@@ -1,4 +1,4 @@
-# Stock Simulatorm Project Brief
+# Stock Simulator Project Brief
 
 Stock Simulator is a production-style paper trading platform for the Indian market
 (NSE/BSE). Users trade with real market prices but virtual money so they can
@@ -62,3 +62,21 @@ Ask before:
 - Adding a paid service
 - Changing the core architecture
 - Introducing a new major dependency or service
+
+# Project Name
+
+## Vision
+
+## Problem Statement
+
+## Solution
+
+## Target Users
+
+## Milestones
+
+- Milestone 1 ✅
+- Milestone 2
+- Milestone 3
+...
+- Milestone 30
