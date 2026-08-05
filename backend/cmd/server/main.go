@@ -1,7 +1,16 @@
 package main
 
-import "fmt"
+import (
+	"log"
+
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/app"
+)
 
 func main() {
-	fmt.Println("Stock Simulator API")
+
+	application := app.New()
+
+	if err := application.Run(); err != nil {
+		log.Fatal(err)
+	}
 }
