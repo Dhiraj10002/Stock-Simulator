@@ -31,4 +31,8 @@ func (a *App) Run() error {
 	logger.Info("Server running on :" + cfg.Port)
 
 	return r.Run(":" + cfg.Port)
+
+    if err := database.Connect(cfg); err != nil {
+	     return err
+}
 }
