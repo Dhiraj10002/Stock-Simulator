@@ -3,10 +3,10 @@ package app
 import (
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/config"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/router"
+	"github.com/Dhiraj10002/Stock-Simulator/backend/pkg/logger"
 )
 
-type App struct {
-}
+type App struct{}
 
 func New() *App {
 	return &App{}
@@ -19,7 +19,16 @@ func (a *App) Run() error {
 		return err
 	}
 
-	router := router.Setup()
+	if err := logger.Init(); err != nil {
+		return err
+	}
+	defer logger.Sync()
 
-	return router.Run(":" + cfg.Port)
+	logger.Info("Starting Stock Simulator API")
+
+	r := router.Setup()
+
+	logger.Info("Server running on :" + cfg.Port)
+
+	return r.Run(":" + cfg.Port)
 }
