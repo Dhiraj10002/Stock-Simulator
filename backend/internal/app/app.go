@@ -2,6 +2,8 @@ package app
 
 import (
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/config"
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/database"
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/router"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/pkg/logger"
 )
@@ -14,25 +16,40 @@ func New() *App {
 
 func (a *App) Run() error {
 
+	// Load Configuration
 	cfg, err := config.Load()
 	if err != nil {
 		return err
 	}
 
+	// Initialize Logger
 	if err := logger.Init(); err != nil {
 		return err
 	}
 	defer logger.Sync()
 
-	logger.Info("Starting Stock Simulator API")
+	logger.Info("Configuration Loaded")
 
-	r := router.Setup()
+	// Connect Database
+	if err := database.Connect(cfg); err != nil {
+		return err
+	}
 
-	logger.Info("Server running on :" + cfg.Port)
+	logger.Info("Database Connected")
+
+	// Run Migrations
+	if err := database.GetDB().AutoMigrate(
+		&model.User{},
+	); err != nil {
+		return err
+	}
+
+	logger.Info("Database Migration Completed")
+
+	// Setup Router
+	r := router.Setup(cfg)
+
+	logger.Info("Starting HTTP Server on :" + cfg.Port)
 
 	return r.Run(":" + cfg.Port)
-
-    if err := database.Connect(cfg); err != nil {
-	     return err
-}
 }

@@ -1,0 +1,77 @@
+openapi: 3.0.3
+info:
+  title: Stock Simulator API
+  version: v1
+  description: API for the Stock Simulator paper-trading platform.
+servers:
+  - url: /api/v1
+paths:
+  /health:
+    get:
+      summary: Check API health
+      responses:
+        '200':
+          description: API is available
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+  /auth/register:
+    post:
+      summary: Register a user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: User registered
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /auth/login:
+    post:
+      summary: Log in and receive tokens
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: Invalid credentials
+components:
+  schemas:
+    RegisterRequest:
+      type: object
+      required: [name, email, password]
+      properties:
+        name: {type: string, minLength: 2, maxLength: 100}
+        email: {type: string, format: email}
+        password: {type: string, minLength: 8, maxLength: 32, format: password}
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: {type: string, format: email}
+        password: {type: string, format: password}
+    SuccessResponse:
+      type: object
+      required: [success, message]
+      properties:
+        success: {type: boolean, example: true}
+        message: {type: string}
+        data: {}
+  responses:
+    BadRequest:
+      description: Invalid request body or validation failure

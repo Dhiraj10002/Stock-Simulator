@@ -1,18 +1,18 @@
-POST   /auth/register
-POST   /auth/login
-POST   /auth/logout
+POST   /api/v1/auth/register
+POST   /api/v1/auth/login
+POST   /api/v1/auth/logout
 
-GET    /stocks
-GET    /stocks/{symbol}
+GET    /api/v1/stocks
+GET    /api/v1/stocks/{symbol}
 
-POST   /orders
-GET    /orders
+POST   /api/v1/orders
+GET    /api/v1/orders
 
-GET    /portfolio
+GET    /api/v1/portfolio
 
-GET    /watchlist
-POST   /watchlist
+GET    /api/v1/watchlist
+POST   /api/v1/watchlist
 
-GET    /news
+GET    /api/v1/news
 
-POST   /ai/analyze-trade
+POST   /api/v1/ai/analyze-trade

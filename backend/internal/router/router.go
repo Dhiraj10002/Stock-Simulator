@@ -1,35 +1,38 @@
-package response
+package router
 
 import (
-	"net/http"
+	authHandler "github.com/Dhiraj10002/Stock-Simulator/backend/internal/auth/handler"
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/config"
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/handler"
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/middleware"
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/validation"
 
 	"github.com/gin-gonic/gin"
 )
 
-type APIResponse struct {
-	Success bool `json:"success"`
-	Message string `json:"message"`
-	Data    any    `json:"data,omitempty"`
-	Errors  any    `json:"errors,omitempty"`
-}
+func Setup(cfg *config.Config) *gin.Engine {
 
-func Success(c *gin.Context, statusCode int, message string, data any) {
-	c.JSON(statusCode, APIResponse{
-		Success: true,
-		Message: message,
-		Data:    data,
-	})
-}
+	validation.Register()
 
-func Error(c *gin.Context, statusCode int, message string, errors any) {
-	c.JSON(statusCode, APIResponse{
-		Success: false,
-		Message: message,
-		Errors:  errors,
-	})
-}
+	r := gin.New()
+	_ = r.SetTrustedProxies(nil)
+	r.Use(
+		middleware.Recovery(),
+		middleware.RequestID(),
+		middleware.RequestLogger(),
+		middleware.CORS(cfg.CORSAllowedOrigins),
+	)
 
-// Optional helper
-func OK(c *gin.Context, message string, data any) {
-	Success(c, http.StatusOK, message, data)
+	healthHandler := handler.NewHealthHandler()
+	auth := authHandler.New(cfg)
+
+	api := r.Group("/api/v1")
+	{
+		api.GET("/health", healthHandler.Health)
+
+		api.POST("/auth/register", auth.Register)
+		api.POST("/auth/login", auth.Login)
+	}
+
+	return r
 }

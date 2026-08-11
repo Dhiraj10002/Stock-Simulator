@@ -1,24 +1,26 @@
 package response
 
+import "github.com/gin-gonic/gin"
+
 type APIResponse struct {
-    Success bool
-    Message string
-    Data any
-    Errors any
+	Success bool   `json:"success"`
+	Message string `json:"message"`
+	Data    any    `json:"data,omitempty"`
+	Errors  any    `json:"errors,omitempty"`
 }
-func Success(message string, data any) APIResponse {
-    return APIResponse{
-        Success: true,
-        Message: message,
-        Data:    data,
-        Errors:  nil,
-    }
+
+func Success(c *gin.Context, status int, message string, data any) {
+	c.JSON(status, APIResponse{
+		Success: true,
+		Message: message,
+		Data:    data,
+	})
 }
-func Error(message string, errors any) APIResponse {
-    return APIResponse{
-        Success: false,
-        Message: message,
-        Data:    nil,
-        Errors:  errors,
-    }
+
+func Error(c *gin.Context, status int, message string, errors any) {
+	c.JSON(status, APIResponse{
+		Success: false,
+		Message: message,
+		Errors:  errors,
+	})
 }
