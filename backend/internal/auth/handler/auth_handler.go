@@ -73,3 +73,45 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 	response.Success(c, http.StatusOK, "Login successful", loginResponse)
 }
+
+func (h *AuthHandler) Me(c *gin.Context) {
+	userID := c.GetString("user_id")
+	user, err := h.service.CurrentUser(userID)
+	if err != nil {
+		response.Error(c, http.StatusUnauthorized, "Unauthorized", nil)
+		return
+	}
+
+	response.Success(c, http.StatusOK, "Current user retrieved successfully", user)
+}
+
+func (h *AuthHandler) Refresh(c *gin.Context) {
+	var req dto.RefreshTokenRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, http.StatusBadRequest, "Invalid request body", err.Error())
+		return
+	}
+
+	loginResponse, err := h.service.Refresh(req.RefreshToken)
+	if err != nil {
+		response.Error(c, http.StatusUnauthorized, "Invalid refresh token", nil)
+		return
+	}
+
+	response.Success(c, http.StatusOK, "Token refreshed successfully", loginResponse)
+}
+
+func (h *AuthHandler) Logout(c *gin.Context) {
+	var req dto.LogoutRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, http.StatusBadRequest, "Invalid request body", err.Error())
+		return
+	}
+
+	if err := h.service.Logout(req.RefreshToken); err != nil {
+		response.Error(c, http.StatusUnauthorized, "Invalid refresh token", nil)
+		return
+	}
+
+	response.Success(c, http.StatusOK, "Logged out successfully", nil)
+}

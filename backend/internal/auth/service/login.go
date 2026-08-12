@@ -1,10 +1,14 @@
 package service
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"time"
 
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/auth/dto"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/auth/token"
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -40,8 +44,21 @@ func (s *AuthService) Login(req dto.LoginRequest) (*dto.LoginResponse, error) {
 		return nil, err
 	}
 
+	if err := s.repo.CreateRefreshSession(&model.RefreshSession{
+		UserUUID:  user.UUID,
+		TokenHash: hashToken(refreshToken),
+		ExpiresAt: time.Now().Add(7 * 24 * time.Hour),
+	}); err != nil {
+		return nil, err
+	}
+
 	return &dto.LoginResponse{
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
 	}, nil
+}
+
+func hashToken(value string) string {
+	hash := sha256.Sum256([]byte(value))
+	return hex.EncodeToString(hash[:])
 }

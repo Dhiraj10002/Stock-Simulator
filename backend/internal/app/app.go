@@ -40,6 +40,7 @@ func (a *App) Run() error {
 	// Run Migrations
 	if err := database.GetDB().AutoMigrate(
 		&model.User{},
+		&model.RefreshSession{},
 	); err != nil {
 		return err
 	}
