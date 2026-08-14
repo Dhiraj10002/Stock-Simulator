@@ -32,5 +32,9 @@ func (s *AuthService) Register(req dto.RegisterRequest) error {
 		Password: string(hashedPassword),
 	}
 
-	return s.repo.Create(user)
+	if err := s.repo.Create(user); err != nil {
+		return err
+	}
+
+	return s.wallet.CreateInitialWallet(user.UUID)
 }

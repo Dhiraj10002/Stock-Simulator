@@ -17,7 +17,8 @@ type Config struct {
 
 	JWTSecret string
 
-	CORSAllowedOrigins string
+	CORSAllowedOrigins         string
+	InitialVirtualBalancePaise int64
 }
 
 func Load() (*Config, error) {
@@ -35,7 +36,8 @@ func Load() (*Config, error) {
 
 		JWTSecret: viper.GetString("JWT_SECRET"),
 
-		CORSAllowedOrigins: viper.GetString("CORS_ALLOWED_ORIGINS"),
+		CORSAllowedOrigins:         viper.GetString("CORS_ALLOWED_ORIGINS"),
+		InitialVirtualBalancePaise: viper.GetInt64("INITIAL_VIRTUAL_BALANCE_PAISE"),
 	}
 
 	if cfg.Port == "" {
@@ -46,6 +48,9 @@ func Load() (*Config, error) {
 	}
 	if cfg.CORSAllowedOrigins == "" {
 		cfg.CORSAllowedOrigins = "http://localhost:3000"
+	}
+	if cfg.InitialVirtualBalancePaise <= 0 {
+		cfg.InitialVirtualBalancePaise = 100000000 // ₹10,00,000
 	}
 
 	if cfg.DatabaseURL == "" {

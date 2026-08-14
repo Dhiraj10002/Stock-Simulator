@@ -41,6 +41,11 @@ func (a *App) Run() error {
 	if err := database.GetDB().AutoMigrate(
 		&model.User{},
 		&model.RefreshSession{},
+		&model.Wallet{},
+		&model.WalletTransaction{},
+		&model.Position{},
+		&model.Order{},
+		&model.Trade{},
 	); err != nil {
 		return err
 	}

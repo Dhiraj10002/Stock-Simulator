@@ -10,12 +10,14 @@ import (
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/auth/token"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/config"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
+	walletService "github.com/Dhiraj10002/Stock-Simulator/backend/internal/wallet/service"
 	"github.com/google/uuid"
 )
 
 type AuthService struct {
-	repo *repository.AuthRepository
-	cfg  *config.Config
+	repo   *repository.AuthRepository
+	cfg    *config.Config
+	wallet *walletService.WalletService
 }
 
 func (s *AuthService) CurrentUser(userID string) (*dto.CurrentUserResponse, error) {
@@ -84,7 +86,8 @@ func (s *AuthService) Logout(refreshToken string) error {
 
 func New(cfg *config.Config) *AuthService {
 	return &AuthService{
-		repo: repository.New(),
-		cfg:  cfg,
+		repo:   repository.New(),
+		cfg:    cfg,
+		wallet: walletService.New(cfg),
 	}
 }

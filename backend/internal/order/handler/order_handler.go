@@ -1,0 +1,67 @@
+package handler
+
+import (
+	"net/http"
+
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/order/dto"
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/order/service"
+	"github.com/Dhiraj10002/Stock-Simulator/backend/pkg/response"
+	"github.com/gin-gonic/gin"
+)
+
+type OrderHandler struct{ service *service.OrderService }
+
+func New() *OrderHandler { return &OrderHandler{service: service.New()} }
+
+func (h *OrderHandler) Create(c *gin.Context) {
+	var request dto.CreateOrderRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		response.Error(c, http.StatusBadRequest, "Invalid order request", err.Error())
+		return
+	}
+	order, err := h.service.Create(c.GetString("user_id"), request)
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error(), nil)
+		return
+	}
+	response.Success(c, http.StatusCreated, "Order created successfully", order)
+}
+
+func (h *OrderHandler) List(c *gin.Context) {
+	orders, err := h.service.List(c.GetString("user_id"))
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error(), nil)
+		return
+	}
+	response.Success(c, http.StatusOK, "Orders retrieved successfully", orders)
+}
+
+func (h *OrderHandler) Get(c *gin.Context) {
+	order, err := h.service.Get(c.GetString("user_id"), c.Param("id"))
+	if err != nil {
+		response.Error(c, http.StatusNotFound, "Order not found", nil)
+		return
+	}
+	response.Success(c, http.StatusOK, "Order retrieved successfully", order)
+}
+
+func (h *OrderHandler) Cancel(c *gin.Context) {
+	if err := h.service.Cancel(c.GetString("user_id"), c.Param("id")); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error(), nil)
+		return
+	}
+	response.Success(c, http.StatusOK, "Order cancelled successfully", nil)
+}
+
+func (h *OrderHandler) Execute(c *gin.Context) {
+	var request dto.ExecuteOrderRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		response.Error(c, http.StatusBadRequest, "Invalid execution request", err.Error())
+		return
+	}
+	if err := h.service.Execute(c.GetString("user_id"), c.Param("id"), request.ExecutionPricePaise); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error(), nil)
+		return
+	}
+	response.Success(c, http.StatusOK, "Order executed successfully", nil)
+}
