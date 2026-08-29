@@ -1,0 +1,17 @@
+package dto
+
+type QuoteResponse struct {
+	Symbol     string `json:"symbol"`
+	PricePaise int64  `json:"price_paise"`
+	Source     string `json:"source"`
+	UpdatedAt  string `json:"updated_at"`
+}
+
+type CandleResponse struct {
+	Timestamp  int64 `json:"timestamp"`
+	OpenPaise  int64 `json:"open_paise"`
+	HighPaise  int64 `json:"high_paise"`
+	LowPaise   int64 `json:"low_paise"`
+	ClosePaise int64 `json:"close_paise"`
+	Volume     int64 `json:"volume"`
+}

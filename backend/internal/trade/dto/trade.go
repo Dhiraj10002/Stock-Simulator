@@ -1,0 +1,12 @@
+package dto
+
+type TradeResponse struct {
+	UUID       string `json:"uuid"`
+	OrderUUID  string `json:"order_uuid"`
+	Symbol     string `json:"symbol"`
+	Side       string `json:"side"`
+	Quantity   int64  `json:"quantity"`
+	PricePaise int64  `json:"price_paise"`
+	TotalPaise int64  `json:"total_paise"`
+	ExecutedAt string `json:"executed_at"`
+}

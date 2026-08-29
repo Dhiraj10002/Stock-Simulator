@@ -4,15 +4,21 @@ import (
 	"fmt"
 	"strings"
 
+	marketService "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/service"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/order/dto"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/order/repository"
 	"github.com/google/uuid"
 )
 
-type OrderService struct{ repo *repository.OrderRepository }
+type OrderService struct {
+	repo   *repository.OrderRepository
+	market *marketService.Service
+}
 
-func New() *OrderService { return &OrderService{repo: repository.New()} }
+func New(market *marketService.Service) *OrderService {
+	return &OrderService{repo: repository.New(), market: market}
+}
 
 func (s *OrderService) Create(userID string, request dto.CreateOrderRequest) (*dto.OrderResponse, error) {
 	userUUID, err := uuid.Parse(userID)
@@ -43,9 +49,6 @@ func (s *OrderService) Create(userID string, request dto.CreateOrderRequest) (*d
 			return nil, fmt.Errorf("insufficient available wallet balance")
 		}
 	} else if err := s.repo.Create(order); err != nil {
-		return nil, err
-	}
-	if err := s.repo.Create(order); err != nil {
 		return nil, err
 	}
 	return toResponse(order), nil

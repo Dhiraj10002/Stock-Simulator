@@ -24,14 +24,17 @@ func (s *OrderService) Execute(userID, orderID string, executionPricePaise int64
 	if err != nil {
 		return fmt.Errorf("invalid order identity")
 	}
-	if executionPricePaise <= 0 {
-		return errors.New("execution price must be positive")
-	}
-
 	return database.GetDB().Transaction(func(tx *gorm.DB) error {
 		var order model.Order
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("uuid = ? AND user_uuid = ?", orderUUID, userUUID).First(&order).Error; err != nil {
 			return err
+		}
+		if executionPricePaise <= 0 {
+			quote, quoteErr := s.market.CurrentQuote(order.Symbol)
+			if quoteErr != nil {
+				return quoteErr
+			}
+			executionPricePaise = quote.PricePaise
 		}
 		if order.Status != model.OrderStatusPending && order.Status != model.OrderStatusOpen {
 			return fmt.Errorf("order cannot be executed in %s status", order.Status)

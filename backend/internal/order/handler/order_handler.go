@@ -3,6 +3,7 @@ package handler
 import (
 	"net/http"
 
+	marketService "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/service"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/order/dto"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/order/service"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/pkg/response"
@@ -11,7 +12,9 @@ import (
 
 type OrderHandler struct{ service *service.OrderService }
 
-func New() *OrderHandler { return &OrderHandler{service: service.New()} }
+func New(market *marketService.Service) *OrderHandler {
+	return &OrderHandler{service: service.New(market)}
+}
 
 func (h *OrderHandler) Create(c *gin.Context) {
 	var request dto.CreateOrderRequest

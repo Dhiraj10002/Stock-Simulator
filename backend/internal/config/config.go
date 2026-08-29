@@ -8,14 +8,17 @@ import (
 )
 
 type Config struct {
-	AppName    string
+	AppName    string 
 	AppEnv     string
 	Port       string
 	APIVersion string
 
 	DatabaseURL string
+	RedisURL    string
 
-	JWTSecret string
+	JWTSecret    string
+	GeminiAPIKey string
+	GeminiModel  string
 
 	CORSAllowedOrigins         string
 	InitialVirtualBalancePaise int64
@@ -33,8 +36,11 @@ func Load() (*Config, error) {
 		Port:        viper.GetString("PORT"),
 		APIVersion:  viper.GetString("API_VERSION"),
 		DatabaseURL: viper.GetString("DATABASE_URL"),
+		RedisURL:    viper.GetString("REDIS_URL"),
 
-		JWTSecret: viper.GetString("JWT_SECRET"),
+		JWTSecret:    viper.GetString("JWT_SECRET"),
+		GeminiAPIKey: viper.GetString("GEMINI_API_KEY"),
+		GeminiModel:  viper.GetString("GEMINI_MODEL"),
 
 		CORSAllowedOrigins:         viper.GetString("CORS_ALLOWED_ORIGINS"),
 		InitialVirtualBalancePaise: viper.GetInt64("INITIAL_VIRTUAL_BALANCE_PAISE"),
@@ -51,6 +57,12 @@ func Load() (*Config, error) {
 	}
 	if cfg.InitialVirtualBalancePaise <= 0 {
 		cfg.InitialVirtualBalancePaise = 100000000 // ₹10,00,000
+	}
+	if cfg.RedisURL == "" {
+		cfg.RedisURL = "redis://localhost:6379/0"
+	}
+	if cfg.GeminiModel == "" {
+		cfg.GeminiModel = "gemini-3.7-flash"
 	}
 
 	if cfg.DatabaseURL == "" {

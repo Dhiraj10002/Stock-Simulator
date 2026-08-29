@@ -22,6 +22,34 @@ services:
       - "8080:8080"
     depends_on:
       - db
+      - redis
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  market-worker:
+    build:
+      context: ./python-services/market-worker
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      MARKET_SYMBOLS: RELIANCE,TCS,INFY,HDFCBANK
+      POLL_INTERVAL_SECONDS: 60
+    depends_on:
+      - redis
+
+  news-worker:
+    build:
+      context: ./python-services/news-worker
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      NEWS_POLL_INTERVAL_SECONDS: 600
+    depends_on:
+      - redis
 
 volumes:
   postgres_data:
+  redis_data:

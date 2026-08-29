@@ -18,9 +18,9 @@ Use this stack strictly. Do not suggest alternatives unless explicitly asked.
 - Data ingestion: Python script using a free/delayed market data source,
   running as a Render free Background Worker
 - Real-time: WebSocket only with `gorilla/websocket` in Go
-- AI mentor and news sentiment: Anthropic API called server-side only
+- AI mentor and news sentiment: Gemini API called server-side only
 
-Never expose Anthropic API keys or any other secrets client-side.
+Never expose Gemini API keys or any other secrets client-side.
 
 ## Cost Constraint
 
@@ -45,7 +45,7 @@ Market data provider -> Python ingestion -> Redis (live prices) -> WebSocket -> 
   margin calculation; expiry-day handling
 - AI trade mentor: structured JSON feedback on trade quality after each trade or
   at end of day
-- News sentiment: FinBERT/lexicon for bulk scoring, Claude API for on-demand
+- News sentiment: FinBERT/lexicon for bulk scoring, Gemini API for on-demand
   deep explanation
 
 ## Coding Conventions

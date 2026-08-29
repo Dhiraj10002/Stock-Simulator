@@ -17,6 +17,13 @@ GET    /api/v1/orders/:id
 DELETE /api/v1/orders/:id
 POST   /api/v1/orders/:id/execute
 
+GET    /api/v1/trades
+
+GET    /api/v1/market/quotes/:symbol
+GET    /api/v1/market/quotes/:symbol/history
+GET    /api/v1/news
+WS     /ws/market
+
 GET    /api/v1/stocks
 GET    /api/v1/stocks/{symbol}
 
