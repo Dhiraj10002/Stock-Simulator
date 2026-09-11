@@ -5,33 +5,40 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/cache"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/news/dto"
 	"github.com/redis/go-redis/v9"
 )
 
 const itemsKey = "news:items"
 
-type NewsService struct{ client *redis.Client }
+type NewsService struct {
+	client  *redis.Client
+	timeout time.Duration
+}
 
-func New(redisURL string) (*NewsService, error) {
+func New(redisURL string, timeout time.Duration) (*NewsService, error) {
 	if redisURL == "" {
 		redisURL = "redis://localhost:6379/0"
 	}
-	options, err := redis.ParseURL(redisURL)
+	client, err := cache.NewRedisClient(redisURL, timeout)
 	if err != nil {
 		return nil, err
 	}
-	return &NewsService{client: redis.NewClient(options)}, nil
+	return &NewsService{client: client, timeout: timeout}, nil
 }
 
 func (s *NewsService) List(symbol string, limit int) ([]dto.ArticleResponse, error) {
 	if limit <= 0 || limit > 100 {
 		return nil, fmt.Errorf("limit must be between 1 and 100")
 	}
-	items, err := s.client.LRange(context.Background(), itemsKey, 0, 199).Result()
+	ctx, cancel := cache.Context(context.Background(), s.timeout)
+	defer cancel()
+	items, err := s.client.LRange(ctx, itemsKey, 0, 199).Result()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %v", cache.ErrUnavailable, err)
 	}
 	symbol = strings.ToUpper(strings.TrimSpace(symbol))
 	result := make([]dto.ArticleResponse, 0, limit)

@@ -33,3 +33,23 @@ func TestInvalidRegistrationIsRejectedBeforeDatabaseAccess(t *testing.T) {
 		t.Fatalf("expected %d, got %d", http.StatusBadRequest, response.Code)
 	}
 }
+
+func TestSimulationResetRequiresAuthentication(t *testing.T) {
+	router := Setup(&config.Config{CORSAllowedOrigins: "http://localhost:3000"})
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/api/v1/simulation/reset", nil))
+
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("expected %d, got %d", http.StatusUnauthorized, response.Code)
+	}
+}
+
+func TestWalletResetRouteIsNotExposed(t *testing.T) {
+	router := Setup(&config.Config{CORSAllowedOrigins: "http://localhost:3000"})
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/api/v1/wallet/reset", nil))
+
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("expected %d, got %d", http.StatusNotFound, response.Code)
+	}
+}

@@ -6,24 +6,29 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/cache"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/dto"
 	"github.com/redis/go-redis/v9"
 )
 
-type Service struct{ client *redis.Client }
+type Service struct {
+	client  *redis.Client
+	timeout time.Duration
+}
 
 const QuoteUpdatesChannel = "market:updates"
 
-func New(redisURL string) (*Service, error) {
+func New(redisURL string, timeout time.Duration) (*Service, error) {
 	if redisURL == "" {
 		redisURL = "redis://localhost:6379/0"
 	}
-	options, err := redis.ParseURL(redisURL)
+	client, err := cache.NewRedisClient(redisURL, timeout)
 	if err != nil {
 		return nil, err
 	}
-	return &Service{client: redis.NewClient(options)}, nil
+	return &Service{client: client, timeout: timeout}, nil
 }
 
 func (s *Service) CurrentQuote(symbol string) (*dto.QuoteResponse, error) {
@@ -31,9 +36,11 @@ func (s *Service) CurrentQuote(symbol string) (*dto.QuoteResponse, error) {
 	if symbol == "" {
 		return nil, fmt.Errorf("symbol is required")
 	}
-	values, err := s.client.HGetAll(context.Background(), quoteKey(symbol)).Result()
+	ctx, cancel := cache.Context(context.Background(), s.timeout)
+	defer cancel()
+	values, err := s.client.HGetAll(ctx, quoteKey(symbol)).Result()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %v", cache.ErrUnavailable, err)
 	}
 	if len(values) == 0 {
 		return nil, fmt.Errorf("quote not found for %s", symbol)
@@ -53,9 +60,11 @@ func (s *Service) HistoricalQuotes(symbol string, limit int) ([]dto.CandleRespon
 	if limit <= 0 || limit > 500 {
 		return nil, fmt.Errorf("limit must be between 1 and 500")
 	}
-	items, err := s.client.LRange(context.Background(), historyKey(symbol), 0, int64(limit-1)).Result()
+	ctx, cancel := cache.Context(context.Background(), s.timeout)
+	defer cancel()
+	items, err := s.client.LRange(ctx, historyKey(symbol), 0, int64(limit-1)).Result()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %v", cache.ErrUnavailable, err)
 	}
 	result := make([]dto.CandleResponse, 0, len(items))
 	for i := len(items) - 1; i >= 0; i-- {

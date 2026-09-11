@@ -1,9 +1,12 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
+	"time"
 
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/cache"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/news/service"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/pkg/response"
 	"github.com/gin-gonic/gin"
@@ -11,8 +14,8 @@ import (
 
 type NewsHandler struct{ service *service.NewsService }
 
-func New(redisURL string) (*NewsHandler, error) {
-	newsService, err := service.New(redisURL)
+func New(redisURL string, timeout time.Duration) (*NewsHandler, error) {
+	newsService, err := service.New(redisURL, timeout)
 	if err != nil {
 		return nil, err
 	}
@@ -31,6 +34,10 @@ func (h *NewsHandler) List(c *gin.Context) {
 	}
 	articles, err := h.service.List(c.Query("symbol"), limit)
 	if err != nil {
+		if errors.Is(err, cache.ErrUnavailable) {
+			response.Error(c, http.StatusServiceUnavailable, "News temporarily unavailable", nil)
+			return
+		}
 		response.Error(c, http.StatusBadRequest, err.Error(), nil)
 		return
 	}

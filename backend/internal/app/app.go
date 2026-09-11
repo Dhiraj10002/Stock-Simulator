@@ -46,6 +46,7 @@ func (a *App) Run() error {
 		&model.Position{},
 		&model.Order{},
 		&model.Trade{},
+		&model.SimulationReset{},
 	); err != nil {
 		return err
 	}

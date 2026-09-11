@@ -1,9 +1,12 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
+	"time"
 
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/cache"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/service"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/pkg/response"
 	"github.com/gin-gonic/gin"
@@ -11,8 +14,8 @@ import (
 
 type Handler struct{ service *service.Service }
 
-func New(redisURL string) (*Handler, error) {
-	marketService, err := service.New(redisURL)
+func New(redisURL string, timeout time.Duration) (*Handler, error) {
+	marketService, err := service.New(redisURL, timeout)
 	if err != nil {
 		return nil, err
 	}
@@ -24,6 +27,10 @@ func (h *Handler) Service() *service.Service { return h.service }
 func (h *Handler) Quote(c *gin.Context) {
 	quote, err := h.service.CurrentQuote(c.Param("symbol"))
 	if err != nil {
+		if errors.Is(err, cache.ErrUnavailable) {
+			response.Error(c, http.StatusServiceUnavailable, "Market data temporarily unavailable", nil)
+			return
+		}
 		response.Error(c, http.StatusBadRequest, err.Error(), nil)
 		return
 	}
@@ -42,6 +49,10 @@ func (h *Handler) History(c *gin.Context) {
 	}
 	candles, err := h.service.HistoricalQuotes(c.Param("symbol"), limit)
 	if err != nil {
+		if errors.Is(err, cache.ErrUnavailable) {
+			response.Error(c, http.StatusServiceUnavailable, "Market data temporarily unavailable", nil)
+			return
+		}
 		response.Error(c, http.StatusBadRequest, err.Error(), nil)
 		return
 	}

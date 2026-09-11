@@ -9,6 +9,12 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d stock_simulator"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
 
   backend:
     build:
@@ -21,8 +27,10 @@ services:
     ports:
       - "8080:8080"
     depends_on:
-      - db
-      - redis
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   redis:
     image: redis:7-alpine
@@ -30,6 +38,11 @@ services:
       - "6379:6379"
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   market-worker:
     build:
@@ -38,8 +51,12 @@ services:
       REDIS_URL: redis://redis:6379/0
       MARKET_SYMBOLS: RELIANCE,TCS,INFY,HDFCBANK
       POLL_INTERVAL_SECONDS: 60
+      QUOTE_TTL_SECONDS: 300
+      HISTORY_TTL_SECONDS: 86400
+      HISTORY_MAX_ITEMS: 500
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
 
   news-worker:
     build:
@@ -47,8 +64,12 @@ services:
     environment:
       REDIS_URL: redis://redis:6379/0
       NEWS_POLL_INTERVAL_SECONDS: 600
+      NEWS_TTL_SECONDS: 604800
+      NEWS_SEEN_TTL_SECONDS: 604800
+      NEWS_MAX_ITEMS: 200
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
 
 volumes:
   postgres_data:

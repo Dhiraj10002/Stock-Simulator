@@ -61,24 +61,28 @@ def fetch_items(rss_url: str) -> list[dict]:
     return items
 
 
-def store(client: redis.Redis, items: list[dict]) -> None:
+def store(client: redis.Redis, items: list[dict], items_ttl: int, seen_ttl: int, max_items: int) -> None:
     with client.pipeline() as pipe:
         for item in items:
             identity = f"news:seen:{item['url']}"
-            if client.set(identity, "1", nx=True, ex=604800):
+            if client.set(identity, "1", nx=True, ex=seen_ttl):
                 pipe.lpush("news:items", json.dumps(item))
-        pipe.ltrim("news:items", 0, 199)
-        pipe.expire("news:items", 604800)
+        pipe.ltrim("news:items", 0, max_items - 1)
+        pipe.expire("news:items", items_ttl)
         pipe.execute()
 
 
 def main() -> None:
-    client = redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"), decode_responses=True)
+    client = redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"), decode_responses=True,
+                            socket_connect_timeout=5, socket_timeout=5, health_check_interval=30)
     rss_url = os.getenv("NEWS_RSS_URL", "https://news.google.com/rss/search?q=Indian+stock+market&hl=en-IN&gl=IN&ceid=IN:en")
     interval = max(60, int(os.getenv("NEWS_POLL_INTERVAL_SECONDS", "600")))
+    items_ttl = int(os.getenv("NEWS_TTL_SECONDS", "604800"))
+    seen_ttl = int(os.getenv("NEWS_SEEN_TTL_SECONDS", "604800"))
+    max_items = int(os.getenv("NEWS_MAX_ITEMS", "200"))
     while True:
         try:
-            store(client, fetch_items(rss_url))
+            store(client, fetch_items(rss_url), items_ttl, seen_ttl, max_items)
         except Exception as error:
             print(f"news worker error: {error}", flush=True)
         time.sleep(interval)
