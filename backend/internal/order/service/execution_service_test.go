@@ -16,3 +16,14 @@ func TestSettlementArithmetic(t *testing.T) {
 		t.Fatalf("multiply returned (%d, %v), want (120000, true)", total, ok)
 	}
 }
+
+func TestOnlyDeliveryIsSupportedUntilProductRulesExist(t *testing.T) {
+	if !isSupportedProduct("DELIVERY") {
+		t.Fatal("delivery orders must remain available")
+	}
+	for _, product := range []string{"INTRADAY", "FNO", ""} {
+		if isSupportedProduct(product) {
+			t.Fatalf("%q must be rejected until its product rules exist", product)
+		}
+	}
+}

@@ -52,6 +52,11 @@ func (s *OrderService) Execute(userID, orderID string) error {
 		if order.Status != model.OrderStatusPending && order.Status != model.OrderStatusOpen {
 			return fmt.Errorf("order cannot be executed in %s status", order.Status)
 		}
+		// Defense in depth for historical/manual rows created before product
+		// support was restricted at order creation.
+		if !isSupportedProduct(order.Product) {
+			return fmt.Errorf("%s orders are not available yet; only DELIVERY orders are supported", order.Product)
+		}
 		if order.Quantity <= 0 || (order.Side != model.OrderSideBuy && order.Side != model.OrderSideSell) {
 			return errors.New("order has invalid settlement data")
 		}

@@ -29,6 +29,9 @@ func (s *OrderService) Create(userID string, request dto.CreateOrderRequest) (*d
 	if request.Symbol == "" {
 		return nil, fmt.Errorf("symbol is required")
 	}
+	if request.Product != model.OrderProductDelivery {
+		return nil, fmt.Errorf("%s orders are not available yet; only DELIVERY orders are supported", request.Product)
+	}
 	if request.Type == model.OrderTypeLimit && request.PricePaise <= 0 {
 		return nil, fmt.Errorf("limit orders require a positive price")
 	}
@@ -52,6 +55,10 @@ func (s *OrderService) Create(userID string, request dto.CreateOrderRequest) (*d
 		return nil, err
 	}
 	return toResponse(order), nil
+}
+
+func isSupportedProduct(product string) bool {
+	return product == model.OrderProductDelivery
 }
 
 func (s *OrderService) List(userID string) ([]dto.OrderResponse, error) {
