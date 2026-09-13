@@ -106,5 +106,5 @@ func (s *OrderService) Cancel(userID, orderID string) error {
 }
 
 func toResponse(order *model.Order) *dto.OrderResponse {
-	return &dto.OrderResponse{UUID: order.UUID.String(), Symbol: order.Symbol, Side: order.Side, Type: order.Type, Product: order.Product, Quantity: order.Quantity, PricePaise: order.PricePaise, ReservedPaise: order.ReservedPaise, Status: order.Status}
+	return &dto.OrderResponse{UUID: order.UUID.String(), Symbol: order.Symbol, Side: order.Side, Type: order.Type, Product: order.Product, Quantity: order.Quantity, PricePaise: order.PricePaise, ExecutedPricePaise: order.ExecutedPricePaise, ReservedPaise: order.ReservedPaise, Status: order.Status}
 }

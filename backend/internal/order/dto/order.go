@@ -10,13 +10,14 @@ type CreateOrderRequest struct {
 }
 
 type OrderResponse struct {
-	UUID          string `json:"uuid"`
-	Symbol        string `json:"symbol"`
-	Side          string `json:"side"`
-	Type          string `json:"type"`
-	Product       string `json:"product"`
-	Quantity      int64  `json:"quantity"`
-	PricePaise    int64  `json:"price_paise"`
-	ReservedPaise int64  `json:"reserved_paise"`
-	Status        string `json:"status"`
+	UUID               string `json:"uuid"`
+	Symbol             string `json:"symbol"`
+	Side               string `json:"side"`
+	Type               string `json:"type"`
+	Product            string `json:"product"`
+	Quantity           int64  `json:"quantity"`
+	PricePaise         int64  `json:"price_paise"`
+	ExecutedPricePaise int64  `json:"executed_price_paise"`
+	ReservedPaise      int64  `json:"reserved_paise"`
+	Status             string `json:"status"`
 }

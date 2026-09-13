@@ -17,6 +17,10 @@ GET    /api/v1/orders/:id
 DELETE /api/v1/orders/:id
 POST   /api/v1/orders/:id/execute
 
+`POST /api/v1/orders/:id/execute` accepts no request body. The server fills the
+order only from a positive, recent Redis market quote; client-supplied prices
+are rejected.
+
 GET    /api/v1/trades
 
 GET    /api/v1/market/quotes/:symbol

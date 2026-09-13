@@ -57,14 +57,14 @@ func (h *OrderHandler) Cancel(c *gin.Context) {
 }
 
 func (h *OrderHandler) Execute(c *gin.Context) {
-	var request dto.ExecuteOrderRequest
-	if err := c.ShouldBindJSON(&request); err != nil {
-		response.Error(c, http.StatusBadRequest, "Invalid execution request", err.Error())
+	if c.Request.ContentLength > 0 {
+		response.Error(c, http.StatusBadRequest, "Execution price is server-controlled; this endpoint does not accept a request body", nil)
 		return
 	}
-	if err := h.service.Execute(c.GetString("user_id"), c.Param("id"), request.ExecutionPricePaise); err != nil {
+	if err := h.service.Execute(c.GetString("user_id"), c.Param("id")); err != nil {
 		response.Error(c, http.StatusBadRequest, err.Error(), nil)
 		return
 	}
+
 	response.Success(c, http.StatusOK, "Order executed successfully", nil)
 }

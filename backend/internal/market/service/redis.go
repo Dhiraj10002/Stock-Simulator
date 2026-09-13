@@ -20,6 +20,8 @@ type Service struct {
 
 const QuoteUpdatesChannel = "market:updates"
 
+const maxExecutableQuoteAge = 2 * time.Minute
+
 func New(redisURL string, timeout time.Duration) (*Service, error) {
 	if redisURL == "" {
 		redisURL = "redis://localhost:6379/0"
@@ -50,6 +52,41 @@ func (s *Service) CurrentQuote(symbol string) (*dto.QuoteResponse, error) {
 		return nil, fmt.Errorf("invalid stored quote")
 	}
 	return &dto.QuoteResponse{Symbol: symbol, PricePaise: price, Source: values["source"], UpdatedAt: values["updated_at"]}, nil
+}
+
+// ExecutableQuote returns a quote that is safe to use for settlement. A
+// cached quote without a valid, recent timestamp must never determine money
+// movement, even if a price field happens to be present.
+func (s *Service) ExecutableQuote(symbol string) (*dto.QuoteResponse, error) {
+	quote, err := s.CurrentQuote(symbol)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateExecutableQuote(quote, time.Now()); err != nil {
+		return nil, err
+	}
+	return quote, nil
+}
+
+func validateExecutableQuote(quote *dto.QuoteResponse, now time.Time) error {
+	if quote.PricePaise <= 0 {
+		return fmt.Errorf("market quote has an invalid price")
+	}
+	if strings.TrimSpace(quote.UpdatedAt) == "" {
+		return fmt.Errorf("market quote has no update time")
+	}
+	updatedAt, err := time.Parse(time.RFC3339, quote.UpdatedAt)
+	if err != nil {
+		return fmt.Errorf("market quote has an invalid update time")
+	}
+	age := now.Sub(updatedAt)
+	if age > maxExecutableQuoteAge {
+		return fmt.Errorf("market quote is stale")
+	}
+	if age < -30*time.Second {
+		return fmt.Errorf("market quote update time is in the future")
+	}
+	return nil
 }
 
 func (s *Service) HistoricalQuotes(symbol string, limit int) ([]dto.CandleResponse, error) {

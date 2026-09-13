@@ -13,9 +13,9 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// Execute fills an order at an explicit simulator price. It atomically updates
-// the order, wallet, position, wallet transaction, and trade record.
-func (s *OrderService) Execute(userID, orderID string, executionPricePaise int64) error {
+// Execute settles an order at the current market quote. The client cannot
+// provide a fill price: the Redis market-data service is the only price source.
+func (s *OrderService) Execute(userID, orderID string) error {
 	userUUID, err := uuid.Parse(userID)
 	if err != nil {
 		return fmt.Errorf("invalid user identity")
@@ -24,42 +24,57 @@ func (s *OrderService) Execute(userID, orderID string, executionPricePaise int64
 	if err != nil {
 		return fmt.Errorf("invalid order identity")
 	}
+
+	// Fetch before taking database locks. ExecutableQuote validates price and
+	// freshness so a Redis outage or old tick cannot settle an order.
+	var pendingOrder model.Order
+	if err := database.GetDB().Where("uuid = ? AND user_uuid = ?", orderUUID, userUUID).First(&pendingOrder).Error; err != nil {
+		return err
+	}
+	quote, err := s.market.ExecutableQuote(pendingOrder.Symbol)
+	if err != nil {
+		return err
+	}
+	executionPricePaise := quote.PricePaise
+
 	return database.GetDB().Transaction(func(tx *gorm.DB) error {
 		var order model.Order
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("uuid = ? AND user_uuid = ?", orderUUID, userUUID).First(&order).Error; err != nil {
 			return err
 		}
-		if executionPricePaise <= 0 {
-			quote, quoteErr := s.market.CurrentQuote(order.Symbol)
-			if quoteErr != nil {
-				return quoteErr
-			}
-			executionPricePaise = quote.PricePaise
-		}
 		if order.Status != model.OrderStatusPending && order.Status != model.OrderStatusOpen {
 			return fmt.Errorf("order cannot be executed in %s status", order.Status)
 		}
-		if order.Type == model.OrderTypeLimit && ((order.Side == model.OrderSideBuy && executionPricePaise > order.PricePaise) || (order.Side == model.OrderSideSell && executionPricePaise < order.PricePaise)) {
-			return errors.New("execution price does not satisfy limit order")
+		if order.Quantity <= 0 || (order.Side != model.OrderSideBuy && order.Side != model.OrderSideSell) {
+			return errors.New("order has invalid settlement data")
 		}
-		if order.Quantity > math.MaxInt64/executionPricePaise {
+		if order.Type == model.OrderTypeLimit && ((order.Side == model.OrderSideBuy && executionPricePaise > order.PricePaise) || (order.Side == model.OrderSideSell && executionPricePaise < order.PricePaise)) {
+			return errors.New("market price does not satisfy limit order")
+		}
+		total, ok := multiply(order.Quantity, executionPricePaise)
+		if !ok {
 			return errors.New("order value is too large")
 		}
-		total := order.Quantity * executionPricePaise
 
 		var wallet model.Wallet
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_uuid = ?", userUUID).First(&wallet).Error; err != nil {
 			return err
+		}
+		if wallet.CashBalancePaise < 0 || wallet.BlockedPaise < 0 || wallet.BlockedPaise > wallet.CashBalancePaise {
+			return errors.New("wallet has invalid balances")
 		}
 		var position model.Position
 		positionErr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_uuid = ? AND symbol = ?", userUUID, order.Symbol).First(&position).Error
 
 		if order.Side == model.OrderSideBuy {
 			if order.ReservedPaise > 0 && total > order.ReservedPaise {
-				return errors.New("execution price exceeds reserved order amount")
+				return errors.New("market price exceeds reserved order amount")
 			}
 			if order.ReservedPaise == 0 && wallet.AvailableBalancePaise() < total {
 				return errors.New("insufficient available wallet balance")
+			}
+			if wallet.CashBalancePaise < total {
+				return errors.New("insufficient wallet balance")
 			}
 			wallet.CashBalancePaise -= total
 			if order.ReservedPaise > 0 {
@@ -73,9 +88,20 @@ func (s *OrderService) Execute(userID, orderID string, executionPricePaise int64
 			} else if positionErr != nil {
 				return positionErr
 			} else {
-				oldValue := position.InvestedValuePaise()
-				position.Quantity += order.Quantity
-				position.AveragePricePaise = (oldValue + total) / position.Quantity
+				newQuantity, ok := add(position.Quantity, order.Quantity)
+				if !ok {
+					return errors.New("position quantity is too large")
+				}
+				oldValue, ok := multiply(position.Quantity, position.AveragePricePaise)
+				if !ok {
+					return errors.New("position value is too large")
+				}
+				newValue, ok := add(oldValue, total)
+				if !ok {
+					return errors.New("position value is too large")
+				}
+				position.Quantity = newQuantity
+				position.AveragePricePaise = newValue / newQuantity
 				position.CurrentPricePaise = executionPricePaise
 			}
 		} else {
@@ -85,7 +111,11 @@ func (s *OrderService) Execute(userID, orderID string, executionPricePaise int64
 			if position.Quantity < order.Quantity {
 				return errors.New("insufficient position quantity")
 			}
-			wallet.CashBalancePaise += total
+			newBalance, ok := add(wallet.CashBalancePaise, total)
+			if !ok {
+				return errors.New("wallet balance is too large")
+			}
+			wallet.CashBalancePaise = newBalance
 			position.Quantity -= order.Quantity
 			position.CurrentPricePaise = executionPricePaise
 		}
@@ -96,8 +126,7 @@ func (s *OrderService) Execute(userID, orderID string, executionPricePaise int64
 		if err := tx.Save(&position).Error; err != nil {
 			return err
 		}
-		walletType := model.WalletTransactionDebit
-		walletAmount := -total
+		walletType, walletAmount := model.WalletTransactionDebit, -total
 		if order.Side == model.OrderSideSell {
 			walletType, walletAmount = model.WalletTransactionCredit, total
 		}
@@ -107,7 +136,22 @@ func (s *OrderService) Execute(userID, orderID string, executionPricePaise int64
 		if err := tx.Create(&model.Trade{OrderUUID: order.UUID, UserUUID: userUUID, Symbol: order.Symbol, Side: order.Side, Quantity: order.Quantity, PricePaise: executionPricePaise, TotalPaise: total, ExecutedAt: time.Now()}).Error; err != nil {
 			return err
 		}
-		order.Status, order.PricePaise = model.OrderStatusExecuted, executionPricePaise
+		order.Status = model.OrderStatusExecuted
+		order.ExecutedPricePaise = executionPricePaise
 		return tx.Save(&order).Error
 	})
+}
+
+func multiply(left, right int64) (int64, bool) {
+	if left <= 0 || right <= 0 || left > math.MaxInt64/right {
+		return 0, false
+	}
+	return left * right, true
+}
+
+func add(left, right int64) (int64, bool) {
+	if (right > 0 && left > math.MaxInt64-right) || (right < 0 && left < math.MinInt64-right) {
+		return 0, false
+	}
+	return left + right, true
 }
