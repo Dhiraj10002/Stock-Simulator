@@ -57,6 +57,7 @@ services:
       QUOTE_TTL_SECONDS: 300
       HISTORY_TTL_SECONDS: 86400
       HISTORY_MAX_ITEMS: 500
+      MARKET_FEED_STALE_SECONDS: 120
     depends_on:
       redis:
         condition: service_healthy

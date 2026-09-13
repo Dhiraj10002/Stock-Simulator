@@ -4,7 +4,7 @@ import threading
 import time
 import urllib.request
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
@@ -26,6 +26,54 @@ class Subscription:
     exchange_type: int
 
 
+class FeedControl:
+    """Coordinates refresh/watchdog signals with the active WebSocket."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._websocket: SmartWebSocketV2 | None = None
+        self._opened = False
+        self._last_tick_at: float | None = None
+
+    def attach(self, websocket: SmartWebSocketV2) -> None:
+        with self._lock:
+            self._websocket = websocket
+            self._opened = False
+            self._last_tick_at = None
+
+    def opened(self) -> None:
+        with self._lock:
+            self._opened = True
+            self._last_tick_at = time.monotonic()
+
+    def tick(self) -> None:
+        with self._lock:
+            self._last_tick_at = time.monotonic()
+
+    def healthy_connection_opened(self) -> bool:
+        with self._lock:
+            return self._opened
+
+    def stale(self, stale_after_seconds: int) -> bool:
+        with self._lock:
+            return self._opened and self._last_tick_at is not None and time.monotonic() - self._last_tick_at > stale_after_seconds
+
+    def reconnect(self, reason: str) -> None:
+        with self._lock:
+            websocket = self._websocket
+        if websocket is None:
+            return
+        print(f"market worker: reconnect requested ({reason})", flush=True)
+        # SmartAPI exposes this lifecycle method; it causes connect() to return
+        # so the feed loop can authenticate and subscribe again.
+        websocket.close_connection()
+
+    def detach(self, websocket: SmartWebSocketV2) -> None:
+        with self._lock:
+            if self._websocket is websocket:
+                self._websocket = None
+
+
 class InstrumentStore:
     def __init__(self, database_url: str, symbols: list[str]) -> None:
         self.database_url = database_url
@@ -41,7 +89,7 @@ class InstrumentStore:
         with self._lock:
             return self._subscriptions.get((token, exchange_type))
 
-    def refresh(self) -> None:
+    def refresh(self) -> bool:
         print("market worker: downloading Angel One instrument master", flush=True)
         request = urllib.request.Request(INSTRUMENT_MASTER_URL, headers={"User-Agent": "stock-simulator-market-worker/1.0"})
         with urllib.request.urlopen(request, timeout=60) as response:
@@ -51,8 +99,10 @@ class InstrumentStore:
         if not subscriptions:
             raise RuntimeError("none of MARKET_SYMBOLS were found as NSE equity instruments")
         with self._lock:
+            changed = self._subscriptions != {(item.token, item.exchange_type): item for item in subscriptions}
             self._subscriptions = {(item.token, item.exchange_type): item for item in subscriptions}
         print(f"market worker: imported {len(rows)} instruments; subscribed symbols={','.join(item.symbol for item in subscriptions)}", flush=True)
+        return changed
 
     def _upsert(self, rows: list[dict[str, Any]]) -> None:
         statement = """
@@ -98,6 +148,7 @@ class QuoteWriter:
         self.quote_ttl = quote_ttl
         self.history_ttl = history_ttl
         self.history_max_items = history_max_items
+        self._daily_volume: dict[str, tuple[date, int]] = {}
 
     def write(self, subscription: Subscription, price_paise: int, volume: int) -> None:
         now = datetime.now(timezone.utc)
@@ -105,7 +156,7 @@ class QuoteWriter:
         quote_key, history_key = f"market:quote:{subscription.symbol}", f"market:history:{subscription.symbol}"
         bucket = int(now.timestamp()) // 60
         latest = self.client.lindex(history_key, 0)
-        candle = make_candle(latest, bucket, price_paise, volume)
+        candle = make_candle(latest, bucket, price_paise, self.volume_delta(subscription.symbol, now.date(), volume))
         with self.client.pipeline() as pipe:
             pipe.hset(quote_key, mapping=quote)
             pipe.expire(quote_key, self.quote_ttl)
@@ -117,6 +168,15 @@ class QuoteWriter:
             pipe.expire(history_key, self.history_ttl)
             pipe.publish("market:updates", json.dumps(quote))
             pipe.execute()
+
+    def volume_delta(self, symbol: str, trading_day: date, cumulative_volume: int) -> int:
+        """Converts Angel One's cumulative day volume to a non-negative delta."""
+        cumulative_volume = max(cumulative_volume, 0)
+        previous = self._daily_volume.get(symbol)
+        self._daily_volume[symbol] = (trading_day, cumulative_volume)
+        if previous is None or previous[0] != trading_day:
+            return cumulative_volume
+        return max(cumulative_volume - previous[1], 0)
 
 
 def clean(value: Any) -> str:
@@ -147,7 +207,7 @@ def make_candle(latest: str | None, bucket: int, price_paise: int, volume: int) 
                 candle["high_paise"] = max(integer(candle.get("high_paise")), price_paise)
                 candle["low_paise"] = min(integer(candle.get("low_paise")) or price_paise, price_paise)
                 candle["close_paise"] = price_paise
-                candle["volume"] = max(integer(candle.get("volume")), volume)
+                candle["volume"] = integer(candle.get("volume")) + volume
                 return candle
         except (TypeError, ValueError, json.JSONDecodeError):
             pass
@@ -162,16 +222,17 @@ def required_env(name: str) -> str:
     return value
 
 
-def refresh_daily(store: InstrumentStore) -> None:
+def refresh_daily(store: InstrumentStore, control: FeedControl) -> None:
     while True:
         time.sleep(24 * 60 * 60)
         try:
-            store.refresh()
+            if store.refresh():
+                control.reconnect("instrument subscriptions changed")
         except Exception as error:  # retry happens on the next scheduled run; feed remains available
             print(f"market worker: daily instrument refresh failed: {error}", flush=True)
 
 
-def run_feed(store: InstrumentStore, writer: QuoteWriter) -> None:
+def run_feed(store: InstrumentStore, writer: QuoteWriter, control: FeedControl) -> bool:
     api_key, client_id = required_env("ANGEL_API_KEY"), required_env("ANGEL_CLIENT_ID")
     smart_api = SmartConnect(api_key=api_key)
     session = smart_api.generateSession(client_id, required_env("ANGEL_PASSWORD"), pyotp.TOTP(required_env("ANGEL_TOTP_SECRET")).now())
@@ -180,12 +241,14 @@ def run_feed(store: InstrumentStore, writer: QuoteWriter) -> None:
     auth_token = session["data"]["jwtToken"]
     feed_token = smart_api.getfeedToken()
     websocket = SmartWebSocketV2(auth_token, api_key, client_id, feed_token)
+    control.attach(websocket)
 
     def on_open(_wsapp: Any) -> None:
         grouped: dict[int, list[str]] = {}
         for item in store.subscriptions():
             grouped.setdefault(item.exchange_type, []).append(item.token)
         websocket.subscribe("stock-simulator", 1, [{"exchangeType": exchange_type, "tokens": tokens} for exchange_type, tokens in grouped.items()])
+        control.opened()
         print("market worker: Angel One WebSocket connected", flush=True)
 
     def on_data(_wsapp: Any, message: dict[str, Any]) -> None:
@@ -195,6 +258,7 @@ def run_feed(store: InstrumentStore, writer: QuoteWriter) -> None:
             if subscription is None:
                 return
             writer.write(subscription, paise(message.get("last_traded_price")), integer(message.get("volume_trade_for_the_day")))
+            control.tick()
         except (ValueError, redis.RedisError) as error:
             print(f"market worker: discarded Angel One tick: {error}", flush=True)
 
@@ -202,7 +266,20 @@ def run_feed(store: InstrumentStore, writer: QuoteWriter) -> None:
     websocket.on_data = on_data
     websocket.on_error = lambda _wsapp, error: print(f"market worker: Angel One WebSocket error: {error}", flush=True)
     websocket.on_close = lambda _wsapp: print("market worker: Angel One WebSocket closed", flush=True)
-    websocket.connect()
+    try:
+        websocket.connect()
+    finally:
+        opened = control.healthy_connection_opened()
+        control.detach(websocket)
+    return opened
+
+
+def watch_feed(control: FeedControl, stale_after_seconds: int) -> None:
+    check_interval = max(1, min(10, stale_after_seconds // 2))
+    while True:
+        time.sleep(check_interval)
+        if control.stale(stale_after_seconds):
+            control.reconnect(f"no market tick for {stale_after_seconds}s")
 
 
 def main() -> None:
@@ -223,15 +300,23 @@ def main() -> None:
             print(f"market worker: initial instrument refresh failed: {error}; retrying in {refresh_backoff}s", flush=True)
             time.sleep(refresh_backoff)
             refresh_backoff = min(refresh_backoff * 2, 60)
-    threading.Thread(target=refresh_daily, args=(store,), daemon=True).start()
+    control = FeedControl()
+    threading.Thread(target=refresh_daily, args=(store, control), daemon=True).start()
+    stale_after_seconds = int(os.getenv("MARKET_FEED_STALE_SECONDS", "120"))
+    if stale_after_seconds <= 0:
+        raise RuntimeError("MARKET_FEED_STALE_SECONDS must be positive")
+    threading.Thread(target=watch_feed, args=(control, stale_after_seconds), daemon=True).start()
     writer = QuoteWriter(client, int(os.getenv("QUOTE_TTL_SECONDS", "300")), int(os.getenv("HISTORY_TTL_SECONDS", "86400")), int(os.getenv("HISTORY_MAX_ITEMS", "500")))
 
     backoff = 1
     while True:
         try:
-            run_feed(store, writer)
+            opened = run_feed(store, writer, control)
         except Exception as error:
             print(f"market worker: feed disconnected: {error}; reconnecting in {backoff}s", flush=True)
+            opened = False
+        if opened:
+            backoff = 1
         time.sleep(backoff)
         backoff = min(backoff * 2, 60)
 
