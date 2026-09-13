@@ -56,6 +56,12 @@ func (r *OrderRepository) FindByUUID(userUUID, orderUUID uuid.UUID) (*model.Orde
 	return &order, err
 }
 
+func (r *OrderRepository) FindInstrument(symbol string) (*model.Instrument, error) {
+	var instrument model.Instrument
+	err := database.GetDB().Where("symbol = ?", symbol).First(&instrument).Error
+	return &instrument, err
+}
+
 // ListOpenLimitOrders returns candidates in FIFO order. Settlement still locks
 // and rechecks each order, so a cancellation racing with a quote is safe.
 func (r *OrderRepository) ListOpenLimitOrders(symbol string) ([]model.Order, error) {

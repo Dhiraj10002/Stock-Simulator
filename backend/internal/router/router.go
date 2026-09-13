@@ -1,11 +1,13 @@
 package router
 
 import (
+	"context"
 	aiHandler "github.com/Dhiraj10002/Stock-Simulator/backend/internal/ai/handler"
 	authHandler "github.com/Dhiraj10002/Stock-Simulator/backend/internal/auth/handler"
 	authMiddleware "github.com/Dhiraj10002/Stock-Simulator/backend/internal/auth/middleware"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/cache"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/config"
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/database"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/handler"
 	marketHandler "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/handler"
 	marketWebsocket "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/websocket"
@@ -44,7 +46,12 @@ func Setup(cfg *config.Config) *gin.Engine {
 		panic(err)
 	}
 	portfolio := portfolioHandler.New(market.Service())
-	orders := orderHandler.New(market.Service())
+	orders := orderHandler.New(market.Service(), cfg)
+	go orders.RunMatcher(context.Background())
+	if database.GetDB() != nil {
+		go orders.RunProductLifecycle(context.Background())
+		go orders.RunExpirySettlement(context.Background())
+	}
 	marketWS := marketWebsocket.New(market.Service())
 	stocks := stockHandler.New()
 	trades := tradeHandler.New()

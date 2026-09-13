@@ -22,6 +22,11 @@ const (
 	OrderStatusExecuted  = "EXECUTED"
 	OrderStatusCancelled = "CANCELLED"
 	OrderStatusRejected  = "REJECTED"
+
+	OrderSourceUser         = "USER"
+	OrderSourceSystem       = "SYSTEM"
+	OrderReasonMISSquareOff = "MIS_SQUARE_OFF"
+	OrderReasonFNOExpiry    = "FNO_EXPIRY_SETTLEMENT"
 )
 
 type Order struct {
@@ -38,6 +43,8 @@ type Order struct {
 	// remains the original limit price (or zero for a market order).
 	ExecutedPricePaise int64  `gorm:"not null;default:0"`
 	ReservedPaise      int64  `gorm:"not null;default:0"`
+	Source             string `gorm:"size:16;not null;default:'USER'"`
+	Reason             string `gorm:"size:40"`
 	Status             string `gorm:"size:20;index;not null"`
 	CreatedAt          time.Time
 	UpdatedAt          time.Time

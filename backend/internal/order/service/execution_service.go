@@ -8,6 +8,7 @@ import (
 
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/database"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/product"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -30,6 +31,9 @@ func (s *OrderService) Execute(userID, orderID string) error {
 	var pendingOrder model.Order
 	if err := database.GetDB().Where("uuid = ? AND user_uuid = ?", orderUUID, userUUID).First(&pendingOrder).Error; err != nil {
 		return err
+	}
+	if pendingOrder.Product != model.OrderProductDelivery {
+		return s.executeMarginProduct(userUUID, orderUUID, pendingOrder)
 	}
 	quote, err := s.market.ExecutableQuote(pendingOrder.Symbol)
 	if err != nil {
@@ -172,6 +176,177 @@ func (s *OrderService) Execute(userID, orderID string) error {
 
 		return tx.Save(&order).Error
 	})
+}
+
+func (s *OrderService) executeMarginProduct(userUUID, orderUUID uuid.UUID, pending model.Order) error {
+	quote, err := s.market.ExecutableQuote(pending.Symbol)
+	if err != nil {
+		return err
+	}
+	instrumentType, underlying := "", ""
+	if pending.Product == model.OrderProductFNO {
+		instrument, err := s.repo.FindInstrument(pending.Symbol)
+		if err != nil {
+			return fmt.Errorf("F&O instrument not found")
+		}
+		instrumentType, err = product.ValidateFNOInstrument(*instrument, pending.Quantity)
+		if err != nil {
+			return err
+		}
+		underlying = instrument.UnderlyingSymbol
+	}
+	return database.GetDB().Transaction(func(tx *gorm.DB) error {
+		var wallet model.Wallet
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_uuid = ?", userUUID).First(&wallet).Error; err != nil {
+			return err
+		}
+		var order model.Order
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("uuid = ? AND user_uuid = ?", orderUUID, userUUID).First(&order).Error; err != nil {
+			return err
+		}
+		if order.Status != model.OrderStatusPending && order.Status != model.OrderStatusOpen {
+			return fmt.Errorf("order cannot be executed in %s status", order.Status)
+		}
+		if order.Type == model.OrderTypeLimit && !limitSatisfied(&order, quote.PricePaise) {
+			return errors.New("market price does not satisfy limit order")
+		}
+		if order.Product == model.OrderProductIntraday {
+			if err := product.ValidateMISOrder(time.Now()); err != nil && order.Source != model.OrderSourceSystem {
+				return err
+			}
+		}
+		total, ok := multiply(order.Quantity, quote.PricePaise)
+		if !ok {
+			return errors.New("order value is too large")
+		}
+		var position model.Position
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_uuid = ? AND symbol = ? AND product = ?", userUUID, order.Symbol, order.Product).First(&position).Error
+		if err != nil && err != gorm.ErrRecordNotFound {
+			return err
+		}
+		oldQty := position.Quantity
+		delta := order.Quantity
+		if order.Side == model.OrderSideSell {
+			delta = -delta
+		}
+		newQty, ok := add(oldQty, delta)
+		if !ok {
+			return errors.New("position quantity is too large")
+		}
+		if oldQty != 0 && newQty != 0 && (oldQty > 0) != (newQty > 0) {
+			return errors.New("orders may reduce or close a margin position but cannot reverse it")
+		}
+		realized := int64(0)
+		if oldQty != 0 && ((oldQty > 0 && delta < 0) || (oldQty < 0 && delta > 0)) {
+			closed := order.Quantity
+			if closed > abs(oldQty) {
+				return errors.New("insufficient position quantity")
+			}
+			entryNotional, valid := multiply(closed, position.AveragePricePaise)
+			if !valid {
+				return errors.New("position value is too large")
+			}
+			if oldQty > 0 {
+				realized, ok = subtract(total, entryNotional)
+			} else {
+				realized, ok = subtract(entryNotional, total)
+			}
+			if !ok {
+				return errors.New("realized P&L is too large")
+			}
+		}
+		newAverage := position.AveragePricePaise
+		if oldQty == 0 || (oldQty > 0) == (delta > 0) {
+			oldNotional := abs(oldQty) * position.AveragePricePaise
+			newAverage = (oldNotional + total) / abs(newQty)
+		} else if newQty == 0 {
+			newAverage = 0
+		}
+		newMargin, err := s.marginForPosition(order.Product, instrumentType, newQty, newAverage)
+		if err != nil {
+			return err
+		}
+		marginDelta, ok := subtract(newMargin, position.MarginBlockedPaise)
+		if !ok {
+			return errors.New("margin is too large")
+		}
+		availableAfterReservation, ok := add(wallet.AvailableBalancePaise(), order.ReservedPaise)
+		if !ok {
+			return errors.New("wallet balance is too large")
+		}
+		if marginDelta > availableAfterReservation {
+			return errors.New("insufficient available wallet balance for margin")
+		}
+		newBlocked, ok := subtract(wallet.BlockedPaise, order.ReservedPaise)
+		if !ok || newBlocked < 0 {
+			return errors.New("reserved wallet amount is missing")
+		}
+		newBlocked, ok = add(newBlocked, marginDelta)
+		if !ok || newBlocked < 0 {
+			return errors.New("invalid margin balance")
+		}
+		wallet.BlockedPaise = newBlocked
+		cashChange := realized
+		if order.Product == model.OrderProductFNO && instrumentType == product.InstrumentOption {
+			cashChange = -total
+			if order.Side == model.OrderSideSell {
+				cashChange = total
+			}
+		}
+		wallet.CashBalancePaise, ok = add(wallet.CashBalancePaise, cashChange)
+		if !ok || wallet.CashBalancePaise < wallet.BlockedPaise {
+			return errors.New("insufficient wallet balance")
+		}
+		if err := tx.Save(&wallet).Error; err != nil {
+			return err
+		}
+		position.UserUUID, position.Symbol, position.Product = userUUID, order.Symbol, order.Product
+		position.InstrumentType, position.UnderlyingSymbol = instrumentType, underlying
+		position.Quantity, position.AveragePricePaise, position.CurrentPricePaise = newQty, newAverage, quote.PricePaise
+		position.MarginBlockedPaise = newMargin
+		position.RealizedPnlPaise, ok = add(position.RealizedPnlPaise, realized)
+		if !ok {
+			return errors.New("realized P&L is too large")
+		}
+		position.CostBasisPaise, ok = multiply(abs(newQty), newAverage)
+		if !ok {
+			return errors.New("position value is too large")
+		}
+		if err := tx.Save(&position).Error; err != nil {
+			return err
+		}
+		if err := tx.Create(&model.Trade{OrderUUID: order.UUID, UserUUID: userUUID, Symbol: order.Symbol, Side: order.Side, Quantity: order.Quantity, PricePaise: quote.PricePaise, TotalPaise: total, Product: order.Product, Source: order.Source, Reason: order.Reason, RealizedPnlPaise: realized, ExecutedAt: time.Now()}).Error; err != nil {
+			return err
+		}
+		order.Status, order.ExecutedPricePaise, order.ReservedPaise = model.OrderStatusExecuted, quote.PricePaise, 0
+		return tx.Save(&order).Error
+	})
+}
+
+func (s *OrderService) marginForPosition(productName, instrumentType string, quantity, averagePrice int64) (int64, error) {
+	if quantity == 0 {
+		return 0, nil
+	}
+	// Long option premium is paid from cash at entry; it is not blocked margin.
+	if productName == model.OrderProductFNO && instrumentType == product.InstrumentOption && quantity > 0 {
+		return 0, nil
+	}
+	notional, ok := multiply(abs(quantity), averagePrice)
+	if !ok {
+		return 0, errors.New("position value is too large")
+	}
+	side := model.OrderSideBuy
+	if quantity < 0 {
+		side = model.OrderSideSell
+	}
+	return s.rules.Margin(productName, instrumentType, side, notional)
+}
+
+func abs(value int64) int64 {
+	if value < 0 {
+		return -value
+	}
+	return value
 }
 
 func limitSatisfied(order *model.Order, executionPricePaise int64) bool {

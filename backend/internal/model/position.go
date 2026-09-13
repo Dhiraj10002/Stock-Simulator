@@ -13,15 +13,21 @@ type Position struct {
 	UUID              uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();uniqueIndex"`
 	UserUUID          uuid.UUID `gorm:"type:uuid;index;not null"`
 	Symbol            string    `gorm:"size:30;index;not null"`
+	Product           string    `gorm:"size:15;index;not null;default:'DELIVERY'"`
+	InstrumentType    string    `gorm:"size:40"`
+	UnderlyingSymbol  string    `gorm:"size:80"`
 	Quantity          int64     `gorm:"not null;default:0"`
 	AveragePricePaise int64     `gorm:"not null;default:0"`
 	// CostBasisPaise retains the exact remaining acquisition cost. Average
 	// price is only a display value and cannot represent fractional paise.
-	CostBasisPaise    int64     `gorm:"not null;default:0"`
-	RealizedPnlPaise  int64     `gorm:"not null;default:0"`
-	CurrentPricePaise int64     `gorm:"not null;default:0"`
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
+	CostBasisPaise     int64  `gorm:"not null;default:0"`
+	RealizedPnlPaise   int64  `gorm:"not null;default:0"`
+	MarginBlockedPaise int64  `gorm:"not null;default:0"`
+	SquareOffState     string `gorm:"size:20"`
+	SettlementState    string `gorm:"size:20;index"`
+	CurrentPricePaise  int64  `gorm:"not null;default:0"`
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
 }
 
 func (p Position) InvestedValuePaise() int64 {

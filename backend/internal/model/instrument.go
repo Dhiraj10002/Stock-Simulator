@@ -6,16 +6,20 @@ import "time"
 // are only unique within an exchange segment, so both columns form the
 // provider identity used by the market-data worker.
 type Instrument struct {
-	ID              uint   `gorm:"primaryKey"`
-	Token           string `gorm:"size:32;not null;uniqueIndex:idx_instruments_token_exchange,priority:1"`
-	Symbol          string `gorm:"size:80;not null;index"`
-	Name            string `gorm:"size:160;not null;index"`
-	Expiry          string `gorm:"size:32"`
-	Strike          string `gorm:"size:32"`
-	LotSize         int64  `gorm:"not null;default:0"`
-	InstrumentType  string `gorm:"size:40"`
-	ExchangeSegment string `gorm:"column:exchange_segment;size:16;not null;uniqueIndex:idx_instruments_token_exchange,priority:2;index"`
-	TickSize        string `gorm:"size:32"`
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	ID     uint   `gorm:"primaryKey"`
+	Token  string `gorm:"size:32;not null;uniqueIndex:idx_instruments_token_exchange,priority:1"`
+	Symbol string `gorm:"size:80;not null;index"`
+	Name   string `gorm:"size:160;not null;index"`
+	// UnderlyingSymbol is supplied explicitly by the instrument master for
+	// derivatives. It is never inferred from a display name or contract code.
+	UnderlyingSymbol string `gorm:"size:80;index"`
+	Expiry           string `gorm:"size:32"`
+	Strike           string `gorm:"size:32"`
+	OptionType       string `gorm:"size:8"`
+	LotSize          int64  `gorm:"not null;default:0"`
+	InstrumentType   string `gorm:"size:40"`
+	ExchangeSegment  string `gorm:"column:exchange_segment;size:16;not null;uniqueIndex:idx_instruments_token_exchange,priority:2;index"`
+	TickSize         string `gorm:"size:32"`
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
 }

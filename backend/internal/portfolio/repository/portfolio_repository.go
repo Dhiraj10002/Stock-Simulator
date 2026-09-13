@@ -1,10 +1,10 @@
 package repository
 
 import (
-	"time"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/database"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
 	"github.com/google/uuid"
+	"time"
 )
 
 type PortfolioRepository struct{}

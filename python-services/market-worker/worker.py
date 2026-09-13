@@ -120,11 +120,13 @@ class InstrumentStore:
 
     def _upsert(self, rows: list[dict[str, Any]]) -> None:
         statement = """
-            INSERT INTO instruments (token, symbol, name, expiry, strike, lot_size, instrument_type, exchange_segment, tick_size, created_at, updated_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
+            INSERT INTO instruments (token, symbol, name, underlying_symbol, expiry, strike, option_type, lot_size, instrument_type, exchange_segment, tick_size, created_at, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
             ON CONFLICT (token, exchange_segment) DO UPDATE SET
                 symbol = EXCLUDED.symbol, name = EXCLUDED.name, expiry = EXCLUDED.expiry,
+                underlying_symbol = EXCLUDED.underlying_symbol,
                 strike = EXCLUDED.strike, lot_size = EXCLUDED.lot_size,
+                option_type = EXCLUDED.option_type,
                 instrument_type = EXCLUDED.instrument_type, tick_size = EXCLUDED.tick_size,
                 updated_at = NOW()
         """
@@ -133,8 +135,10 @@ class InstrumentStore:
             token, segment = clean(row.get("token")), clean(row.get("exch_seg"))
             if not token or not segment:
                 continue
-            values.append((token, clean(row.get("symbol")), clean(row.get("name")), clean(row.get("expiry")),
-                           clean(row.get("strike")), integer(row.get("lotsize")), clean(row.get("instrumenttype")),
+            # The provider must explicitly supply this value for derivatives.
+            # Do not derive it from `name` or the contract symbol.
+            values.append((token, clean(row.get("symbol")), clean(row.get("name")), clean(row.get("underlying_symbol")), clean(row.get("expiry")),
+                           clean(row.get("strike")), clean(row.get("option_type")), integer(row.get("lotsize")), clean(row.get("instrumenttype")),
                            segment, clean(row.get("tick_size"))))
         if not values:
             raise RuntimeError("Angel One instrument master contained no valid instruments")

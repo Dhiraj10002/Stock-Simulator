@@ -3,8 +3,8 @@ package handler
 import (
 	"net/http"
 
-	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/portfolio/service"
 	marketService "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/service"
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/portfolio/service"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/pkg/response"
 	"github.com/gin-gonic/gin"
 )

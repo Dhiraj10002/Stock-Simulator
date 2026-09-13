@@ -30,6 +30,9 @@ type Config struct {
 
 	CORSAllowedOrigins         string
 	InitialVirtualBalancePaise int64
+	MISLeverage                int64
+	FuturesMarginPercent       int64
+	OptionSellMarginPercent    int64
 }
 
 func Load() (*Config, error) {
@@ -58,6 +61,9 @@ func Load() (*Config, error) {
 
 		CORSAllowedOrigins:         viper.GetString("CORS_ALLOWED_ORIGINS"),
 		InitialVirtualBalancePaise: viper.GetInt64("INITIAL_VIRTUAL_BALANCE_PAISE"),
+		MISLeverage:                viper.GetInt64("MIS_LEVERAGE"),
+		FuturesMarginPercent:       viper.GetInt64("FUTURES_MARGIN_PERCENT"),
+		OptionSellMarginPercent:    viper.GetInt64("OPTION_SELL_MARGIN_PERCENT"),
 	}
 
 	if cfg.Port == "" {
@@ -71,6 +77,15 @@ func Load() (*Config, error) {
 	}
 	if cfg.InitialVirtualBalancePaise <= 0 {
 		cfg.InitialVirtualBalancePaise = 100000000 // ₹10,00,000
+	}
+	if cfg.MISLeverage <= 0 {
+		cfg.MISLeverage = 5
+	}
+	if cfg.FuturesMarginPercent <= 0 || cfg.FuturesMarginPercent > 100 {
+		cfg.FuturesMarginPercent = 20
+	}
+	if cfg.OptionSellMarginPercent <= 0 || cfg.OptionSellMarginPercent > 100 {
+		cfg.OptionSellMarginPercent = 30
 	}
 	if cfg.RedisURL == "" {
 		cfg.RedisURL = "redis://localhost:6379/0"

@@ -48,6 +48,7 @@ func (a *App) Run() error {
 		&model.Trade{},
 		&model.SimulationReset{},
 		&model.Instrument{},
+		&model.RiskEvent{},
 	); err != nil {
 		return err
 	}

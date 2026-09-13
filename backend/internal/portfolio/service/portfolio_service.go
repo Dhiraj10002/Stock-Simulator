@@ -33,7 +33,8 @@ func (s *PortfolioService) Get(userID string) (*dto.PortfolioResponse, error) {
 
 	result := &dto.PortfolioResponse{Positions: make([]dto.PositionResponse, 0, len(positions))}
 	for _, position := range positions {
-		quote, err := s.market.CurrentQuote(position.Symbol)
+		// Valuation must not silently use an old or malformed cached price.
+		quote, err := s.market.ExecutableQuote(position.Symbol)
 		if err != nil {
 			return nil, fmt.Errorf("current quote for %s: %w", position.Symbol, err)
 		}
