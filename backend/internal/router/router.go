@@ -39,11 +39,11 @@ func Setup(cfg *config.Config) *gin.Engine {
 	auth := authHandler.New(cfg)
 	wallet := walletHandler.New(cfg)
 	simulation := simulationHandler.New(cfg)
-	portfolio := portfolioHandler.New()
 	market, err := marketHandler.New(cfg.RedisURL, cfg.RedisOperationTimeout)
 	if err != nil {
 		panic(err)
 	}
+	portfolio := portfolioHandler.New(market.Service())
 	orders := orderHandler.New(market.Service())
 	marketWS := marketWebsocket.New(market.Service())
 	stocks := stockHandler.New()

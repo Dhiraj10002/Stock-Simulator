@@ -9,6 +9,7 @@ type PositionResponse struct {
 	InvestedValuePaise int64  `json:"invested_value_paise"`
 	CurrentValuePaise  int64  `json:"current_value_paise"`
 	UnrealizedPnlPaise int64  `json:"unrealized_pnl_paise"`
+	RealizedPnlPaise   int64  `json:"realized_pnl_paise"`
 }
 
 type PortfolioResponse struct {
@@ -16,4 +17,7 @@ type PortfolioResponse struct {
 	InvestedValuePaise int64              `json:"invested_value_paise"`
 	CurrentValuePaise  int64              `json:"current_value_paise"`
 	UnrealizedPnlPaise int64              `json:"unrealized_pnl_paise"`
+	RealizedPnlPaise   int64              `json:"realized_pnl_paise"`
+	DailyPnlPaise      int64              `json:"daily_pnl_paise"`
+	TotalPnlPaise      int64              `json:"total_pnl_paise"`
 }

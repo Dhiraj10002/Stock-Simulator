@@ -60,7 +60,7 @@ func (s *OrderService) Execute(userID, orderID string) error {
 		if order.Quantity <= 0 || (order.Side != model.OrderSideBuy && order.Side != model.OrderSideSell) {
 			return errors.New("order has invalid settlement data")
 		}
-		if order.Type == model.OrderTypeLimit && ((order.Side == model.OrderSideBuy && executionPricePaise > order.PricePaise) || (order.Side == model.OrderSideSell && executionPricePaise < order.PricePaise)) {
+		if order.Type == model.OrderTypeLimit && !limitSatisfied(&order, executionPricePaise) {
 			return errors.New("market price does not satisfy limit order")
 		}
 		total, ok := multiply(order.Quantity, executionPricePaise)
@@ -74,6 +74,7 @@ func (s *OrderService) Execute(userID, orderID string) error {
 		var position model.Position
 		positionErr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_uuid = ? AND symbol = ?", userUUID, order.Symbol).First(&position).Error
 
+		realizedPnlPaise := int64(0)
 		if order.Side == model.OrderSideBuy {
 			if order.ReservedPaise > 0 && total > order.ReservedPaise {
 				return errors.New("market price exceeds reserved order amount")
@@ -92,7 +93,7 @@ func (s *OrderService) Execute(userID, orderID string) error {
 				wallet.BlockedPaise -= order.ReservedPaise
 			}
 			if positionErr == gorm.ErrRecordNotFound {
-				position = model.Position{UserUUID: userUUID, Symbol: order.Symbol, Quantity: order.Quantity, AveragePricePaise: executionPricePaise, CurrentPricePaise: executionPricePaise}
+				position = model.Position{UserUUID: userUUID, Symbol: order.Symbol, Quantity: order.Quantity, AveragePricePaise: executionPricePaise, CostBasisPaise: total, CurrentPricePaise: executionPricePaise}
 			} else if positionErr != nil {
 				return positionErr
 			} else {
@@ -100,16 +101,14 @@ func (s *OrderService) Execute(userID, orderID string) error {
 				if !ok {
 					return errors.New("position quantity is too large")
 				}
-				oldValue, ok := multiply(position.Quantity, position.AveragePricePaise)
-				if !ok {
-					return errors.New("position value is too large")
-				}
-				newValue, ok := add(oldValue, total)
+				oldCostBasis := position.InvestedValuePaise()
+				newCostBasis, ok := add(oldCostBasis, total)
 				if !ok {
 					return errors.New("position value is too large")
 				}
 				position.Quantity = newQuantity
-				position.AveragePricePaise = newValue / newQuantity
+				position.CostBasisPaise = newCostBasis
+				position.AveragePricePaise = newCostBasis / newQuantity
 				position.CurrentPricePaise = executionPricePaise
 			}
 		} else {
@@ -119,12 +118,35 @@ func (s *OrderService) Execute(userID, orderID string) error {
 			if position.Quantity < order.Quantity {
 				return errors.New("insufficient position quantity")
 			}
+			costSold, ok := proportionalCostBasis(position.InvestedValuePaise(), order.Quantity, position.Quantity)
+			if !ok {
+				return errors.New("position value is too large")
+			}
+			realizedPnlPaise, ok = subtract(total, costSold)
+			if !ok {
+				return errors.New("realized P&L is too large")
+			}
+			remainingCostBasis, ok := subtract(position.InvestedValuePaise(), costSold)
+			if !ok {
+				return errors.New("position value is invalid")
+			}
+			newRealizedPnl, ok := add(position.RealizedPnlPaise, realizedPnlPaise)
+			if !ok {
+				return errors.New("realized P&L is too large")
+			}
 			newBalance, ok := add(wallet.CashBalancePaise, total)
 			if !ok {
 				return errors.New("wallet balance is too large")
 			}
 			wallet.CashBalancePaise = newBalance
 			position.Quantity -= order.Quantity
+			position.CostBasisPaise = remainingCostBasis
+			position.RealizedPnlPaise = newRealizedPnl
+			if position.Quantity == 0 {
+				position.AveragePricePaise = 0
+			} else {
+				position.AveragePricePaise = remainingCostBasis / position.Quantity
+			}
 			position.CurrentPricePaise = executionPricePaise
 		}
 
@@ -141,7 +163,7 @@ func (s *OrderService) Execute(userID, orderID string) error {
 		if err := tx.Create(&model.WalletTransaction{WalletUUID: wallet.UUID, Type: walletType, AmountPaise: walletAmount, BalancePaise: wallet.CashBalancePaise, BlockedPaise: wallet.BlockedPaise, Note: "Order execution"}).Error; err != nil {
 			return err
 		}
-		if err := tx.Create(&model.Trade{OrderUUID: order.UUID, UserUUID: userUUID, Symbol: order.Symbol, Side: order.Side, Quantity: order.Quantity, PricePaise: executionPricePaise, TotalPaise: total, ExecutedAt: time.Now()}).Error; err != nil {
+		if err := tx.Create(&model.Trade{OrderUUID: order.UUID, UserUUID: userUUID, Symbol: order.Symbol, Side: order.Side, Quantity: order.Quantity, PricePaise: executionPricePaise, TotalPaise: total, RealizedPnlPaise: realizedPnlPaise, ExecutedAt: time.Now()}).Error; err != nil {
 			return err
 		}
 		order.Status = model.OrderStatusExecuted
@@ -150,6 +172,30 @@ func (s *OrderService) Execute(userID, orderID string) error {
 
 		return tx.Save(&order).Error
 	})
+}
+
+func limitSatisfied(order *model.Order, executionPricePaise int64) bool {
+	if order.Type != model.OrderTypeLimit || order.PricePaise <= 0 || executionPricePaise <= 0 {
+		return false
+	}
+	return (order.Side == model.OrderSideBuy && executionPricePaise <= order.PricePaise) ||
+		(order.Side == model.OrderSideSell && executionPricePaise >= order.PricePaise)
+}
+
+// proportionalCostBasis allocates the exact remaining cost to a partial sale.
+// The final sale takes the full residual, so rounding never loses a paise.
+func proportionalCostBasis(costBasis, soldQuantity, heldQuantity int64) (int64, bool) {
+	if costBasis < 0 || soldQuantity <= 0 || heldQuantity <= 0 || soldQuantity > heldQuantity {
+		return 0, false
+	}
+	if soldQuantity == heldQuantity {
+		return costBasis, true
+	}
+	product, ok := multiply(costBasis, soldQuantity)
+	if !ok {
+		return 0, false
+	}
+	return product / heldQuantity, true
 }
 
 func multiply(left, right int64) (int64, bool) {
@@ -164,4 +210,11 @@ func add(left, right int64) (int64, bool) {
 		return 0, false
 	}
 	return left + right, true
+}
+
+func subtract(left, right int64) (int64, bool) {
+	if (right > 0 && left < math.MinInt64+right) || (right < 0 && left > math.MaxInt64+right) {
+		return 0, false
+	}
+	return left - right, true
 }

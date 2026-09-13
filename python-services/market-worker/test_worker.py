@@ -31,5 +31,28 @@ class VolumeDeltaTest(unittest.TestCase):
         self.assertEqual(second["volume"], 140)
 
 
+class FeedControlTest(unittest.TestCase):
+    def test_reconnect_is_requested_only_once_per_connection(self):
+        class WebSocket:
+            def __init__(self):
+                self.close_calls = 0
+
+            def close_connection(self):
+                self.close_calls += 1
+
+        control = worker.FeedControl()
+        websocket = WebSocket()
+        control.attach(websocket)
+        control.reconnect("test")
+        control.reconnect("test again")
+        self.assertEqual(websocket.close_calls, 1)
+
+        control.detach(websocket)
+        next_websocket = WebSocket()
+        control.attach(next_websocket)
+        control.reconnect("new connection")
+        self.assertEqual(next_websocket.close_calls, 1)
+
+
 if __name__ == "__main__":
     unittest.main()

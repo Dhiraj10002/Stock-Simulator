@@ -56,6 +56,26 @@ func (r *OrderRepository) FindByUUID(userUUID, orderUUID uuid.UUID) (*model.Orde
 	return &order, err
 }
 
+// ListOpenLimitOrders returns candidates in FIFO order. Settlement still locks
+// and rechecks each order, so a cancellation racing with a quote is safe.
+func (r *OrderRepository) ListOpenLimitOrders(symbol string) ([]model.Order, error) {
+	var orders []model.Order
+	err := database.GetDB().
+		Where("symbol = ? AND type = ? AND status IN ?", symbol, model.OrderTypeLimit, []string{model.OrderStatusPending, model.OrderStatusOpen}).
+		Order("created_at ASC").
+		Find(&orders).Error
+	return orders, err
+}
+
+// Reject marks a newly-created market order as rejected when its immediate
+// settlement fails. It never releases funds: market orders have no reservation.
+func (r *OrderRepository) Reject(userUUID, orderUUID uuid.UUID) error {
+	return database.GetDB().
+		Model(&model.Order{}).
+		Where("uuid = ? AND user_uuid = ? AND status IN ? AND reserved_paise = 0", orderUUID, userUUID, []string{model.OrderStatusPending, model.OrderStatusOpen}).
+		Update("status", model.OrderStatusRejected).Error
+}
+
 func (r *OrderRepository) Cancel(userUUID, orderUUID uuid.UUID) error {
 	return database.GetDB().Transaction(func(tx *gorm.DB) error {
 		// Lock the wallet first, matching reservation, execution, and reset.

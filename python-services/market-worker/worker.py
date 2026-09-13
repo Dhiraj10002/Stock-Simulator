@@ -34,17 +34,20 @@ class FeedControl:
         self._websocket: SmartWebSocketV2 | None = None
         self._opened = False
         self._last_tick_at: float | None = None
+        self._reconnect_requested = False
 
     def attach(self, websocket: SmartWebSocketV2) -> None:
         with self._lock:
             self._websocket = websocket
             self._opened = False
             self._last_tick_at = None
+            self._reconnect_requested = False
 
     def opened(self) -> None:
         with self._lock:
             self._opened = True
             self._last_tick_at = time.monotonic()
+            self._reconnect_requested = False
 
     def tick(self) -> None:
         with self._lock:
@@ -61,17 +64,28 @@ class FeedControl:
     def reconnect(self, reason: str) -> None:
         with self._lock:
             websocket = self._websocket
-        if websocket is None:
-            return
+            if websocket is None or self._reconnect_requested:
+                return
+            self._reconnect_requested = True
         print(f"market worker: reconnect requested ({reason})", flush=True)
         # SmartAPI exposes this lifecycle method; it causes connect() to return
         # so the feed loop can authenticate and subscribe again.
-        websocket.close_connection()
+        try:
+            websocket.close_connection()
+        except Exception as error:
+            # A failed close must not permanently suppress future recovery.
+            with self._lock:
+                if self._websocket is websocket:
+                    self._reconnect_requested = False
+            print(f"market worker: failed to close WebSocket: {error}", flush=True)
 
     def detach(self, websocket: SmartWebSocketV2) -> None:
         with self._lock:
             if self._websocket is websocket:
                 self._websocket = None
+                self._opened = False
+                self._last_tick_at = None
+                self._reconnect_requested = False
 
 
 class InstrumentStore:
@@ -257,8 +271,12 @@ def run_feed(store: InstrumentStore, writer: QuoteWriter, control: FeedControl) 
             subscription = store.lookup(clean(message.get("token")), exchange_type)
             if subscription is None:
                 return
-            writer.write(subscription, paise(message.get("last_traded_price")), integer(message.get("volume_trade_for_the_day")))
+            price_paise = paise(message.get("last_traded_price"))
+            volume = integer(message.get("volume_trade_for_the_day"))
+            # A valid Angel One tick proves the feed is alive even if Redis is
+            # temporarily unavailable and cannot accept this particular write.
             control.tick()
+            writer.write(subscription, price_paise, volume)
         except (ValueError, redis.RedisError) as error:
             print(f"market worker: discarded Angel One tick: {error}", flush=True)
 

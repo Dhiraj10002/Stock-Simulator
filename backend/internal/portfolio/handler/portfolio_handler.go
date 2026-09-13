@@ -4,13 +4,16 @@ import (
 	"net/http"
 
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/portfolio/service"
+	marketService "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/service"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/pkg/response"
 	"github.com/gin-gonic/gin"
 )
 
 type PortfolioHandler struct{ service *service.PortfolioService }
 
-func New() *PortfolioHandler { return &PortfolioHandler{service: service.New()} }
+func New(market *marketService.Service) *PortfolioHandler {
+	return &PortfolioHandler{service: service.New(market)}
+}
 
 func (h *PortfolioHandler) Get(c *gin.Context) {
 	data, err := h.service.Get(c.GetString("user_id"))
