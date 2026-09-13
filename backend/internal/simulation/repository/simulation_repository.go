@@ -17,20 +17,22 @@ func New() *SimulationRepository { return &SimulationRepository{} }
 // historical orders, trades, and wallet transactions.
 func (r *SimulationRepository) ResetCurrentState(userUUID uuid.UUID, initialBalancePaise int64) error {
 	return database.GetDB().Transaction(func(tx *gorm.DB) error {
-		// Preserve order history. Updating open orders first follows the same
-		// order-then-wallet locking order used by execution and cancellation.
-		orderResult := tx.Model(&model.Order{}).
-			Where("user_uuid = ? AND status IN ?", userUUID, []string{model.OrderStatusPending, model.OrderStatusOpen}).
-			Update("status", model.OrderStatusCancelled)
-		if orderResult.Error != nil {
-			return orderResult.Error
-		}
-
+		// The wallet is the per-user serialization point. Order reservation,
+		// cancellation, execution, and reset all lock it before order rows.
 		var wallet model.Wallet
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("user_uuid = ?", userUUID).
 			First(&wallet).Error; err != nil {
 			return err
+		}
+
+		// Once the wallet is locked, no reservation can be inserted until this
+		// reset has cancelled every currently open order and cleared blocked cash.
+		orderResult := tx.Model(&model.Order{}).
+			Where("user_uuid = ? AND status IN ?", userUUID, []string{model.OrderStatusPending, model.OrderStatusOpen}).
+			Updates(map[string]any{"status": model.OrderStatusCancelled, "reserved_paise": 0})
+		if orderResult.Error != nil {
+			return orderResult.Error
 		}
 
 		previousCashPaise, previousBlockedPaise := wallet.CashBalancePaise, wallet.BlockedPaise

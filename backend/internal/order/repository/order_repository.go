@@ -33,7 +33,14 @@ func (r *OrderRepository) CreateWithReservation(order *model.Order, reservation 
 		if err := tx.Create(order).Error; err != nil {
 			return err
 		}
-		return tx.Create(&model.WalletTransaction{WalletUUID: wallet.UUID, Type: model.WalletTransactionReserve, BalancePaise: wallet.CashBalancePaise, BlockedPaise: wallet.BlockedPaise, Note: "Order funds reserved"}).Error
+		return tx.Create(&model.WalletTransaction{
+			WalletUUID:   wallet.UUID,
+			Type:         model.WalletTransactionReserve,
+			AmountPaise:  reservation,
+			BalancePaise: wallet.CashBalancePaise,
+			BlockedPaise: wallet.BlockedPaise,
+			Note:         "Order funds reserved",
+		}).Error
 	})
 }
 
@@ -49,32 +56,57 @@ func (r *OrderRepository) FindByUUID(userUUID, orderUUID uuid.UUID) (*model.Orde
 	return &order, err
 }
 
-func (r *OrderRepository) Cancel(orderUUID uuid.UUID) error {
+func (r *OrderRepository) Cancel(userUUID, orderUUID uuid.UUID) error {
 	return database.GetDB().Transaction(func(tx *gorm.DB) error {
-		var order model.Order
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&order, "uuid = ?", orderUUID).Error; err != nil {
+		// Lock the wallet first, matching reservation, execution, and reset.
+		var wallet model.Wallet
+		if err := tx.
+			Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("user_uuid = ?", userUUID).
+			First(&wallet).Error; err != nil {
 			return err
 		}
-		if order.Status != model.OrderStatusPending && order.Status != model.OrderStatusOpen {
+
+		var order model.Order
+		if err := tx.
+			Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("uuid = ? AND user_uuid = ?", orderUUID, userUUID).
+			First(&order).Error; err != nil {
+			return err
+		}
+
+		if order.Status != model.OrderStatusPending &&
+			order.Status != model.OrderStatusOpen {
 			return gorm.ErrInvalidData
 		}
+
 		if order.ReservedPaise > 0 {
-			var wallet model.Wallet
-			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_uuid = ?", order.UserUUID).First(&wallet).Error; err != nil {
-				return err
-			}
 			if wallet.BlockedPaise < order.ReservedPaise {
 				return gorm.ErrInvalidData
 			}
+
 			wallet.BlockedPaise -= order.ReservedPaise
+
 			if err := tx.Save(&wallet).Error; err != nil {
 				return err
 			}
-			if err := tx.Create(&model.WalletTransaction{WalletUUID: wallet.UUID, Type: model.WalletTransactionRelease, BalancePaise: wallet.CashBalancePaise, BlockedPaise: wallet.BlockedPaise, Note: "Cancelled order funds released"}).Error; err != nil {
+
+			if err := tx.Create(&model.WalletTransaction{
+				WalletUUID:   wallet.UUID,
+				Type:         model.WalletTransactionRelease,
+				AmountPaise:  order.ReservedPaise,
+				BalancePaise: wallet.CashBalancePaise,
+				BlockedPaise: wallet.BlockedPaise,
+				Note:         "Cancelled order funds released",
+			}).Error; err != nil {
 				return err
 			}
+
+			order.ReservedPaise = 0
 		}
+
 		order.Status = model.OrderStatusCancelled
+
 		return tx.Save(&order).Error
 	})
 }

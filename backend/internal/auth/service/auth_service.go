@@ -10,14 +10,16 @@ import (
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/auth/token"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/config"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
-	walletService "github.com/Dhiraj10002/Stock-Simulator/backend/internal/wallet/service"
 	"github.com/google/uuid"
 )
 
 type AuthService struct {
-	repo   *repository.AuthRepository
-	cfg    *config.Config
-	wallet *walletService.WalletService
+	repo *repository.AuthRepository
+	cfg  *config.Config
+}
+
+func New(cfg *config.Config) *AuthService {
+	return &AuthService{repo: repository.New(), cfg: cfg}
 }
 
 func (s *AuthService) CurrentUser(userID string) (*dto.CurrentUserResponse, error) {
@@ -41,53 +43,61 @@ func (s *AuthService) CurrentUser(userID string) (*dto.CurrentUserResponse, erro
 
 func (s *AuthService) Refresh(refreshToken string) (*dto.LoginResponse, error) {
 	claims, err := token.Parse(s.cfg.JWTSecret, refreshToken)
-	if err != nil || claims.TokenType != "refresh" || claims.UserID == "" {
+	if err != nil ||
+		claims.TokenType != "refresh" ||
+		claims.UserID == "" ||
+		claims.ID == "" {
 		return nil, errors.New("invalid refresh token")
 	}
 
-	session, err := s.repo.FindActiveRefreshSession(hashToken(refreshToken))
-	if err != nil || session.UserUUID.String() != claims.UserID {
+	userUUID, err := uuid.Parse(claims.UserID)
+	if err != nil {
 		return nil, errors.New("invalid refresh token")
 	}
 
-	accessToken, err := token.GenerateAccessToken(s.cfg.JWTSecret, claims.UserID)
-	if err != nil {
-		return nil, err
-	}
-	newRefreshToken, err := token.GenerateRefreshToken(s.cfg.JWTSecret, claims.UserID)
+	accessToken, err := token.GenerateAccessToken(
+		s.cfg.JWTSecret,
+		claims.UserID,
+	)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := s.repo.RevokeRefreshSession(session.TokenHash); err != nil {
+	newRefreshToken, err := token.GenerateRefreshToken(
+		s.cfg.JWTSecret,
+		claims.UserID,
+	)
+	if err != nil {
 		return nil, err
 	}
-	if err := s.repo.CreateRefreshSession(&model.RefreshSession{
-		UserUUID:  session.UserUUID,
+
+	newSession := &model.RefreshSession{
+		UserUUID:  userUUID,
 		TokenHash: hashToken(newRefreshToken),
 		ExpiresAt: time.Now().Add(7 * 24 * time.Hour),
-	}); err != nil {
-		return nil, err
 	}
 
-	return &dto.LoginResponse{AccessToken: accessToken, RefreshToken: newRefreshToken}, nil
+	if err := s.repo.RotateRefreshSession(
+		userUUID,
+		hashToken(refreshToken),
+		newSession,
+	); err != nil {
+		return nil, errors.New("invalid refresh token")
+	}
+
+	return &dto.LoginResponse{
+		AccessToken:  accessToken,
+		RefreshToken: newRefreshToken,
+	}, nil
 }
 
 func (s *AuthService) Logout(refreshToken string) error {
 	claims, err := token.Parse(s.cfg.JWTSecret, refreshToken)
-	if err != nil || claims.TokenType != "refresh" {
+	if err != nil || claims.TokenType != "refresh" || claims.UserID == "" || claims.ID == "" {
 		return errors.New("invalid refresh token")
 	}
 	if err := s.repo.RevokeRefreshSession(hashToken(refreshToken)); err != nil {
-		return err
+		return errors.New("invalid refresh token")
 	}
 	return nil
-}
-
-func New(cfg *config.Config) *AuthService {
-	return &AuthService{
-		repo:   repository.New(),
-		cfg:    cfg,
-		wallet: walletService.New(cfg),
-	}
 }

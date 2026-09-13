@@ -91,18 +91,13 @@ func (s *OrderService) Cancel(userID, orderID string) error {
 	if err != nil {
 		return fmt.Errorf("invalid user identity")
 	}
+
 	orderUUID, err := uuid.Parse(orderID)
 	if err != nil {
 		return fmt.Errorf("invalid order identity")
 	}
-	order, err := s.repo.FindByUUID(userUUID, orderUUID)
-	if err != nil {
-		return err
-	}
-	if order.Status != model.OrderStatusPending && order.Status != model.OrderStatusOpen {
-		return fmt.Errorf("order cannot be cancelled in %s status", order.Status)
-	}
-	return s.repo.Cancel(order.UUID)
+
+	return s.repo.Cancel(userUUID, orderUUID)
 }
 
 func toResponse(order *model.Order) *dto.OrderResponse {

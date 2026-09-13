@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 )
 
 type Claims struct {
@@ -19,40 +20,65 @@ const (
 )
 
 func GenerateAccessToken(secret, userID string) (string, error) {
-	return generate(secret, userID, "access", accessTokenLifetime)
+	tokenString, err := generate(
+		secret,
+		userID,
+		"access",
+		accessTokenLifetime,
+	)
+
+	return tokenString, err
 }
 
 func GenerateRefreshToken(secret, userID string) (string, error) {
-	return generate(secret, userID, "refresh", refreshTokenLifetime)
+	return generate(
+		secret,
+		userID,
+		"refresh",
+		refreshTokenLifetime,
+	)
 }
 
-func generate(secret, userID, tokenType string, lifetime time.Duration) (string, error) {
+func generate(
+	secret string,
+	userID string,
+	tokenType string,
+	lifetime time.Duration,
+) (string, error) {
+	jti := uuid.NewString()
 
 	claims := Claims{
 		UserID:    userID,
 		TokenType: tokenType,
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(
-				time.Now().Add(lifetime),
-			),
-			IssuedAt: jwt.NewNumericDate(time.Now()),
+			ID:        jti,
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(lifetime)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
 		},
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 
-	return token.SignedString([]byte(secret))
+	signedToken, err := token.SignedString([]byte(secret))
+	if err != nil {
+		return "", err
+	}
+
+	return signedToken, nil
 }
 
 func Parse(secret, tokenString string) (*Claims, error) {
-
 	token, err := jwt.ParseWithClaims(
 		tokenString,
 		&Claims{},
 		func(token *jwt.Token) (interface{}, error) {
-			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok || token.Method.Alg() != jwt.SigningMethodHS256.Alg() {
-				return nil, fmt.Errorf("unexpected signing method: %s", token.Header["alg"])
+			if token.Method != jwt.SigningMethodHS256 {
+				return nil, fmt.Errorf(
+					"unexpected signing method: %s",
+					token.Header["alg"],
+				)
 			}
+
 			return []byte(secret), nil
 		},
 	)
@@ -62,7 +88,7 @@ func Parse(secret, tokenString string) (*Claims, error) {
 	}
 
 	claims, ok := token.Claims.(*Claims)
-	if !ok || !token.Valid {
+	if !ok || !token.Valid || claims.ExpiresAt == nil {
 		return nil, fmt.Errorf("invalid token claims")
 	}
 

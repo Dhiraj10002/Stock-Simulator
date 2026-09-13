@@ -38,6 +38,13 @@ func (s *OrderService) Execute(userID, orderID string) error {
 	executionPricePaise := quote.PricePaise
 
 	return database.GetDB().Transaction(func(tx *gorm.DB) error {
+		// The wallet is the per-user serialization point. Keep this ordering in
+		// sync with reservation, cancellation, and simulation reset.
+		var wallet model.Wallet
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_uuid = ?", userUUID).First(&wallet).Error; err != nil {
+			return err
+		}
+
 		var order model.Order
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("uuid = ? AND user_uuid = ?", orderUUID, userUUID).First(&order).Error; err != nil {
 			return err
@@ -56,10 +63,6 @@ func (s *OrderService) Execute(userID, orderID string) error {
 			return errors.New("order value is too large")
 		}
 
-		var wallet model.Wallet
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_uuid = ?", userUUID).First(&wallet).Error; err != nil {
-			return err
-		}
 		if wallet.CashBalancePaise < 0 || wallet.BlockedPaise < 0 || wallet.BlockedPaise > wallet.CashBalancePaise {
 			return errors.New("wallet has invalid balances")
 		}
@@ -138,6 +141,8 @@ func (s *OrderService) Execute(userID, orderID string) error {
 		}
 		order.Status = model.OrderStatusExecuted
 		order.ExecutedPricePaise = executionPricePaise
+		order.ReservedPaise = 0
+
 		return tx.Save(&order).Error
 	})
 }
