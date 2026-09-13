@@ -1,1 +1,6 @@
 redis==5.0.8
+psycopg[binary]>=3.2,<4
+pyotp>=2.9,<3
+smartapi-python>=1.4.8
+logzero>=1.7,<2
+websocket-client>=1.8,<2

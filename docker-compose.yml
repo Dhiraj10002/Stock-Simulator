@@ -24,6 +24,7 @@ services:
       - backend/.env
     environment:
       DATABASE_URL: postgres://postgres:postgres@db:5432/stock_simulator?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
     ports:
       - "8080:8080"
     depends_on:
@@ -47,15 +48,19 @@ services:
   market-worker:
     build:
       context: ./python-services/market-worker
+    env_file:
+      - backend/.env
     environment:
       REDIS_URL: redis://redis:6379/0
+      DATABASE_URL: postgres://postgres:postgres@db:5432/stock_simulator?sslmode=disable
       MARKET_SYMBOLS: RELIANCE,TCS,INFY,HDFCBANK
-      POLL_INTERVAL_SECONDS: 60
       QUOTE_TTL_SECONDS: 300
       HISTORY_TTL_SECONDS: 86400
       HISTORY_MAX_ITEMS: 500
     depends_on:
       redis:
+        condition: service_healthy
+      db:
         condition: service_healthy
 
   news-worker:

@@ -14,6 +14,7 @@ import (
 	orderHandler "github.com/Dhiraj10002/Stock-Simulator/backend/internal/order/handler"
 	portfolioHandler "github.com/Dhiraj10002/Stock-Simulator/backend/internal/portfolio/handler"
 	simulationHandler "github.com/Dhiraj10002/Stock-Simulator/backend/internal/simulation/handler"
+	stockHandler "github.com/Dhiraj10002/Stock-Simulator/backend/internal/stock/handler"
 	tradeHandler "github.com/Dhiraj10002/Stock-Simulator/backend/internal/trade/handler"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/validation"
 	walletHandler "github.com/Dhiraj10002/Stock-Simulator/backend/internal/wallet/handler"
@@ -45,6 +46,7 @@ func Setup(cfg *config.Config) *gin.Engine {
 	}
 	orders := orderHandler.New(market.Service())
 	marketWS := marketWebsocket.New(market.Service())
+	stocks := stockHandler.New()
 	trades := tradeHandler.New()
 	mentor := aiHandler.New(cfg)
 	news, err := newsHandler.New(cfg.RedisURL, cfg.RedisOperationTimeout)
@@ -66,6 +68,7 @@ func Setup(cfg *config.Config) *gin.Engine {
 		api.GET("/health", healthHandler.Health)
 		api.GET("/market/quotes/:symbol", market.Quote)
 		api.GET("/market/quotes/:symbol/history", market.History)
+		api.GET("/stocks", stocks.Search)
 		api.GET("/news", news.List)
 
 		if rateLimiter != nil {

@@ -1,59 +1,239 @@
-import hashlib
 import json
 import os
+import threading
 import time
+import urllib.request
+from dataclasses import dataclass
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
+from typing import Any
 
+import psycopg
+import pyotp
 import redis
+from SmartApi import SmartConnect
+from SmartApi.smartWebSocketV2 import SmartWebSocketV2
+
+INSTRUMENT_MASTER_URL = "https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json"
+EXCHANGE_TYPES = {"NSE": 1, "NFO": 2, "BSE": 3, "MCX": 5, "NCDEX": 7}
 
 
-def number(seed: str, maximum: int) -> int:
-    digest = hashlib.sha256(seed.encode()).digest()
-    return int.from_bytes(digest[:4], "big") % maximum
+@dataclass(frozen=True)
+class Subscription:
+    symbol: str
+    token: str
+    exchange_segment: str
+    exchange_type: int
 
 
-def quote(symbol: str, bucket: int) -> dict:
-    base = 100000 + number(symbol, 490000)
-    movement = number(f"{symbol}:{bucket}", 4001) - 2000
-    price = max(1, base + (base * movement) // 100000)
-    return {"symbol": symbol, "price_paise": price, "source": "simulated", "updated_at": datetime.now(timezone.utc).isoformat()}
+class InstrumentStore:
+    def __init__(self, database_url: str, symbols: list[str]) -> None:
+        self.database_url = database_url
+        self.symbols = symbols
+        self._subscriptions: dict[tuple[str, int], Subscription] = {}
+        self._lock = threading.Lock()
+
+    def subscriptions(self) -> list[Subscription]:
+        with self._lock:
+            return list(self._subscriptions.values())
+
+    def lookup(self, token: str, exchange_type: int) -> Subscription | None:
+        with self._lock:
+            return self._subscriptions.get((token, exchange_type))
+
+    def refresh(self) -> None:
+        print("market worker: downloading Angel One instrument master", flush=True)
+        request = urllib.request.Request(INSTRUMENT_MASTER_URL, headers={"User-Agent": "stock-simulator-market-worker/1.0"})
+        with urllib.request.urlopen(request, timeout=60) as response:
+            rows: list[dict[str, Any]] = json.load(response)
+        self._upsert(rows)
+        subscriptions = self._build_subscriptions(rows)
+        if not subscriptions:
+            raise RuntimeError("none of MARKET_SYMBOLS were found as NSE equity instruments")
+        with self._lock:
+            self._subscriptions = {(item.token, item.exchange_type): item for item in subscriptions}
+        print(f"market worker: imported {len(rows)} instruments; subscribed symbols={','.join(item.symbol for item in subscriptions)}", flush=True)
+
+    def _upsert(self, rows: list[dict[str, Any]]) -> None:
+        statement = """
+            INSERT INTO instruments (token, symbol, name, expiry, strike, lot_size, instrument_type, exchange_segment, tick_size, created_at, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
+            ON CONFLICT (token, exchange_segment) DO UPDATE SET
+                symbol = EXCLUDED.symbol, name = EXCLUDED.name, expiry = EXCLUDED.expiry,
+                strike = EXCLUDED.strike, lot_size = EXCLUDED.lot_size,
+                instrument_type = EXCLUDED.instrument_type, tick_size = EXCLUDED.tick_size,
+                updated_at = NOW()
+        """
+        values = []
+        for row in rows:
+            token, segment = clean(row.get("token")), clean(row.get("exch_seg"))
+            if not token or not segment:
+                continue
+            values.append((token, clean(row.get("symbol")), clean(row.get("name")), clean(row.get("expiry")),
+                           clean(row.get("strike")), integer(row.get("lotsize")), clean(row.get("instrumenttype")),
+                           segment, clean(row.get("tick_size"))))
+        if not values:
+            raise RuntimeError("Angel One instrument master contained no valid instruments")
+        with psycopg.connect(self.database_url) as connection:
+            with connection.cursor() as cursor:
+                for start in range(0, len(values), 1000):
+                    cursor.executemany(statement, values[start:start + 1000])
+            connection.commit()
+
+    def _build_subscriptions(self, rows: list[dict[str, Any]]) -> list[Subscription]:
+        subscriptions = []
+        for requested in self.symbols:
+            match = next((row for row in rows if clean(row.get("exch_seg")) == "NSE" and clean(row.get("name")).upper() == requested
+                          and clean(row.get("symbol")).upper() == f"{requested}-EQ"), None)
+            if match is None:
+                print(f"market worker: MARKET_SYMBOLS entry {requested} was not found in the NSE equity master", flush=True)
+                continue
+            subscriptions.append(Subscription(requested, clean(match.get("token")), "NSE", EXCHANGE_TYPES["NSE"]))
+        return subscriptions
 
 
-def candle(symbol: str, bucket: int) -> dict:
-    current = quote(symbol, bucket)["price_paise"]
-    opening = max(1, current + number(f"open:{symbol}:{bucket}", 2001) - 1000)
-    closing = max(1, current + number(f"close:{symbol}:{bucket}", 2001) - 1000)
-    return {"timestamp": bucket * 60, "open_paise": opening, "high_paise": max(opening, closing) + 100,
-            "low_paise": max(1, min(opening, closing) - 100), "close_paise": closing,
-            "volume": 1000 + number(f"volume:{symbol}:{bucket}", 50000)}
+class QuoteWriter:
+    def __init__(self, client: redis.Redis, quote_ttl: int, history_ttl: int, history_max_items: int) -> None:
+        self.client = client
+        self.quote_ttl = quote_ttl
+        self.history_ttl = history_ttl
+        self.history_max_items = history_max_items
+
+    def write(self, subscription: Subscription, price_paise: int, volume: int) -> None:
+        now = datetime.now(timezone.utc)
+        quote = {"symbol": subscription.symbol, "price_paise": price_paise, "source": "angelone_live", "updated_at": now.isoformat()}
+        quote_key, history_key = f"market:quote:{subscription.symbol}", f"market:history:{subscription.symbol}"
+        bucket = int(now.timestamp()) // 60
+        latest = self.client.lindex(history_key, 0)
+        candle = make_candle(latest, bucket, price_paise, volume)
+        with self.client.pipeline() as pipe:
+            pipe.hset(quote_key, mapping=quote)
+            pipe.expire(quote_key, self.quote_ttl)
+            if latest and candle["timestamp"] == bucket * 60:
+                pipe.lset(history_key, 0, json.dumps(candle))
+            else:
+                pipe.lpush(history_key, json.dumps(candle))
+            pipe.ltrim(history_key, 0, self.history_max_items - 1)
+            pipe.expire(history_key, self.history_ttl)
+            pipe.publish("market:updates", json.dumps(quote))
+            pipe.execute()
+
+
+def clean(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def integer(value: Any) -> int:
+    try:
+        return int(Decimal(clean(value)))
+    except (InvalidOperation, ValueError):
+        return 0
+
+
+def paise(value: Any) -> int:
+    # SmartAPI's WebSocket V2 last_traded_price is an integer scaled to paise.
+    parsed = integer(value)
+    if parsed <= 0:
+        raise ValueError("tick has no positive last traded price")
+    return parsed
+
+
+def make_candle(latest: str | None, bucket: int, price_paise: int, volume: int) -> dict[str, int]:
+    timestamp = bucket * 60
+    if latest:
+        try:
+            candle = json.loads(latest)
+            if candle.get("timestamp") == timestamp:
+                candle["high_paise"] = max(integer(candle.get("high_paise")), price_paise)
+                candle["low_paise"] = min(integer(candle.get("low_paise")) or price_paise, price_paise)
+                candle["close_paise"] = price_paise
+                candle["volume"] = max(integer(candle.get("volume")), volume)
+                return candle
+        except (TypeError, ValueError, json.JSONDecodeError):
+            pass
+    return {"timestamp": timestamp, "open_paise": price_paise, "high_paise": price_paise,
+            "low_paise": price_paise, "close_paise": price_paise, "volume": volume}
+
+
+def required_env(name: str) -> str:
+    value = os.getenv(name, "").strip()
+    if not value:
+        raise RuntimeError(f"{name} is required")
+    return value
+
+
+def refresh_daily(store: InstrumentStore) -> None:
+    while True:
+        time.sleep(24 * 60 * 60)
+        try:
+            store.refresh()
+        except Exception as error:  # retry happens on the next scheduled run; feed remains available
+            print(f"market worker: daily instrument refresh failed: {error}", flush=True)
+
+
+def run_feed(store: InstrumentStore, writer: QuoteWriter) -> None:
+    api_key, client_id = required_env("ANGEL_API_KEY"), required_env("ANGEL_CLIENT_ID")
+    smart_api = SmartConnect(api_key=api_key)
+    session = smart_api.generateSession(client_id, required_env("ANGEL_PASSWORD"), pyotp.TOTP(required_env("ANGEL_TOTP_SECRET")).now())
+    if not session.get("status"):
+        raise RuntimeError(f"Angel One login failed: {session.get('message', 'unknown error')}")
+    auth_token = session["data"]["jwtToken"]
+    feed_token = smart_api.getfeedToken()
+    websocket = SmartWebSocketV2(auth_token, api_key, client_id, feed_token)
+
+    def on_open(_wsapp: Any) -> None:
+        grouped: dict[int, list[str]] = {}
+        for item in store.subscriptions():
+            grouped.setdefault(item.exchange_type, []).append(item.token)
+        websocket.subscribe("stock-simulator", 1, [{"exchangeType": exchange_type, "tokens": tokens} for exchange_type, tokens in grouped.items()])
+        print("market worker: Angel One WebSocket connected", flush=True)
+
+    def on_data(_wsapp: Any, message: dict[str, Any]) -> None:
+        try:
+            exchange_type = integer(message.get("exchange_type"))
+            subscription = store.lookup(clean(message.get("token")), exchange_type)
+            if subscription is None:
+                return
+            writer.write(subscription, paise(message.get("last_traded_price")), integer(message.get("volume_trade_for_the_day")))
+        except (ValueError, redis.RedisError) as error:
+            print(f"market worker: discarded Angel One tick: {error}", flush=True)
+
+    websocket.on_open = on_open
+    websocket.on_data = on_data
+    websocket.on_error = lambda _wsapp, error: print(f"market worker: Angel One WebSocket error: {error}", flush=True)
+    websocket.on_close = lambda _wsapp: print("market worker: Angel One WebSocket closed", flush=True)
+    websocket.connect()
 
 
 def main() -> None:
+    symbols = [item.strip().upper() for item in os.getenv("MARKET_SYMBOLS", "RELIANCE,TCS,INFY,HDFCBANK").split(",") if item.strip()]
+    if not symbols:
+        raise RuntimeError("MARKET_SYMBOLS must contain at least one symbol")
     client = redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"), decode_responses=True,
                             socket_connect_timeout=5, socket_timeout=5, health_check_interval=30)
-    symbols = [item.strip().upper() for item in os.getenv("MARKET_SYMBOLS", "RELIANCE,TCS,INFY").split(",") if item.strip()]
-    interval = int(os.getenv("POLL_INTERVAL_SECONDS", "60"))
-    quote_ttl = int(os.getenv("QUOTE_TTL_SECONDS", "300"))
-    history_ttl = int(os.getenv("HISTORY_TTL_SECONDS", "86400"))
-    history_max_items = int(os.getenv("HISTORY_MAX_ITEMS", "500"))
+    store = InstrumentStore(required_env("DATABASE_URL"), symbols)
+    refresh_backoff = 1
     while True:
-        bucket = int(time.time()) // 60
         try:
-            for symbol in symbols:
-                current = quote(symbol, bucket)
-                key = f"market:quote:{symbol}"
-                history_key = f"market:history:{symbol}"
-                with client.pipeline() as pipe:
-                    pipe.hset(key, mapping=current)
-                    pipe.expire(key, quote_ttl)
-                    pipe.lpush(history_key, json.dumps(candle(symbol, bucket)))
-                    pipe.ltrim(history_key, 0, history_max_items - 1)
-                    pipe.expire(history_key, history_ttl)
-                    pipe.publish("market:updates", json.dumps(current))
-                    pipe.execute()
-        except redis.RedisError as error:
-            print(f"market worker Redis error: {error}", flush=True)
-        time.sleep(interval)
+            store.refresh()
+            break
+        except Exception as error:
+            # The backend owns the GORM migration. At compose startup it may
+            # not have created instruments yet, so wait rather than crash-loop.
+            print(f"market worker: initial instrument refresh failed: {error}; retrying in {refresh_backoff}s", flush=True)
+            time.sleep(refresh_backoff)
+            refresh_backoff = min(refresh_backoff * 2, 60)
+    threading.Thread(target=refresh_daily, args=(store,), daemon=True).start()
+    writer = QuoteWriter(client, int(os.getenv("QUOTE_TTL_SECONDS", "300")), int(os.getenv("HISTORY_TTL_SECONDS", "86400")), int(os.getenv("HISTORY_MAX_ITEMS", "500")))
+
+    backoff = 1
+    while True:
+        try:
+            run_feed(store, writer)
+        except Exception as error:
+            print(f"market worker: feed disconnected: {error}; reconnecting in {backoff}s", flush=True)
+        time.sleep(backoff)
+        backoff = min(backoff * 2, 60)
 
 
 if __name__ == "__main__":
