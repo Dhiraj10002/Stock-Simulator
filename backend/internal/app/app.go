@@ -49,6 +49,7 @@ func (a *App) Run() error {
 		&model.SimulationReset{},
 		&model.Instrument{},
 		&model.RiskEvent{},
+		&model.WatchlistItem{},
 	); err != nil {
 		return err
 	}

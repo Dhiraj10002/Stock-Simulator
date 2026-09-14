@@ -11,6 +11,9 @@ import (
 	"time"
 
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/config"
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/database"
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
+	"github.com/google/uuid"
 )
 
 const geminiGenerateContentURL = "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent"
@@ -54,13 +57,21 @@ func New(cfg *config.Config) *MentorService {
 	return &MentorService{apiKey: cfg.GeminiAPIKey, model: cfg.GeminiModel, client: &http.Client{Timeout: 30 * time.Second}}
 }
 
-func (s *MentorService) Analyze(ctx context.Context, question string) (string, error) {
+func (s *MentorService) Analyze(ctx context.Context, userID, question string) (string, error) {
 	if strings.TrimSpace(s.apiKey) == "" {
 		return "", fmt.Errorf("AI mentor is not configured; add GEMINI_API_KEY to backend/.env")
 	}
+	contextSummary := "No account context was available."
+	if userUUID, err := uuid.Parse(userID); err == nil {
+		var positions []model.Position
+		var orders []model.Order
+		_ = database.GetDB().Where("user_uuid = ? AND quantity <> 0", userUUID).Order("symbol ASC").Limit(20).Find(&positions).Error
+		_ = database.GetDB().Where("user_uuid = ?", userUUID).Order("created_at DESC").Limit(10).Find(&orders).Error
+		contextSummary = fmt.Sprintf("Open simulator positions: %v. Recent simulator orders: %v.", positions, orders)
+	}
 	payload := geminiRequest{
 		SystemInstruction: content("You are an educational mentor inside a virtual stock simulator. Explain concepts, risks, and trade mechanics clearly. Never promise returns, predict prices with certainty, or provide personalised financial advice. State that the response is educational, not financial advice."),
-		Contents:          []geminiContent{{Role: "user", Parts: content(question).Parts}},
+		Contents:          []geminiContent{{Role: "user", Parts: content("Account context (simulated, do not infer facts beyond it): " + contextSummary + "\n\nQuestion: " + question).Parts}},
 	}
 	payload.GenerationConfig.MaxOutputTokens = 700
 	body, err := json.Marshal(payload)

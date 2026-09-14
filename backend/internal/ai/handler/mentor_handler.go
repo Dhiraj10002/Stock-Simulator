@@ -20,7 +20,7 @@ func (h *MentorHandler) Analyze(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, "Invalid mentor request", err.Error())
 		return
 	}
-	answer, err := h.service.Analyze(c.Request.Context(), request.Question)
+	answer, err := h.service.Analyze(c.Request.Context(), c.GetString("user_id"), request.Question)
 	if err != nil {
 		response.Error(c, http.StatusServiceUnavailable, err.Error(), nil)
 		return

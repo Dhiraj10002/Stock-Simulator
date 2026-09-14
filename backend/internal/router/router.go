@@ -20,6 +20,7 @@ import (
 	tradeHandler "github.com/Dhiraj10002/Stock-Simulator/backend/internal/trade/handler"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/validation"
 	walletHandler "github.com/Dhiraj10002/Stock-Simulator/backend/internal/wallet/handler"
+	watchlistHandler "github.com/Dhiraj10002/Stock-Simulator/backend/internal/watchlist/handler"
 
 	"github.com/gin-gonic/gin"
 )
@@ -55,6 +56,7 @@ func Setup(cfg *config.Config) *gin.Engine {
 	marketWS := marketWebsocket.New(market.Service())
 	stocks := stockHandler.New()
 	trades := tradeHandler.New()
+	watchlist := watchlistHandler.New()
 	mentor := aiHandler.New(cfg)
 	news, err := newsHandler.New(cfg.RedisURL, cfg.RedisOperationTimeout)
 	if err != nil {
@@ -112,6 +114,9 @@ func Setup(cfg *config.Config) *gin.Engine {
 		protected.GET("/orders/:id", orders.Get)
 		protected.DELETE("/orders/:id", orders.Cancel)
 		protected.GET("/trades", trades.List)
+		protected.GET("/watchlist", watchlist.List)
+		protected.POST("/watchlist", watchlist.Add)
+		protected.DELETE("/watchlist/:symbol", watchlist.Remove)
 	}
 
 	return r

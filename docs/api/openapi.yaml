@@ -6,6 +6,28 @@ info:
 servers:
   - url: /api/v1
 paths:
+  /watchlist:
+    get:
+      summary: List the authenticated user's watchlist
+      responses:
+        '200':
+          description: Watchlist items
+    post:
+      summary: Add a symbol to the authenticated user's watchlist
+      responses:
+        '201':
+          description: Watchlist item created
+  /watchlist/{symbol}:
+    delete:
+      summary: Remove a symbol from the authenticated user's watchlist
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Watchlist item removed
   /health:
     get:
       summary: Check API health

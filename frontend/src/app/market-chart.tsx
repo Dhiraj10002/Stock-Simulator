@@ -46,7 +46,7 @@ export default function MarketChart() {
   useEffect(() => {
     const socket = new WebSocket(WS_URL);
     socket.onopen = () => { setStatus("Live"); socket.send(JSON.stringify({ action: "subscribe", symbols: [symbol] })); };
-    socket.onmessage = (message) => { const event = JSON.parse(message.data); if (event.type !== "quote" || event.quote?.symbol !== symbol) return; const next: Quote = event.quote; setQuote(next); setCandles((items) => { if (!items.length) return items; const last = items[items.length - 1]; const price = next.price_paise; return [...items.slice(0, -1), { ...last, close_paise: price, high_paise: Math.max(last.high_paise, price), low_paise: Math.min(last.low_paise, price) }]; }); };
+    socket.onmessage = (message) => { const event = JSON.parse(message.data); if (event.type !== "quote" || event.quote?.symbol !== symbol) return; const next: Quote = event.quote; setQuote(next); setCandles((items) => { const price = next.price_paise; const timestamp = Math.floor(new Date(next.updated_at).getTime() / 60000) * 60; if (!items.length) return [{ timestamp, open_paise: price, high_paise: price, low_paise: price, close_paise: price, volume: 0 }]; const last = items[items.length - 1]; if (last.timestamp !== timestamp) return [...items, { timestamp, open_paise: last.close_paise, high_paise: price, low_paise: price, close_paise: price, volume: 0 }]; return [...items.slice(0, -1), { ...last, close_paise: price, high_paise: Math.max(last.high_paise, price), low_paise: Math.min(last.low_paise, price) }]; }); };
     socket.onerror = () => setStatus("Live connection unavailable");
     return () => socket.close();
   }, [symbol]);

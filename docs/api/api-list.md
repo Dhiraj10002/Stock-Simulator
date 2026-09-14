@@ -21,9 +21,8 @@ POST   /api/v1/orders/:id/execute
 order only from a positive, recent Redis market quote; client-supplied prices
 are rejected.
 
-For the current delivery-trading release, `POST /api/v1/orders` accepts only
-`product: "DELIVERY"`. `INTRADAY` and `FNO` are deliberately rejected until
-instrument-aware margin, leverage, and lifecycle rules are implemented.
+`POST /api/v1/orders` supports DELIVERY, MIS (`INTRADAY`), and F&O (`FNO`)
+subject to the applicable margin, lot-size, and lifecycle rules.
 
 GET    /api/v1/trades
 
@@ -42,6 +41,7 @@ GET    /api/v1/portfolio
 
 GET    /api/v1/watchlist
 POST   /api/v1/watchlist
+DELETE /api/v1/watchlist/:symbol
 
 GET    /api/v1/news
 
