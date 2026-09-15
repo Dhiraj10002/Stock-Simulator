@@ -1,5 +1,33 @@
 services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file:
+      - backend/.env
+    ports:
+      - "8080:8080"
+    restart: on-failure
+
+  market-worker:
+    build:
+      context: ./python-services/market-worker
+    env_file:
+      - backend/.env
+    restart: on-failure
+
+  news-worker:
+    build:
+      context: ./python-services/news-worker
+    env_file:
+      - backend/.env
+    restart: on-failure
+
+  # The services below only start when explicitly requested via:
+  #   docker compose --profile local up
+  # They are not started by default so development connects to Neon DEV and Upstash DEV.
   db:
+    profiles: ["local"]
     image: postgres:16-alpine
     environment:
       POSTGRES_DB: stock_simulator
@@ -16,25 +44,8 @@ services:
       retries: 10
       start_period: 10s
 
-  backend:
-    build:
-      context: .
-      dockerfile: backend/Dockerfile
-    env_file:
-      - backend/.env
-    environment:
-      DATABASE_URL: postgres://postgres:postgres@db:5432/stock_simulator?sslmode=disable
-      # Set REDIS_URL in the shell/.env to a rediss:// Upstash TCP URL in production.
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
-    ports:
-      - "8080:8080"
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-
   redis:
+    profiles: ["local"]
     image: redis:7-alpine
     ports:
       - "6379:6379"
@@ -46,38 +57,7 @@ services:
       timeout: 3s
       retries: 10
 
-  market-worker:
-    build:
-      context: ./python-services/market-worker
-    env_file:
-      - backend/.env
-    environment:
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
-      DATABASE_URL: postgres://postgres:postgres@db:5432/stock_simulator?sslmode=disable
-      MARKET_SYMBOLS: RELIANCE,TCS,INFY,HDFCBANK
-      QUOTE_TTL_SECONDS: 300
-      HISTORY_TTL_SECONDS: 86400
-      HISTORY_MAX_ITEMS: 500
-      MARKET_FEED_STALE_SECONDS: 120
-    depends_on:
-      redis:
-        condition: service_healthy
-      db:
-        condition: service_healthy
-
-  news-worker:
-    build:
-      context: ./python-services/news-worker
-    environment:
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
-      NEWS_POLL_INTERVAL_SECONDS: 600
-      NEWS_TTL_SECONDS: 604800
-      NEWS_SEEN_TTL_SECONDS: 604800
-      NEWS_MAX_ITEMS: 200
-    depends_on:
-      redis:
-        condition: service_healthy
-
 volumes:
   postgres_data:
   redis_data:
+

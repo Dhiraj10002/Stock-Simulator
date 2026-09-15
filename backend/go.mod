@@ -1,6 +1,6 @@
 module github.com/Dhiraj10002/Stock-Simulator/backend
 
-go 1.26.5
+go 1.25.0
 
 require (
 	github.com/gin-gonic/gin v1.12.0
@@ -26,7 +26,7 @@ require (
 	github.com/gin-contrib/sse v1.1.0 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
-	github.com/go-playground/validator/v10 v10.30.3 // indirect
+	github.com/go-playground/validator/v10 v10.30.3
 	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
 	github.com/goccy/go-json v0.10.5 // indirect
 	github.com/goccy/go-yaml v1.19.2 // indirect

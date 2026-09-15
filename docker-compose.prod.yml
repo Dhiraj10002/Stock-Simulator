@@ -1,0 +1,36 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file:
+      - backend/.env
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/api/v1/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  market-worker:
+    build:
+      context: ./python-services/market-worker
+    env_file:
+      - backend/.env
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  news-worker:
+    build:
+      context: ./python-services/news-worker
+    env_file:
+      - backend/.env
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
