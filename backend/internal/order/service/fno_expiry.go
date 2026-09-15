@@ -87,7 +87,7 @@ func (s *OrderService) finalQuotePrice(symbol, expiry string) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	quote, err := s.market.ExecutableQuote(symbol)
+	quote, err := s.executableQuote(symbol)
 	if err != nil {
 		return 0, err
 	}

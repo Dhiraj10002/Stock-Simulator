@@ -50,3 +50,251 @@ func TestLimitMatchingAndExactPartialSaleCostBasis(t *testing.T) {
 		t.Fatalf("final allocation = (%d, %v), want (%d, true)", allocated, ok, remaining)
 	}
 }
+
+func TestCalculatePositionTransition(t *testing.T) {
+	tests := []struct {
+		name            string
+		oldQty          int64
+		oldAverage      int64
+		orderQty        int64
+		execPrice       int64
+		side            string
+		wantNewQty      int64
+		wantNewAvg      int64
+		wantRealizedPnl int64
+		wantClosedQty   int64
+		wantOpenedQty   int64
+		wantErr         bool
+	}{
+		{
+			name:            "Open Long from Flat",
+			oldQty:          0,
+			oldAverage:      0,
+			orderQty:        100,
+			execPrice:       2500,
+			side:            model.OrderSideBuy,
+			wantNewQty:      100,
+			wantNewAvg:      2500,
+			wantRealizedPnl: 0,
+			wantClosedQty:   0,
+			wantOpenedQty:   100,
+		},
+		{
+			name:            "Open Short from Flat",
+			oldQty:          0,
+			oldAverage:      0,
+			orderQty:        100,
+			execPrice:       2500,
+			side:            model.OrderSideSell,
+			wantNewQty:      -100,
+			wantNewAvg:      2500,
+			wantRealizedPnl: 0,
+			wantClosedQty:   0,
+			wantOpenedQty:   100,
+		},
+		{
+			name:            "Accumulate Long",
+			oldQty:          100,
+			oldAverage:      2500,
+			orderQty:        50,
+			execPrice:       2800,
+			side:            model.OrderSideBuy,
+			wantNewQty:      150,
+			wantNewAvg:      2600, // (250000 + 140000) / 150 = 2600
+			wantRealizedPnl: 0,
+			wantClosedQty:   0,
+			wantOpenedQty:   50,
+		},
+		{
+			name:            "Accumulate Short",
+			oldQty:          -100,
+			oldAverage:      2500,
+			orderQty:        50,
+			execPrice:       2800,
+			side:            model.OrderSideSell,
+			wantNewQty:      -150,
+			wantNewAvg:      2600,
+			wantRealizedPnl: 0,
+			wantClosedQty:   0,
+			wantOpenedQty:   50,
+		},
+		{
+			name:            "Partial Close Long (Profit)",
+			oldQty:          100,
+			oldAverage:      2500,
+			orderQty:        40,
+			execPrice:       2800,
+			side:            model.OrderSideSell,
+			wantNewQty:      60,
+			wantNewAvg:      2500,  // preserved
+			wantRealizedPnl: 12000, // 40 * (2800 - 2500)
+			wantClosedQty:   40,
+			wantOpenedQty:   0,
+		},
+		{
+			name:            "Partial Close Long (Loss)",
+			oldQty:          100,
+			oldAverage:      2500,
+			orderQty:        40,
+			execPrice:       2200,
+			side:            model.OrderSideSell,
+			wantNewQty:      60,
+			wantNewAvg:      2500,
+			wantRealizedPnl: -12000, // 40 * (2200 - 2500)
+			wantClosedQty:   40,
+			wantOpenedQty:   0,
+		},
+		{
+			name:            "Partial Close Short (Profit)",
+			oldQty:          -100,
+			oldAverage:      3000,
+			orderQty:        40,
+			execPrice:       2800,
+			side:            model.OrderSideBuy,
+			wantNewQty:      -60,
+			wantNewAvg:      3000, // preserved
+			wantRealizedPnl: 8000, // 40 * (3000 - 2800)
+			wantClosedQty:   40,
+			wantOpenedQty:   0,
+		},
+		{
+			name:            "Partial Close Short (Loss)",
+			oldQty:          -100,
+			oldAverage:      3000,
+			orderQty:        40,
+			execPrice:       3300,
+			side:            model.OrderSideBuy,
+			wantNewQty:      -60,
+			wantNewAvg:      3000,
+			wantRealizedPnl: -12000, // 40 * (3000 - 3300)
+			wantClosedQty:   40,
+			wantOpenedQty:   0,
+		},
+		{
+			name:            "Full Close Long (Flat)",
+			oldQty:          100,
+			oldAverage:      2500,
+			orderQty:        100,
+			execPrice:       2800,
+			side:            model.OrderSideSell,
+			wantNewQty:      0,
+			wantNewAvg:      0,
+			wantRealizedPnl: 30000, // 100 * (2800 - 2500)
+			wantClosedQty:   100,
+			wantOpenedQty:   0,
+		},
+		{
+			name:            "Full Close Short (Flat)",
+			oldQty:          -100,
+			oldAverage:      3000,
+			orderQty:        100,
+			execPrice:       2800,
+			side:            model.OrderSideBuy,
+			wantNewQty:      0,
+			wantNewAvg:      0,
+			wantRealizedPnl: 20000, // 100 * (3000 - 2800)
+			wantClosedQty:   100,
+			wantOpenedQty:   0,
+		},
+		{
+			name:            "Position Crossing: Long to Short (Profit on close)",
+			oldQty:          100,
+			oldAverage:      2500,
+			orderQty:        150,
+			execPrice:       2800,
+			side:            model.OrderSideSell,
+			wantNewQty:      -50,
+			wantNewAvg:      2800,  // new short position opened at execution price
+			wantRealizedPnl: 30000, // 100 * (2800 - 2500)
+			wantClosedQty:   100,
+			wantOpenedQty:   50,
+		},
+		{
+			name:            "Position Crossing: Long to Short (Loss on close)",
+			oldQty:          100,
+			oldAverage:      2500,
+			orderQty:        150,
+			execPrice:       2200,
+			side:            model.OrderSideSell,
+			wantNewQty:      -50,
+			wantNewAvg:      2200,   // new short position opened at execution price
+			wantRealizedPnl: -30000, // 100 * (2200 - 2500)
+			wantClosedQty:   100,
+			wantOpenedQty:   50,
+		},
+		{
+			name:            "Position Crossing: Short to Long (Profit on close)",
+			oldQty:          -100,
+			oldAverage:      3000,
+			orderQty:        150,
+			execPrice:       2800,
+			side:            model.OrderSideBuy,
+			wantNewQty:      50,
+			wantNewAvg:      2800,  // new long position opened at execution price
+			wantRealizedPnl: 20000, // 100 * (3000 - 2800)
+			wantClosedQty:   100,
+			wantOpenedQty:   50,
+		},
+		{
+			name:            "Position Crossing: Short to Long (Loss on close)",
+			oldQty:          -100,
+			oldAverage:      3000,
+			orderQty:        150,
+			execPrice:       3500,
+			side:            model.OrderSideBuy,
+			wantNewQty:      50,
+			wantNewAvg:      3500,   // new long position opened at execution price
+			wantRealizedPnl: -50000, // 100 * (3000 - 3500)
+			wantClosedQty:   100,
+			wantOpenedQty:   50,
+		},
+		{
+			name:      "Invalid Quantity Zero",
+			orderQty:  0,
+			execPrice: 2500,
+			side:      model.OrderSideBuy,
+			wantErr:   true,
+		},
+		{
+			name:      "Invalid Execution Price Zero",
+			orderQty:  10,
+			execPrice: 0,
+			side:      model.OrderSideBuy,
+			wantErr:   true,
+		},
+		{
+			name:      "Invalid Order Side",
+			orderQty:  10,
+			execPrice: 2500,
+			side:      "HOLD",
+			wantErr:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := calculatePositionTransition(tt.oldQty, tt.oldAverage, tt.orderQty, tt.execPrice, tt.side)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("calculatePositionTransition() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if tt.wantErr {
+				return
+			}
+			if got.NewQuantity != tt.wantNewQty {
+				t.Errorf("NewQuantity = %d, want %d", got.NewQuantity, tt.wantNewQty)
+			}
+			if got.NewAveragePrice != tt.wantNewAvg {
+				t.Errorf("NewAveragePrice = %d, want %d", got.NewAveragePrice, tt.wantNewAvg)
+			}
+			if got.RealizedPnlPaise != tt.wantRealizedPnl {
+				t.Errorf("RealizedPnlPaise = %d, want %d", got.RealizedPnlPaise, tt.wantRealizedPnl)
+			}
+			if got.ClosedQuantity != tt.wantClosedQty {
+				t.Errorf("ClosedQuantity = %d, want %d", got.ClosedQuantity, tt.wantClosedQty)
+			}
+			if got.OpenedQuantity != tt.wantOpenedQty {
+				t.Errorf("OpenedQuantity = %d, want %d", got.OpenedQuantity, tt.wantOpenedQty)
+			}
+		})
+	}
+}

@@ -35,7 +35,7 @@ func (s *OrderService) Execute(userID, orderID string) error {
 	if pendingOrder.Product != model.OrderProductDelivery {
 		return s.executeMarginProduct(userUUID, orderUUID, pendingOrder)
 	}
-	quote, err := s.market.ExecutableQuote(pendingOrder.Symbol)
+	quote, err := s.executableQuote(pendingOrder.Symbol)
 	if err != nil {
 		return err
 	}
@@ -179,7 +179,7 @@ func (s *OrderService) Execute(userID, orderID string) error {
 }
 
 func (s *OrderService) executeMarginProduct(userUUID, orderUUID uuid.UUID, pending model.Order) error {
-	quote, err := s.market.ExecutableQuote(pending.Symbol)
+	quote, err := s.executableQuote(pending.Symbol)
 	if err != nil {
 		return err
 	}
@@ -211,7 +211,7 @@ func (s *OrderService) executeMarginProduct(userUUID, orderUUID uuid.UUID, pendi
 			return errors.New("market price does not satisfy limit order")
 		}
 		if order.Product == model.OrderProductIntraday {
-			if err := product.ValidateMISOrder(time.Now()); err != nil && order.Source != model.OrderSourceSystem {
+			if err := product.ValidateMISOrder(s.now()); err != nil && order.Source != model.OrderSourceSystem {
 				return err
 			}
 		}
@@ -224,44 +224,13 @@ func (s *OrderService) executeMarginProduct(userUUID, orderUUID uuid.UUID, pendi
 		if err != nil && err != gorm.ErrRecordNotFound {
 			return err
 		}
-		oldQty := position.Quantity
-		delta := order.Quantity
-		if order.Side == model.OrderSideSell {
-			delta = -delta
+		transition, err := calculatePositionTransition(position.Quantity, position.AveragePricePaise, order.Quantity, quote.PricePaise, order.Side)
+		if err != nil {
+			return err
 		}
-		newQty, ok := add(oldQty, delta)
-		if !ok {
-			return errors.New("position quantity is too large")
-		}
-		if oldQty != 0 && newQty != 0 && (oldQty > 0) != (newQty > 0) {
-			return errors.New("orders may reduce or close a margin position but cannot reverse it")
-		}
-		realized := int64(0)
-		if oldQty != 0 && ((oldQty > 0 && delta < 0) || (oldQty < 0 && delta > 0)) {
-			closed := order.Quantity
-			if closed > abs(oldQty) {
-				return errors.New("insufficient position quantity")
-			}
-			entryNotional, valid := multiply(closed, position.AveragePricePaise)
-			if !valid {
-				return errors.New("position value is too large")
-			}
-			if oldQty > 0 {
-				realized, ok = subtract(total, entryNotional)
-			} else {
-				realized, ok = subtract(entryNotional, total)
-			}
-			if !ok {
-				return errors.New("realized P&L is too large")
-			}
-		}
-		newAverage := position.AveragePricePaise
-		if oldQty == 0 || (oldQty > 0) == (delta > 0) {
-			oldNotional := abs(oldQty) * position.AveragePricePaise
-			newAverage = (oldNotional + total) / abs(newQty)
-		} else if newQty == 0 {
-			newAverage = 0
-		}
+		newQty := transition.NewQuantity
+		newAverage := transition.NewAveragePrice
+		realized := transition.RealizedPnlPaise
 		newMargin, err := s.marginForPosition(order.Product, instrumentType, newQty, newAverage)
 		if err != nil {
 			return err
@@ -299,6 +268,22 @@ func (s *OrderService) executeMarginProduct(userUUID, orderUUID uuid.UUID, pendi
 		}
 		if err := tx.Save(&wallet).Error; err != nil {
 			return err
+		}
+		if cashChange != 0 {
+			walletType := model.WalletTransactionCredit
+			if cashChange < 0 {
+				walletType = model.WalletTransactionDebit
+			}
+			if err := tx.Create(&model.WalletTransaction{
+				WalletUUID:   wallet.UUID,
+				Type:         walletType,
+				AmountPaise:  cashChange,
+				BalancePaise: wallet.CashBalancePaise,
+				BlockedPaise: wallet.BlockedPaise,
+				Note:         "Order execution",
+			}).Error; err != nil {
+				return err
+			}
 		}
 		position.UserUUID, position.Symbol, position.Product = userUUID, order.Symbol, order.Product
 		position.InstrumentType, position.UnderlyingSymbol = instrumentType, underlying
@@ -392,4 +377,118 @@ func subtract(left, right int64) (int64, bool) {
 		return 0, false
 	}
 	return left - right, true
+}
+
+type PositionTransition struct {
+	NewQuantity      int64
+	NewAveragePrice  int64
+	RealizedPnlPaise int64
+	ClosedQuantity   int64
+	OpenedQuantity   int64
+}
+
+// calculatePositionTransition determines the new quantity, new average entry price,
+// and realized P&L when applying an order fill to an existing net position.
+// It supports increasing positions, partial reductions, complete closures,
+// and full crossing / net position reversals across zero.
+func calculatePositionTransition(oldQty, oldAverage, orderQty, execPrice int64, side string) (PositionTransition, error) {
+	if orderQty <= 0 {
+		return PositionTransition{}, errors.New("order quantity must be positive")
+	}
+	if execPrice <= 0 {
+		return PositionTransition{}, errors.New("execution price must be positive")
+	}
+	if side != model.OrderSideBuy && side != model.OrderSideSell {
+		return PositionTransition{}, errors.New("invalid order side")
+	}
+
+	delta := orderQty
+	if side == model.OrderSideSell {
+		delta = -delta
+	}
+	newQty, ok := add(oldQty, delta)
+	if !ok {
+		return PositionTransition{}, errors.New("position quantity is too large")
+	}
+
+	// Case 1: Order opposes existing position (reducing, flattening, or reversing across zero)
+	if oldQty != 0 && ((oldQty > 0 && delta < 0) || (oldQty < 0 && delta > 0)) {
+		closed := orderQty
+		if closed > abs(oldQty) {
+			closed = abs(oldQty)
+		}
+		opened := orderQty - closed
+
+		entryNotional, ok := multiply(closed, oldAverage)
+		if !ok {
+			return PositionTransition{}, errors.New("position value is too large")
+		}
+		exitNotional, ok := multiply(closed, execPrice)
+		if !ok {
+			return PositionTransition{}, errors.New("order value is too large")
+		}
+
+		var realized int64
+		if oldQty > 0 {
+			realized, ok = subtract(exitNotional, entryNotional)
+		} else {
+			realized, ok = subtract(entryNotional, exitNotional)
+		}
+		if !ok {
+			return PositionTransition{}, errors.New("realized P&L is too large")
+		}
+
+		var newAverage int64
+		if newQty == 0 {
+			newAverage = 0
+		} else if (oldQty > 0) == (newQty > 0) {
+			// Position reduced in same direction; average price of remaining units is unchanged.
+			newAverage = oldAverage
+		} else {
+			// Position reversed across zero; remaining units opened at current execution price.
+			newAverage = execPrice
+		}
+
+		return PositionTransition{
+			NewQuantity:      newQty,
+			NewAveragePrice:  newAverage,
+			RealizedPnlPaise: realized,
+			ClosedQuantity:   closed,
+			OpenedQuantity:   opened,
+		}, nil
+	}
+
+	// Case 2: Opening a brand new position from flat (oldQty == 0)
+	if oldQty == 0 {
+		return PositionTransition{
+			NewQuantity:      newQty,
+			NewAveragePrice:  execPrice,
+			RealizedPnlPaise: 0,
+			ClosedQuantity:   0,
+			OpenedQuantity:   orderQty,
+		}, nil
+	}
+
+	// Case 3: Increasing existing position in the same direction (both long or both short)
+	oldNotional, ok := multiply(abs(oldQty), oldAverage)
+	if !ok {
+		return PositionTransition{}, errors.New("position value is too large")
+	}
+	addedNotional, ok := multiply(orderQty, execPrice)
+	if !ok {
+		return PositionTransition{}, errors.New("order value is too large")
+	}
+	totalNotional, ok := add(oldNotional, addedNotional)
+	if !ok {
+		return PositionTransition{}, errors.New("position value is too large")
+	}
+	newAverage := totalNotional / abs(newQty)
+
+	return PositionTransition{
+		NewQuantity:      newQty,
+		NewAveragePrice:  newAverage,
+		RealizedPnlPaise: 0,
+		ClosedQuantity:   0,
+		OpenedQuantity:   orderQty,
+	}, nil
 }

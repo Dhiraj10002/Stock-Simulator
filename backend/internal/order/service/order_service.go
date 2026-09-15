@@ -20,10 +20,11 @@ import (
 )
 
 type OrderService struct {
-	repo    *repository.OrderRepository
-	market  *marketService.Service
-	rules   product.Rules
-	nowFunc func() time.Time
+	repo                *repository.OrderRepository
+	market              *marketService.Service
+	rules               product.Rules
+	nowFunc             func() time.Time
+	executableQuoteFunc func(symbol string) (*marketDTO.QuoteResponse, error)
 }
 
 func New(market *marketService.Service, cfg *config.Config) *OrderService {
@@ -32,6 +33,20 @@ func New(market *marketService.Service, cfg *config.Config) *OrderService {
 
 func (s *OrderService) SetNowFunc(fn func() time.Time) {
 	s.nowFunc = fn
+}
+
+func (s *OrderService) SetExecutableQuoteFunc(fn func(symbol string) (*marketDTO.QuoteResponse, error)) {
+	s.executableQuoteFunc = fn
+}
+
+func (s *OrderService) executableQuote(symbol string) (*marketDTO.QuoteResponse, error) {
+	if s.executableQuoteFunc != nil {
+		return s.executableQuoteFunc(symbol)
+	}
+	if s.market != nil {
+		return s.market.ExecutableQuote(symbol)
+	}
+	return nil, fmt.Errorf("market service not configured")
 }
 
 func (s *OrderService) now() time.Time {
@@ -110,7 +125,7 @@ func (s *OrderService) Create(userID string, request dto.CreateOrderRequest) (*d
 	if request.Type == model.OrderTypeMarket {
 		// Reject before persisting when there is no safe executable price. This
 		// prevents a market order becoming an unfillable pending order.
-		if _, err := s.market.ExecutableQuote(request.Symbol); err != nil {
+		if _, err := s.executableQuote(request.Symbol); err != nil {
 			return nil, err
 		}
 	}
@@ -230,7 +245,7 @@ func (s *OrderService) MatchSymbol(symbol string) error {
 	if symbol == "" {
 		return nil
 	}
-	quote, err := s.market.ExecutableQuote(symbol)
+	quote, err := s.executableQuote(symbol)
 	if err != nil {
 		return nil // a zero or stale tick must not trigger settlement
 	}

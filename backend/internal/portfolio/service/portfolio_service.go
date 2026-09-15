@@ -5,6 +5,7 @@ import (
 	"math"
 	"time"
 
+	marketDTO "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/dto"
 	marketService "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/service"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/portfolio/dto"
@@ -13,12 +14,39 @@ import (
 )
 
 type PortfolioService struct {
-	repo   *repository.PortfolioRepository
-	market *marketService.Service
+	repo             *repository.PortfolioRepository
+	market           *marketService.Service
+	currentQuoteFunc func(symbol string) (*marketDTO.QuoteResponse, error)
+	nowFunc          func() time.Time
 }
 
 func New(market *marketService.Service) *PortfolioService {
 	return &PortfolioService{repo: repository.New(), market: market}
+}
+
+func (s *PortfolioService) SetCurrentQuoteFunc(fn func(symbol string) (*marketDTO.QuoteResponse, error)) {
+	s.currentQuoteFunc = fn
+}
+
+func (s *PortfolioService) SetNowFunc(fn func() time.Time) {
+	s.nowFunc = fn
+}
+
+func (s *PortfolioService) currentQuote(symbol string) (*marketDTO.QuoteResponse, error) {
+	if s.currentQuoteFunc != nil {
+		return s.currentQuoteFunc(symbol)
+	}
+	if s.market != nil {
+		return s.market.CurrentQuote(symbol)
+	}
+	return nil, fmt.Errorf("market service not configured")
+}
+
+func (s *PortfolioService) now() time.Time {
+	if s.nowFunc != nil {
+		return s.nowFunc()
+	}
+	return time.Now()
 }
 
 func (s *PortfolioService) Get(userID string) (*dto.PortfolioResponse, error) {
@@ -33,15 +61,22 @@ func (s *PortfolioService) Get(userID string) (*dto.PortfolioResponse, error) {
 
 	result := &dto.PortfolioResponse{Positions: make([]dto.PositionResponse, 0, len(positions))}
 	for _, position := range positions {
-		// Valuation must not silently use an old or malformed cached price.
-		quote, err := s.market.ExecutableQuote(position.Symbol)
-		if err != nil {
-			return nil, fmt.Errorf("current quote for %s: %w", position.Symbol, err)
+		// Display valuation uses CurrentQuote (latest tick/cached price) decoupled
+		// from 120s executable freshness so users can view holdings outside market hours
+		// or on weekends. If Redis is unavailable, fall back to last recorded price or cost basis.
+		var quotePrice int64
+		quote, quoteErr := s.currentQuote(position.Symbol)
+		if quoteErr == nil && quote != nil && quote.PricePaise > 0 {
+			quotePrice = quote.PricePaise
+		} else if position.CurrentPricePaise > 0 {
+			quotePrice = position.CurrentPricePaise
+		} else if position.AveragePricePaise > 0 {
+			quotePrice = position.AveragePricePaise
+		} else {
+			return nil, fmt.Errorf("current quote for %s: price not available", position.Symbol)
 		}
-		if quote.PricePaise <= 0 {
-			return nil, fmt.Errorf("current quote for %s has an invalid price", position.Symbol)
-		}
-		position.CurrentPricePaise = quote.PricePaise
+
+		position.CurrentPricePaise = quotePrice
 		item := toPositionResponse(position)
 		result.Positions = append(result.Positions, item)
 		result.InvestedValuePaise += item.InvestedValuePaise
@@ -56,7 +91,7 @@ func (s *PortfolioService) Get(userID string) (*dto.PortfolioResponse, error) {
 	if err != nil {
 		return nil, err
 	}
-	now := time.Now().In(location)
+	now := s.now().In(location)
 	dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, location)
 	dailyRealized, err := s.repo.RealizedPnl(userUUID, dayStart)
 	if err != nil {
