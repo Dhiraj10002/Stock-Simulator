@@ -41,10 +41,15 @@ func TestFNOInstrumentRequiresExplicitUnderlyingAndLot(t *testing.T) {
 
 func TestMISCutoff(t *testing.T) {
 	ist, _ := time.LoadLocation("Asia/Kolkata")
-	if err := ValidateMISOrder(time.Date(2026, 9, 13, 15, 19, 59, 0, ist)); err != nil {
+	// 2026-09-16 is Wednesday (trading day)
+	if err := ValidateMISOrder(time.Date(2026, 9, 16, 15, 19, 59, 0, ist)); err != nil {
 		t.Fatal(err)
 	}
-	if err := ValidateMISOrder(time.Date(2026, 9, 13, 15, 20, 0, 0, ist)); err == nil {
+	if err := ValidateMISOrder(time.Date(2026, 9, 16, 15, 20, 0, 0, ist)); err == nil {
 		t.Fatal("MIS order at cutoff was accepted")
+	}
+	// Sunday (2026-09-13) must be rejected
+	if err := ValidateMISOrder(time.Date(2026, 9, 13, 15, 0, 0, 0, ist)); err == nil {
+		t.Fatal("MIS order on Sunday was accepted")
 	}
 }

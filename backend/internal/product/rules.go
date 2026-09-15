@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/config"
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/calendar"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
 )
 
@@ -56,16 +57,7 @@ func (r Rules) Margin(product, instrumentType, side string, notional int64) (int
 }
 
 func ValidateMISOrder(now time.Time) error {
-	ist, err := time.LoadLocation("Asia/Kolkata")
-	if err != nil {
-		return err
-	}
-	local := now.In(ist)
-	cutoff := time.Date(local.Year(), local.Month(), local.Day(), 15, 20, 0, 0, ist)
-	if !local.Before(cutoff) {
-		return fmt.Errorf("MIS orders are not accepted after 15:20 IST")
-	}
-	return nil
+	return calendar.ValidateMISCutoff(now)
 }
 
 func ValidateFNOInstrument(instrument model.Instrument, quantity int64) (string, error) {

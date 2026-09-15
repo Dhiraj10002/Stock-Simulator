@@ -104,16 +104,24 @@ func (s *OrderService) finalQuotePrice(symbol, expiry string) (int64, error) {
 
 func (s *OrderService) settleExpiredPosition(positionID uuid.UUID, settlementPrice int64, kind string) error {
 	return database.GetDB().Transaction(func(tx *gorm.DB) error {
+		var preview model.Position
+		if err := tx.Where("uuid = ?", positionID).First(&preview).Error; err != nil {
+			return err
+		}
+		if preview.Quantity == 0 || preview.SettlementState == settlementComplete {
+			return nil
+		}
+		// Enforce uniform locking hierarchy: Wallet -> Position
+		var wallet model.Wallet
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_uuid = ?", preview.UserUUID).First(&wallet).Error; err != nil {
+			return err
+		}
 		var position model.Position
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("uuid = ?", positionID).First(&position).Error; err != nil {
 			return err
 		}
 		if position.Quantity == 0 || position.SettlementState == settlementComplete {
 			return nil
-		}
-		var wallet model.Wallet
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_uuid = ?", position.UserUUID).First(&wallet).Error; err != nil {
-			return err
 		}
 		quantity := abs(position.Quantity)
 		settlementValue, ok := multiply(quantity, settlementPrice)

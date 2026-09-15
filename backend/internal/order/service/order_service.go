@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/config"
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/database"
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/calendar"
 	marketDTO "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/dto"
 	marketService "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/service"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
@@ -18,13 +20,25 @@ import (
 )
 
 type OrderService struct {
-	repo   *repository.OrderRepository
-	market *marketService.Service
-	rules  product.Rules
+	repo    *repository.OrderRepository
+	market  *marketService.Service
+	rules   product.Rules
+	nowFunc func() time.Time
 }
 
 func New(market *marketService.Service, cfg *config.Config) *OrderService {
 	return &OrderService{repo: repository.New(), market: market, rules: product.FromConfig(cfg)}
+}
+
+func (s *OrderService) SetNowFunc(fn func() time.Time) {
+	s.nowFunc = fn
+}
+
+func (s *OrderService) now() time.Time {
+	if s.nowFunc != nil {
+		return s.nowFunc()
+	}
+	return time.Now()
 }
 
 func (s *OrderService) Create(userID string, request dto.CreateOrderRequest) (*dto.OrderResponse, error) {
@@ -36,23 +50,20 @@ func (s *OrderService) Create(userID string, request dto.CreateOrderRequest) (*d
 	if request.Symbol == "" {
 		return nil, fmt.Errorf("symbol is required")
 	}
+	request.Side = strings.ToUpper(strings.TrimSpace(request.Side))
+	if request.Side != model.OrderSideBuy && request.Side != model.OrderSideSell {
+		return nil, fmt.Errorf("invalid order side %q; must be BUY or SELL", request.Side)
+	}
+	request.Type = strings.ToUpper(strings.TrimSpace(request.Type))
+	if request.Type != model.OrderTypeMarket && request.Type != model.OrderTypeLimit {
+		return nil, fmt.Errorf("invalid order type %q; must be MARKET or LIMIT", request.Type)
+	}
+	request.Product = strings.ToUpper(strings.TrimSpace(request.Product))
 	if !isSupportedProduct(request.Product) {
 		return nil, fmt.Errorf("unsupported order product %s", request.Product)
 	}
-	var instrument *model.Instrument
-	if request.Product == model.OrderProductIntraday {
-		if err := product.ValidateMISOrder(time.Now()); err != nil {
-			return nil, err
-		}
-	}
-	if request.Product == model.OrderProductFNO {
-		instrument, err = s.repo.FindInstrument(request.Symbol)
-		if err != nil {
-			return nil, fmt.Errorf("F&O instrument not found")
-		}
-		if _, err := product.ValidateFNOInstrument(*instrument, request.Quantity); err != nil {
-			return nil, err
-		}
+	if request.Quantity <= 0 {
+		return nil, fmt.Errorf("order quantity must be greater than zero")
 	}
 	if request.Type == model.OrderTypeLimit && request.PricePaise <= 0 {
 		return nil, fmt.Errorf("limit orders require a positive price")
@@ -60,6 +71,42 @@ func (s *OrderService) Create(userID string, request dto.CreateOrderRequest) (*d
 	if request.Type == model.OrderTypeMarket && request.PricePaise != 0 {
 		return nil, fmt.Errorf("market orders must not include a price")
 	}
+
+	// Market Session Check: New orders are rejected outside trading hours (09:15-15:30 IST, Mon-Fri).
+	// Existing open LIMIT orders remain open across sessions and are not rejected here.
+	now := s.now()
+	if err := calendar.ValidateNewOrderSession(now); err != nil {
+		return nil, err
+	}
+
+	var instrument *model.Instrument
+	if database.GetDB() != nil {
+		found, err := s.repo.FindInstrument(request.Symbol)
+		if err == nil {
+			instrument = found
+		} else if request.Product == model.OrderProductFNO {
+			return nil, fmt.Errorf("F&O instrument %q not found in instrument master", request.Symbol)
+		}
+	} else if request.Product == model.OrderProductFNO {
+		return nil, fmt.Errorf("F&O instrument verification requires database connection")
+	}
+
+	if request.Product == model.OrderProductIntraday {
+		if err := product.ValidateMISOrder(now); err != nil {
+			return nil, err
+		}
+	}
+	if request.Product == model.OrderProductFNO {
+		if instrument != nil {
+			if _, err := product.ValidateFNOInstrument(*instrument, request.Quantity); err != nil {
+				return nil, err
+			}
+			if isExpired(instrument.Expiry, now) {
+				return nil, fmt.Errorf("cannot place order on expired contract %s (expiry: %s)", request.Symbol, instrument.Expiry)
+			}
+		}
+	}
+
 	if request.Type == model.OrderTypeMarket {
 		// Reject before persisting when there is no safe executable price. This
 		// prevents a market order becoming an unfillable pending order.
@@ -68,7 +115,17 @@ func (s *OrderService) Create(userID string, request dto.CreateOrderRequest) (*d
 		}
 	}
 
-	order := &model.Order{UserUUID: userUUID, Symbol: request.Symbol, Side: request.Side, Type: request.Type, Product: request.Product, Quantity: request.Quantity, PricePaise: request.PricePaise, Status: model.OrderStatusPending}
+	order := &model.Order{
+		UserUUID:   userUUID,
+		Symbol:     request.Symbol,
+		Side:       request.Side,
+		Type:       request.Type,
+		Product:    request.Product,
+		Quantity:   request.Quantity,
+		PricePaise: request.PricePaise,
+		Status:     model.OrderStatusPending,
+	}
+
 	reservation := int64(0)
 	if request.Product == model.OrderProductDelivery && request.Side == model.OrderSideBuy && request.Type == model.OrderTypeLimit {
 		if request.Quantity > 0 && request.PricePaise > 0 && request.Quantity > int64(^uint64(0)>>1)/request.PricePaise {
@@ -90,9 +147,14 @@ func (s *OrderService) Create(userID string, request dto.CreateOrderRequest) (*d
 			return nil, err
 		}
 	}
+
 	if reservation > 0 {
 		if err := s.repo.CreateWithReservation(order, reservation); err != nil {
 			return nil, fmt.Errorf("insufficient available wallet balance")
+		}
+	} else if request.Product == model.OrderProductDelivery && request.Side == model.OrderSideSell {
+		if err := s.repo.CreateDeliverySell(order); err != nil {
+			return nil, err
 		}
 	} else if err := s.repo.Create(order); err != nil {
 		return nil, err

@@ -1,6 +1,9 @@
 package repository
 
 import (
+	"errors"
+	"fmt"
+
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/database"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
 	"github.com/google/uuid"
@@ -14,6 +17,52 @@ func New() *OrderRepository { return &OrderRepository{} }
 
 func (r *OrderRepository) Create(order *model.Order) error {
 	return database.GetDB().Create(order).Error
+}
+
+// CreateDeliverySell verifies that the user holds enough free shares
+// (position quantity minus open/pending sell orders) and creates the order atomically.
+func (r *OrderRepository) CreateDeliverySell(order *model.Order) error {
+	return database.GetDB().Transaction(func(tx *gorm.DB) error {
+		// Lock wallet first to preserve uniform per-user serialization hierarchy
+		var wallet model.Wallet
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_uuid = ?", order.UserUUID).First(&wallet).Error; err != nil {
+			return err
+		}
+
+		var position model.Position
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("user_uuid = ? AND symbol = ? AND product = ?", order.UserUUID, order.Symbol, model.OrderProductDelivery).
+			First(&position).Error
+
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return fmt.Errorf("cannot place DELIVERY sell order without holding shares of %s", order.Symbol)
+			}
+			return err
+		}
+		if position.Quantity <= 0 {
+			return fmt.Errorf("insufficient shares to sell: position quantity is %d", position.Quantity)
+		}
+
+		var committedShares int64
+		err = tx.Model(&model.Order{}).
+			Where("user_uuid = ? AND symbol = ? AND product = ? AND side = ? AND status IN ?",
+				order.UserUUID, order.Symbol, model.OrderProductDelivery, model.OrderSideSell,
+				[]string{model.OrderStatusPending, model.OrderStatusOpen}).
+			Select("COALESCE(SUM(quantity), 0)").
+			Scan(&committedShares).Error
+		if err != nil {
+			return err
+		}
+
+		availableShares := position.Quantity - committedShares
+		if order.Quantity > availableShares {
+			return fmt.Errorf("insufficient available shares to sell: holding %d, %d committed to open orders, %d available",
+				position.Quantity, committedShares, availableShares)
+		}
+
+		return tx.Create(order).Error
+	})
 }
 
 func (r *OrderRepository) CreateWithReservation(order *model.Order, reservation int64) error {
@@ -57,6 +106,9 @@ func (r *OrderRepository) FindByUUID(userUUID, orderUUID uuid.UUID) (*model.Orde
 }
 
 func (r *OrderRepository) FindInstrument(symbol string) (*model.Instrument, error) {
+	if database.GetDB() == nil {
+		return nil, errors.New("database not connected")
+	}
 	var instrument model.Instrument
 	err := database.GetDB().Where("symbol = ?", symbol).First(&instrument).Error
 	return &instrument, err
