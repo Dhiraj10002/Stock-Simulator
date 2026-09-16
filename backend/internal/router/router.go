@@ -25,7 +25,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func Setup(cfg *config.Config) *gin.Engine {
+func Setup(ctx context.Context, cfg *config.Config) *gin.Engine {
 
 	validation.Register()
 
@@ -48,10 +48,10 @@ func Setup(cfg *config.Config) *gin.Engine {
 	}
 	portfolio := portfolioHandler.New(market.Service())
 	orders := orderHandler.New(market.Service(), cfg)
-	go orders.RunMatcher(context.Background())
+	go orders.RunMatcher(ctx)
 	if database.GetDB() != nil {
-		go orders.RunProductLifecycle(context.Background())
-		go orders.RunExpirySettlement(context.Background())
+		go orders.RunProductLifecycle(ctx)
+		go orders.RunExpirySettlement(ctx)
 	}
 	marketWS := marketWebsocket.New(market.Service())
 	stocks := stockHandler.New()

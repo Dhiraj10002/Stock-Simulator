@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/database"
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/calendar"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/product"
 	"github.com/google/uuid"
@@ -26,7 +27,7 @@ func (s *OrderService) RunExpirySettlement(ctx context.Context) {
 	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
 	for {
-		s.ProcessFNOExpiry(time.Now())
+		s.ProcessFNOExpiry(s.now())
 		select {
 		case <-ctx.Done():
 			return
@@ -79,24 +80,27 @@ func (s *OrderService) expiryPrice(instrument model.Instrument, kind string) (in
 	return optionIntrinsic(instrument.OptionType, underlyingPrice, strike)
 }
 
-// finalQuotePrice accepts the provider's last executable tick immediately
-// before the simulator expiry cut-off (15:30 IST). A later live quote is not
-// assumed to be a final settlement price.
+// finalQuotePrice accepts the last recorded executable quote from the expiry
+// trading session (up to market close 15:30 IST).
 func (s *OrderService) finalQuotePrice(symbol, expiry string) (int64, error) {
 	expiryDay, err := expiryDate(expiry)
 	if err != nil {
 		return 0, err
 	}
-	quote, err := s.executableQuote(symbol)
+	quote, err := s.currentQuote(symbol)
 	if err != nil {
 		return 0, err
+	}
+	if quote.PricePaise <= 0 {
+		return 0, fmt.Errorf("invalid settlement quote price")
 	}
 	updated, err := time.Parse(time.RFC3339, quote.UpdatedAt)
 	if err != nil {
 		return 0, fmt.Errorf("invalid final quote timestamp")
 	}
+	open := time.Date(expiryDay.Year(), expiryDay.Month(), expiryDay.Day(), 9, 15, 0, 0, expiryDay.Location())
 	cutoff := time.Date(expiryDay.Year(), expiryDay.Month(), expiryDay.Day(), 15, 30, 0, 0, expiryDay.Location())
-	if updated.Before(cutoff.Add(-2*time.Minute)) || updated.After(cutoff.Add(30*time.Second)) {
+	if updated.Before(open) || updated.After(cutoff.Add(30*time.Minute)) {
 		return 0, fmt.Errorf("final settlement quote is unavailable")
 	}
 	return quote.PricePaise, nil
@@ -154,6 +158,24 @@ func (s *OrderService) settleExpiredPosition(positionID uuid.UUID, settlementPri
 		if err := tx.Save(&wallet).Error; err != nil {
 			return err
 		}
+		if cashChange != 0 {
+			walletType := model.WalletTransactionCredit
+			walletAmount := cashChange
+			if cashChange < 0 {
+				walletType = model.WalletTransactionDebit
+				walletAmount = -cashChange
+			}
+			if err := tx.Create(&model.WalletTransaction{
+				WalletUUID:   wallet.UUID,
+				Type:         walletType,
+				AmountPaise:  walletAmount,
+				BalancePaise: wallet.CashBalancePaise,
+				BlockedPaise: wallet.BlockedPaise,
+				Note:         "F&O expiry settlement",
+			}).Error; err != nil {
+				return err
+			}
+		}
 		order := model.Order{UserUUID: position.UserUUID, Symbol: position.Symbol, Side: model.OrderSideSell, Type: model.OrderTypeMarket, Product: model.OrderProductFNO, Quantity: quantity, ExecutedPricePaise: settlementPrice, Status: model.OrderStatusExecuted, Source: model.OrderSourceSystem, Reason: model.OrderReasonFNOExpiry}
 		if position.Quantity < 0 {
 			order.Side = model.OrderSideBuy
@@ -171,7 +193,11 @@ func (s *OrderService) settleExpiredPosition(positionID uuid.UUID, settlementPri
 			return fmt.Errorf("realized P&L is too large")
 		}
 		position.SettlementState = settlementComplete
-		return tx.Save(&position).Error
+		if err := tx.Save(&position).Error; err != nil {
+			return err
+		}
+		return tx.Model(&model.RiskEvent{}).Where("user_uuid = ? AND symbol = ? AND product = ? AND event_type = ? AND status = ?",
+			position.UserUUID, position.Symbol, position.Product, riskEventFNOExpiry, riskStatusPending).Update("status", "RESOLVED").Error
 	})
 }
 
@@ -191,15 +217,14 @@ func isExpired(value string, now time.Time) bool {
 	if err != nil {
 		return false
 	}
-	local := now.In(date.Location())
-	today := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, local.Location())
-	return !date.After(today)
+	cutoff := time.Date(date.Year(), date.Month(), date.Day(), 15, 30, 0, 0, date.Location())
+	return !now.Before(cutoff)
 }
 
 func expiryDate(value string) (time.Time, error) {
 	value = strings.TrimSpace(value)
 	for _, layout := range []string{"2006-01-02", "02JAN2006", "02-Jan-2006"} {
-		if date, err := time.ParseInLocation(layout, strings.ToUpper(value), time.FixedZone("IST", 19800)); err == nil {
+		if date, err := time.ParseInLocation(layout, strings.ToUpper(value), calendar.Location()); err == nil {
 			return date, nil
 		}
 	}

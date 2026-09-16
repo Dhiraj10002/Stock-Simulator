@@ -2,45 +2,36 @@ openapi: 3.0.3
 info:
   title: Stock Simulator API
   version: v1
-  description: API for the Stock Simulator paper-trading platform.
+  description: >
+    Production-ready REST and WebSocket API specification for the Stock Simulator
+    Indian-market paper trading platform. All monetary values are integer paise
+    (1 INR = 100 paise) to eliminate floating-point arithmetic errors.
 servers:
   - url: /api/v1
+    description: Primary API Gateway v1
 paths:
-  /watchlist:
-    get:
-      summary: List the authenticated user's watchlist
-      responses:
-        '200':
-          description: Watchlist items
-    post:
-      summary: Add a symbol to the authenticated user's watchlist
-      responses:
-        '201':
-          description: Watchlist item created
-  /watchlist/{symbol}:
-    delete:
-      summary: Remove a symbol from the authenticated user's watchlist
-      parameters:
-        - name: symbol
-          in: path
-          required: true
-          schema: { type: string }
-      responses:
-        '200':
-          description: Watchlist item removed
   /health:
     get:
-      summary: Check API health
+      summary: Health Check
+      description: Returns API service health status and request correlation ID.
+      tags: [System]
       responses:
         '200':
-          description: API is available
+          description: API is available and healthy
+          headers:
+            X-Request-ID:
+              schema: { type: string }
+              description: Unique request tracing ID
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/SuccessResponse'
+
   /auth/register:
     post:
-      summary: Register a user
+      summary: Register User
+      description: Creates a new user account and initializes a paper-trading wallet with initial virtual balance.
+      tags: [Authentication]
       requestBody:
         required: true
         content:
@@ -49,12 +40,19 @@ paths:
               $ref: '#/components/schemas/RegisterRequest'
       responses:
         '201':
-          description: User registered
+          description: User registered successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
+
   /auth/login:
     post:
-      summary: Log in and receive tokens
+      summary: User Login
+      description: Authenticates user credentials and issues an access token and refresh token.
+      tags: [Authentication]
       requestBody:
         required: true
         content:
@@ -67,119 +65,844 @@ paths:
           content:
             application/json:
               schema:
+                $ref: '#/components/schemas/AuthSuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/refresh:
+    post:
+      summary: Refresh Access Token
+      description: Rotates the refresh token and issues a new access token and refresh token pair.
+      tags: [Authentication]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshTokenRequest'
+      responses:
+        '200':
+          description: Tokens refreshed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthSuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/logout:
+    post:
+      summary: User Logout
+      description: Revokes the specified refresh token session.
+      tags: [Authentication]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshTokenRequest'
+      responses:
+        '200':
+          description: Logged out successfully
+          content:
+            application/json:
+              schema:
                 $ref: '#/components/schemas/SuccessResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
-          description: Invalid credentials
+          $ref: '#/components/responses/Unauthorized'
+
   /auth/me:
     get:
-      summary: Get the authenticated user's safe profile
+      summary: Current User Profile
+      description: Returns the authenticated user's profile and account identity.
+      tags: [Authentication]
       security:
         - bearerAuth: []
       responses:
         '200':
-          description: Current user
+          description: Current user profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /wallet:
+    get:
+      summary: Get Wallet Balances
+      description: Returns cash balance and blocked margin in integer paise.
+      tags: [Wallet]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: User wallet balances
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WalletResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /wallet/transactions:
+    get:
+      summary: List Wallet Transactions
+      description: Returns ledger transaction history (credits, debits, reservations, releases).
+      tags: [Wallet]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of wallet transactions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WalletTransactionsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /simulation/reset:
+    post:
+      summary: Reset Simulation
+      description: >
+        Atomically resets the paper-trading environment: cancels all open orders,
+        closes all open positions, restores wallet balance to the default initial virtual cash,
+        and logs a permanent SimulationReset audit entry.
+      tags: [Simulation]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Simulation reset successfully
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/SuccessResponse'
         '401':
-          description: Missing, invalid, expired, or non-access token
-  /auth/refresh:
+          $ref: '#/components/responses/Unauthorized'
+
+  /orders:
+    get:
+      summary: List Orders
+      description: Returns all orders placed by the authenticated user.
+      tags: [Orders]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of orders
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrdersListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
     post:
-      summary: Rotate a refresh token and issue new tokens
+      summary: Place Order
+      description: >
+        Submits a new market or limit order. Validates trading session hours (09:15-15:30 IST),
+        lot size multiples, delivery holdings, available cash, and margin reservations.
+      tags: [Orders]
+      security:
+        - bearerAuth: []
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/RefreshTokenRequest'
+              $ref: '#/components/schemas/CreateOrderRequest'
       responses:
-        '200':
-          description: Tokens refreshed
+        '201':
+          description: Order created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderCreatedResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
-          description: Invalid or revoked refresh token
-  /auth/logout:
+          $ref: '#/components/responses/Unauthorized'
+
+  /orders/{id}:
+    get:
+      summary: Get Order Details
+      description: Returns order status and execution details by UUID.
+      tags: [Orders]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+          description: Order UUID
+      responses:
+        '200':
+          description: Order details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderCreatedResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Order not found
+    delete:
+      summary: Cancel Order
+      description: Cancels an open or pending order and immediately releases reserved wallet cash or position shares.
+      tags: [Orders]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+          description: Order UUID
+      responses:
+        '200':
+          description: Order cancelled successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          description: Order cannot be cancelled in current status
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Order not found
+
+  /orders/{id}/execute:
     post:
-      summary: Revoke a refresh session
+      summary: Execute Order Trigger
+      description: Triggers immediate match and execution of an order against the latest executable quote.
+      tags: [Orders]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+          description: Order UUID
+      responses:
+        '200':
+          description: Order executed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          description: Execution failed (e.g. price unsatisfied, insufficient margin)
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /portfolio:
+    get:
+      summary: Full Portfolio Summary
+      description: >
+        Returns overall portfolio valuation, invested value, current value, and unrealized/realized P&L.
+        Decoupled from 120s execution freshness to allow resilient viewing outside market hours.
+      tags: [Portfolio]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Portfolio summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PortfolioResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /portfolio/positions:
+    get:
+      summary: List Portfolio Positions
+      description: Returns active open positions across DELIVERY, INTRADAY, and FNO.
+      tags: [Portfolio]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Active positions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PositionsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /portfolio/pnl:
+    get:
+      summary: Portfolio P&L Summary
+      description: Returns realized, unrealized, daily, and total profit and loss in integer paise.
+      tags: [Portfolio]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: P&L breakdown
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PortfolioPnlResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /trades:
+    get:
+      summary: List Executed Trades
+      description: Returns trade fill execution logs for the authenticated user.
+      tags: [Trades]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of trades
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TradesListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /market/quotes/{symbol}:
+    get:
+      summary: Get Market Quote
+      description: Returns the latest cached quote and price for the given symbol from Redis.
+      tags: [Market]
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          schema: { type: string }
+          example: RELIANCE
+      responses:
+        '200':
+          description: Live quote
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuoteResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /market/quotes/{symbol}/history:
+    get:
+      summary: Get Historical Candles
+      description: Returns historical OHLCV candle bars for charting.
+      tags: [Market]
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          schema: { type: string }
+          example: RELIANCE
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, default: 100 }
+          description: Maximum number of candle bars to return
+      responses:
+        '200':
+          description: Candle history
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CandleHistoryResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /stocks:
+    get:
+      summary: Search Stocks & Instruments
+      description: Searches Angel One instrument master by symbol prefix or company name.
+      tags: [Market]
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: { type: string }
+          description: Search term (e.g. RELIANCE, TCS, INFY)
+      responses:
+        '200':
+          description: Search results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockSearchResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /news:
+    get:
+      summary: List Market News & Sentiment
+      description: Returns recent financial RSS news articles with deduplication and lexical sentiment scores.
+      tags: [News]
+      parameters:
+        - name: category
+          in: query
+          required: false
+          schema: { type: string }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, default: 20 }
+      responses:
+        '200':
+          description: News articles
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NewsListResponse'
+
+  /watchlist:
+    get:
+      summary: List Watchlist
+      description: Returns user's saved watchlist symbols.
+      tags: [Watchlist]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Watchlist items
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WatchlistResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      summary: Add to Watchlist
+      description: Adds a symbol to the authenticated user's watchlist.
+      tags: [Watchlist]
+      security:
+        - bearerAuth: []
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/RefreshTokenRequest'
+              type: object
+              required: [symbol]
+              properties:
+                symbol: { type: string, example: RELIANCE }
       responses:
-        '200':
-          description: Logged out
+        '201':
+          description: Watchlist item added
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
-          description: Invalid refresh token
-  /wallet:
-    get:
-      summary: Get the authenticated user's wallet
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: Symbol is already in watchlist
+
+  /watchlist/{symbol}:
+    delete:
+      summary: Remove from Watchlist
+      description: Removes a symbol from user's watchlist.
+      tags: [Watchlist]
       security:
         - bearerAuth: []
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          schema: { type: string }
+          example: RELIANCE
       responses:
         '200':
-          description: Wallet balances
+          description: Watchlist item removed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
         '401':
-          description: Unauthorized
-  /wallet/transactions:
-    get:
-      summary: Get wallet transaction history
-      security:
-        - bearerAuth: []
-      responses:
-        '200':
-          description: Wallet transactions
-        '401':
-          description: Unauthorized
-  /wallet/reset:
+          $ref: '#/components/responses/Unauthorized'
+
+  /ai/analyze-trade:
     post:
-      summary: Reset virtual wallet balance
+      summary: AI Mentor Trade Analysis
+      description: Generates educational analysis and risk feedback for simulated trades.
+      tags: [AI Mentor]
       security:
         - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MentorRequest'
       responses:
         '200':
-          description: Wallet reset
+          description: Educational analysis generated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MentorResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
-          description: Unauthorized
+          $ref: '#/components/responses/Unauthorized'
+
+  /ws/market:
+    get:
+      summary: WebSocket Market Tick Feed
+      description: >
+        WebSocket connection endpoint for real-time market data streaming and quote updates.
+        Connect using `ws://<host>/ws/market` or `wss://<host>/ws/market`.
+      tags: [Market]
+      responses:
+        '101':
+          description: Switching Protocols to WebSocket stream
+
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
+
   schemas:
     RegisterRequest:
       type: object
       required: [name, email, password]
       properties:
-        name: {type: string, minLength: 2, maxLength: 100}
-        email: {type: string, format: email}
-        password: {type: string, minLength: 8, maxLength: 32, format: password}
+        name: { type: string, minLength: 2, maxLength: 100, example: "Dhiraj Sharma" }
+        email: { type: string, format: email, example: "trader@example.com" }
+        password: { type: string, minLength: 8, maxLength: 32, format: password, example: "SecurePass123!" }
+
     LoginRequest:
       type: object
       required: [email, password]
       properties:
-        email: {type: string, format: email}
-        password: {type: string, format: password}
+        email: { type: string, format: email, example: "trader@example.com" }
+        password: { type: string, format: password, example: "SecurePass123!" }
+
     RefreshTokenRequest:
       type: object
       required: [refresh_token]
       properties:
-        refresh_token: {type: string}
+        refresh_token: { type: string }
+
     SuccessResponse:
       type: object
       required: [success, message]
       properties:
-        success: {type: boolean, example: true}
-        message: {type: string}
-        data: {}
+        success: { type: boolean, example: true }
+        message: { type: string, example: "Operation completed successfully" }
+        data: { type: object, nullable: true }
+
+    AuthTokens:
+      type: object
+      properties:
+        access_token: { type: string }
+        refresh_token: { type: string }
+
+    AuthSuccessResponse:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+        message: { type: string, example: "Authentication successful" }
+        data:
+          $ref: '#/components/schemas/AuthTokens'
+
+    UserResponse:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+        data:
+          type: object
+          properties:
+            uuid: { type: string, format: uuid }
+            name: { type: string }
+            email: { type: string, format: email }
+
+    WalletData:
+      type: object
+      properties:
+        uuid: { type: string, format: uuid }
+        cash_balance_paise: { type: integer, format: int64, example: 1000000 }
+        blocked_paise: { type: integer, format: int64, example: 25000 }
+        available_paise: { type: integer, format: int64, example: 975000 }
+
+    WalletResponse:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+        data:
+          $ref: '#/components/schemas/WalletData'
+
+    WalletTransactionItem:
+      type: object
+      properties:
+        id: { type: integer }
+        type: { type: string, enum: [CREDIT, DEBIT, RESERVE, RELEASE], example: "CREDIT" }
+        amount_paise: { type: integer, format: int64, example: 5000 }
+        balance_paise: { type: integer, format: int64, example: 1005000 }
+        blocked_paise: { type: integer, format: int64, example: 0 }
+        note: { type: string, example: "Order execution" }
+        created_at: { type: string, format: date-time }
+
+    WalletTransactionsResponse:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/WalletTransactionItem'
+
+    CreateOrderRequest:
+      type: object
+      required: [symbol, side, type, product, quantity]
+      properties:
+        symbol: { type: string, example: "RELIANCE" }
+        side: { type: string, enum: [BUY, SELL], example: "BUY" }
+        type: { type: string, enum: [MARKET, LIMIT], example: "LIMIT" }
+        product: { type: string, enum: [DELIVERY, INTRADAY, FNO], example: "INTRADAY" }
+        quantity: { type: integer, format: int64, minimum: 1, example: 10 }
+        price_paise: { type: integer, format: int64, example: 250000, description: "Required for LIMIT orders; must be 0 for MARKET" }
+
+    OrderData:
+      type: object
+      properties:
+        uuid: { type: string, format: uuid }
+        symbol: { type: string }
+        side: { type: string, enum: [BUY, SELL] }
+        type: { type: string, enum: [MARKET, LIMIT] }
+        product: { type: string, enum: [DELIVERY, INTRADAY, FNO] }
+        quantity: { type: integer, format: int64 }
+        price_paise: { type: integer, format: int64 }
+        executed_price_paise: { type: integer, format: int64 }
+        reserved_paise: { type: integer, format: int64 }
+        status: { type: string, enum: [PENDING, OPEN, EXECUTED, CANCELLED, REJECTED] }
+
+    OrderCreatedResponse:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+        message: { type: string, example: "Order created successfully" }
+        data:
+          $ref: '#/components/schemas/OrderData'
+
+    OrdersListResponse:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderData'
+
+    PositionItem:
+      type: object
+      properties:
+        uuid: { type: string, format: uuid }
+        symbol: { type: string, example: "RELIANCE" }
+        quantity: { type: integer, format: int64, example: 50 }
+        average_price_paise: { type: integer, format: int64, example: 250000 }
+        current_price_paise: { type: integer, format: int64, example: 255000 }
+        invested_value_paise: { type: integer, format: int64, example: 12500000 }
+        current_value_paise: { type: integer, format: int64, example: 12750000 }
+        unrealized_pnl_paise: { type: integer, format: int64, example: 250000 }
+        realized_pnl_paise: { type: integer, format: int64, example: 0 }
+
+    PortfolioResponse:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+        data:
+          type: object
+          properties:
+            positions:
+              type: array
+              items:
+                $ref: '#/components/schemas/PositionItem'
+            invested_value_paise: { type: integer, format: int64 }
+            current_value_paise: { type: integer, format: int64 }
+            unrealized_pnl_paise: { type: integer, format: int64 }
+            realized_pnl_paise: { type: integer, format: int64 }
+            daily_pnl_paise: { type: integer, format: int64 }
+            total_pnl_paise: { type: integer, format: int64 }
+
+    PositionsResponse:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/PositionItem'
+
+    PortfolioPnlResponse:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+        data:
+          type: object
+          properties:
+            realized_pnl_paise: { type: integer, format: int64 }
+            unrealized_pnl_paise: { type: integer, format: int64 }
+            daily_pnl_paise: { type: integer, format: int64 }
+            total_pnl_paise: { type: integer, format: int64 }
+
+    TradeItem:
+      type: object
+      properties:
+        uuid: { type: string, format: uuid }
+        order_uuid: { type: string, format: uuid }
+        symbol: { type: string }
+        side: { type: string, enum: [BUY, SELL] }
+        quantity: { type: integer, format: int64 }
+        price_paise: { type: integer, format: int64 }
+        total_paise: { type: integer, format: int64 }
+        executed_at: { type: string, format: date-time }
+
+    TradesListResponse:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/TradeItem'
+
+    QuoteResponse:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+        data:
+          type: object
+          properties:
+            symbol: { type: string, example: "RELIANCE" }
+            price_paise: { type: integer, format: int64, example: 250000 }
+            source: { type: string, example: "ANGEL_ONE" }
+            updated_at: { type: string, format: date-time }
+
+    CandleItem:
+      type: object
+      properties:
+        timestamp: { type: integer, format: int64 }
+        open_paise: { type: integer, format: int64 }
+        high_paise: { type: integer, format: int64 }
+        low_paise: { type: integer, format: int64 }
+        close_paise: { type: integer, format: int64 }
+        volume: { type: integer, format: int64 }
+
+    CandleHistoryResponse:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/CandleItem'
+
+    StockItem:
+      type: object
+      properties:
+        token: { type: string }
+        symbol: { type: string }
+        name: { type: string }
+        expiry: { type: string }
+        strike: { type: string }
+        lot_size: { type: integer, format: int64 }
+        instrument_type: { type: string }
+        exchange_segment: { type: string }
+        tick_size: { type: string }
+
+    StockSearchResponse:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/StockItem'
+
+    NewsItem:
+      type: object
+      properties:
+        title: { type: string }
+        url: { type: string, format: uri }
+        source: { type: string }
+        published_at: { type: string }
+        sentiment: { type: string, enum: [POSITIVE, NEUTRAL, NEGATIVE] }
+        score: { type: integer }
+        symbols: { type: array, items: { type: string } }
+
+    NewsListResponse:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/NewsItem'
+
+    WatchlistItem:
+      type: object
+      properties:
+        id: { type: integer }
+        symbol: { type: string }
+        created_at: { type: string, format: date-time }
+
+    WatchlistResponse:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/WatchlistItem'
+
+    MentorRequest:
+      type: object
+      required: [question]
+      properties:
+        question: { type: string, example: "Why was my order rejected outside market hours?" }
+
+    MentorResponse:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+        data:
+          type: object
+          properties:
+            answer: { type: string }
+
   responses:
     BadRequest:
-      description: Invalid request body or validation failure
+      description: Invalid request parameters or validation error
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              success: { type: boolean, example: false }
+              message: { type: string }
+              error: { type: string }
+
+    Unauthorized:
+      description: Missing, invalid, expired, or non-access JWT token
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              success: { type: boolean, example: false }
+              message: { type: string, example: "Unauthorized" }

@@ -49,6 +49,16 @@ func (s *OrderService) executableQuote(symbol string) (*marketDTO.QuoteResponse,
 	return nil, fmt.Errorf("market service not configured")
 }
 
+func (s *OrderService) currentQuote(symbol string) (*marketDTO.QuoteResponse, error) {
+	if s.executableQuoteFunc != nil {
+		return s.executableQuoteFunc(symbol)
+	}
+	if s.market != nil {
+		return s.market.CurrentQuote(symbol)
+	}
+	return nil, fmt.Errorf("market service not configured")
+}
+
 func (s *OrderService) now() time.Time {
 	if s.nowFunc != nil {
 		return s.nowFunc()

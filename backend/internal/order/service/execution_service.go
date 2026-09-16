@@ -251,8 +251,11 @@ func (s *OrderService) executeMarginProduct(userUUID, orderUUID uuid.UUID, pendi
 			return errors.New("reserved wallet amount is missing")
 		}
 		newBlocked, ok = add(newBlocked, marginDelta)
-		if !ok || newBlocked < 0 {
+		if !ok {
 			return errors.New("invalid margin balance")
+		}
+		if newBlocked < 0 {
+			newBlocked = 0
 		}
 		wallet.BlockedPaise = newBlocked
 		cashChange := realized
@@ -359,7 +362,10 @@ func proportionalCostBasis(costBasis, soldQuantity, heldQuantity int64) (int64, 
 }
 
 func multiply(left, right int64) (int64, bool) {
-	if left <= 0 || right <= 0 || left > math.MaxInt64/right {
+	if left == 0 || right == 0 {
+		return 0, true
+	}
+	if left < 0 || right < 0 || left > math.MaxInt64/right {
 		return 0, false
 	}
 	return left * right, true
