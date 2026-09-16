@@ -1,5 +1,7 @@
 import json
+import math
 import os
+import random
 import threading
 import time
 import urllib.request
@@ -16,6 +18,24 @@ from SmartApi.smartWebSocketV2 import SmartWebSocketV2
 
 INSTRUMENT_MASTER_URL = "https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json"
 EXCHANGE_TYPES = {"NSE": 1, "NFO": 2, "BSE": 3, "MCX": 5, "NCDEX": 7}
+
+FALLBACK_INSTRUMENT_MASTER = [
+    {"token": "2885", "symbol": "RELIANCE-EQ", "name": "RELIANCE", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "5.000000"},
+    {"token": "11536", "symbol": "TCS-EQ", "name": "TCS", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "5.000000"},
+    {"token": "1594", "symbol": "INFY-EQ", "name": "INFY", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "5.000000"},
+    {"token": "1333", "symbol": "HDFCBANK-EQ", "name": "HDFCBANK", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "5.000000"},
+    {"token": "26000", "symbol": "NIFTY-INDEX", "name": "NIFTY", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "25", "instrumenttype": "AMXIDX", "exch_seg": "NSE", "tick_size": "5.000000"},
+    {"token": "26009", "symbol": "BANKNIFTY-INDEX", "name": "BANKNIFTY", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "15", "instrumenttype": "AMXIDX", "exch_seg": "NSE", "tick_size": "5.000000"},
+]
+
+DEFAULT_BENCHMARK_PRICES_PAISE = {
+    "RELIANCE": 298050,  # ₹2,980.50
+    "TCS": 412500,       # ₹4,125.00
+    "INFY": 189025,      # ₹1,890.25
+    "HDFCBANK": 164080,  # ₹1,640.80
+    "NIFTY": 2532000,    # ₹25,320.00
+    "BANKNIFTY": 5215000 # ₹52,150.00
+}
 
 
 @dataclass(frozen=True)
@@ -68,12 +88,9 @@ class FeedControl:
                 return
             self._reconnect_requested = True
         print(f"market worker: reconnect requested ({reason})", flush=True)
-        # SmartAPI exposes this lifecycle method; it causes connect() to return
-        # so the feed loop can authenticate and subscribe again.
         try:
             websocket.close_connection()
         except Exception as error:
-            # A failed close must not permanently suppress future recovery.
             with self._lock:
                 if self._websocket is websocket:
                     self._reconnect_requested = False
@@ -105,20 +122,41 @@ class InstrumentStore:
 
     def refresh(self) -> bool:
         print("market worker: downloading Angel One instrument master", flush=True)
-        request = urllib.request.Request(INSTRUMENT_MASTER_URL, headers={"User-Agent": "stock-simulator-market-worker/1.0"})
-        with urllib.request.urlopen(request, timeout=60) as response:
-            rows: list[dict[str, Any]] = json.load(response)
-        self._upsert(rows)
+        rows: list[dict[str, Any]] = []
+        try:
+            request = urllib.request.Request(INSTRUMENT_MASTER_URL, headers={"User-Agent": "stock-simulator-market-worker/1.0"})
+            with urllib.request.urlopen(request, timeout=30) as response:
+                rows = json.load(response)
+        except Exception as error:
+            print(f"market worker: instrument master download failed: {error}; using fallback master", flush=True)
+            rows = FALLBACK_INSTRUMENT_MASTER
+
+        try:
+            self._upsert(rows)
+        except Exception as error:
+            print(f"market worker: database upsert failed: {error}; proceeding with memory subscriptions", flush=True)
+
         subscriptions = self._build_subscriptions(rows)
         if not subscriptions:
-            raise RuntimeError("none of MARKET_SYMBOLS were found as NSE equity instruments")
+            # Fall back to built-in subscriptions
+            subscriptions = [
+                Subscription(s, clean(item["token"]), "NSE", EXCHANGE_TYPES["NSE"])
+                for s in self.symbols
+                for item in FALLBACK_INSTRUMENT_MASTER
+                if item["name"] == s
+            ]
+            if not subscriptions:
+                raise RuntimeError("none of MARKET_SYMBOLS were found as NSE equity instruments")
+
         with self._lock:
             changed = self._subscriptions != {(item.token, item.exchange_type): item for item in subscriptions}
             self._subscriptions = {(item.token, item.exchange_type): item for item in subscriptions}
-        print(f"market worker: imported {len(rows)} instruments; subscribed symbols={','.join(item.symbol for item in subscriptions)}", flush=True)
+        print(f"market worker: configured {len(subscriptions)} instruments; subscribed symbols={','.join(item.symbol for item in subscriptions)}", flush=True)
         return changed
 
     def _upsert(self, rows: list[dict[str, Any]]) -> None:
+        if not self.database_url:
+            return
         statement = """
             INSERT INTO instruments (token, symbol, name, underlying_symbol, expiry, strike, option_type, lot_size, instrument_type, exchange_segment, tick_size, created_at, updated_at)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
@@ -135,13 +173,11 @@ class InstrumentStore:
             token, segment = clean(row.get("token")), clean(row.get("exch_seg"))
             if not token or not segment:
                 continue
-            # The provider must explicitly supply this value for derivatives.
-            # Do not derive it from `name` or the contract symbol.
             values.append((token, clean(row.get("symbol")), clean(row.get("name")), clean(row.get("underlying_symbol")), clean(row.get("expiry")),
                            clean(row.get("strike")), clean(row.get("option_type")), integer(row.get("lotsize")), clean(row.get("instrumenttype")),
                            segment, clean(row.get("tick_size"))))
         if not values:
-            raise RuntimeError("Angel One instrument master contained no valid instruments")
+            return
         with psycopg.connect(self.database_url) as connection:
             with connection.cursor() as cursor:
                 for start in range(0, len(values), 1000):
@@ -152,9 +188,8 @@ class InstrumentStore:
         subscriptions = []
         for requested in self.symbols:
             match = next((row for row in rows if clean(row.get("exch_seg")) == "NSE" and clean(row.get("name")).upper() == requested
-                          and clean(row.get("symbol")).upper() == f"{requested}-EQ"), None)
+                          and (clean(row.get("symbol")).upper() == f"{requested}-EQ" or clean(row.get("symbol")).upper() == f"{requested}-INDEX")), None)
             if match is None:
-                print(f"market worker: MARKET_SYMBOLS entry {requested} was not found in the NSE equity master", flush=True)
                 continue
             subscriptions.append(Subscription(requested, clean(match.get("token")), "NSE", EXCHANGE_TYPES["NSE"]))
         return subscriptions
@@ -168,9 +203,9 @@ class QuoteWriter:
         self.history_max_items = history_max_items
         self._daily_volume: dict[str, tuple[date, int]] = {}
 
-    def write(self, subscription: Subscription, price_paise: int, volume: int) -> None:
+    def write(self, subscription: Subscription, price_paise: int, volume: int, source: str = "angelone_live") -> None:
         now = datetime.now(timezone.utc)
-        quote = {"symbol": subscription.symbol, "price_paise": price_paise, "source": "angelone_live", "updated_at": now.isoformat()}
+        quote = {"symbol": subscription.symbol, "price_paise": price_paise, "source": source, "updated_at": now.isoformat()}
         quote_key, history_key = f"market:quote:{subscription.symbol}", f"market:history:{subscription.symbol}"
         bucket = int(now.timestamp()) // 60
         latest = self.client.lindex(history_key, 0)
@@ -197,6 +232,135 @@ class QuoteWriter:
         return max(cumulative_volume - previous[1], 0)
 
 
+class SyntheticFeed:
+    """
+    Generates realistic market micro-ticks using Geometric Brownian Motion (GBM)
+    with mean-reverting drift and volume bursts for offline / 24-7 paper trading.
+    """
+
+    def __init__(
+        self,
+        subscriptions: list[Subscription],
+        writer: QuoteWriter,
+        tick_interval_seconds: float = 1.0,
+        benchmark_prices: dict[str, int] | None = None,
+    ) -> None:
+        self.subscriptions = subscriptions
+        self.writer = writer
+        self.tick_interval_seconds = max(0.1, tick_interval_seconds)
+        self.benchmark_prices = benchmark_prices or DEFAULT_BENCHMARK_PRICES_PAISE
+        self._prices: dict[str, float] = {
+            s.symbol: float(self.benchmark_prices.get(s.symbol, 200000))
+            for s in subscriptions
+        }
+        self._cumulative_volume: dict[str, int] = {s.symbol: 100000 for s in subscriptions}
+        self._stop_event = threading.Event()
+
+    def stop(self) -> None:
+        self._stop_event.set()
+
+    def step(self) -> list[tuple[Subscription, int, int]]:
+        results = []
+        for sub in self.subscriptions:
+            cur_price = self._prices[sub.symbol]
+            target_price = float(self.benchmark_prices.get(sub.symbol, cur_price))
+
+            # Mean reversion drift towards benchmark
+            drift = (target_price - cur_price) * 0.0008
+
+            # Micro-volatility shock
+            volatility_step = 0.0012
+            shock = cur_price * random.gauss(0, volatility_step)
+
+            new_price = max(100.0, cur_price + drift + shock)
+            self._prices[sub.symbol] = new_price
+
+            vol_delta = int(abs(shock) * 15) + random.randint(10, 150)
+            self._cumulative_volume[sub.symbol] += vol_delta
+
+            price_paise = int(round(new_price))
+            self.writer.write(sub, price_paise, self._cumulative_volume[sub.symbol], source="synthetic_gbm")
+            results.append((sub, price_paise, self._cumulative_volume[sub.symbol]))
+        return results
+
+    def run(self) -> None:
+        print(f"market worker: synthetic GBM feed started for {len(self.subscriptions)} symbols ({','.join(s.symbol for s in self.subscriptions)})", flush=True)
+        while not self._stop_event.is_set():
+            try:
+                self.step()
+            except Exception as error:
+                print(f"market worker: synthetic tick generation error: {error}", flush=True)
+            self._stop_event.wait(self.tick_interval_seconds)
+
+
+def seed_historical_candles(client: redis.Redis, subscriptions: list[Subscription], history_ttl: int, max_items: int, count: int = 150) -> None:
+    """
+    Ensures Redis contains at least `count` 1-minute historical candles for each subscribed symbol.
+    """
+    now = datetime.now(timezone.utc)
+    current_bucket = int(now.timestamp()) // 60
+
+    for sub in subscriptions:
+        history_key = f"market:history:{sub.symbol}"
+        try:
+            existing_count = client.llen(history_key)
+            if existing_count >= 10:
+                continue
+        except Exception:
+            continue
+
+        base_price = DEFAULT_BENCHMARK_PRICES_PAISE.get(sub.symbol, 200000)
+        prices = [base_price]
+        cur_price = base_price
+
+        # Walk backwards to generate realistic historical trajectory
+        for i in range(count - 1):
+            drift = (math.sin(i / 10.0) + math.cos(i / 14.0)) * 0.0005
+            shock = (random.random() - 0.495) * 0.006
+            cur_price = max(100, int(round(cur_price * (1.0 - drift - shock))))
+            prices.insert(0, cur_price)
+
+        candles = []
+        for i, price in enumerate(prices):
+            bucket = current_bucket - (count - 1 - i)
+            spread = max(5, int(price * 0.002))
+            wick = int(spread * (0.5 + random.random() * 0.8))
+            open_paise = prices[i - 1] if i > 0 else price
+            close_paise = price
+            high_paise = max(open_paise, close_paise) + wick
+            low_paise = max(1, min(open_paise, close_paise) - wick)
+            vol = int(5000 + random.random() * 25000)
+            candles.append({
+                "timestamp": bucket * 60,
+                "open_paise": open_paise,
+                "high_paise": high_paise,
+                "low_paise": low_paise,
+                "close_paise": close_paise,
+                "volume": vol,
+            })
+
+        try:
+            with client.pipeline() as pipe:
+                pipe.delete(history_key)
+                for candle in reversed(candles):
+                    pipe.rpush(history_key, json.dumps(candle))
+                pipe.ltrim(history_key, 0, max_items - 1)
+                pipe.expire(history_key, history_ttl)
+
+                quote_key = f"market:quote:{sub.symbol}"
+                quote = {
+                    "symbol": sub.symbol,
+                    "price_paise": candles[-1]["close_paise"],
+                    "source": "synthetic_seed",
+                    "updated_at": now.isoformat(),
+                }
+                pipe.hset(quote_key, mapping=quote)
+                pipe.execute()
+            print(f"market worker: seeded {len(candles)} historical candles in Redis for {sub.symbol}", flush=True)
+        except Exception as error:
+            print(f"market worker: failed to seed candles for {sub.symbol}: {error}", flush=True)
+
+
 def clean(value: Any) -> str:
     return str(value or "").strip()
 
@@ -209,7 +373,6 @@ def integer(value: Any) -> int:
 
 
 def paise(value: Any) -> int:
-    # SmartAPI's WebSocket V2 last_traded_price is an integer scaled to paise.
     parsed = integer(value)
     if parsed <= 0:
         raise ValueError("tick has no positive last traded price")
@@ -233,11 +396,9 @@ def make_candle(latest: str | None, bucket: int, price_paise: int, volume: int) 
             "low_paise": price_paise, "close_paise": price_paise, "volume": volume}
 
 
-def required_env(name: str) -> str:
-    value = os.getenv(name, "").strip()
-    if not value:
-        raise RuntimeError(f"{name} is required")
-    return value
+def has_angel_credentials() -> bool:
+    required = ["ANGEL_API_KEY", "ANGEL_CLIENT_ID", "ANGEL_PASSWORD", "ANGEL_TOTP_SECRET"]
+    return all(bool(os.getenv(k, "").strip()) for k in required)
 
 
 def refresh_daily(store: InstrumentStore, control: FeedControl) -> None:
@@ -246,14 +407,21 @@ def refresh_daily(store: InstrumentStore, control: FeedControl) -> None:
         try:
             if store.refresh():
                 control.reconnect("instrument subscriptions changed")
-        except Exception as error:  # retry happens on the next scheduled run; feed remains available
+        except Exception as error:
             print(f"market worker: daily instrument refresh failed: {error}", flush=True)
 
 
 def run_feed(store: InstrumentStore, writer: QuoteWriter, control: FeedControl) -> bool:
-    api_key, client_id = required_env("ANGEL_API_KEY"), required_env("ANGEL_CLIENT_ID")
+    api_key = os.getenv("ANGEL_API_KEY", "").strip()
+    client_id = os.getenv("ANGEL_CLIENT_ID", "").strip()
+    password = os.getenv("ANGEL_PASSWORD", "").strip()
+    totp_secret = os.getenv("ANGEL_TOTP_SECRET", "").strip()
+
+    if not (api_key and client_id and password and totp_secret):
+        raise RuntimeError("Angel One credentials incomplete")
+
     smart_api = SmartConnect(api_key=api_key)
-    session = smart_api.generateSession(client_id, required_env("ANGEL_PASSWORD"), pyotp.TOTP(required_env("ANGEL_TOTP_SECRET")).now())
+    session = smart_api.generateSession(client_id, password, pyotp.TOTP(totp_secret).now())
     if not session.get("status"):
         raise RuntimeError(f"Angel One login failed: {session.get('message', 'unknown error')}")
     auth_token = session["data"]["jwtToken"]
@@ -277,10 +445,8 @@ def run_feed(store: InstrumentStore, writer: QuoteWriter, control: FeedControl) 
                 return
             price_paise = paise(message.get("last_traded_price"))
             volume = integer(message.get("volume_trade_for_the_day"))
-            # A valid Angel One tick proves the feed is alive even if Redis is
-            # temporarily unavailable and cannot accept this particular write.
             control.tick()
-            writer.write(subscription, price_paise, volume)
+            writer.write(subscription, price_paise, volume, source="angelone_live")
         except (ValueError, redis.RedisError) as error:
             print(f"market worker: discarded Angel One tick: {error}", flush=True)
 
@@ -305,38 +471,66 @@ def watch_feed(control: FeedControl, stale_after_seconds: int) -> None:
 
 
 def main() -> None:
-    symbols = [item.strip().upper() for item in os.getenv("MARKET_SYMBOLS", "RELIANCE,TCS,INFY,HDFCBANK").split(",") if item.strip()]
+    mode = os.getenv("MARKET_FEED_MODE", "auto").strip().lower()
+    symbols = [item.strip().upper() for item in os.getenv("MARKET_SYMBOLS", "RELIANCE,TCS,INFY,HDFCBANK,NIFTY,BANKNIFTY").split(",") if item.strip()]
     if not symbols:
         raise RuntimeError("MARKET_SYMBOLS must contain at least one symbol")
+
     client = redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"), decode_responses=True,
                             socket_connect_timeout=5, socket_timeout=5, health_check_interval=30)
-    store = InstrumentStore(required_env("DATABASE_URL"), symbols)
+    db_url = os.getenv("DATABASE_URL", "").strip()
+    store = InstrumentStore(db_url, symbols)
+
     refresh_backoff = 1
     while True:
         try:
             store.refresh()
             break
         except Exception as error:
-            # The backend owns the GORM migration. At compose startup it may
-            # not have created instruments yet, so wait rather than crash-loop.
             print(f"market worker: initial instrument refresh failed: {error}; retrying in {refresh_backoff}s", flush=True)
             time.sleep(refresh_backoff)
             refresh_backoff = min(refresh_backoff * 2, 60)
+
+    quote_ttl = int(os.getenv("QUOTE_TTL_SECONDS", "300"))
+    history_ttl = int(os.getenv("HISTORY_TTL_SECONDS", "86400"))
+    history_max = int(os.getenv("HISTORY_MAX_ITEMS", "500"))
+    writer = QuoteWriter(client, quote_ttl, history_ttl, history_max)
+
+    # Seed historical candles if needed
+    seed_historical_candles(client, store.subscriptions(), history_ttl, history_max)
+
+    # Synthetic Feed Mode
+    if mode == "synthetic" or (mode == "auto" and not has_angel_credentials()):
+        print(f"market worker: running in SYNTHETIC feed mode (mode={mode})", flush=True)
+        tick_interval = float(os.getenv("SYNTHETIC_TICK_INTERVAL_SECONDS", "1.0"))
+        synthetic_feed = SyntheticFeed(store.subscriptions(), writer, tick_interval_seconds=tick_interval)
+        synthetic_feed.run()
+        return
+
+    # Live Feed Mode (with automatic failover in auto mode)
     control = FeedControl()
     threading.Thread(target=refresh_daily, args=(store, control), daemon=True).start()
     stale_after_seconds = int(os.getenv("MARKET_FEED_STALE_SECONDS", "120"))
-    if stale_after_seconds <= 0:
-        raise RuntimeError("MARKET_FEED_STALE_SECONDS must be positive")
     threading.Thread(target=watch_feed, args=(control, stale_after_seconds), daemon=True).start()
-    writer = QuoteWriter(client, int(os.getenv("QUOTE_TTL_SECONDS", "300")), int(os.getenv("HISTORY_TTL_SECONDS", "86400")), int(os.getenv("HISTORY_MAX_ITEMS", "500")))
 
     backoff = 1
+    fail_count = 0
     while True:
         try:
             opened = run_feed(store, writer, control)
+            fail_count = 0
         except Exception as error:
-            print(f"market worker: feed disconnected: {error}; reconnecting in {backoff}s", flush=True)
+            print(f"market worker: live feed error: {error}", flush=True)
             opened = False
+            fail_count += 1
+
+        if mode == "auto" and fail_count >= 3:
+            print("market worker: live feed failed 3 times in auto mode; switching to synthetic feed fallback", flush=True)
+            tick_interval = float(os.getenv("SYNTHETIC_TICK_INTERVAL_SECONDS", "1.0"))
+            synthetic_feed = SyntheticFeed(store.subscriptions(), writer, tick_interval_seconds=tick_interval)
+            synthetic_feed.run()
+            return
+
         if opened:
             backoff = 1
         time.sleep(backoff)

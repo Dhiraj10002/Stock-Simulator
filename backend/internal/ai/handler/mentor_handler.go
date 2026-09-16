@@ -27,3 +27,19 @@ func (h *MentorHandler) Analyze(c *gin.Context) {
 	}
 	response.Success(c, http.StatusOK, "Educational analysis generated", dto.MentorResponse{Answer: answer})
 }
+
+func (h *MentorHandler) Critique(c *gin.Context) {
+	userID := c.GetString("user_id")
+	if userID == "" {
+		response.Error(c, http.StatusUnauthorized, "Unauthorized", nil)
+		return
+	}
+
+	critique, err := h.service.Critique(c.Request.Context(), userID)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, "Failed to generate trade critique", err.Error())
+		return
+	}
+
+	response.Success(c, http.StatusOK, "Trade post-mortem critique generated", critique)
+}

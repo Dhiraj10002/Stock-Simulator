@@ -232,3 +232,141 @@ func TestPositionCrossing_IntradayReversals(t *testing.T) {
 		t.Fatalf("expected 3 executed trades, found %d", tradeCount)
 	}
 }
+
+// TestConcurrency_CancelVsExecuteCompetition verifies that when a user cancellation
+// and a market fill execution race simultaneously on the exact same order:
+// 1. Row-level locks (Wallet -> Order) serialize the competition.
+// 2. Exactly one operation wins and the other is safely rejected.
+// 3. Margin is neither double-released nor orphaned.
+// 4. The order reaches a clean, definitive terminal state (CANCELLED or EXECUTED).
+func TestConcurrency_CancelVsExecuteCompetition(t *testing.T) {
+	db := getTestDB(t)
+
+	// Ensure RELIANCE instrument exists
+	var inst model.Instrument
+	if err := db.Where("symbol = ?", "RELIANCE").First(&inst).Error; err != nil {
+		_ = db.Create(&model.Instrument{Symbol: "RELIANCE", LotSize: 1, InstrumentType: "EQUITY"}).Error
+	}
+
+	userUUID := uuid.New()
+	walletUUID := uuid.New()
+	orderUUID := uuid.New()
+	defer func() {
+		db.Where("user_uuid = ?", userUUID).Delete(&model.Trade{})
+		db.Where("user_uuid = ?", userUUID).Delete(&model.Order{})
+		db.Where("user_uuid = ?", userUUID).Delete(&model.Position{})
+		db.Where("wallet_uuid = ?", walletUUID).Delete(&model.WalletTransaction{})
+		db.Where("user_uuid = ?", userUUID).Delete(&model.Wallet{})
+	}()
+
+	// 100,000 cash, 25,000 blocked for the order
+	wallet := model.Wallet{
+		UUID:             walletUUID,
+		UserUUID:         userUUID,
+		CashBalancePaise: 100000,
+		BlockedPaise:     25000,
+	}
+	if err := db.Create(&wallet).Error; err != nil {
+		t.Fatalf("create wallet: %v", err)
+	}
+
+	// Open LIMIT buy order: 10 shares @ 2,500 = 25,000 reserved
+	order := model.Order{
+		UUID:          orderUUID,
+		UserUUID:      userUUID,
+		Symbol:        "RELIANCE",
+		Side:          model.OrderSideBuy,
+		Type:          model.OrderTypeLimit,
+		Product:       model.OrderProductDelivery,
+		Quantity:      10,
+		PricePaise:    2500,
+		ReservedPaise: 25000,
+		Status:        model.OrderStatusOpen,
+	}
+	if err := db.Create(&order).Error; err != nil {
+		t.Fatalf("create order: %v", err)
+	}
+
+	cfg := &config.Config{
+		MISLeverage:             5,
+		FuturesMarginPercent:    20,
+		OptionSellMarginPercent: 20,
+	}
+	orderSvc := New(nil, cfg)
+	orderSvc.SetExecutableQuoteFunc(func(symbol string) (*marketDTO.QuoteResponse, error) {
+		return &marketDTO.QuoteResponse{
+			Symbol:     symbol,
+			PricePaise: 2500, // exact limit match
+			Source:     "MOCK",
+			UpdatedAt:  time.Now().UTC().Format(time.RFC3339),
+		}, nil
+	})
+
+	var wg sync.WaitGroup
+	var cancelErr, execErr error
+
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		cancelErr = orderSvc.Cancel(userUUID.String(), orderUUID.String())
+	}()
+	go func() {
+		defer wg.Done()
+		execErr = orderSvc.Execute(userUUID.String(), orderUUID.String())
+	}()
+	wg.Wait()
+
+	// Exactly one must succeed and one must fail
+	successCount := 0
+	if cancelErr == nil {
+		successCount++
+	}
+	if execErr == nil {
+		successCount++
+	}
+	if successCount != 1 {
+		t.Fatalf("expected exactly 1 winner between cancel and execute, got %d (cancelErr: %v, execErr: %v)", successCount, cancelErr, execErr)
+	}
+
+	// Verify database state integrity
+	var finalOrder model.Order
+	if err := db.Where("uuid = ?", orderUUID).First(&finalOrder).Error; err != nil {
+		t.Fatalf("load order: %v", err)
+	}
+
+	var finalWallet model.Wallet
+	if err := db.Where("uuid = ?", walletUUID).First(&finalWallet).Error; err != nil {
+		t.Fatalf("load wallet: %v", err)
+	}
+
+	// Margin must ALWAYS be cleanly released (0 blocked) regardless of who won
+	if finalWallet.BlockedPaise != 0 {
+		t.Fatalf("expected blocked paise to be 0, got %d", finalWallet.BlockedPaise)
+	}
+
+	if finalOrder.Status == model.OrderStatusCancelled {
+		// Cancel won: cash unchanged at 100,000, position 0
+		if finalWallet.CashBalancePaise != 100000 {
+			t.Fatalf("cancel won: expected cash 100,000, got %d", finalWallet.CashBalancePaise)
+		}
+		var posCount int64
+		db.Model(&model.Position{}).Where("user_uuid = ? AND symbol = ?", userUUID, "RELIANCE").Count(&posCount)
+		if posCount != 0 {
+			t.Fatalf("cancel won: expected 0 positions, found %d", posCount)
+		}
+	} else if finalOrder.Status == model.OrderStatusExecuted {
+		// Execute won: cash decreased by 25,000 -> 75,000, position holds 10 shares
+		if finalWallet.CashBalancePaise != 75000 {
+			t.Fatalf("execute won: expected cash 75,000, got %d", finalWallet.CashBalancePaise)
+		}
+		var pos model.Position
+		if err := db.Where("user_uuid = ? AND symbol = ?", userUUID, "RELIANCE").First(&pos).Error; err != nil {
+			t.Fatalf("execute won: load position: %v", err)
+		}
+		if pos.Quantity != 10 {
+			t.Fatalf("execute won: expected quantity 10, got %d", pos.Quantity)
+		}
+	} else {
+		t.Fatalf("unexpected terminal order status: %s", finalOrder.Status)
+	}
+}

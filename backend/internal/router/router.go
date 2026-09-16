@@ -101,11 +101,13 @@ func Setup(ctx context.Context, cfg *config.Config) *gin.Engine {
 			protected.POST("/orders", writeLimit, orders.Create)
 			protected.POST("/orders/:id/execute", writeLimit, orders.Execute)
 			protected.POST("/ai/analyze-trade", writeLimit, mentor.Analyze)
+			protected.POST("/ai/trade-critique", writeLimit, mentor.Critique)
 		} else {
 			protected.POST("/simulation/reset", simulation.Reset)
 			protected.POST("/orders", orders.Create)
 			protected.POST("/orders/:id/execute", orders.Execute)
 			protected.POST("/ai/analyze-trade", mentor.Analyze)
+			protected.POST("/ai/trade-critique", mentor.Critique)
 		}
 		protected.GET("/portfolio", portfolio.Get)
 		protected.GET("/portfolio/positions", portfolio.Positions)

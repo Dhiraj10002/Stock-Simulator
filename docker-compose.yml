@@ -23,6 +23,18 @@ services:
       - backend/.env
     restart: on-failure
 
+  frontend:
+    build:
+      context: ./frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8080/api/v1
+      - NEXT_PUBLIC_WS_URL=ws://localhost:8080/ws/market
+    restart: on-failure
+    depends_on:
+      - backend
+
   # The services below only start when explicitly requested via:
   #   docker compose --profile local up
   # They are not started by default so development connects to Neon DEV and Upstash DEV.

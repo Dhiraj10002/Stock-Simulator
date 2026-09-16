@@ -8,15 +8,39 @@ from email.utils import parsedate_to_datetime
 
 import redis
 
+POSITIVE = {
+    "gain", "gains", "growth", "profit", "profits", "surge", "surges", "rally",
+    "rallies", "beat", "strong", "upgrade", "bullish", "record", "recovery", "wins",
+    "breakout", "dividend", "expansion", "soars", "highs", "outperforms"
+}
+NEGATIVE = {
+    "loss", "losses", "fall", "falls", "drop", "drops", "decline", "declines",
+    "weak", "downgrade", "bearish", "risk", "crisis", "fraud", "penalty", "miss",
+    "misses", "plunge", "plunges", "slump", "investigation", "default", "selloff"
+}
 
-POSITIVE = {"gain", "gains", "growth", "profit", "profits", "surge", "surges", "rally", "rallies", "beat", "strong", "upgrade", "bullish", "record", "recovery", "wins"}
-NEGATIVE = {"loss", "losses", "fall", "falls", "drop", "drops", "decline", "declines", "weak", "downgrade", "bearish", "risk", "crisis", "fraud", "penalty", "miss", "misses"}
-SYMBOLS = {"RELIANCE", "TCS", "INFY", "HDFCBANK"}
+SYMBOL_ALIASES = {
+    "RELIANCE": ["RELIANCE", "RIL", "MUKESH AMBANI", "JIO"],
+    "TCS": ["TCS", "TATA CONSULTANCY", "TATA SONS"],
+    "INFY": ["INFOSYS", "INFY", "SALIL PAREKH"],
+    "HDFCBANK": ["HDFC", "HDFCBANK", "HDFC BANK"],
+    "NIFTY": ["NIFTY", "NIFTY50", "NIFTY 50", "BENCHMARK INDEX"],
+    "BANKNIFTY": ["BANK NIFTY", "BANKNIFTY", "BANKING INDEX"],
+}
+
+SECTOR_KEYWORDS = {
+    "BANKING": ["BANK", "FINANCIAL", "LENDING", "CREDIT", "RBI", "REPO", "NPA", "DEPOSIT"],
+    "IT": ["TECH", "SOFTWARE", "IT", "CLOUD", "AI", "OUTSOURCING", "DIGITAL"],
+    "ENERGY": ["OIL", "PETROL", "CRUDE", "GAS", "REFINERY", "POWER", "RENEWABLE"],
+    "MACRO": ["INFLATION", "GDP", "DEFICIT", "RUPEE", "FISCAL", "BUDGET", "FED"],
+}
 
 
 def sentiment(title: str) -> tuple[str, int]:
     words = {word.strip(".,:;!?()[]\"'").lower() for word in title.split()}
-    score = len(words & POSITIVE) - len(words & NEGATIVE)
+    pos_matches = len(words & POSITIVE)
+    neg_matches = len(words & NEGATIVE)
+    score = pos_matches - neg_matches
     if score > 0:
         return "POSITIVE", score
     if score < 0:
@@ -35,7 +59,22 @@ def published_at(value: str | None) -> str:
 
 def matching_symbols(title: str) -> list[str]:
     uppercase = title.upper()
-    return [symbol for symbol in SYMBOLS if symbol in uppercase]
+    matched = []
+    for symbol, aliases in SYMBOL_ALIASES.items():
+        for alias in aliases:
+            if alias in uppercase:
+                matched.append(symbol)
+                break
+    return matched
+
+
+def matching_sectors(title: str) -> list[str]:
+    uppercase = title.upper()
+    sectors = []
+    for sector, keywords in SECTOR_KEYWORDS.items():
+        if any(kw in uppercase for kw in keywords):
+            sectors.append(sector)
+    return sectors
 
 
 def fetch_items(rss_url: str) -> list[dict]:
@@ -57,6 +96,7 @@ def fetch_items(rss_url: str) -> list[dict]:
             "sentiment": label,
             "score": score,
             "symbols": matching_symbols(title),
+            "sectors": matching_sectors(title),
         })
     return items
 
@@ -80,9 +120,13 @@ def main() -> None:
     items_ttl = int(os.getenv("NEWS_TTL_SECONDS", "604800"))
     seen_ttl = int(os.getenv("NEWS_SEEN_TTL_SECONDS", "604800"))
     max_items = int(os.getenv("NEWS_MAX_ITEMS", "200"))
+
+    print(f"news worker: started polling {rss_url} every {interval}s", flush=True)
     while True:
         try:
-            store(client, fetch_items(rss_url), items_ttl, seen_ttl, max_items)
+            items = fetch_items(rss_url)
+            store(client, items, items_ttl, seen_ttl, max_items)
+            print(f"news worker: processed {len(items)} items", flush=True)
         except Exception as error:
             print(f"news worker error: {error}", flush=True)
         time.sleep(interval)

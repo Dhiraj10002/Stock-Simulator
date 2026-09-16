@@ -122,7 +122,7 @@ Stock-Simulator/
 ## 🚀 Getting Started
 
 ### Prerequisites
-- **Go**: `1.24+`
+- **Go**: `1.25+`
 - **Node.js**: `20+` & `npm`
 - **Python**: `3.11+`
 - **Docker & Docker Compose**
