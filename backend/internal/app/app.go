@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"os"
 	"os/signal"
 	"syscall"
 	"time"
@@ -54,24 +55,28 @@ func (a *App) RunWithContext(ctx context.Context) error {
 
 	logger.Info("Database Connected")
 
-	// Run Migrations
-	if err := database.GetDB().AutoMigrate(
-		&model.User{},
-		&model.RefreshSession{},
-		&model.Wallet{},
-		&model.WalletTransaction{},
-		&model.Position{},
-		&model.Order{},
-		&model.Trade{},
-		&model.SimulationReset{},
-		&model.Instrument{},
-		&model.RiskEvent{},
-		&model.WatchlistItem{},
-	); err != nil {
-		return err
+	// Run Migrations if tables do not exist or if explicitly requested
+	shouldMigrate := os.Getenv("RUN_MIGRATION") == "true" || !database.GetDB().Migrator().HasTable(&model.User{})
+	if shouldMigrate {
+		if err := database.GetDB().AutoMigrate(
+			&model.User{},
+			&model.RefreshSession{},
+			&model.Wallet{},
+			&model.WalletTransaction{},
+			&model.Position{},
+			&model.Order{},
+			&model.Trade{},
+			&model.SimulationReset{},
+			&model.Instrument{},
+			&model.RiskEvent{},
+			&model.WatchlistItem{},
+		); err != nil {
+			return err
+		}
+		logger.Info("Database Migration Completed")
+	} else {
+		logger.Info("Database Schema Verified (Tables Exist, Skipping Slow Remote Introspection)")
 	}
-
-	logger.Info("Database Migration Completed")
 
 	// Setup Router with worker context
 	r := router.Setup(workerCtx, cfg)

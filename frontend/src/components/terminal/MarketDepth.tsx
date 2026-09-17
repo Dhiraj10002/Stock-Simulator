@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo } from "react";
-import { formatPaise } from "@/lib/format";
-import { generateMarketDepth, INSTRUMENT_METADATA } from "@/lib/mockData";
+import { useMemo, useState, useEffect } from "react";
+import { formatPaise, getIndianMarketStatus } from "@/lib/format";
+import { generateMarketDepth, getDynamicMetadata } from "@/lib/mockData";
+import { Lock } from "lucide-react";
 import type { Quote } from "@/types";
 
 interface MarketDepthProps {
@@ -11,13 +12,18 @@ interface MarketDepthProps {
 }
 
 export default function MarketDepth({ symbol, quote }: MarketDepthProps) {
-  const meta = INSTRUMENT_METADATA[symbol] ?? {
-    basePricePaise: 250000,
-    high52WPaise: 300000,
-    low52WPaise: 180000,
-  };
+  const [marketStatus, setMarketStatus] = useState(() => getIndianMarketStatus());
 
-  const ltpPaise = quote?.price_paise ?? meta.basePricePaise;
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setMarketStatus(getIndianMarketStatus());
+    }, 10000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const meta = getDynamicMetadata(symbol);
+
+  const ltpPaise = quote?.price_paise && quote.price_paise > 0 ? quote.price_paise : meta.basePricePaise;
   const depth = useMemo(() => generateMarketDepth(ltpPaise), [ltpPaise]);
 
   const maxQty = useMemo(() => {
@@ -42,18 +48,38 @@ export default function MarketDepth({ symbol, quote }: MarketDepthProps) {
   return (
     <div className="flex flex-col bg-slate-900/50 rounded-xl border border-slate-800/80 p-3 text-xs space-y-3">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-slate-800/60 pb-2">
-        <div className="flex items-center gap-2">
-          <span className="font-bold text-slate-200 uppercase tracking-wider text-[11px]">
-            Market Depth (L2)
-          </span>
-          <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 font-mono">
-            NSE
-          </span>
+      <div className="flex flex-col gap-1.5 border-b border-slate-800/60 pb-2">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-slate-200 uppercase tracking-wider text-[11px]">
+              Market Depth (L2)
+            </span>
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 font-mono">
+              NSE
+            </span>
+          </div>
+          <div className="text-[10px] text-slate-400 font-mono">
+            Spread: <span className="text-slate-200">{formatPaise(spreadPaise)}</span> ({spreadPercent}%)
+          </div>
         </div>
-        <div className="text-[10px] text-slate-400 font-mono">
-          Spread: <span className="text-slate-200">{formatPaise(spreadPaise)}</span> ({spreadPercent}%)
-        </div>
+
+        {/* Clear Market Closed (Frozen Depth) Badge */}
+        {!marketStatus.isOpen ? (
+          <div className="flex items-center justify-between px-2 py-1 rounded bg-amber-500/10 border border-amber-500/30 text-[10px] text-amber-300">
+            <span className="flex items-center gap-1.5 font-semibold">
+              <Lock className="w-3 h-3 text-amber-400 shrink-0" />
+              <span>Market Closed (Frozen Depth)</span>
+            </span>
+            <span className="font-mono text-[9px] text-amber-400/70">
+              Closing Snapshot
+            </span>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1.5 text-[10px] text-emerald-400">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            <span>Live Order Book</span>
+          </div>
+        )}
       </div>
 
       {/* Depth Grid (Bids vs Asks) */}
@@ -69,7 +95,7 @@ export default function MarketDepth({ symbol, quote }: MarketDepthProps) {
             {depth.bids.map((b, idx) => {
               const widthPct = (b.quantity / maxQty) * 100;
               return (
-                <div key={idx} className="relative grid grid-cols-3 py-0.5 px-1 items-center rounded overflow-hidden">
+                <div key={`bid-${idx}-${b.price_paise}`} className="relative grid grid-cols-3 py-0.5 px-1 items-center rounded overflow-hidden">
                   <div
                     className="absolute inset-y-0 right-0 bg-emerald-500/10 pointer-events-none transition-all"
                     style={{ width: `${widthPct}%` }}
@@ -96,7 +122,7 @@ export default function MarketDepth({ symbol, quote }: MarketDepthProps) {
             {depth.asks.map((a, idx) => {
               const widthPct = (a.quantity / maxQty) * 100;
               return (
-                <div key={idx} className="relative grid grid-cols-3 py-0.5 px-1 items-center rounded overflow-hidden">
+                <div key={`ask-${idx}-${a.price_paise}`} className="relative grid grid-cols-3 py-0.5 px-1 items-center rounded overflow-hidden">
                   <div
                     className="absolute inset-y-0 left-0 bg-rose-500/10 pointer-events-none transition-all"
                     style={{ width: `${widthPct}%` }}

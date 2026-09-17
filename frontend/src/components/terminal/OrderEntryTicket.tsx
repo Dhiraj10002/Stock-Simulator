@@ -10,12 +10,13 @@ import {
 import { formatPaise } from "@/lib/format";
 import { INSTRUMENT_METADATA } from "@/lib/mockData";
 import MarketDepth from "./MarketDepth";
-import type { Wallet, Quote } from "@/types";
+import type { Wallet, Quote, Position } from "@/types";
 
 type OrderEntryTicketProps = {
   symbol: string;
   quote: Quote | null;
   wallet: Wallet | null;
+  positions?: Position[];
   onOrderPlaced: () => void;
   onRequest: <T>(path: string, options?: RequestInit) => Promise<T>;
   onToast: (title: string, message?: string, type?: "success" | "error" | "info") => void;
@@ -25,6 +26,7 @@ export default function OrderEntryTicket({
   symbol,
   quote,
   wallet,
+  positions = [],
   onOrderPlaced,
   onRequest,
   onToast,
@@ -64,9 +66,14 @@ export default function OrderEntryTicket({
       : estimatedTurnoverPaise;
 
   const availablePaise = wallet?.available_balance_paise ?? 0;
+  const cncHolding = (positions ?? []).find(
+    (p) => p.symbol === symbol && p.product === "DELIVERY"
+  );
+  const sharesOwned = cncHolding?.quantity ?? 0;
+
   const isAffordable =
     side === "SELL" && product === "DELIVERY"
-      ? true // verified by holdings pre-check in backend
+      ? sharesOwned >= quantity
       : requiredMarginPaise <= availablePaise;
 
   // Percentage allocation shortcut (25%, 50%, 75%, 100%)
@@ -83,6 +90,17 @@ export default function OrderEntryTicket({
     e.preventDefault();
     if (quantity <= 0) {
       onToast("Invalid Quantity", "Quantity must be greater than zero", "error");
+      return;
+    }
+
+    if (side === "SELL" && product === "DELIVERY" && !isAffordable) {
+      onToast(
+        "Short-Selling Restricted",
+        sharesOwned === 0
+          ? `You have 0 shares of ${symbol} in CNC Delivery holdings. Delivery short-selling is prohibited.`
+          : `You only own ${sharesOwned} shares of ${symbol}, cannot sell ${quantity}.`,
+        "error"
+      );
       return;
     }
 
@@ -334,20 +352,40 @@ export default function OrderEntryTicket({
               {formatPaise(availablePaise)}
             </span>
           </div>
+          {side === "SELL" && product === "DELIVERY" && (
+            <div className="flex justify-between items-center text-slate-400 pt-1 border-t border-slate-800/60">
+              <span>Delivery Holdings</span>
+              <span
+                className={`font-semibold ${
+                  sharesOwned >= quantity ? "text-slate-300" : "text-amber-400"
+                }`}
+              >
+                {sharesOwned} shares
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Submission Button */}
         <button
           type="submit"
-          disabled={submitting || (side === "BUY" && !isAffordable)}
+          disabled={submitting || !isAffordable}
           className={`w-full py-2.5 rounded-xl font-bold text-sm text-white shadow-xl transition-all flex items-center justify-center gap-2 ${
             isBuy
-              ? "bg-emerald-600 hover:bg-emerald-500 shadow-emerald-600/30 disabled:bg-emerald-950 disabled:text-emerald-700"
-              : "bg-rose-600 hover:bg-rose-500 shadow-rose-600/30 disabled:bg-rose-950 disabled:text-rose-700"
+              ? "bg-emerald-600 hover:bg-emerald-500 shadow-emerald-600/30 disabled:bg-emerald-950/60 disabled:text-emerald-700/60 disabled:cursor-not-allowed"
+              : "bg-rose-600 hover:bg-rose-500 shadow-rose-600/30 disabled:bg-rose-950/60 disabled:text-rose-700/60 disabled:cursor-not-allowed"
           }`}
         >
           {submitting ? (
             <span className="animate-pulse">Placing Order…</span>
+          ) : side === "SELL" && product === "DELIVERY" && !isAffordable ? (
+            <span>
+              {sharesOwned === 0
+                ? "No CNC Holdings to Sell"
+                : `Holding: ${sharesOwned} (Need ${quantity})`}
+            </span>
+          ) : side === "BUY" && !isAffordable ? (
+            <span>Insufficient Balance</span>
           ) : (
             <>
               <Zap className="w-4 h-4" />

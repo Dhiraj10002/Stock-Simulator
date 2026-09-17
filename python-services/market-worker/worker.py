@@ -26,15 +26,19 @@ FALLBACK_INSTRUMENT_MASTER = [
     {"token": "1333", "symbol": "HDFCBANK-EQ", "name": "HDFCBANK", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "5.000000"},
     {"token": "26000", "symbol": "NIFTY-INDEX", "name": "NIFTY", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "25", "instrumenttype": "AMXIDX", "exch_seg": "NSE", "tick_size": "5.000000"},
     {"token": "26009", "symbol": "BANKNIFTY-INDEX", "name": "BANKNIFTY", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "15", "instrumenttype": "AMXIDX", "exch_seg": "NSE", "tick_size": "5.000000"},
+    {"token": "5097", "symbol": "ETERNAL-EQ", "name": "ETERNAL", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "5.000000"},
+    {"token": "11491", "symbol": "APARINDS-EQ", "name": "APARINDS", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "5.000000"},
 ]
 
 DEFAULT_BENCHMARK_PRICES_PAISE = {
-    "RELIANCE": 298050,  # ₹2,980.50
-    "TCS": 412500,       # ₹4,125.00
-    "INFY": 189025,      # ₹1,890.25
-    "HDFCBANK": 164080,  # ₹1,640.80
+    "RELIANCE": 124390,  # ₹1,243.90
+    "TCS": 219000,       # ₹2,190.00
+    "INFY": 105860,      # ₹1,058.60
+    "HDFCBANK": 71300,   # ₹713.00
     "NIFTY": 2532000,    # ₹25,320.00
-    "BANKNIFTY": 5215000 # ₹52,150.00
+    "BANKNIFTY": 5215000,# ₹52,150.00
+    "ETERNAL": 27850,    # ₹278.50 (formerly Zomato)
+    "APARINDS": 845000,  # ₹8,450.00
 }
 
 
@@ -169,11 +173,17 @@ class InstrumentStore:
                 updated_at = NOW()
         """
         values = []
+        target_names = set(self.symbols)
         for row in rows:
             token, segment = clean(row.get("token")), clean(row.get("exch_seg"))
             if not token or not segment:
                 continue
-            values.append((token, clean(row.get("symbol")), clean(row.get("name")), clean(row.get("underlying_symbol")), clean(row.get("expiry")),
+            name = clean(row.get("name"))
+            symbol = clean(row.get("symbol"))
+            underlying = clean(row.get("underlying_symbol"))
+            if name not in target_names and symbol not in target_names and underlying not in target_names:
+                continue
+            values.append((token, symbol, name, underlying, clean(row.get("expiry")),
                            clean(row.get("strike")), clean(row.get("option_type")), integer(row.get("lotsize")), clean(row.get("instrumenttype")),
                            segment, clean(row.get("tick_size"))))
         if not values:
@@ -232,6 +242,18 @@ class QuoteWriter:
         return max(cumulative_volume - previous[1], 0)
 
 
+def is_indian_market_open() -> bool:
+    now_utc = datetime.now(timezone.utc)
+    # Indian Standard Time is UTC + 5:30
+    now_ist = datetime.fromtimestamp(now_utc.timestamp() + 5 * 3600 + 30 * 60, tz=timezone.utc)
+    if now_ist.weekday() > 4:  # Saturday or Sunday
+        return False
+    # Market trading session: 09:15 to 15:30 IST
+    market_open = now_ist.replace(hour=9, minute=15, second=0, microsecond=0)
+    market_close = now_ist.replace(hour=15, minute=30, second=0, microsecond=0)
+    return market_open <= now_ist <= market_close
+
+
 class SyntheticFeed:
     """
     Generates realistic market micro-ticks using Geometric Brownian Motion (GBM)
@@ -286,6 +308,10 @@ class SyntheticFeed:
     def run(self) -> None:
         print(f"market worker: synthetic GBM feed started for {len(self.subscriptions)} symbols ({','.join(s.symbol for s in self.subscriptions)})", flush=True)
         while not self._stop_event.is_set():
+            if not is_indian_market_open():
+                # Market is closed (after 15:30 IST or weekend): hold prices frozen!
+                self._stop_event.wait(5.0)
+                continue
             try:
                 self.step()
             except Exception as error:
@@ -472,7 +498,7 @@ def watch_feed(control: FeedControl, stale_after_seconds: int) -> None:
 
 def main() -> None:
     mode = os.getenv("MARKET_FEED_MODE", "auto").strip().lower()
-    symbols = [item.strip().upper() for item in os.getenv("MARKET_SYMBOLS", "RELIANCE,TCS,INFY,HDFCBANK,NIFTY,BANKNIFTY").split(",") if item.strip()]
+    symbols = [item.strip().upper() for item in os.getenv("MARKET_SYMBOLS", "RELIANCE,TCS,INFY,HDFCBANK,NIFTY,BANKNIFTY,ETERNAL").split(",") if item.strip()]
     if not symbols:
         raise RuntimeError("MARKET_SYMBOLS must contain at least one symbol")
 

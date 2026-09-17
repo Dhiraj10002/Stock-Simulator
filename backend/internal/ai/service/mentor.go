@@ -322,6 +322,9 @@ func (s *MentorService) buildRuleBasedCritique(score int, rating string, metrics
 
 func (s *MentorService) generateRuleBasedAnswer(question string) string {
 	q := strings.ToLower(question)
+	if strings.Contains(q, "news") || strings.Contains(q, "headline") || strings.Contains(q, "update") || strings.Contains(q, "market today") {
+		return "📰 **Market Pulse & Short News:**\n\n1. **Benchmark Indices:** Markets closed the daily session with key leaders (Reliance, TCS, HDFC Bank) defending support zones.\n2. **Sectoral Breadth:** High liquidity in large-cap equities; derivatives expiries driving open interest shifts.\n3. **Trading Discipline:** During market-closed hours (after 15:30 IST), systematic traders review day journals, verify margin utilization, and prepare setups for the 09:15 opening bell.\n\n*Tip: Switch to the 'Market News' tab below for curated real-time business wire articles!*"
+	}
 	if strings.Contains(q, "mis") || strings.Contains(q, "intraday") || strings.Contains(q, "square") {
 		return "📘 **MIS (Margin Intraday Square-off) Rules:**\n\n1. **Leverage:** MIS offers up to 5x leverage (20% margin required).\n2. **Mandatory Cut-off:** All open MIS positions are automatically squared off by the server at 15:20 IST.\n3. **Risk:** Unhedged intraday leverage amplifies both gains and losses. Ensure stop-loss orders are active before 15:00 IST."
 	}

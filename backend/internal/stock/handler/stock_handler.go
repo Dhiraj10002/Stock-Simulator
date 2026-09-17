@@ -27,10 +27,18 @@ func (h *Handler) Search(c *gin.Context) {
 	// Escape LIKE metacharacters so a user search is treated as text.
 	escaped := strings.NewReplacer("\\", "\\\\", "%", "\\%", "_", "\\_").Replace(query)
 	pattern := "%" + escaped + "%"
+	aliasPattern := ""
+	if strings.Contains(strings.ToLower(query), "zomato") {
+		aliasPattern = "%ETERNAL%"
+	}
+
 	var instruments []model.Instrument
-	if err := database.GetDB().Where("symbol ILIKE ? ESCAPE '\\' OR name ILIKE ? ESCAPE '\\'", pattern, pattern).
-		Order("symbol ASC").
-		Limit(50).Find(&instruments).Error; err != nil {
+	dbQuery := database.GetDB().Where("symbol ILIKE ? ESCAPE '\\' OR name ILIKE ? ESCAPE '\\'", pattern, pattern)
+	if aliasPattern != "" {
+		dbQuery = database.GetDB().Where("symbol ILIKE ? ESCAPE '\\' OR name ILIKE ? ESCAPE '\\' OR symbol ILIKE ? OR name ILIKE ?", pattern, pattern, aliasPattern, aliasPattern)
+	}
+
+	if err := dbQuery.Order("symbol ASC").Limit(50).Find(&instruments).Error; err != nil {
 		response.Error(c, http.StatusServiceUnavailable, "Instrument search is temporarily unavailable", nil)
 		return
 	}

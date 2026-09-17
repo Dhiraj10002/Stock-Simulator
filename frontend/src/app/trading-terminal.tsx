@@ -17,7 +17,7 @@ import OrdersTable from "@/components/terminal/OrdersTable";
 import LedgerModal from "@/components/terminal/LedgerModal";
 import TradeCopilot from "@/components/terminal/TradeCopilot";
 import { useToast } from "@/components/terminal/ToastProvider";
-import { getDefaultQuotes } from "@/lib/mockData";
+import { getDefaultQuotes, getOrSeedQuote } from "@/lib/mockData";
 import type {
   User,
   Wallet,
@@ -59,19 +59,63 @@ export default function TradingTerminal() {
   const [isLedgerOpen, setIsLedgerOpen] = useState(false);
   const [resetting, setResetting] = useState(false);
 
+  // Token refresh helper
+  const tryRefreshToken = useCallback(async (): Promise<string | null> => {
+    const curRefresh = refreshToken || localStorage.getItem("stock-simulator-refresh-token");
+    if (!curRefresh) return null;
+    try {
+      const res = await fetch(`${API_URL}/auth/refresh`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh_token: curRefresh }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success && data.data?.access_token) {
+        const newAccess = data.data.access_token as string;
+        const newRefresh = (data.data.refresh_token as string) || curRefresh;
+        setToken(newAccess);
+        setRefreshToken(newRefresh);
+        localStorage.setItem("stock-simulator-access-token", newAccess);
+        localStorage.setItem("stock-simulator-refresh-token", newRefresh);
+        return newAccess;
+      }
+    } catch {
+      // ignore network glitch
+    }
+    // Refresh token expired or invalid: reset session cleanly
+    localStorage.removeItem("stock-simulator-access-token");
+    localStorage.removeItem("stock-simulator-refresh-token");
+    setToken("");
+    setRefreshToken("");
+    setUser(null);
+    return null;
+  }, [refreshToken]);
+
   // Authenticated HTTP Request Helper
   const request = useCallback(
     async <T,>(path: string, options: RequestInit = {}): Promise<T> => {
+      let activeToken = token;
       const headers: Record<string, string> = {
         "Content-Type": "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(activeToken ? { Authorization: `Bearer ${activeToken}` } : {}),
         ...((options.headers as Record<string, string>) || {}),
       };
 
-      const response = await fetch(`${API_URL}${path}`, {
+      let response = await fetch(`${API_URL}${path}`, {
         ...options,
         headers,
       });
+
+      if (response.status === 401) {
+        const newToken = await tryRefreshToken();
+        if (newToken) {
+          headers["Authorization"] = `Bearer ${newToken}`;
+          response = await fetch(`${API_URL}${path}`, {
+            ...options,
+            headers,
+          });
+        }
+      }
 
       const body = (await response.json()) as ApiResponse<T>;
       if (!response.ok || !body.success) {
@@ -79,20 +123,28 @@ export default function TradingTerminal() {
       }
       return body.data;
     },
-    [token]
+    [token, tryRefreshToken]
   );
 
   // Load account data from backend
   const loadData = useCallback(
     async (accessToken: string) => {
       try {
+        const meRes = await fetch(`${API_URL}/auth/me`, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+
+        if (meRes.status === 401) {
+          const newToken = await tryRefreshToken();
+          if (newToken) {
+            return loadData(newToken);
+          }
+          return;
+        }
+
         const [nextUser, nextWallet, nextPortfolio, nextOrders, nextTransactions] =
           await Promise.all([
-            fetch(`${API_URL}/auth/me`, {
-              headers: { Authorization: `Bearer ${accessToken}` },
-            })
-              .then((r) => r.json())
-              .then((b) => b.data as User),
+            meRes.json().then((b) => b.data as User),
             fetch(`${API_URL}/wallet`, {
               headers: { Authorization: `Bearer ${accessToken}` },
             })
@@ -121,10 +173,10 @@ export default function TradingTerminal() {
         setOrders(nextOrders);
         setTransactions(nextTransactions);
       } catch (err) {
-        console.error("Data load failed:", err);
+        console.warn("Backend connectivity paused:", err instanceof Error ? err.message : err);
       }
     },
-    []
+    [tryRefreshToken]
   );
 
   // Restore session from localStorage
@@ -205,7 +257,7 @@ export default function TradingTerminal() {
 
   // Prefetch authoritative quotes from backend on mount
   useEffect(() => {
-    const symbols = ["RELIANCE", "TCS", "INFY", "HDFCBANK", "NIFTY", "BANKNIFTY"];
+    const symbols = ["RELIANCE", "TCS", "INFY", "HDFCBANK", "NIFTY", "BANKNIFTY", "ETERNAL", "APARINDS"];
     symbols.forEach((sym) => {
       fetch(`${API_URL}/market/quotes/${sym}`)
         .then((res) => res.json())
@@ -223,6 +275,30 @@ export default function TradingTerminal() {
         .catch(() => {});
     });
   }, []);
+
+  // Ensure any newly searched or selected symbol has a quote immediately seeded
+  useEffect(() => {
+    if (!quotes[selectedSymbol]) {
+      setQuotes((prev) => ({
+        ...prev,
+        [selectedSymbol]: getOrSeedQuote(selectedSymbol),
+      }));
+    }
+    fetch(`${API_URL}/market/quotes/${selectedSymbol}`)
+      .then((res) => res.json())
+      .then((body) => {
+        if (body.success && body.data) {
+          setQuotes((prev) => ({
+            ...prev,
+            [selectedSymbol]: {
+              ...prev[selectedSymbol],
+              ...body.data,
+            },
+          }));
+        }
+      })
+      .catch(() => {});
+  }, [selectedSymbol]);
 
   // Simulated Micro-Jitter (24/7 Practice Feed when market is closed or offline)
   useEffect(() => {
@@ -409,7 +485,7 @@ export default function TradingTerminal() {
     );
   }
 
-  const activeQuote = quotes[selectedSymbol] ?? null;
+  const activeQuote = quotes[selectedSymbol] ?? getOrSeedQuote(selectedSymbol);
 
   return (
     <div className="flex flex-col min-h-screen bg-slate-950 text-slate-100 font-sans">
@@ -431,6 +507,7 @@ export default function TradingTerminal() {
           selectedSymbol={selectedSymbol}
           onSelectSymbol={setSelectedSymbol}
           quotes={quotes}
+          apiUrl={API_URL}
         />
 
         {/* Center Canvas: Chart on Top, Tabbed Desk on Bottom */}
@@ -529,6 +606,7 @@ export default function TradingTerminal() {
           symbol={selectedSymbol}
           quote={activeQuote}
           wallet={wallet}
+          positions={augmentedPortfolio?.positions ?? []}
           onOrderPlaced={() => void loadData(token)}
           onRequest={request}
           onToast={addToast}

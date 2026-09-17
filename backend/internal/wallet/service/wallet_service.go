@@ -22,12 +22,47 @@ func (s *WalletService) CreateInitialWallet(userUUID uuid.UUID) error {
 	return s.repo.CreateInitial(wallet)
 }
 
+func (s *WalletService) ensureWallet(userUUID uuid.UUID) (*model.Wallet, error) {
+	wallet, err := s.repo.FindByUserUUID(userUUID)
+	initBalance := s.cfg.InitialVirtualBalancePaise
+	if initBalance <= 0 {
+		initBalance = 100000000 // ₹10 Lakhs
+	}
+
+	if err != nil {
+		newWallet := &model.Wallet{
+			UserUUID:         userUUID,
+			CashBalancePaise: initBalance,
+		}
+		if createErr := s.repo.CreateInitial(newWallet); createErr != nil {
+			// Handle potential concurrent insert race
+			if existing, findErr := s.repo.FindByUserUUID(userUUID); findErr == nil {
+				return existing, nil
+			}
+			return nil, createErr
+		}
+		return newWallet, nil
+	}
+
+	// For existing users who registered before initial capital or have empty wallets without activity
+	if wallet.CashBalancePaise == 0 && wallet.BlockedPaise == 0 {
+		txs, txErr := s.repo.ListTransactions(wallet.UUID)
+		if txErr == nil && len(txs) == 0 {
+			if topupErr := s.repo.EnsureStartingBalance(wallet, initBalance); topupErr == nil {
+				wallet.CashBalancePaise = initBalance
+			}
+		}
+	}
+
+	return wallet, nil
+}
+
 func (s *WalletService) Get(userID string) (*dto.WalletResponse, error) {
 	userUUID, err := uuid.Parse(userID)
 	if err != nil {
 		return nil, fmt.Errorf("invalid user identity")
 	}
-	wallet, err := s.repo.FindByUserUUID(userUUID)
+	wallet, err := s.ensureWallet(userUUID)
 	if err != nil {
 		return nil, err
 	}
@@ -39,7 +74,7 @@ func (s *WalletService) Transactions(userID string) ([]dto.TransactionResponse, 
 	if err != nil {
 		return nil, fmt.Errorf("invalid user identity")
 	}
-	wallet, err := s.repo.FindByUserUUID(userUUID)
+	wallet, err := s.ensureWallet(userUUID)
 	if err != nil {
 		return nil, err
 	}
@@ -49,7 +84,15 @@ func (s *WalletService) Transactions(userID string) ([]dto.TransactionResponse, 
 	}
 	result := make([]dto.TransactionResponse, 0, len(items))
 	for _, item := range items {
-		result = append(result, dto.TransactionResponse{UUID: item.UUID.String(), Type: item.Type, AmountPaise: item.AmountPaise, BalancePaise: item.BalancePaise, BlockedPaise: item.BlockedPaise, Note: item.Note, CreatedAt: item.CreatedAt.UTC().Format("2006-01-02T15:04:05Z07:00")})
+		result = append(result, dto.TransactionResponse{
+			UUID:         item.UUID.String(),
+			Type:         item.Type,
+			AmountPaise:  item.AmountPaise,
+			BalancePaise: item.BalancePaise,
+			BlockedPaise: item.BlockedPaise,
+			Note:         item.Note,
+			CreatedAt:    item.CreatedAt.UTC().Format("2006-01-02T15:04:05Z07:00"),
+		})
 	}
 	return result, nil
 }
@@ -93,7 +136,7 @@ func (s *WalletService) walletForUser(userID string) (*model.Wallet, error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalid user identity")
 	}
-	return s.repo.FindByUserUUID(userUUID)
+	return s.ensureWallet(userUUID)
 }
 
 func (s *WalletService) Reset(userID string) (*dto.WalletResponse, error) {
@@ -101,7 +144,7 @@ func (s *WalletService) Reset(userID string) (*dto.WalletResponse, error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalid user identity")
 	}
-	wallet, err := s.repo.FindByUserUUID(userUUID)
+	wallet, err := s.ensureWallet(userUUID)
 	if err != nil {
 		return nil, err
 	}

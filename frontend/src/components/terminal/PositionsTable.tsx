@@ -53,7 +53,7 @@ export default function PositionsTable({
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-800/40">
-          {positions.map((pos) => {
+          {positions.map((pos, idx) => {
             const isLong = pos.quantity > 0;
             const pnlPaise = pos.unrealized_pnl_paise;
             const isProfit = pnlPaise >= 0;
@@ -62,7 +62,7 @@ export default function PositionsTable({
 
             return (
               <tr
-                key={pos.uuid}
+                key={pos.uuid || `pos-${pos.symbol}-${pos.product}-${idx}`}
                 className="hover:bg-slate-900/40 transition-colors group"
               >
                 {/* Symbol & Direction */}

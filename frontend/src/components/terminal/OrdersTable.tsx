@@ -52,7 +52,7 @@ export default function OrdersTable({ orders, onCancelOrder }: OrdersTableProps)
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-800/40">
-          {orders.map((ord) => {
+          {orders.map((ord, idx) => {
             const isBuy = ord.side === "BUY";
             const isOpen = ord.status === "OPEN" || ord.status === "PENDING";
             const isExecuted = ord.status === "EXECUTED";
@@ -61,7 +61,7 @@ export default function OrdersTable({ orders, onCancelOrder }: OrdersTableProps)
 
             return (
               <tr
-                key={ord.uuid}
+                key={ord.uuid || `ord-${ord.symbol}-${idx}`}
                 className="hover:bg-slate-900/40 transition-colors group"
               >
                 {/* Time */}

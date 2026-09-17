@@ -50,9 +50,17 @@ export default function TradeCopilot({ token, apiUrl }: TradeCopilotProps) {
         body: JSON.stringify({ question: q }),
       });
       const data = await res.json();
-      setAnswer(data.data?.answer || "No response received.");
+      if (!res.ok || !data.success) {
+        if (res.status === 401) {
+          setAnswer("⚠️ Session expired or unauthorized. Please refresh the page or sign in again to activate your AI Copilot session.");
+        } else {
+          setAnswer(data.message || "Unable to generate mentor response.");
+        }
+      } else {
+        setAnswer(data.data?.answer || "No response received.");
+      }
     } catch {
-      setAnswer("Unable to reach AI Mentor service.");
+      setAnswer("Unable to reach AI Mentor service. Please check backend connection.");
     } finally {
       setAsking(false);
     }

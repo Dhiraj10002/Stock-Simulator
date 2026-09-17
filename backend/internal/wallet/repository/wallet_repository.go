@@ -41,6 +41,24 @@ func (r *WalletRepository) CreateInitial(wallet *model.Wallet) error {
 	})
 }
 
+func (r *WalletRepository) EnsureStartingBalance(wallet *model.Wallet, amount int64) error {
+	return database.GetDB().Transaction(func(tx *gorm.DB) error {
+		wallet.CashBalancePaise = amount
+		wallet.BlockedPaise = 0
+		if err := tx.Save(wallet).Error; err != nil {
+			return err
+		}
+		return tx.Create(&model.WalletTransaction{
+			WalletUUID:   wallet.UUID,
+			Type:         model.WalletTransactionInitialCredit,
+			AmountPaise:  amount,
+			BalancePaise: amount,
+			BlockedPaise: 0,
+			Note:         "Auto-provisioned initial virtual capital",
+		}).Error
+	})
+}
+
 func (r *WalletRepository) ListTransactions(walletUUID uuid.UUID) ([]model.WalletTransaction, error) {
 	var transactions []model.WalletTransaction
 	err := database.GetDB().Where("wallet_uuid = ?", walletUUID).Order("created_at DESC").Find(&transactions).Error
