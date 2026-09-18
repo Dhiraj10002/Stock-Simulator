@@ -1,16 +1,19 @@
 "use client";
 
-import { useState, useId } from "react";
+import { useState, useId, useEffect } from "react";
 import {
   TrendingUp,
   TrendingDown,
   ShieldCheck,
+  ShieldAlert,
   Zap,
+  Sparkles,
+  Bot,
 } from "lucide-react";
 import { formatPaise } from "@/lib/format";
 import { INSTRUMENT_METADATA } from "@/lib/mockData";
 import MarketDepth from "./MarketDepth";
-import type { Wallet, Quote, Position } from "@/types";
+import type { Wallet, Quote, Position, PreTradeCheckResponse, ApiResponse } from "@/types";
 
 type OrderEntryTicketProps = {
   symbol: string;
@@ -20,7 +23,35 @@ type OrderEntryTicketProps = {
   onOrderPlaced: () => void;
   onRequest: <T>(path: string, options?: RequestInit) => Promise<T>;
   onToast: (title: string, message?: string, type?: "success" | "error" | "info") => void;
+  prefill?: {
+    side?: "BUY" | "SELL";
+    product?: "DELIVERY" | "INTRADAY" | "FNO";
+    type?: "MARKET" | "LIMIT" | "SL" | "SL-M";
+    quantity?: number;
+    priceRupees?: number;
+  } | null;
 };
+
+const KNOWN_FNO_LOTS: Record<string, number> = {
+  NIFTY: 25,
+  BANKNIFTY: 15,
+  RELIANCE: 250,
+  TCS: 225,
+  INFY: 400,
+  HDFCBANK: 550,
+  TATAMOTORS: 575,
+  SBIN: 750,
+};
+
+function inferFnoLotSize(sym: string): number {
+  const upper = sym.toUpperCase();
+  for (const [underlying, lot] of Object.entries(KNOWN_FNO_LOTS)) {
+    if (upper.startsWith(underlying)) {
+      return lot;
+    }
+  }
+  return 1;
+}
 
 export default function OrderEntryTicket({
   symbol,
@@ -30,6 +61,7 @@ export default function OrderEntryTicket({
   onOrderPlaced,
   onRequest,
   onToast,
+  prefill,
 }: OrderEntryTicketProps) {
   const meta = INSTRUMENT_METADATA[symbol] ?? {
     basePricePaise: 250000,
@@ -37,22 +69,137 @@ export default function OrderEntryTicket({
 
   const defaultPriceRupees = (quote?.price_paise ?? meta.basePricePaise) / 100;
 
+  const isFnoSymbol =
+    symbol.endsWith("CE") ||
+    symbol.endsWith("PE") ||
+    symbol.endsWith("FUT") ||
+    symbol.includes("CE") ||
+    symbol.includes("PE") ||
+    symbol === "NIFTY" ||
+    symbol === "BANKNIFTY";
+
   const [side, setSide] = useState<"BUY" | "SELL">("BUY");
-  const [product, setProduct] = useState<"DELIVERY" | "INTRADAY" | "FNO">("DELIVERY");
-  const [type, setType] = useState<"MARKET" | "LIMIT">("MARKET");
-  const [quantity, setQuantity] = useState<number>(1);
+  const [product, setProduct] = useState<"DELIVERY" | "INTRADAY" | "FNO">(() =>
+    isFnoSymbol ? "FNO" : "DELIVERY"
+  );
+  const [lotSize, setLotSize] = useState<number>(() => inferFnoLotSize(symbol));
+  const [type, setType] = useState<"MARKET" | "LIMIT" | "SL" | "SL-M">("MARKET");
+  const [quantity, setQuantity] = useState<number>(() => {
+    const lot = inferFnoLotSize(symbol);
+    return isFnoSymbol && lot > 1 ? lot : 1;
+  });
   const [limitRupees, setLimitRupees] = useState<number>(defaultPriceRupees);
+  const [triggerRupees, setTriggerRupees] = useState<number>(defaultPriceRupees);
   const [submitting, setSubmitting] = useState(false);
+
+  // Auto switch product to FNO if FNO contract selected
+  useEffect(() => {
+    if (isFnoSymbol) {
+      setProduct("FNO");
+    }
+  }, [isFnoSymbol, symbol]);
+
+  // Dynamically query instrument master to resolve authoritative lot size
+  useEffect(() => {
+    let isMounted = true;
+    const inferred = inferFnoLotSize(symbol);
+    if (inferred > 1) {
+      setLotSize(inferred);
+    }
+
+    if (product === "FNO" || isFnoSymbol) {
+      onRequest<ApiResponse<Array<{ symbol: string; lot_size: number }>>>(
+        `/stocks?q=${encodeURIComponent(symbol)}`
+      )
+        .then((res) => {
+          if (!isMounted) return;
+          if (res?.data && res.data.length > 0) {
+            const match = res.data.find((d) => d.symbol === symbol) || res.data[0];
+            if (match && match.lot_size > 0) {
+              setLotSize(match.lot_size);
+              setQuantity((q) => {
+                if (q < match.lot_size || q % match.lot_size !== 0) {
+                  return match.lot_size;
+                }
+                return q;
+              });
+            }
+          }
+        })
+        .catch(() => {});
+    } else {
+      setLotSize(1);
+    }
+
+    return () => {
+      isMounted = false;
+    };
+  }, [symbol, product, isFnoSymbol, onRequest]);
+
+  const [preTradeRisk, setPreTradeRisk] = useState<PreTradeCheckResponse | null>(null);
+  const [checkingRisk, setCheckingRisk] = useState(false);
+
+  useEffect(() => {
+    setPreTradeRisk(null);
+  }, [symbol, quantity, side, product, type]);
+
+  useEffect(() => {
+    if (prefill) {
+      if (prefill.side) setSide(prefill.side);
+      if (prefill.product) setProduct(prefill.product);
+      if (prefill.type) setType(prefill.type);
+      if (prefill.quantity) setQuantity(prefill.quantity);
+      if (prefill.priceRupees) {
+        setLimitRupees(prefill.priceRupees);
+        setTriggerRupees(prefill.priceRupees);
+      }
+    }
+  }, [prefill]);
 
   const [prevSymbol, setPrevSymbol] = useState(symbol);
   if (prevSymbol !== symbol) {
     setPrevSymbol(symbol);
-    setLimitRupees((quote?.price_paise ?? meta.basePricePaise) / 100);
+    const newPrice = (quote?.price_paise ?? meta.basePricePaise) / 100;
+    setLimitRupees(newPrice);
+    setTriggerRupees(newPrice);
   }
 
   const ltpRupees = (quote?.price_paise ?? meta.basePricePaise) / 100;
-  const activePriceRupees = type === "LIMIT" ? limitRupees : ltpRupees;
+  const isStopOrder = type === "SL" || type === "SL-M";
+  const isLimitOrder = type === "LIMIT" || type === "SL";
+
+  const activePriceRupees =
+    type === "LIMIT" || type === "SL"
+      ? limitRupees
+      : type === "SL-M"
+      ? triggerRupees
+      : ltpRupees;
+
   const estimatedTurnoverPaise = Math.round(quantity * activePriceRupees * 100);
+
+  // Slippage simulation for MARKET and SL-M orders with quantity > 50
+  const hasSlippage = (type === "MARKET" || type === "SL-M") && quantity > 50;
+  const slippageBps = hasSlippage ? Math.min(6, 2 + Math.floor(((quantity - 50) * 4) / 450)) : 0;
+  const slippagePercent = (slippageBps * 0.01).toFixed(2);
+  const slippageDeltaRupees = (activePriceRupees * (slippageBps / 10000)).toFixed(2);
+
+  // Stop-loss trigger directional check
+  const isTriggerInvalid =
+    isStopOrder &&
+    ((side === "BUY" && triggerRupees < ltpRupees) ||
+     (side === "SELL" && triggerRupees > ltpRupees));
+
+  // Circuit limits calculation
+  const lowerCircuitRupees = quote?.lower_circuit_paise
+    ? quote.lower_circuit_paise / 100
+    : Math.round(ltpRupees * 0.9 * 100) / 100;
+  const upperCircuitRupees = quote?.upper_circuit_paise
+    ? quote.upper_circuit_paise / 100
+    : Math.round(ltpRupees * 1.1 * 100) / 100;
+
+  const isLimitCircuitBreached =
+    isLimitOrder &&
+    (limitRupees < lowerCircuitRupees || limitRupees > upperCircuitRupees);
 
   // Margin calculation
   // Delivery = 100% turnover
@@ -71,6 +218,10 @@ export default function OrderEntryTicket({
   );
   const sharesOwned = cncHolding?.quantity ?? 0;
 
+  const isFno = product === "FNO";
+  const effectiveLotSize = isFno && lotSize > 1 ? lotSize : 1;
+  const isInvalidFnoQty = isFno && effectiveLotSize > 1 && quantity % effectiveLotSize !== 0;
+
   const isAffordable =
     side === "SELL" && product === "DELIVERY"
       ? sharesOwned >= quantity
@@ -82,14 +233,83 @@ export default function OrderEntryTicket({
     const targetBudgetPaise = availablePaise * (pct / 100);
     const leverage = product === "INTRADAY" || product === "FNO" ? 5 : 1;
     const marginPerUnitPaise = Math.ceil((activePriceRupees * 100) / leverage);
-    const qty = Math.max(1, Math.floor(targetBudgetPaise / marginPerUnitPaise));
-    setQuantity(qty);
+    const rawQty = Math.max(1, Math.floor(targetBudgetPaise / marginPerUnitPaise));
+    if (isFno && effectiveLotSize > 1) {
+      const lots = Math.max(1, Math.floor(rawQty / effectiveLotSize));
+      setQuantity(lots * effectiveLotSize);
+    } else {
+      setQuantity(rawQty);
+    }
+  };
+
+  const handleCheckRisk = async () => {
+    setCheckingRisk(true);
+    try {
+      const pricePaise = Math.round(activePriceRupees * 100);
+      const res = await onRequest<ApiResponse<PreTradeCheckResponse>>("/ai/pretrade-check", {
+        method: "POST",
+        body: JSON.stringify({
+          symbol,
+          side,
+          product,
+          type,
+          quantity,
+          price_paise: pricePaise > 0 ? pricePaise : meta.basePricePaise,
+        }),
+      });
+      if (res.success && res.data) {
+        setPreTradeRisk(res.data);
+      }
+    } catch (err: unknown) {
+      onToast("Risk Check Failed", err instanceof Error ? err.message : "Error analyzing order risk", "error");
+    } finally {
+      setCheckingRisk(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isInvalidFnoQty) {
+      const snapped = Math.max(1, Math.round(quantity / effectiveLotSize)) * effectiveLotSize;
+      onToast(
+        "Invalid Lot Size",
+        `F&O quantity must be an exact multiple of lot size ${effectiveLotSize}. Click snap or enter a multiple (e.g. ${snapped}).`,
+        "error"
+      );
+      return;
+    }
     if (quantity <= 0) {
       onToast("Invalid Quantity", "Quantity must be greater than zero", "error");
+      return;
+    }
+
+    if (isStopOrder && triggerRupees <= 0) {
+      onToast("Invalid Trigger Price", "Trigger price must be greater than zero", "error");
+      return;
+    }
+
+    if (isLimitOrder && limitRupees <= 0) {
+      onToast("Invalid Limit Price", "Limit price must be greater than zero", "error");
+      return;
+    }
+
+    if (isLimitOrder && isLimitCircuitBreached) {
+      onToast(
+        "Circuit Limit Exceeded",
+        `Limit price (₹${limitRupees.toFixed(2)}) violates daily circuit limits [₹${lowerCircuitRupees.toFixed(2)} - ₹${upperCircuitRupees.toFixed(2)}]`,
+        "error"
+      );
+      return;
+    }
+
+    if (isStopOrder && isTriggerInvalid) {
+      onToast(
+        "Invalid Trigger Price",
+        side === "BUY"
+          ? `BUY stop trigger (₹${triggerRupees.toFixed(2)}) must be ≥ current price (₹${ltpRupees.toFixed(2)})`
+          : `SELL stop trigger (₹${triggerRupees.toFixed(2)}) must be ≤ current price (₹${ltpRupees.toFixed(2)})`,
+        "error"
+      );
       return;
     }
 
@@ -115,7 +335,8 @@ export default function OrderEntryTicket({
 
     setSubmitting(true);
     try {
-      const pricePaise = type === "LIMIT" ? Math.round(limitRupees * 100) : 0;
+      const pricePaise = isLimitOrder ? Math.round(limitRupees * 100) : 0;
+      const triggerPricePaise = isStopOrder ? Math.round(triggerRupees * 100) : 0;
       await onRequest("/orders", {
         method: "POST",
         body: JSON.stringify({
@@ -125,12 +346,13 @@ export default function OrderEntryTicket({
           product,
           quantity,
           price_paise: pricePaise,
+          trigger_price_paise: triggerPricePaise,
         }),
       });
 
       onToast(
         "Order Placed",
-        `${side} ${quantity} ${symbol} (${product}) submitted successfully`,
+        `${side} ${quantity} ${symbol} (${product} - ${type}) submitted successfully`,
         "success"
       );
       onOrderPlaced();
@@ -148,6 +370,7 @@ export default function OrderEntryTicket({
   const isBuy = side === "BUY";
   const qtyInputId = useId();
   const limitInputId = useId();
+  const triggerInputId = useId();
 
   return (
     <div className="w-full lg:w-[320px] xl:w-[350px] flex flex-col bg-slate-950/80 border-l border-slate-800/80 p-4 shrink-0 overflow-y-auto space-y-4">
@@ -212,28 +435,30 @@ export default function OrderEntryTicket({
           </div>
         </div>
 
-        {/* Order Type (Market vs Limit) */}
+        {/* Order Type (Market vs Limit vs SL vs SL-M) */}
         <div className="space-y-1">
           <span className="text-[11px] font-semibold text-slate-400">
             Order Type
           </span>
-          <div className="grid grid-cols-2 gap-1.5">
+          <div className="grid grid-cols-4 gap-1">
             {[
-              { id: "MARKET", label: "Market", sub: "At Best LTP" },
-              { id: "LIMIT", label: "Limit", sub: "Set Price" },
+              { id: "MARKET", label: "MKT", sub: "Market" },
+              { id: "LIMIT", label: "LMT", sub: "Limit" },
+              { id: "SL", label: "SL", sub: "Stop Lmt" },
+              { id: "SL-M", label: "SL-M", sub: "Stop Mkt" },
             ].map((ord) => (
               <button
                 key={ord.id}
                 type="button"
-                onClick={() => setType(ord.id as "MARKET" | "LIMIT")}
-                className={`py-1.5 px-2 rounded-lg border text-xs font-medium text-center transition-all ${
+                onClick={() => setType(ord.id as "MARKET" | "LIMIT" | "SL" | "SL-M")}
+                className={`py-1.5 px-1 rounded-lg border text-xs font-medium text-center transition-all ${
                   type === ord.id
-                    ? "bg-slate-800 border-cyan-500/40 text-cyan-300"
+                    ? "bg-slate-800 border-cyan-500/50 text-cyan-300 shadow-sm shadow-cyan-500/10"
                     : "bg-slate-900/40 border-slate-800 text-slate-400 hover:text-slate-200"
                 }`}
               >
-                <div className="font-semibold">{ord.label}</div>
-                <div className="text-[9px] text-slate-500">{ord.sub}</div>
+                <div className="font-bold">{ord.label}</div>
+                <div className="text-[9px] text-slate-500 truncate">{ord.sub}</div>
               </button>
             ))}
           </div>
@@ -242,26 +467,48 @@ export default function OrderEntryTicket({
         {/* Quantity Controls */}
         <div className="space-y-1.5">
           <div className="flex items-center justify-between text-[11px] text-slate-400">
-            <label htmlFor={qtyInputId} className="font-semibold">
-              Quantity
-            </label>
+            <div className="flex items-center gap-1.5">
+              <label htmlFor={qtyInputId} className="font-semibold text-slate-300">
+                Quantity
+              </label>
+              {isFno && effectiveLotSize > 1 && (
+                <span className="text-[10px] px-1.5 py-0.2 rounded bg-purple-950/80 text-purple-300 border border-purple-800/40 font-mono font-bold">
+                  Lot: {effectiveLotSize} ({(quantity / effectiveLotSize).toFixed(0)} Lots)
+                </span>
+              )}
+            </div>
             <div className="flex gap-1">
-              {[1, 5, 25, 100].map((step) => (
-                <button
-                  key={step}
-                  type="button"
-                  onClick={() => setQuantity((q) => q + step)}
-                  className="px-1.5 py-0.5 rounded bg-slate-800 text-[10px] text-slate-300 hover:bg-slate-700"
-                >
-                  +{step}
-                </button>
-              ))}
+              {isFno && effectiveLotSize > 1
+                ? [1, 2, 5, 10].map((multiplier) => (
+                    <button
+                      key={multiplier}
+                      type="button"
+                      onClick={() => setQuantity((q) => q + multiplier * effectiveLotSize)}
+                      className="px-1.5 py-0.5 rounded bg-purple-950/60 border border-purple-800/40 text-[10px] text-purple-300 hover:bg-purple-900/60 transition-colors font-mono"
+                    >
+                      +{multiplier}L
+                    </button>
+                  ))
+                : [1, 5, 25, 100].map((step) => (
+                    <button
+                      key={step}
+                      type="button"
+                      onClick={() => setQuantity((q) => q + step)}
+                      className="px-1.5 py-0.5 rounded bg-slate-800 text-[10px] text-slate-300 hover:bg-slate-700 transition-colors font-mono"
+                    >
+                      +{step}
+                    </button>
+                  ))}
             </div>
           </div>
-          <div className="flex items-center border border-slate-800 rounded-xl bg-slate-900/80 overflow-hidden">
+          <div
+            className={`flex items-center border rounded-xl bg-slate-900/80 overflow-hidden transition-colors ${
+              isInvalidFnoQty ? "border-rose-500/70" : "border-slate-800"
+            }`}
+          >
             <button
               type="button"
-              onClick={() => setQuantity((q) => Math.max(1, q - 1))}
+              onClick={() => setQuantity((q) => Math.max(effectiveLotSize, q - effectiveLotSize))}
               className="px-3 py-1.5 text-slate-400 hover:text-white bg-slate-800/40 hover:bg-slate-800 transition-colors font-bold"
             >
               -
@@ -269,19 +516,38 @@ export default function OrderEntryTicket({
             <input
               id={qtyInputId}
               type="number"
-              min="1"
+              min={effectiveLotSize}
+              step={effectiveLotSize}
               value={quantity}
               onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
-              className="w-full text-center bg-transparent text-sm font-bold text-white focus:outline-none"
+              className="w-full text-center bg-transparent text-sm font-bold text-white focus:outline-none font-mono"
             />
             <button
               type="button"
-              onClick={() => setQuantity((q) => q + 1)}
+              onClick={() => setQuantity((q) => q + effectiveLotSize)}
               className="px-3 py-1.5 text-slate-400 hover:text-white bg-slate-800/40 hover:bg-slate-800 transition-colors font-bold"
             >
               +
             </button>
           </div>
+
+          {/* Invalid lot size warning helper */}
+          {isInvalidFnoQty && (
+            <div className="flex items-center justify-between text-[10px] text-rose-300 bg-rose-950/40 border border-rose-900/60 px-2.5 py-1 rounded-lg">
+              <span>Must be a multiple of lot size {effectiveLotSize}</span>
+              <button
+                type="button"
+                onClick={() =>
+                  setQuantity(
+                    Math.max(1, Math.round(quantity / effectiveLotSize)) * effectiveLotSize
+                  )
+                }
+                className="font-bold underline text-cyan-400 hover:text-cyan-300 ml-2 cursor-pointer"
+              >
+                Snap to {Math.max(1, Math.round(quantity / effectiveLotSize)) * effectiveLotSize}
+              </button>
+            </div>
+          )}
 
           {/* Margin Allocation Shortcuts */}
           <div className="grid grid-cols-4 gap-1 pt-0.5">
@@ -298,12 +564,49 @@ export default function OrderEntryTicket({
           </div>
         </div>
 
-        {/* Limit Price Input */}
-        {type === "LIMIT" && (
+        {/* Trigger Price Input (For SL and SL-M) */}
+        {isStopOrder && (
           <div className="space-y-1">
-            <label htmlFor={limitInputId} className="text-[11px] font-semibold text-slate-400">
-              Limit Price (₹)
-            </label>
+            <div className="flex items-center justify-between text-[11px]">
+              <label htmlFor={triggerInputId} className="font-semibold text-slate-400">
+                Trigger Price (₹)
+              </label>
+              <span className={`text-[10px] ${isTriggerInvalid ? "text-rose-400 font-semibold" : "text-slate-500"}`}>
+                {side === "BUY" ? `Must be ≥ ₹${ltpRupees.toFixed(2)}` : `Must be ≤ ₹${ltpRupees.toFixed(2)}`}
+              </span>
+            </div>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm font-bold">
+                ₹
+              </span>
+              <input
+                id={triggerInputId}
+                type="number"
+                step="0.05"
+                min="0.05"
+                value={triggerRupees}
+                onChange={(e) => setTriggerRupees(parseFloat(e.target.value) || 0)}
+                className={`w-full pl-8 pr-4 py-1.5 bg-slate-900/80 border rounded-xl text-sm font-bold text-white focus:outline-none ${
+                  isTriggerInvalid ? "border-rose-500/70 focus:border-rose-500" : "border-slate-800 focus:border-cyan-500"
+                }`}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Limit Price Input (For LIMIT and SL) */}
+        {isLimitOrder && (
+          <div className="space-y-1">
+            <div className="flex items-center justify-between text-[11px]">
+              <label htmlFor={limitInputId} className="font-semibold text-slate-400">
+                Limit Price (₹)
+              </label>
+              <div className="flex items-center gap-1.5 text-[10px] font-mono">
+                <span className="text-rose-400/90 font-medium">LC: ₹{lowerCircuitRupees.toFixed(2)}</span>
+                <span className="text-slate-600">|</span>
+                <span className="text-emerald-400/90 font-medium">UC: ₹{upperCircuitRupees.toFixed(2)}</span>
+              </div>
+            </div>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm font-bold">
                 ₹
@@ -315,8 +618,33 @@ export default function OrderEntryTicket({
                 min="0.05"
                 value={limitRupees}
                 onChange={(e) => setLimitRupees(parseFloat(e.target.value) || 0)}
-                className="w-full pl-8 pr-4 py-1.5 bg-slate-900/80 border border-slate-800 rounded-xl text-sm font-bold text-white focus:outline-none focus:border-cyan-500"
+                className={`w-full pl-8 pr-4 py-1.5 bg-slate-900/80 border rounded-xl text-sm font-bold text-white focus:outline-none ${
+                  isLimitCircuitBreached
+                    ? "border-rose-500/70 focus:border-rose-500"
+                    : "border-slate-800 focus:border-cyan-500"
+                }`}
               />
+            </div>
+            {isLimitCircuitBreached && (
+              <p className="text-[10px] text-rose-400 font-medium">
+                {limitRupees > upperCircuitRupees ? "Exceeds Upper Circuit Limit (+10%)" : "Falls below Lower Circuit Limit (-10%)"}
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Slippage Estimation Warning for Large Market / SL-M Orders */}
+        {hasSlippage && (
+          <div className="px-2.5 py-1.5 rounded-xl bg-amber-950/20 border border-amber-500/30 text-amber-300 text-[11px] space-y-0.5">
+            <div className="flex justify-between items-center font-semibold">
+              <span>Simulated Slippage (Qty &gt; 50)</span>
+              <span className="font-mono">~{slippagePercent}%</span>
+            </div>
+            <div className="flex justify-between text-[10px] text-amber-400/80 font-mono">
+              <span>Est. Fill Price:</span>
+              <span>
+                ₹{(side === "BUY" ? activePriceRupees * (1 + slippageBps / 10000) : activePriceRupees * (1 - slippageBps / 10000)).toFixed(2)} ({side === "BUY" ? "+" : "-"}₹{slippageDeltaRupees})
+              </span>
             </div>
           </div>
         )}
@@ -362,6 +690,64 @@ export default function OrderEntryTicket({
               >
                 {sharesOwned} shares
               </span>
+            </div>
+          )}
+        </div>
+
+        {/* Pre-Trade AI Risk Check Pill & Assessment */}
+        <div className="pt-0.5 space-y-1.5">
+          <div className="flex items-center justify-between gap-2 p-2 rounded-xl bg-slate-900/60 border border-slate-800 text-[11px]">
+            <div className="flex items-center gap-1.5 text-slate-400">
+              <Bot className="w-3.5 h-3.5 text-cyan-400" />
+              <span>AI Behavioral Risk Check</span>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleCheckRisk}
+              disabled={checkingRisk}
+              className="px-2.5 py-1 rounded-lg border border-cyan-500/30 bg-cyan-950/40 hover:bg-cyan-900/50 text-cyan-300 font-semibold text-[10px] flex items-center gap-1 transition-all"
+            >
+              <Sparkles className="w-2.5 h-2.5" />
+              <span>{checkingRisk ? "Analyzing…" : "Check Risk"}</span>
+            </button>
+          </div>
+
+          {preTradeRisk && (
+            <div
+              className={`p-2.5 rounded-xl border text-[11px] space-y-1.5 animate-fade-in ${
+                preTradeRisk.risk_level === "HIGH_RISK"
+                  ? "bg-rose-950/40 border-rose-500/40 text-rose-300"
+                  : preTradeRisk.risk_level === "MODERATE"
+                  ? "bg-amber-950/40 border-amber-500/40 text-amber-300"
+                  : "bg-emerald-950/40 border-emerald-500/40 text-emerald-300"
+              }`}
+            >
+              <div className="flex items-center justify-between font-bold">
+                <span className="flex items-center gap-1">
+                  {preTradeRisk.risk_level === "HIGH_RISK" ? (
+                    <ShieldAlert className="w-3.5 h-3.5 text-rose-400" />
+                  ) : (
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                  )}
+                  Risk Level: {preTradeRisk.risk_level}
+                </span>
+                <span className="text-[10px] font-mono">
+                  Margin: {preTradeRisk.margin_impact_pct.toFixed(0)}%
+                </span>
+              </div>
+
+              {preTradeRisk.warnings.length > 0 && (
+                <ul className="list-disc list-inside space-y-0.5 text-[10px] text-slate-300">
+                  {preTradeRisk.warnings.map((w, idx) => (
+                    <li key={idx}>{w}</li>
+                  ))}
+                </ul>
+              )}
+
+              <p className="text-[10px] text-slate-400 pt-1 border-t border-slate-800/60 leading-tight">
+                💡 {preTradeRisk.advice}
+              </p>
             </div>
           )}
         </div>

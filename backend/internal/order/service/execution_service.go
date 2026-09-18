@@ -40,6 +40,9 @@ func (s *OrderService) Execute(userID, orderID string) error {
 		return err
 	}
 	executionPricePaise := quote.PricePaise
+	if pendingOrder.Type == model.OrderTypeMarket || pendingOrder.Type == model.OrderTypeSLM {
+		executionPricePaise = calculateSlippage(pendingOrder.Quantity, quote.PricePaise, pendingOrder.Side)
+	}
 
 	return database.GetDB().Transaction(func(tx *gorm.DB) error {
 		// The wallet is the per-user serialization point. Keep this ordering in
@@ -53,7 +56,7 @@ func (s *OrderService) Execute(userID, orderID string) error {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("uuid = ? AND user_uuid = ?", orderUUID, userUUID).First(&order).Error; err != nil {
 			return err
 		}
-		if order.Status != model.OrderStatusPending && order.Status != model.OrderStatusOpen {
+		if order.Status != model.OrderStatusPending && order.Status != model.OrderStatusOpen && order.Status != model.OrderStatusTriggerPending {
 			return fmt.Errorf("order cannot be executed in %s status", order.Status)
 		}
 		// Defense in depth for historical/manual rows created before product
@@ -64,7 +67,7 @@ func (s *OrderService) Execute(userID, orderID string) error {
 		if order.Quantity <= 0 || (order.Side != model.OrderSideBuy && order.Side != model.OrderSideSell) {
 			return errors.New("order has invalid settlement data")
 		}
-		if order.Type == model.OrderTypeLimit && !limitSatisfied(&order, executionPricePaise) {
+		if (order.Type == model.OrderTypeLimit || order.Type == model.OrderTypeSL) && !limitSatisfied(&order, executionPricePaise) {
 			return errors.New("market price does not satisfy limit order")
 		}
 		total, ok := multiply(order.Quantity, executionPricePaise)
@@ -204,10 +207,14 @@ func (s *OrderService) executeMarginProduct(userUUID, orderUUID uuid.UUID, pendi
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("uuid = ? AND user_uuid = ?", orderUUID, userUUID).First(&order).Error; err != nil {
 			return err
 		}
-		if order.Status != model.OrderStatusPending && order.Status != model.OrderStatusOpen {
+		if order.Status != model.OrderStatusPending && order.Status != model.OrderStatusOpen && order.Status != model.OrderStatusTriggerPending {
 			return fmt.Errorf("order cannot be executed in %s status", order.Status)
 		}
-		if order.Type == model.OrderTypeLimit && !limitSatisfied(&order, quote.PricePaise) {
+		fillPrice := quote.PricePaise
+		if order.Type == model.OrderTypeMarket || order.Type == model.OrderTypeSLM {
+			fillPrice = calculateSlippage(order.Quantity, quote.PricePaise, order.Side)
+		}
+		if (order.Type == model.OrderTypeLimit || order.Type == model.OrderTypeSL) && !limitSatisfied(&order, fillPrice) {
 			return errors.New("market price does not satisfy limit order")
 		}
 		if order.Product == model.OrderProductIntraday {
@@ -215,7 +222,7 @@ func (s *OrderService) executeMarginProduct(userUUID, orderUUID uuid.UUID, pendi
 				return err
 			}
 		}
-		total, ok := multiply(order.Quantity, quote.PricePaise)
+		total, ok := multiply(order.Quantity, fillPrice)
 		if !ok {
 			return errors.New("order value is too large")
 		}
@@ -337,8 +344,32 @@ func abs(value int64) int64 {
 	return value
 }
 
+// calculateSlippage simulates realistic exchange market impact for market and SL-M orders.
+func calculateSlippage(quantity int64, ltpPaise int64, side string) int64 {
+	if quantity <= 50 || ltpPaise <= 0 {
+		return ltpPaise
+	}
+	// Simulated slippage between 0.02% (2 bps) and 0.06% (6 bps) based on quantity
+	slipBps := int64(2) + (quantity / 250)
+	if slipBps > 6 {
+		slipBps = 6
+	}
+	slipAmount := (ltpPaise * slipBps) / 10000
+	if slipAmount < 5 { // minimum 5 paise exchange tick
+		slipAmount = 5
+	}
+	if side == model.OrderSideBuy {
+		return ltpPaise + slipAmount
+	}
+	res := ltpPaise - slipAmount
+	if res <= 0 {
+		return 5
+	}
+	return res
+}
+
 func limitSatisfied(order *model.Order, executionPricePaise int64) bool {
-	if order.Type != model.OrderTypeLimit || order.PricePaise <= 0 || executionPricePaise <= 0 {
+	if (order.Type != model.OrderTypeLimit && order.Type != model.OrderTypeSL) || order.PricePaise <= 0 || executionPricePaise <= 0 {
 		return false
 	}
 	return (order.Side == model.OrderSideBuy && executionPricePaise <= order.PricePaise) ||

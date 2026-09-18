@@ -80,8 +80,9 @@ func (s *OrderService) Create(userID string, request dto.CreateOrderRequest) (*d
 		return nil, fmt.Errorf("invalid order side %q; must be BUY or SELL", request.Side)
 	}
 	request.Type = strings.ToUpper(strings.TrimSpace(request.Type))
-	if request.Type != model.OrderTypeMarket && request.Type != model.OrderTypeLimit {
-		return nil, fmt.Errorf("invalid order type %q; must be MARKET or LIMIT", request.Type)
+	if request.Type != model.OrderTypeMarket && request.Type != model.OrderTypeLimit &&
+		request.Type != model.OrderTypeSL && request.Type != model.OrderTypeSLM {
+		return nil, fmt.Errorf("invalid order type %q; must be MARKET, LIMIT, SL, or SL-M", request.Type)
 	}
 	request.Product = strings.ToUpper(strings.TrimSpace(request.Product))
 	if !isSupportedProduct(request.Product) {
@@ -90,11 +91,17 @@ func (s *OrderService) Create(userID string, request dto.CreateOrderRequest) (*d
 	if request.Quantity <= 0 {
 		return nil, fmt.Errorf("order quantity must be greater than zero")
 	}
-	if request.Type == model.OrderTypeLimit && request.PricePaise <= 0 {
-		return nil, fmt.Errorf("limit orders require a positive price")
+	if (request.Type == model.OrderTypeLimit || request.Type == model.OrderTypeSL) && request.PricePaise <= 0 {
+		return nil, fmt.Errorf("limit and stop-loss limit orders require a positive price")
 	}
 	if request.Type == model.OrderTypeMarket && request.PricePaise != 0 {
 		return nil, fmt.Errorf("market orders must not include a price")
+	}
+	if request.Type == model.OrderTypeSLM && request.PricePaise != 0 {
+		return nil, fmt.Errorf("SL-M orders must not include a price")
+	}
+	if (request.Type == model.OrderTypeSL || request.Type == model.OrderTypeSLM) && request.TriggerPricePaise <= 0 {
+		return nil, fmt.Errorf("stop-loss orders require a positive trigger price")
 	}
 
 	// Market Session Check: New orders are rejected outside trading hours (09:15-15:30 IST, Mon-Fri).
@@ -102,6 +109,34 @@ func (s *OrderService) Create(userID string, request dto.CreateOrderRequest) (*d
 	now := s.now()
 	if err := calendar.ValidateNewOrderSession(now); err != nil {
 		return nil, err
+	}
+
+	// Stop-Loss Directional Validation against current quote
+	if request.Type == model.OrderTypeSL || request.Type == model.OrderTypeSLM {
+		curQuote, qErr := s.currentQuote(request.Symbol)
+		if qErr == nil && curQuote != nil && curQuote.PricePaise > 0 {
+			if request.Side == model.OrderSideBuy && request.TriggerPricePaise < curQuote.PricePaise {
+				return nil, fmt.Errorf("BUY stop-loss trigger price (%d) must be >= current market price (%d)", request.TriggerPricePaise, curQuote.PricePaise)
+			}
+			if request.Side == model.OrderSideSell && request.TriggerPricePaise > curQuote.PricePaise {
+				return nil, fmt.Errorf("SELL stop-loss trigger price (%d) must be <= current market price (%d)", request.TriggerPricePaise, curQuote.PricePaise)
+			}
+		}
+	}
+
+	// Circuit Breaker Validation against Daily Price Bands (±10% equity, ±20% F&O)
+	if (request.Type == model.OrderTypeLimit || request.Type == model.OrderTypeSL) && request.PricePaise > 0 {
+		curQuote, qErr := s.currentQuote(request.Symbol)
+		if qErr == nil && curQuote != nil && curQuote.PricePaise > 0 {
+			refPrice := curQuote.PricePaise
+			lc, uc := calculateCircuitLimits(refPrice, request.Product)
+			if request.PricePaise > uc {
+				return nil, fmt.Errorf("limit price ₹%.2f exceeds daily upper circuit limit of ₹%.2f", float64(request.PricePaise)/100, float64(uc)/100)
+			}
+			if request.PricePaise < lc {
+				return nil, fmt.Errorf("limit price ₹%.2f falls below daily lower circuit limit of ₹%.2f", float64(request.PricePaise)/100, float64(lc)/100)
+			}
+		}
 	}
 
 	var instrument *model.Instrument
@@ -140,26 +175,37 @@ func (s *OrderService) Create(userID string, request dto.CreateOrderRequest) (*d
 		}
 	}
 
+	initialStatus := model.OrderStatusPending
+	if request.Type == model.OrderTypeSL || request.Type == model.OrderTypeSLM {
+		initialStatus = model.OrderStatusTriggerPending
+	}
+
 	order := &model.Order{
-		UserUUID:   userUUID,
-		Symbol:     request.Symbol,
-		Side:       request.Side,
-		Type:       request.Type,
-		Product:    request.Product,
-		Quantity:   request.Quantity,
-		PricePaise: request.PricePaise,
-		Status:     model.OrderStatusPending,
+		UserUUID:          userUUID,
+		Symbol:            request.Symbol,
+		Side:              request.Side,
+		Type:              request.Type,
+		Product:           request.Product,
+		Quantity:          request.Quantity,
+		PricePaise:        request.PricePaise,
+		TriggerPricePaise: request.TriggerPricePaise,
+		Status:            initialStatus,
+	}
+
+	basePrice := request.PricePaise
+	if request.Type == model.OrderTypeSLM {
+		basePrice = request.TriggerPricePaise
 	}
 
 	reservation := int64(0)
-	if request.Product == model.OrderProductDelivery && request.Side == model.OrderSideBuy && request.Type == model.OrderTypeLimit {
-		if request.Quantity > 0 && request.PricePaise > 0 && request.Quantity > int64(^uint64(0)>>1)/request.PricePaise {
+	if request.Product == model.OrderProductDelivery && request.Side == model.OrderSideBuy && request.Type != model.OrderTypeMarket {
+		if request.Quantity > 0 && basePathPrice(basePrice) > 0 && request.Quantity > int64(^uint64(0)>>1)/basePrice {
 			return nil, fmt.Errorf("order value is too large")
 		}
-		reservation = request.Quantity * request.PricePaise
+		reservation = request.Quantity * basePathPrice(basePrice)
 	}
-	if request.Product != model.OrderProductDelivery && request.Type == model.OrderTypeLimit {
-		notional, ok := multiply(request.Quantity, request.PricePaise)
+	if request.Product != model.OrderProductDelivery && request.Type != model.OrderTypeMarket {
+		notional, ok := multiply(request.Quantity, basePathPrice(basePrice))
 		if !ok {
 			return nil, fmt.Errorf("order value is too large")
 		}
@@ -195,16 +241,36 @@ func (s *OrderService) Create(userID string, request dto.CreateOrderRequest) (*d
 		return s.Get(userID, order.UUID.String())
 	}
 
-	// A limit may already be marketable at creation. Matching it here avoids
-	// waiting for the next tick while retaining its original limit price.
+	// A limit or stop order may already be marketable/triggered at creation.
 	if err := s.MatchSymbol(request.Symbol); err != nil {
 		return nil, err
 	}
 	return s.Get(userID, order.UUID.String())
 }
 
+func basePathPrice(price int64) int64 {
+	if price <= 0 {
+		return 100
+	}
+	return price
+}
+
 func isSupportedProduct(product string) bool {
 	return product == model.OrderProductDelivery || product == model.OrderProductIntraday || product == model.OrderProductFNO
+}
+
+func calculateCircuitLimits(refPricePaise int64, product string) (lowerCircuit int64, upperCircuit int64) {
+	pct := int64(10)
+	if product == model.OrderProductFNO {
+		pct = 20
+	}
+	band := (refPricePaise * pct) / 100
+	lowerCircuit = refPricePaise - band
+	if lowerCircuit < 5 {
+		lowerCircuit = 5
+	}
+	upperCircuit = refPricePaise + band
+	return lowerCircuit, upperCircuit
 }
 
 // RunMatcher consumes quote notifications for the process lifetime. Limit
@@ -248,7 +314,7 @@ func (s *OrderService) RunMatcher(ctx context.Context) {
 	}
 }
 
-// MatchSymbol checks all open limit orders against a fresh executable quote.
+// MatchSymbol checks all active orders (OPEN, PENDING, TRIGGER_PENDING) against a fresh executable quote.
 // It is intentionally idempotent: Execute locks and revalidates every order.
 func (s *OrderService) MatchSymbol(symbol string) error {
 	symbol = strings.ToUpper(strings.TrimSpace(symbol))
@@ -259,13 +325,37 @@ func (s *OrderService) MatchSymbol(symbol string) error {
 	if err != nil {
 		return nil // a zero or stale tick must not trigger settlement
 	}
-	orders, err := s.repo.ListOpenLimitOrders(symbol)
+	orders, err := s.repo.ListActiveOrders(symbol)
 	if err != nil {
 		return err
 	}
 	for _, order := range orders {
-		if limitSatisfied(&order, quote.PricePaise) {
-			_ = s.Execute(order.UserUUID.String(), order.UUID.String())
+		if order.Status == model.OrderStatusTriggerPending {
+			isTriggered := false
+			if order.Side == model.OrderSideBuy && quote.PricePaise >= order.TriggerPricePaise {
+				isTriggered = true
+			} else if order.Side == model.OrderSideSell && quote.PricePaise <= order.TriggerPricePaise {
+				isTriggered = true
+			}
+
+			if isTriggered {
+				if order.Type == model.OrderTypeSLM {
+					// SL-M: Triggers immediately into market execution
+					_ = s.repo.TriggerOrder(order.UUID, model.OrderStatusOpen)
+					_ = s.Execute(order.UserUUID.String(), order.UUID.String())
+				} else if order.Type == model.OrderTypeSL {
+					// SL: Becomes an OPEN limit order
+					_ = s.repo.TriggerOrder(order.UUID, model.OrderStatusOpen)
+					order.Status = model.OrderStatusOpen
+					if limitSatisfied(&order, quote.PricePaise) {
+						_ = s.Execute(order.UserUUID.String(), order.UUID.String())
+					}
+				}
+			}
+		} else if order.Status == model.OrderStatusOpen || order.Status == model.OrderStatusPending {
+			if limitSatisfied(&order, quote.PricePaise) {
+				_ = s.Execute(order.UserUUID.String(), order.UUID.String())
+			}
 		}
 	}
 	return nil
@@ -318,5 +408,18 @@ func (s *OrderService) Cancel(userID, orderID string) error {
 }
 
 func toResponse(order *model.Order) *dto.OrderResponse {
-	return &dto.OrderResponse{UUID: order.UUID.String(), Symbol: order.Symbol, Side: order.Side, Type: order.Type, Product: order.Product, Quantity: order.Quantity, PricePaise: order.PricePaise, ExecutedPricePaise: order.ExecutedPricePaise, ReservedPaise: order.ReservedPaise, Status: order.Status}
+	return &dto.OrderResponse{
+		UUID:               order.UUID.String(),
+		Symbol:             order.Symbol,
+		Side:               order.Side,
+		Type:               order.Type,
+		Product:            order.Product,
+		Quantity:           order.Quantity,
+		PricePaise:         order.PricePaise,
+		TriggerPricePaise:  order.TriggerPricePaise,
+		ExecutedPricePaise: order.ExecutedPricePaise,
+		ReservedPaise:      order.ReservedPaise,
+		Status:             order.Status,
+	}
 }
+

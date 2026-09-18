@@ -48,7 +48,7 @@ func (r *OrderRepository) CreateDeliverySell(order *model.Order) error {
 		err = tx.Model(&model.Order{}).
 			Where("user_uuid = ? AND symbol = ? AND product = ? AND side = ? AND status IN ?",
 				order.UserUUID, order.Symbol, model.OrderProductDelivery, model.OrderSideSell,
-				[]string{model.OrderStatusPending, model.OrderStatusOpen}).
+				[]string{model.OrderStatusPending, model.OrderStatusOpen, model.OrderStatusTriggerPending}).
 			Select("COALESCE(SUM(quantity), 0)").
 			Scan(&committedShares).Error
 		if err != nil {
@@ -78,30 +78,37 @@ func (r *OrderRepository) CreateWithReservation(order *model.Order, reservation 
 		if err := tx.Save(&wallet).Error; err != nil {
 			return err
 		}
-		order.ReservedPaise = reservation
-		if err := tx.Create(order).Error; err != nil {
-			return err
-		}
-		return tx.Create(&model.WalletTransaction{
+
+		if err := tx.Create(&model.WalletTransaction{
 			WalletUUID:   wallet.UUID,
 			Type:         model.WalletTransactionReserve,
 			AmountPaise:  reservation,
 			BalancePaise: wallet.CashBalancePaise,
 			BlockedPaise: wallet.BlockedPaise,
-			Note:         "Order funds reserved",
-		}).Error
+			Note:         "Order margin reserved",
+		}).Error; err != nil {
+			return err
+		}
+
+		order.ReservedPaise = reservation
+		return tx.Create(order).Error
 	})
 }
 
 func (r *OrderRepository) List(userUUID uuid.UUID) ([]model.Order, error) {
 	var orders []model.Order
-	err := database.GetDB().Where("user_uuid = ?", userUUID).Order("created_at DESC").Find(&orders).Error
+	err := database.GetDB().
+		Where("user_uuid = ?", userUUID).
+		Order("created_at DESC").
+		Find(&orders).Error
 	return orders, err
 }
 
 func (r *OrderRepository) FindByUUID(userUUID, orderUUID uuid.UUID) (*model.Order, error) {
 	var order model.Order
-	err := database.GetDB().Where("user_uuid = ? AND uuid = ?", userUUID, orderUUID).First(&order).Error
+	err := database.GetDB().
+		Where("uuid = ? AND user_uuid = ?", orderUUID, userUUID).
+		First(&order).Error
 	return &order, err
 }
 
@@ -125,12 +132,29 @@ func (r *OrderRepository) ListOpenLimitOrders(symbol string) ([]model.Order, err
 	return orders, err
 }
 
+// ListActiveOrders returns all pending, open, or trigger-pending orders for a symbol.
+func (r *OrderRepository) ListActiveOrders(symbol string) ([]model.Order, error) {
+	var orders []model.Order
+	err := database.GetDB().
+		Where("symbol = ? AND status IN ?", symbol, []string{model.OrderStatusPending, model.OrderStatusOpen, model.OrderStatusTriggerPending}).
+		Order("created_at ASC").
+		Find(&orders).Error
+	return orders, err
+}
+
+func (r *OrderRepository) TriggerOrder(orderUUID uuid.UUID, newStatus string) error {
+	return database.GetDB().
+		Model(&model.Order{}).
+		Where("uuid = ? AND status = ?", orderUUID, model.OrderStatusTriggerPending).
+		Update("status", newStatus).Error
+}
+
 // Reject marks a newly-created market order as rejected when its immediate
 // settlement fails. It never releases funds: market orders have no reservation.
 func (r *OrderRepository) Reject(userUUID, orderUUID uuid.UUID) error {
 	return database.GetDB().
 		Model(&model.Order{}).
-		Where("uuid = ? AND user_uuid = ? AND status IN ? AND reserved_paise = 0", orderUUID, userUUID, []string{model.OrderStatusPending, model.OrderStatusOpen}).
+		Where("uuid = ? AND user_uuid = ? AND status IN ? AND reserved_paise = 0", orderUUID, userUUID, []string{model.OrderStatusPending, model.OrderStatusOpen, model.OrderStatusTriggerPending}).
 		Update("status", model.OrderStatusRejected).Error
 }
 
@@ -154,7 +178,8 @@ func (r *OrderRepository) Cancel(userUUID, orderUUID uuid.UUID) error {
 		}
 
 		if order.Status != model.OrderStatusPending &&
-			order.Status != model.OrderStatusOpen {
+			order.Status != model.OrderStatusOpen &&
+			order.Status != model.OrderStatusTriggerPending {
 			return gorm.ErrInvalidData
 		}
 

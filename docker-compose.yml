@@ -1,27 +1,55 @@
 services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 5
+      start_period: 2s
+
   backend:
     build:
       context: .
       dockerfile: backend/Dockerfile
     env_file:
       - backend/.env
+    environment:
+      - REDIS_URL=redis://redis:6379/0
     ports:
       - "8080:8080"
     restart: on-failure
+    depends_on:
+      redis:
+        condition: service_healthy
 
   market-worker:
     build:
       context: ./python-services/market-worker
     env_file:
       - backend/.env
+    environment:
+      - REDIS_URL=redis://redis:6379/0
     restart: on-failure
+    depends_on:
+      redis:
+        condition: service_healthy
 
   news-worker:
     build:
       context: ./python-services/news-worker
     env_file:
       - backend/.env
+    environment:
+      - REDIS_URL=redis://redis:6379/0
     restart: on-failure
+    depends_on:
+      redis:
+        condition: service_healthy
 
   frontend:
     build:
@@ -35,11 +63,11 @@ services:
     depends_on:
       - backend
 
-  # The services below only start when explicitly requested via:
-  #   docker compose --profile local up
-  # They are not started by default so development connects to Neon DEV and Upstash DEV.
+  # The local PostgreSQL container is only started when explicitly requested via:
+  #   docker compose --profile local-db up
+  # By default, the stack connects seamlessly to Neon DEV PostgreSQL.
   db:
-    profiles: ["local"]
+    profiles: ["local-db"]
     image: postgres:16-alpine
     environment:
       POSTGRES_DB: stock_simulator
@@ -55,19 +83,6 @@ services:
       timeout: 3s
       retries: 10
       start_period: 10s
-
-  redis:
-    profiles: ["local"]
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
 
 volumes:
   postgres_data:

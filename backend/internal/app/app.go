@@ -76,6 +76,10 @@ func (a *App) RunWithContext(ctx context.Context) error {
 		logger.Info("Database Migration Completed")
 	} else {
 		logger.Info("Database Schema Verified (Tables Exist, Skipping Slow Remote Introspection)")
+		if !database.GetDB().Migrator().HasColumn(&model.Trade{}, "Tag") {
+			_ = database.GetDB().AutoMigrate(&model.Trade{})
+			logger.Info("Auto-migrated Trade model (Tag & Notes columns)")
+		}
 	}
 
 	// Setup Router with worker context

@@ -12,16 +12,19 @@ const (
 
 	OrderTypeMarket = "MARKET"
 	OrderTypeLimit  = "LIMIT"
+	OrderTypeSL     = "SL"
+	OrderTypeSLM    = "SL-M"
 
 	OrderProductIntraday = "INTRADAY"
 	OrderProductDelivery = "DELIVERY"
 	OrderProductFNO      = "FNO"
 
-	OrderStatusPending   = "PENDING"
-	OrderStatusOpen      = "OPEN"
-	OrderStatusExecuted  = "EXECUTED"
-	OrderStatusCancelled = "CANCELLED"
-	OrderStatusRejected  = "REJECTED"
+	OrderStatusPending        = "PENDING"
+	OrderStatusOpen           = "OPEN"
+	OrderStatusTriggerPending = "TRIGGER_PENDING"
+	OrderStatusExecuted       = "EXECUTED"
+	OrderStatusCancelled      = "CANCELLED"
+	OrderStatusRejected       = "REJECTED"
 
 	OrderSourceUser         = "USER"
 	OrderSourceSystem       = "SYSTEM"
@@ -30,15 +33,16 @@ const (
 )
 
 type Order struct {
-	ID         uint      `gorm:"primaryKey"`
-	UUID       uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();uniqueIndex"`
-	UserUUID   uuid.UUID `gorm:"type:uuid;index;not null"`
-	Symbol     string    `gorm:"size:30;index;not null"`
-	Side       string    `gorm:"size:10;not null"`
-	Type       string    `gorm:"size:10;not null"`
-	Product    string    `gorm:"size:15;not null"`
-	Quantity   int64     `gorm:"not null"`
-	PricePaise int64     `gorm:"not null;default:0"`
+	ID                uint      `gorm:"primaryKey"`
+	UUID              uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();uniqueIndex"`
+	UserUUID          uuid.UUID `gorm:"type:uuid;index;not null"`
+	Symbol            string    `gorm:"size:30;index;not null"`
+	Side              string    `gorm:"size:10;not null"`
+	Type              string    `gorm:"size:10;not null"`
+	Product           string    `gorm:"size:15;not null"`
+	Quantity          int64     `gorm:"not null"`
+	PricePaise        int64     `gorm:"not null;default:0"`
+	TriggerPricePaise int64     `gorm:"not null;default:0"`
 	// ExecutedPricePaise is the server-authoritative fill price. PricePaise
 	// remains the original limit price (or zero for a market order).
 	ExecutedPricePaise int64  `gorm:"not null;default:0"`

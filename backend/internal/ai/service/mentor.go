@@ -60,7 +60,7 @@ func New(cfg *config.Config) *MentorService {
 
 func (s *MentorService) Analyze(ctx context.Context, userID, question string) (string, error) {
 	if strings.TrimSpace(s.apiKey) == "" {
-		return s.generateRuleBasedAnswer(question), nil
+		return s.generateRuleBasedAnswerWithContext(userID, question), nil
 	}
 	contextSummary := "No account context was available."
 	if userUUID, err := uuid.Parse(userID); err == nil {
@@ -90,19 +90,19 @@ func (s *MentorService) Analyze(ctx context.Context, userID, question string) (s
 	req.Header.Set("x-goog-api-key", s.apiKey)
 	response, err := s.client.Do(req)
 	if err != nil {
-		return s.generateRuleBasedAnswer(question), nil
+		return s.generateRuleBasedAnswerWithContext(userID, question), nil
 	}
 	defer response.Body.Close()
 	responseBody, err := io.ReadAll(io.LimitReader(response.Body, 1<<20))
 	if err != nil {
-		return s.generateRuleBasedAnswer(question), nil
+		return s.generateRuleBasedAnswerWithContext(userID, question), nil
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return s.generateRuleBasedAnswer(question), nil
+		return s.generateRuleBasedAnswerWithContext(userID, question), nil
 	}
 	var result geminiResponse
 	if err := json.Unmarshal(responseBody, &result); err != nil {
-		return s.generateRuleBasedAnswer(question), nil
+		return s.generateRuleBasedAnswerWithContext(userID, question), nil
 	}
 	for _, candidate := range result.Candidates {
 		for _, part := range candidate.Content.Parts {
@@ -111,7 +111,125 @@ func (s *MentorService) Analyze(ctx context.Context, userID, question string) (s
 			}
 		}
 	}
-	return s.generateRuleBasedAnswer(question), nil
+	return s.generateRuleBasedAnswerWithContext(userID, question), nil
+}
+
+func (s *MentorService) PreTradeCheck(ctx context.Context, userID string, req dto.PreTradeCheckRequest) (*dto.PreTradeCheckResponse, error) {
+	userUUID, err := uuid.Parse(userID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid user ID")
+	}
+
+	var wallet model.Wallet
+	var positions []model.Position
+	db := database.GetDB()
+	if db != nil {
+		_ = db.Where("user_uuid = ?", userUUID).First(&wallet).Error
+		_ = db.Where("user_uuid = ? AND quantity <> 0", userUUID).Find(&positions).Error
+	}
+
+	availablePaise := wallet.AvailableBalancePaise()
+	turnoverPaise := req.Quantity * req.PricePaise
+
+	// Calculate required margin
+	var requiredMarginPaise int64
+	switch req.Product {
+	case "INTRADAY":
+		requiredMarginPaise = (turnoverPaise + 4) / 5 // 20% margin (5x leverage)
+	case "FNO":
+		requiredMarginPaise = (turnoverPaise + 4) / 5 // 20% margin
+	default: // "DELIVERY"
+		requiredMarginPaise = turnoverPaise // 100%
+	}
+
+	// Calculate projected margin impact
+	marginImpactPct := 0.0
+	if availablePaise > 0 {
+		marginImpactPct = (float64(requiredMarginPaise) / float64(availablePaise)) * 100
+	} else if requiredMarginPaise > 0 {
+		marginImpactPct = 100.0
+	}
+
+	// Concentration check
+	var totalPortfolioValue int64 = requiredMarginPaise
+	var symbolExistingValue int64 = 0
+	for _, p := range positions {
+		v := p.CurrentValuePaise()
+		if v == 0 {
+			v = p.AveragePricePaise * mathAbs(p.Quantity)
+		} else {
+			v = mathAbs(v)
+		}
+		totalPortfolioValue += v
+		if p.Symbol == req.Symbol {
+			symbolExistingValue += v
+		}
+	}
+	projectedSymbolValue := symbolExistingValue + requiredMarginPaise
+	concentrationImpactPct := 0.0
+	if totalPortfolioValue > 0 {
+		concentrationImpactPct = (float64(projectedSymbolValue) / float64(totalPortfolioValue)) * 100
+	}
+
+	var warnings []string
+	riskLevel := "SAFE"
+
+	// 1. Margin & Capital Warnings
+	if requiredMarginPaise > availablePaise && !(req.Side == "SELL" && req.Product == "DELIVERY") {
+		riskLevel = "HIGH_RISK"
+		deficitRupees := float64(requiredMarginPaise-availablePaise) / 100.0
+		warnings = append(warnings, fmt.Sprintf("Insufficient available margin: Deficit of ₹%.2f. Order will be rejected.", deficitRupees))
+	} else if marginImpactPct >= 75.0 {
+		riskLevel = "HIGH_RISK"
+		warnings = append(warnings, fmt.Sprintf("High Capital Depletion: This order consumes %.1f%% of your total available cash.", marginImpactPct))
+	} else if marginImpactPct >= 40.0 {
+		if riskLevel == "SAFE" {
+			riskLevel = "MODERATE"
+		}
+		warnings = append(warnings, fmt.Sprintf("Elevated Margin Commitment: Order utilizes %.1f%% of available trading balance.", marginImpactPct))
+	}
+
+	// 2. Slippage Warning on Market Orders
+	if req.Type == "MARKET" && req.Quantity > 50 {
+		if riskLevel == "SAFE" {
+			riskLevel = "MODERATE"
+		}
+		warnings = append(warnings, fmt.Sprintf("Exchange Slippage Alert: Placing a MARKET order for %d units may experience 2–6 bps of execution slippage against the order book.", req.Quantity))
+	}
+
+	// 3. Concentration Warning
+	if concentrationImpactPct > 40.0 {
+		riskLevel = "HIGH_RISK"
+		warnings = append(warnings, fmt.Sprintf("Severe Concentration: Post-trade exposure to %s will reach %.1f%% of total portfolio equity.", req.Symbol, concentrationImpactPct))
+	} else if concentrationImpactPct > 25.0 {
+		if riskLevel == "SAFE" {
+			riskLevel = "MODERATE"
+		}
+		warnings = append(warnings, fmt.Sprintf("Moderate Concentration: %s will account for %.1f%% of your active portfolio.", req.Symbol, concentrationImpactPct))
+	}
+
+	// 4. Intraday Auto-Squareoff reminder
+	if req.Product == "INTRADAY" {
+		warnings = append(warnings, "MIS Leverage Notice: Mandatory automated square-off at 15:20 IST applies to this position.")
+	}
+
+	// 5. Synthesis Advice
+	advice := "Systematic execution: Parameters fall within normal institutional risk tolerance."
+	if riskLevel == "HIGH_RISK" {
+		advice = "Exercise caution: High capital commitment or portfolio concentration detected. Consider reducing quantity or setting a tight Stop-Loss."
+	} else if riskLevel == "MODERATE" {
+		advice = "Balanced setup: Consider using a Limit order to guarantee entry price and minimize spread cost."
+	}
+
+	return &dto.PreTradeCheckResponse{
+		RiskLevel:              riskLevel,
+		RequiredMarginPaise:    requiredMarginPaise,
+		AvailableBalancePaise:  availablePaise,
+		MarginImpactPct:        marginImpactPct,
+		ConcentrationImpactPct: concentrationImpactPct,
+		Warnings:               warnings,
+		Advice:                 advice,
+	}, nil
 }
 
 func (s *MentorService) Critique(ctx context.Context, userID string) (*dto.TradeCritiqueResponse, error) {
@@ -321,24 +439,57 @@ func (s *MentorService) buildRuleBasedCritique(score int, rating string, metrics
 }
 
 func (s *MentorService) generateRuleBasedAnswer(question string) string {
+	return s.generateRuleBasedAnswerWithContext("", question)
+}
+
+func (s *MentorService) generateRuleBasedAnswerWithContext(userID, question string) string {
 	q := strings.ToLower(question)
+
+	// Contextual portfolio snapshot if userID is available
+	var userContextNote string
+	if userID != "" {
+		if uUUID, err := uuid.Parse(userID); err == nil && database.GetDB() != nil {
+			var wallet model.Wallet
+			var pos []model.Position
+			_ = database.GetDB().Where("user_uuid = ?", uUUID).First(&wallet).Error
+			_ = database.GetDB().Where("user_uuid = ? AND quantity <> 0", uUUID).Find(&pos).Error
+
+			availRupees := float64(wallet.AvailableBalancePaise()) / 100.0
+			blockedRupees := float64(wallet.BlockedPaise) / 100.0
+			userContextNote = fmt.Sprintf("\n\n📌 **Your Live Account Context:**\n- Available Balance: ₹%.2f\n- Blocked Margin: ₹%.2f\n- Open Positions: %d contracts/scrips",
+				availRupees, blockedRupees, len(pos))
+		}
+	}
+
+	if strings.Contains(q, "risk") || strings.Contains(q, "drawdown") || strings.Contains(q, "portfolio") || strings.Contains(q, "exposure") {
+		return fmt.Sprintf("🛡️ **Institutional Portfolio Risk Diagnostic:**\n\n1. **Capital Allocation:** Keep individual position sizing bounded below 15–20%% of total account equity to avoid concentration blow-ups.\n2. **Margin Utilization Guardrail:** Maintain at least a 30%% cash cushion in available balance to absorb market gap-downs and margin spikes.\n3. **Stop-Loss Discipline:** Always specify hard stop-loss trigger levels (`SL` / `SL-M`) rather than relying on manual exits during volatile sessions.%s", userContextNote)
+	}
+	if strings.Contains(q, "hedge") || strings.Contains(q, "hedging") || strings.Contains(q, "protective put") {
+		return fmt.Sprintf("🛡️ **Hedging Framework & Risk Mitigation:**\n\n1. **Protective Puts:** If holding long delivery (CNC) equities, purchasing Out-Of-The-Money (OTM) Put options (`PE`) on `NIFTY` or the underlying stock caps downward portfolio losses.\n2. **Covered Calls:** Writing OTM Call options (`CE`) against existing long delivery shares generates consistent premium income in sideways or mildly bullish markets.\n3. **Delta Neutrality:** Balancing positive equity delta with negative option delta shields your account against unexpected index swings.%s", userContextNote)
+	}
 	if strings.Contains(q, "news") || strings.Contains(q, "headline") || strings.Contains(q, "update") || strings.Contains(q, "market today") {
 		return "📰 **Market Pulse & Short News:**\n\n1. **Benchmark Indices:** Markets closed the daily session with key leaders (Reliance, TCS, HDFC Bank) defending support zones.\n2. **Sectoral Breadth:** High liquidity in large-cap equities; derivatives expiries driving open interest shifts.\n3. **Trading Discipline:** During market-closed hours (after 15:30 IST), systematic traders review day journals, verify margin utilization, and prepare setups for the 09:15 opening bell.\n\n*Tip: Switch to the 'Market News' tab below for curated real-time business wire articles!*"
 	}
 	if strings.Contains(q, "mis") || strings.Contains(q, "intraday") || strings.Contains(q, "square") {
 		return "📘 **MIS (Margin Intraday Square-off) Rules:**\n\n1. **Leverage:** MIS offers up to 5x leverage (20% margin required).\n2. **Mandatory Cut-off:** All open MIS positions are automatically squared off by the server at 15:20 IST.\n3. **Risk:** Unhedged intraday leverage amplifies both gains and losses. Ensure stop-loss orders are active before 15:00 IST."
 	}
+	if strings.Contains(q, "greeks") || strings.Contains(q, "black-scholes") || strings.Contains(q, "delta") || strings.Contains(q, "theta") || strings.Contains(q, "vega") {
+		return "📐 **Black-Scholes Option Greeks Essentials:**\n\n1. **Delta (Δ):** Rate of change of option price per ₹1 move in spot (Calls: 0 to +1, Puts: -1 to 0).\n2. **Theta (Θ):** Daily time decay in ₹/day. Accelerates exponentially in the final 7 days before Thursday expiry.\n3. **Gamma (Γ):** Rate of change of Delta. Highest for At-The-Money (ATM) options.\n4. **Vega (ν):** Sensitivity to a 1% shift in Implied Volatility (IV).\n\n*Tip: Open the 'Option Chain' in the header to view live Black-Scholes Greeks calculated by our engine!*"
+	}
 	if strings.Contains(q, "fno") || strings.Contains(q, "derivative") || strings.Contains(q, "option") || strings.Contains(q, "future") || strings.Contains(q, "expiry") {
-		return "📘 **F&O (Futures & Options) Mechanics:**\n\n1. **Lot Sizes:** NSE index contracts trade in standard lot multiples (e.g. NIFTY 25 units, BANKNIFTY 15 units).\n2. **Cash Settlement:** In this simulator, expiring options settle in cash against final underlying spot price at 15:30 IST on Thursdays.\n3. **Intrinsic Value:** ITM (In-The-Money) options payout intrinsic value automatically into your virtual wallet."
+		return "📘 **F&O (Futures & Options) Mechanics:**\n\n1. **Lot Sizes:** NSE index contracts trade in standard lot multiples (e.g. NIFTY 50 units, BANKNIFTY 15 units).\n2. **Cash Settlement:** In this simulator, expiring options settle in cash against final underlying spot price at 15:30 IST on Thursdays.\n3. **Intrinsic Value:** ITM (In-The-Money) options payout intrinsic value automatically into your virtual wallet."
 	}
 	if strings.Contains(q, "margin") || strings.Contains(q, "leverage") || strings.Contains(q, "balance") {
-		return "📘 **Virtual Margin & Capital Management:**\n\n1. **Available Balance:** Cash available for placing new trades.\n2. **Blocked Margin:** Funds locked to guarantee open positions or active limit orders.\n3. **Golden Rule:** Never commit more than 50% of your total wallet to active intraday margin to absorb sudden gap-downs."
+		return fmt.Sprintf("📘 **Virtual Margin & Capital Management:**\n\n1. **Available Balance:** Cash available for placing new trades.\n2. **Blocked Margin:** Funds locked to guarantee open positions or active limit orders.\n3. **Golden Rule:** Never commit more than 50%% of your total wallet to active intraday margin to absorb sudden gap-downs.%s", userContextNote)
 	}
 	if strings.Contains(q, "cnc") || strings.Contains(q, "delivery") || strings.Contains(q, "holding") {
 		return "📘 **CNC (Cash-and-Carry / Delivery) Rules:**\n\n1. **100% Margin:** CNC requires full 100% cash upfront (no leverage).\n2. **Short-Selling Forbidden:** Delivery short-selling is strictly rejected by the exchange; you can only sell shares you currently hold in your portfolio.\n3. **Holding Period:** CNC positions carry forward indefinitely without overnight auto-squareoff."
 	}
+	if strings.Contains(q, "revenge") || strings.Contains(q, "discipline") || strings.Contains(q, "psychology") || strings.Contains(q, "emotion") {
+		return "🧠 **Trading Psychology & Behavioral Guardrails:**\n\n1. **Revenge Trading Trap:** Placing rapid trades immediately following a loss leads to compounding drawdowns. Take a mandatory 15-minute cool-off after any stop-out.\n2. **Loss Aversion:** Amateurs hold losers hoping for break-even while prematurely selling winners. Define your exit rules before entering the position.\n3. **Trade Journaling:** Review your trades using the 'AI Copilot Critique' to track discipline score and habit flags."
+	}
 
-	return "📘 **Educational Simulator Copilot:**\n\nDisciplined trading requires three pillars:\n1. **Predefined Risk:** Risk no more than 1–2% of total account balance per trade.\n2. **Execution Timing:** Trade during high-liquidity market hours (09:30–11:30 and 13:30–15:00 IST).\n3. **Journaling:** Track your setups, win rates, and emotional states to refine your edge over time."
+	return fmt.Sprintf("📘 **Educational Simulator Copilot:**\n\nDisciplined trading requires three pillars:\n1. **Predefined Risk:** Risk no more than 1–2%% of total account balance per trade.\n2. **Execution Timing:** Trade during high-liquidity market hours (09:30–11:30 and 13:30–15:00 IST).\n3. **Journaling:** Track your setups, win rates, and emotional states to refine your edge over time.%s", userContextNote)
 }
 
 func (s *MentorService) callGemini(ctx context.Context, prompt string) (string, error) {

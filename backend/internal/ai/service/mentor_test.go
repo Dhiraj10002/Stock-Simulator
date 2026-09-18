@@ -43,7 +43,7 @@ func TestMentorService_Analyze_RuleBasedFallback(t *testing.T) {
 		},
 		{
 			name:     "General trading question",
-			question: "How should I structure my risk-reward ratio?",
+			question: "How should I structure my daily routine and setup?",
 			expected: "Educational Simulator Copilot",
 		},
 	}
@@ -104,3 +104,43 @@ func TestMathAbs(t *testing.T) {
 		t.Errorf("expected 0, got %d", mathAbs(0))
 	}
 }
+
+func TestMentorService_PreTradeCheck(t *testing.T) {
+	cfg := &config.Config{
+		GeminiAPIKey: "",
+		GeminiModel:  "gemini-2.0-flash",
+	}
+	svc := New(cfg)
+
+	// Test Slippage Warning on Market order > 50 qty
+	req := dto.PreTradeCheckRequest{
+		Symbol:     "RELIANCE",
+		Side:       "BUY",
+		Product:    "INTRADAY",
+		Type:       "MARKET",
+		Quantity:   100,
+		PricePaise: 125000, // ₹1,250.00
+	}
+
+	res, err := svc.PreTradeCheck(context.Background(), "31372e69-2088-45d8-a2d8-8607a58e3685", req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if res.RequiredMarginPaise != 2500000 { // (100 * 125000 + 4) / 5 = 2,500,000 paise (₹25,000)
+		t.Errorf("expected required margin 2500000 paise, got %d", res.RequiredMarginPaise)
+	}
+
+	// Should contain slippage warning
+	hasSlippageWarning := false
+	for _, w := range res.Warnings {
+		if strings.Contains(w, "Exchange Slippage Alert") {
+			hasSlippageWarning = true
+			break
+		}
+	}
+	if !hasSlippageWarning {
+		t.Errorf("expected slippage warning for 100 qty market order, warnings: %v", res.Warnings)
+	}
+}
+

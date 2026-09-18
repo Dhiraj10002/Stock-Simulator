@@ -46,6 +46,7 @@ export default function OrdersTable({ orders, onCancelOrder }: OrdersTableProps)
             <th className="py-2.5 px-3">Product</th>
             <th className="py-2.5 px-3 text-right">Qty</th>
             <th className="py-2.5 px-3 text-right">Price</th>
+            <th className="py-2.5 px-3 text-right">Trigger</th>
             <th className="py-2.5 px-3 text-right">Fill Price</th>
             <th className="py-2.5 px-3">Status</th>
             <th className="py-2.5 px-4 text-center">Action</th>
@@ -54,7 +55,9 @@ export default function OrdersTable({ orders, onCancelOrder }: OrdersTableProps)
         <tbody className="divide-y divide-slate-800/40">
           {orders.map((ord, idx) => {
             const isBuy = ord.side === "BUY";
+            const isTriggerPending = ord.status === "TRIGGER_PENDING";
             const isOpen = ord.status === "OPEN" || ord.status === "PENDING";
+            const canCancel = isOpen || isTriggerPending;
             const isExecuted = ord.status === "EXECUTED";
             const isCancelled = ord.status === "CANCELLED";
             const isRejected = ord.status === "REJECTED";
@@ -90,8 +93,18 @@ export default function OrdersTable({ orders, onCancelOrder }: OrdersTableProps)
                 </td>
 
                 {/* Type */}
-                <td className="py-3 px-3 text-slate-400 text-[11px]">
-                  {ord.type}
+                <td className="py-3 px-3">
+                  <span
+                    className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${
+                      ord.type === "SL" || ord.type === "SL-M"
+                        ? "bg-purple-950/40 border-purple-500/30 text-purple-300"
+                        : ord.type === "LIMIT"
+                        ? "bg-cyan-950/40 border-cyan-500/30 text-cyan-300"
+                        : "bg-slate-800/80 border-slate-700 text-slate-300"
+                    }`}
+                  >
+                    {ord.type}
+                  </span>
                 </td>
 
                 {/* Product */}
@@ -107,12 +120,21 @@ export default function OrdersTable({ orders, onCancelOrder }: OrdersTableProps)
                 </td>
 
                 {/* Price */}
-                <td className="py-3 px-3 text-right text-slate-300">
-                  {ord.type === "LIMIT" ? formatPaise(ord.price_paise) : "MARKET"}
+                <td className="py-3 px-3 text-right text-slate-300 font-mono">
+                  {ord.type === "LIMIT" || ord.type === "SL"
+                    ? formatPaise(ord.price_paise)
+                    : "MKT"}
+                </td>
+
+                {/* Trigger Price */}
+                <td className="py-3 px-3 text-right text-slate-400 font-mono">
+                  {ord.trigger_price_paise && ord.trigger_price_paise > 0
+                    ? formatPaise(ord.trigger_price_paise)
+                    : "—"}
                 </td>
 
                 {/* Executed Fill Price */}
-                <td className="py-3 px-3 text-right font-medium text-slate-200">
+                <td className="py-3 px-3 text-right font-medium text-slate-200 font-mono">
                   {ord.executed_price_paise && ord.executed_price_paise > 0
                     ? formatPaise(ord.executed_price_paise)
                     : "—"}
@@ -124,26 +146,29 @@ export default function OrdersTable({ orders, onCancelOrder }: OrdersTableProps)
                     className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border ${
                       isExecuted
                         ? "bg-emerald-950/60 border-emerald-500/40 text-emerald-300"
+                        : isTriggerPending
+                        ? "bg-amber-950/60 border-amber-500/40 text-amber-300 animate-pulse"
                         : isOpen
                         ? "bg-cyan-950/60 border-cyan-500/40 text-cyan-300 animate-pulse"
                         : isCancelled
                         ? "bg-slate-800/60 border-slate-700 text-slate-400"
                         : isRejected
                         ? "bg-rose-950/60 border-rose-500/40 text-rose-300"
-                        : "bg-amber-950/60 border-amber-500/40 text-amber-300"
+                        : "bg-slate-800 border-slate-700 text-slate-400"
                     }`}
                   >
                     {isExecuted && <CheckCircle2 className="w-2.5 h-2.5" />}
-                    {isOpen && <Clock className="w-2.5 h-2.5" />}
+                    {isTriggerPending && <Clock className="w-2.5 h-2.5 text-amber-400" />}
+                    {isOpen && !isTriggerPending && <Clock className="w-2.5 h-2.5 text-cyan-400" />}
                     {isCancelled && <XCircle className="w-2.5 h-2.5" />}
                     {isRejected && <AlertCircle className="w-2.5 h-2.5" />}
-                    {ord.status}
+                    {isTriggerPending ? "TRIGGER PENDING" : ord.status}
                   </span>
                 </td>
 
                 {/* Action */}
                 <td className="py-3 px-4 text-center">
-                  {isOpen ? (
+                  {canCancel ? (
                     <button
                       onClick={() => handleCancel(ord)}
                       disabled={cancelling === ord.uuid}

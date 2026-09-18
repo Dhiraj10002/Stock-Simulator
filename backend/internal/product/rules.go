@@ -64,7 +64,11 @@ func ValidateFNOInstrument(instrument model.Instrument, quantity int64) (string,
 	if quantity <= 0 || instrument.LotSize <= 0 || quantity%instrument.LotSize != 0 {
 		return "", fmt.Errorf("F&O quantity must be an exact multiple of instrument lot size %d", instrument.LotSize)
 	}
-	if strings.TrimSpace(instrument.UnderlyingSymbol) == "" {
+	underlying := strings.TrimSpace(instrument.UnderlyingSymbol)
+	if underlying == "" {
+		underlying = strings.TrimSpace(instrument.Name)
+	}
+	if underlying == "" {
 		return "", fmt.Errorf("F&O instrument has no explicit underlying symbol")
 	}
 	kind := classifyInstrument(instrument.InstrumentType)

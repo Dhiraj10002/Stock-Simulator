@@ -180,7 +180,7 @@ class InstrumentStore:
                 continue
             name = clean(row.get("name"))
             symbol = clean(row.get("symbol"))
-            underlying = clean(row.get("underlying_symbol"))
+            underlying = clean(row.get("underlying_symbol")) or name
             if name not in target_names and symbol not in target_names and underlying not in target_names:
                 continue
             values.append((token, symbol, name, underlying, clean(row.get("expiry")),

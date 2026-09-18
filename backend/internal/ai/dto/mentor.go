@@ -30,3 +30,23 @@ type TradeCritiqueResponse struct {
 	BehavioralFlags []BehavioralFlag `json:"behavioral_flags"`
 	Critique        string           `json:"critique"`
 }
+
+type PreTradeCheckRequest struct {
+	Symbol     string `json:"symbol" binding:"required"`
+	Side       string `json:"side" binding:"required,oneof=BUY SELL"`
+	Product    string `json:"product" binding:"required,oneof=DELIVERY INTRADAY FNO"`
+	Type       string `json:"type" binding:"required,oneof=MARKET LIMIT SL SL-M"`
+	Quantity   int64  `json:"quantity" binding:"required,gt=0"`
+	PricePaise int64  `json:"price_paise" binding:"required,gt=0"`
+}
+
+type PreTradeCheckResponse struct {
+	RiskLevel              string   `json:"risk_level"` // "SAFE", "MODERATE", "HIGH_RISK"
+	RequiredMarginPaise    int64    `json:"required_margin_paise"`
+	AvailableBalancePaise  int64    `json:"available_balance_paise"`
+	MarginImpactPct        float64  `json:"margin_impact_pct"`
+	ConcentrationImpactPct float64  `json:"concentration_impact_pct"`
+	Warnings               []string `json:"warnings"`
+	Advice                 string   `json:"advice"`
+}
+

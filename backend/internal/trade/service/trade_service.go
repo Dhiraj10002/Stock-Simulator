@@ -29,6 +29,32 @@ func (s *TradeService) List(userID string) ([]dto.TradeResponse, error) {
 	return result, nil
 }
 
-func toResponse(trade model.Trade) dto.TradeResponse {
-	return dto.TradeResponse{UUID: trade.UUID.String(), OrderUUID: trade.OrderUUID.String(), Symbol: trade.Symbol, Side: trade.Side, Quantity: trade.Quantity, PricePaise: trade.PricePaise, TotalPaise: trade.TotalPaise, ExecutedAt: trade.ExecutedAt.UTC().Format("2006-01-02T15:04:05Z07:00")}
+func (s *TradeService) UpdateJournal(userID, tradeID, tag, notes string) error {
+	userUUID, err := uuid.Parse(userID)
+	if err != nil {
+		return fmt.Errorf("invalid user identity")
+	}
+	tradeUUID, err := uuid.Parse(tradeID)
+	if err != nil {
+		return fmt.Errorf("invalid trade ID")
+	}
+	return s.repo.UpdateJournal(tradeUUID, userUUID, tag, notes)
 }
+
+func toResponse(trade model.Trade) dto.TradeResponse {
+	return dto.TradeResponse{
+		UUID:             trade.UUID.String(),
+		OrderUUID:        trade.OrderUUID.String(),
+		Symbol:           trade.Symbol,
+		Side:             trade.Side,
+		Product:          trade.Product,
+		Quantity:         trade.Quantity,
+		PricePaise:       trade.PricePaise,
+		TotalPaise:       trade.TotalPaise,
+		RealizedPnlPaise: trade.RealizedPnlPaise,
+		Tag:              trade.Tag,
+		Notes:            trade.Notes,
+		ExecutedAt:       trade.ExecutedAt.UTC().Format("2006-01-02T15:04:05Z07:00"),
+	}
+}
+

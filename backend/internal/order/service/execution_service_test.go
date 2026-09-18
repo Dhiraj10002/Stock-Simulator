@@ -298,3 +298,79 @@ func TestCalculatePositionTransition(t *testing.T) {
 		})
 	}
 }
+
+func TestSlippageCalculation(t *testing.T) {
+	ltp := int64(100_000) // ₹1,000.00
+
+	// Small orders <= 50 have 0 slippage
+	buySmall := calculateSlippage(10, ltp, model.OrderSideBuy)
+	if buySmall != ltp {
+		t.Fatalf("expected no slippage for qty <= 50, got %d, want %d", buySmall, ltp)
+	}
+
+	sellSmall := calculateSlippage(50, ltp, model.OrderSideSell)
+	if sellSmall != ltp {
+		t.Fatalf("expected no slippage for qty <= 50, got %d, want %d", sellSmall, ltp)
+	}
+
+	// Large orders (> 50) have slippage
+	buyLarge := calculateSlippage(100, ltp, model.OrderSideBuy)
+	if buyLarge <= ltp {
+		t.Fatalf("expected buy slippage to increase execution price, got %d <= %d", buyLarge, ltp)
+	}
+
+	sellLarge := calculateSlippage(100, ltp, model.OrderSideSell)
+	if sellLarge >= ltp {
+		t.Fatalf("expected sell slippage to decrease execution price, got %d >= %d", sellLarge, ltp)
+	}
+
+	// Maximum slippage check (capped at 6 bps)
+	buyVeryLarge := calculateSlippage(10_000, ltp, model.OrderSideBuy)
+	// 6 bps of 100,000 = 60 paise
+	if buyVeryLarge > ltp+60 {
+		t.Fatalf("expected slippage capped at 6 bps (<= %d), got %d", ltp+60, buyVeryLarge)
+	}
+}
+
+func TestStopLossLimitMatching(t *testing.T) {
+	// SL order with limit price 100,000
+	slBuy := &model.Order{Type: model.OrderTypeSL, Side: model.OrderSideBuy, PricePaise: 100_000, TriggerPricePaise: 99_000}
+	if !limitSatisfied(slBuy, 99_500) {
+		t.Fatalf("expected buy SL limit to be satisfied when price <= limit price")
+	}
+	if limitSatisfied(slBuy, 100_500) {
+		t.Fatalf("expected buy SL limit to not be satisfied when price > limit price")
+	}
+
+	slSell := &model.Order{Type: model.OrderTypeSL, Side: model.OrderSideSell, PricePaise: 100_000, TriggerPricePaise: 101_000}
+	if !limitSatisfied(slSell, 100_500) {
+		t.Fatalf("expected sell SL limit to be satisfied when price >= limit price")
+	}
+	if limitSatisfied(slSell, 99_500) {
+		t.Fatalf("expected sell SL limit to not be satisfied when price < limit price")
+	}
+}
+
+func TestCalculateCircuitLimits(t *testing.T) {
+	refPrice := int64(100_000) // ₹1,000.00
+
+	// Delivery / Intraday: 10% band
+	lc, uc := calculateCircuitLimits(refPrice, model.OrderProductDelivery)
+	if lc != 90_000 || uc != 110_000 {
+		t.Fatalf("expected 10%% circuit limits (90000, 110000), got (%d, %d)", lc, uc)
+	}
+
+	// F&O: 20% band
+	lcFno, ucFno := calculateCircuitLimits(refPrice, model.OrderProductFNO)
+	if lcFno != 80_000 || ucFno != 120_000 {
+		t.Fatalf("expected 20%% circuit limits (80000, 120000), got (%d, %d)", lcFno, ucFno)
+	}
+
+	// Near zero price: minimum 5 paise lower circuit
+	lcZero, _ := calculateCircuitLimits(1, model.OrderProductDelivery)
+	if lcZero != 5 {
+		t.Fatalf("expected min tick 5 paise, got %d", lcZero)
+	}
+}
+
+

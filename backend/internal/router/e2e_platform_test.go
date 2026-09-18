@@ -133,6 +133,49 @@ func TestE2E_FullPlatformSuite(t *testing.T) {
 		}
 	})
 
+	// 5b. AI Pre-Trade Risk Check
+	t.Run("4b. POST /api/v1/ai/pretrade-check assesses order risk", func(t *testing.T) {
+		payload := strings.NewReader(`{
+			"symbol": "RELIANCE",
+			"side": "BUY",
+			"product": "INTRADAY",
+			"type": "MARKET",
+			"quantity": 100,
+			"price_paise": 125000
+		}`)
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/ai/pretrade-check", payload)
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+userToken)
+		rec := httptest.NewRecorder()
+		appRouter.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+
+		var body struct {
+			Success bool `json:"success"`
+			Data    struct {
+				RiskLevel           string   `json:"risk_level"`
+				RequiredMarginPaise int64    `json:"required_margin_paise"`
+				Warnings            []string `json:"warnings"`
+				Advice              string   `json:"advice"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatalf("failed to parse response JSON: %v", err)
+		}
+		if !body.Success {
+			t.Fatalf("expected success: true")
+		}
+		if body.Data.RequiredMarginPaise != 2500000 {
+			t.Errorf("expected 2500000 paise required margin, got %d", body.Data.RequiredMarginPaise)
+		}
+		if len(body.Data.Warnings) == 0 {
+			t.Errorf("expected warnings for 100 qty market order")
+		}
+	})
+
 	// 6. Invalid Registration Validation
 	t.Run("5. POST /api/v1/auth/register validates inputs before execution", func(t *testing.T) {
 		invalidPayloads := []string{

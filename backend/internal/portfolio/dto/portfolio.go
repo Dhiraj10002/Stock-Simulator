@@ -3,6 +3,8 @@ package dto
 type PositionResponse struct {
 	UUID               string `json:"uuid"`
 	Symbol             string `json:"symbol"`
+	Product            string `json:"product"`
+	UnderlyingSymbol   string `json:"underlying_symbol,omitempty"`
 	Quantity           int64  `json:"quantity"`
 	AveragePricePaise  int64  `json:"average_price_paise"`
 	CurrentPricePaise  int64  `json:"current_price_paise"`

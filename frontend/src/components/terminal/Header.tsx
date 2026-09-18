@@ -11,6 +11,9 @@ import {
   LogOut,
   FileText,
   AlertTriangle,
+  Zap,
+  Layers,
+  BarChart2,
 } from "lucide-react";
 import { formatPaise, formatPercent, getIndianMarketStatus } from "@/lib/format";
 import type { User, Wallet, Portfolio } from "@/types";
@@ -21,7 +24,10 @@ type HeaderProps = {
   portfolio: Portfolio | null;
   onSignOut: () => void;
   onOpenLedger: () => void;
+  onOpenOptionChain?: () => void;
+  onOpenPerformance?: () => void;
   onResetSimulation: () => void;
+  onSquareOffMIS?: () => void;
   resetting: boolean;
 };
 
@@ -31,7 +37,10 @@ export default function Header({
   portfolio,
   onSignOut,
   onOpenLedger,
+  onOpenOptionChain,
+  onOpenPerformance,
   onResetSimulation,
+  onSquareOffMIS,
   resetting,
 }: HeaderProps) {
   const [marketStatus, setMarketStatus] = useState(getIndianMarketStatus());
@@ -51,10 +60,24 @@ export default function Header({
   const pnlPercent =
     investedPaise > 0 ? (pnlPaise / investedPaise) * 100 : 0;
 
+  const blockedPaise = wallet?.blocked_paise ?? 0;
+  const cashPaise = wallet?.cash_balance_paise ?? 0;
+  const equityPaise = cashPaise + pnlPaise;
+  const marginUtilization =
+    blockedPaise > 0
+      ? equityPaise <= 0
+        ? 999
+        : Math.round((blockedPaise * 100) / equityPaise)
+      : 0;
+
+  const isMarginCritical = marginUtilization >= 120 || (blockedPaise > 0 && equityPaise <= 0);
+  const isMarginCall = marginUtilization >= 100;
+  const isMarginWarning = marginUtilization >= 80;
+
   return (
     <header className="border-b border-slate-800/80 bg-slate-950/70 backdrop-blur-md px-4 lg:px-6 py-2.5 flex items-center justify-between gap-4 sticky top-0 z-30">
       {/* Brand & Market Session Pill */}
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-3">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-cyan-600 to-emerald-500 flex items-center justify-center font-black text-slate-950 text-sm shadow-lg shadow-cyan-500/20">
             SS
@@ -88,6 +111,39 @@ export default function Header({
           <span className="text-slate-400 text-[10px] flex items-center gap-1 border-l border-slate-700/60 pl-2">
             <Clock className="w-3 h-3" />
             {marketStatus.istTime}
+          </span>
+        </div>
+
+        {/* Margin Health Status Pill */}
+        <div
+          title={
+            isMarginCritical
+              ? "CRITICAL DEFICIT: Margin utilization exceeds 120%."
+              : isMarginCall
+              ? "MARGIN CALL: Blocked margin exceeds available equity."
+              : isMarginWarning
+              ? "MARGIN WARNING: Over 80% of account equity is utilized."
+              : "Margin Status: Healthy"
+          }
+          className={`hidden md:flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold border ${
+            isMarginCritical || isMarginCall
+              ? "bg-rose-950/80 border-rose-500/60 text-rose-300 animate-pulse shadow-sm shadow-rose-500/20"
+              : isMarginWarning
+              ? "bg-amber-950/60 border-amber-500/40 text-amber-300"
+              : "bg-emerald-950/40 border-emerald-500/30 text-emerald-400"
+          }`}
+        >
+          <span
+            className={`w-1.5 h-1.5 rounded-full ${
+              isMarginCritical || isMarginCall
+                ? "bg-rose-400 animate-ping"
+                : isMarginWarning
+                ? "bg-amber-400"
+                : "bg-emerald-400"
+            }`}
+          />
+          <span>
+            {isMarginCritical ? "CRITICAL" : isMarginCall ? "MARGIN CALL" : isMarginWarning ? `Margin ${marginUtilization}%` : "Margin OK"}
           </span>
         </div>
       </div>
@@ -147,7 +203,43 @@ export default function Header({
       </div>
 
       {/* Action Buttons & Profile */}
-      <div className="flex items-center gap-2.5">
+      <div className="flex items-center gap-2">
+        {/* Square Off MIS Button */}
+        {onSquareOffMIS && (
+          <button
+            onClick={onSquareOffMIS}
+            title="Auto Square-Off all open Intraday (MIS) positions and cancel pending orders"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-amber-500/30 bg-amber-950/40 hover:bg-amber-900/50 text-amber-300 text-xs font-medium transition-all"
+          >
+            <Zap className="w-3.5 h-3.5 text-amber-400" />
+            <span className="hidden xl:inline">Square Off MIS</span>
+          </button>
+        )}
+
+        {/* Option Chain Button */}
+        {onOpenOptionChain && (
+          <button
+            onClick={onOpenOptionChain}
+            title="Open F&O Option Chain with Black-Scholes Greeks"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-cyan-500/30 bg-cyan-950/40 hover:bg-cyan-900/50 text-cyan-300 text-xs font-medium transition-all"
+          >
+            <Layers className="w-3.5 h-3.5 text-cyan-400" />
+            <span className="hidden sm:inline">Option Chain</span>
+          </button>
+        )}
+
+        {/* Trader Analytics & Journal Button */}
+        {onOpenPerformance && (
+          <button
+            onClick={onOpenPerformance}
+            title="Open Trader Performance Analytics, Zerodha-Style P&L Calendar & Trade Journal"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-purple-500/30 bg-purple-950/40 hover:bg-purple-900/50 text-purple-300 text-xs font-medium transition-all"
+          >
+            <BarChart2 className="w-3.5 h-3.5 text-purple-400" />
+            <span className="hidden sm:inline">Analytics</span>
+          </button>
+        )}
+
         {/* Ledger Statement Button */}
         <button
           onClick={onOpenLedger}

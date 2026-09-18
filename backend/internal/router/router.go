@@ -3,11 +3,13 @@ package router
 import (
 	"context"
 	aiHandler "github.com/Dhiraj10002/Stock-Simulator/backend/internal/ai/handler"
+	analyticsHandler "github.com/Dhiraj10002/Stock-Simulator/backend/internal/analytics/handler"
 	authHandler "github.com/Dhiraj10002/Stock-Simulator/backend/internal/auth/handler"
 	authMiddleware "github.com/Dhiraj10002/Stock-Simulator/backend/internal/auth/middleware"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/cache"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/config"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/database"
+	fnoHandler "github.com/Dhiraj10002/Stock-Simulator/backend/internal/fno/handler"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/handler"
 	marketHandler "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/handler"
 	marketWebsocket "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/websocket"
@@ -15,6 +17,7 @@ import (
 	newsHandler "github.com/Dhiraj10002/Stock-Simulator/backend/internal/news/handler"
 	orderHandler "github.com/Dhiraj10002/Stock-Simulator/backend/internal/order/handler"
 	portfolioHandler "github.com/Dhiraj10002/Stock-Simulator/backend/internal/portfolio/handler"
+	riskHandler "github.com/Dhiraj10002/Stock-Simulator/backend/internal/risk/handler"
 	simulationHandler "github.com/Dhiraj10002/Stock-Simulator/backend/internal/simulation/handler"
 	stockHandler "github.com/Dhiraj10002/Stock-Simulator/backend/internal/stock/handler"
 	tradeHandler "github.com/Dhiraj10002/Stock-Simulator/backend/internal/trade/handler"
@@ -58,6 +61,9 @@ func Setup(ctx context.Context, cfg *config.Config) *gin.Engine {
 	trades := tradeHandler.New()
 	watchlist := watchlistHandler.New()
 	mentor := aiHandler.New(cfg)
+	risk := riskHandler.New(market.Service())
+	fno := fnoHandler.New(market.Service())
+	analytics := analyticsHandler.New()
 	news, err := newsHandler.New(cfg.RedisURL, cfg.RedisOperationTimeout)
 	if err != nil {
 		panic(err)
@@ -77,6 +83,7 @@ func Setup(ctx context.Context, cfg *config.Config) *gin.Engine {
 		api.GET("/health", healthHandler.Health)
 		api.GET("/market/quotes/:symbol", market.Quote)
 		api.GET("/market/quotes/:symbol/history", market.History)
+		api.GET("/fno/option-chain", fno.GetOptionChain)
 		api.GET("/stocks", stocks.Search)
 		api.GET("/news", news.List)
 
@@ -102,20 +109,28 @@ func Setup(ctx context.Context, cfg *config.Config) *gin.Engine {
 			protected.POST("/orders/:id/execute", writeLimit, orders.Execute)
 			protected.POST("/ai/analyze-trade", writeLimit, mentor.Analyze)
 			protected.POST("/ai/trade-critique", writeLimit, mentor.Critique)
+			protected.POST("/ai/pretrade-check", writeLimit, mentor.PreTradeCheck)
 		} else {
 			protected.POST("/simulation/reset", simulation.Reset)
 			protected.POST("/orders", orders.Create)
 			protected.POST("/orders/:id/execute", orders.Execute)
 			protected.POST("/ai/analyze-trade", mentor.Analyze)
 			protected.POST("/ai/trade-critique", mentor.Critique)
+			protected.POST("/ai/pretrade-check", mentor.PreTradeCheck)
 		}
 		protected.GET("/portfolio", portfolio.Get)
 		protected.GET("/portfolio/positions", portfolio.Positions)
 		protected.GET("/portfolio/pnl", portfolio.Pnl)
+		protected.GET("/risk/overview", risk.GetOverview)
+		protected.POST("/orders/squareoff-mis", orders.SquareOffMIS)
+		protected.POST("/simulation/squareoff-mis", orders.SquareOffMIS)
 		protected.GET("/orders", orders.List)
 		protected.GET("/orders/:id", orders.Get)
 		protected.DELETE("/orders/:id", orders.Cancel)
 		protected.GET("/trades", trades.List)
+		protected.PATCH("/trades/:uuid/journal", trades.UpdateJournal)
+		protected.GET("/analytics/performance", analytics.GetPerformanceOverview)
+		protected.GET("/analytics/pnl-calendar", analytics.GetPnlCalendar)
 		protected.GET("/watchlist", watchlist.List)
 		protected.POST("/watchlist", watchlist.Add)
 		protected.DELETE("/watchlist/:symbol", watchlist.Remove)

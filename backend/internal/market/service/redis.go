@@ -120,9 +120,15 @@ func validateExecutableQuote(quote *dto.QuoteResponse, now time.Time) error {
 	if strings.TrimSpace(quote.UpdatedAt) == "" {
 		return fmt.Errorf("market quote has no update time")
 	}
-	_, err := time.Parse(time.RFC3339, quote.UpdatedAt)
+	updatedAt, err := time.Parse(time.RFC3339, quote.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("market quote has an invalid update time")
+	}
+	if updatedAt.After(now.Add(5 * time.Second)) {
+		return fmt.Errorf("market quote is in the future")
+	}
+	if now.Sub(updatedAt) > maxExecutableQuoteAge {
+		return fmt.Errorf("market quote is stale")
 	}
 	return nil
 }

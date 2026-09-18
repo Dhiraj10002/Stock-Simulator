@@ -20,3 +20,25 @@ func (h *TradeHandler) List(c *gin.Context) {
 	}
 	response.Success(c, http.StatusOK, "Trades retrieved successfully", trades)
 }
+
+func (h *TradeHandler) UpdateJournal(c *gin.Context) {
+	userID := c.GetString("user_id")
+	tradeID := c.Param("uuid")
+
+	var req struct {
+		Tag   string `json:"tag"`
+		Notes string `json:"notes"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, http.StatusBadRequest, "Invalid journal payload", err.Error())
+		return
+	}
+
+	if err := h.service.UpdateJournal(userID, tradeID, req.Tag, req.Notes); err != nil {
+		response.Error(c, http.StatusInternalServerError, "Failed to update trade journal", err.Error())
+		return
+	}
+
+	response.Success(c, http.StatusOK, "Trade journal updated successfully", gin.H{"uuid": tradeID, "tag": req.Tag, "notes": req.Notes})
+}
+

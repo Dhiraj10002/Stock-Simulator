@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/config"
@@ -10,6 +11,7 @@ import (
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/order/service"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/pkg/response"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 type OrderHandler struct{ service *service.OrderService }
@@ -17,6 +19,8 @@ type OrderHandler struct{ service *service.OrderService }
 func New(market *marketService.Service, cfg *config.Config) *OrderHandler {
 	return &OrderHandler{service: service.New(market, cfg)}
 }
+
+func (h *OrderHandler) Service() *service.OrderService { return h.service }
 
 // RunMatcher keeps limit orders eligible for execution as fresh Redis quote
 // updates arrive. It is started once by the application router.
@@ -82,3 +86,21 @@ func (h *OrderHandler) Execute(c *gin.Context) {
 
 	response.Success(c, http.StatusOK, "Order executed successfully", nil)
 }
+
+func (h *OrderHandler) SquareOffMIS(c *gin.Context) {
+	userID := c.GetString("user_id")
+	userUUID, err := uuid.Parse(userID)
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, "Invalid user identity", nil)
+		return
+	}
+	closedCount, err := h.service.TriggerManualMISSquareOff(userUUID)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, fmt.Sprintf("Failed to square off MIS positions: %v", err), nil)
+		return
+	}
+	response.Success(c, http.StatusOK, fmt.Sprintf("Successfully squared off %d intraday position(s) and cancelled pending orders", closedCount), gin.H{
+		"closed_positions_count": closedCount,
+	})
+}
+

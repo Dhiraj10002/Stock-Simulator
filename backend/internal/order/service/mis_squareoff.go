@@ -8,6 +8,7 @@ import (
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/database"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/calendar"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
+	"github.com/google/uuid"
 )
 
 const (
@@ -44,11 +45,11 @@ func (s *OrderService) ProcessMISSquareOff(now time.Time) {
 		return
 	}
 
-	// 1. At or after 15:20 IST cutoff: Cancel all pending/open MIS orders
+	// 1. At or after 15:20 IST cutoff: Cancel all pending/open/trigger-pending MIS orders
 	var openOrders []model.Order
 	if err := database.GetDB().Where("product = ? AND status IN ?",
 		model.OrderProductIntraday,
-		[]string{model.OrderStatusPending, model.OrderStatusOpen}).Find(&openOrders).Error; err == nil {
+		[]string{model.OrderStatusPending, model.OrderStatusOpen, model.OrderStatusTriggerPending}).Find(&openOrders).Error; err == nil {
 		for _, order := range openOrders {
 			_ = s.repo.Cancel(order.UserUUID, order.UUID)
 		}
@@ -121,3 +122,60 @@ func (s *OrderService) recordRisk(position model.Position, status, message strin
 		Message:   message,
 	}).Error
 }
+
+// TriggerManualMISSquareOff executes an immediate MIS square-off for a specific user.
+// It cancels pending/open/trigger-pending intraday orders and squares off open intraday positions at market.
+func (s *OrderService) TriggerManualMISSquareOff(userUUID uuid.UUID) (int, error) {
+	// 1. Cancel active intraday orders for user
+	var openOrders []model.Order
+	orderQuery := database.GetDB().Where("product = ? AND status IN ?",
+		model.OrderProductIntraday,
+		[]string{model.OrderStatusPending, model.OrderStatusOpen, model.OrderStatusTriggerPending})
+	if userUUID != uuid.Nil {
+		orderQuery = orderQuery.Where("user_uuid = ?", userUUID)
+	}
+	if err := orderQuery.Find(&openOrders).Error; err == nil {
+		for _, order := range openOrders {
+			_ = s.repo.Cancel(order.UserUUID, order.UUID)
+		}
+	}
+
+	// 2. Fetch open intraday positions
+	var positions []model.Position
+	posQuery := database.GetDB().Where("product = ? AND quantity <> 0", model.OrderProductIntraday)
+	if userUUID != uuid.Nil {
+		posQuery = posQuery.Where("user_uuid = ?", userUUID)
+	}
+	if err := posQuery.Find(&positions).Error; err != nil {
+		return 0, err
+	}
+
+	closedCount := 0
+	for _, position := range positions {
+		squareOffSide := model.OrderSideSell
+		if position.Quantity < 0 {
+			squareOffSide = model.OrderSideBuy
+		}
+		order := &model.Order{
+			UserUUID: position.UserUUID,
+			Symbol:   position.Symbol,
+			Side:     squareOffSide,
+			Type:     model.OrderTypeMarket,
+			Product:  model.OrderProductIntraday,
+			Quantity: abs(position.Quantity),
+			Status:   model.OrderStatusPending,
+			Source:   model.OrderSourceSystem,
+			Reason:   model.OrderReasonMISSquareOff,
+		}
+		if err := s.repo.Create(order); err == nil {
+			if execErr := s.Execute(position.UserUUID.String(), order.UUID.String()); execErr == nil {
+				closedCount++
+				_ = database.GetDB().Model(&model.Position{}).Where("uuid = ?", position.UUID).Update("square_off_state", "COMPLETED").Error
+			} else {
+				_ = s.repo.Reject(position.UserUUID, order.UUID)
+			}
+		}
+	}
+	return closedCount, nil
+}
+

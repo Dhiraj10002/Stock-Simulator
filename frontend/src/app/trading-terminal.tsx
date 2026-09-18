@@ -16,6 +16,8 @@ import PositionsTable from "@/components/terminal/PositionsTable";
 import OrdersTable from "@/components/terminal/OrdersTable";
 import LedgerModal from "@/components/terminal/LedgerModal";
 import TradeCopilot from "@/components/terminal/TradeCopilot";
+import OptionChainModal from "@/components/terminal/OptionChainModal";
+import PerformanceModal from "@/components/terminal/PerformanceModal";
 import { useToast } from "@/components/terminal/ToastProvider";
 import { getDefaultQuotes, getOrSeedQuote } from "@/lib/mockData";
 import type {
@@ -28,12 +30,35 @@ import type {
   Quote,
   Article,
   ApiResponse,
+  OptionContract,
 } from "@/types";
 
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080/api/v1";
 const WS_URL =
   process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:8080/ws/market";
+
+function getUnderlyingSymbol(sym: string): string {
+  const upper = (sym || "").toUpperCase();
+  for (const underlying of [
+    "RELIANCE",
+    "TCS",
+    "INFY",
+    "HDFCBANK",
+    "BANKNIFTY",
+    "NIFTY",
+    "TATAMOTORS",
+    "SBIN",
+    "ICICIBANK",
+    "AXISBANK",
+    "KOTAKBANK",
+    "ETERNAL",
+    "APARINDS",
+  ]) {
+    if (upper.startsWith(underlying)) return underlying;
+  }
+  return "";
+}
 
 export default function TradingTerminal() {
   const { addToast } = useToast();
@@ -57,7 +82,17 @@ export default function TradingTerminal() {
 
   // Modals & Async States
   const [isLedgerOpen, setIsLedgerOpen] = useState(false);
+  const [isOptionChainOpen, setIsOptionChainOpen] = useState(false);
+  const [isPerformanceOpen, setIsPerformanceOpen] = useState(false);
+  const [prefillOrder, setPrefillOrder] = useState<{
+    side?: "BUY" | "SELL";
+    product?: "DELIVERY" | "INTRADAY" | "FNO";
+    type?: "MARKET" | "LIMIT" | "SL" | "SL-M";
+    quantity?: number;
+    priceRupees?: number;
+  } | null>(null);
   const [resetting, setResetting] = useState(false);
+  const [activeWatchlistSymbols, setActiveWatchlistSymbols] = useState<string[]>([]);
 
   // Token refresh helper
   const tryRefreshToken = useCallback(async (): Promise<string | null> => {
@@ -172,6 +207,28 @@ export default function TradingTerminal() {
         setPortfolio(nextPortfolio);
         setOrders(nextOrders);
         setTransactions(nextTransactions);
+
+        // Ensure every open position and its underlying stock has an active quote initialized
+        if (nextPortfolio && Array.isArray(nextPortfolio.positions)) {
+          setQuotes((prev) => {
+            const next = { ...prev };
+            nextPortfolio.positions.forEach((pos) => {
+              if (!next[pos.symbol]) {
+                next[pos.symbol] = {
+                  symbol: pos.symbol,
+                  price_paise: pos.current_price_paise || pos.average_price_paise,
+                  change_percent: 0,
+                  updated_at: new Date().toISOString(),
+                };
+              }
+              const und = pos.underlying_symbol || getUnderlyingSymbol(pos.symbol);
+              if (und && !next[und]) {
+                next[und] = getOrSeedQuote(und);
+              }
+            });
+            return next;
+          });
+        }
       } catch (err) {
         console.warn("Backend connectivity paused:", err instanceof Error ? err.message : err);
       }
@@ -268,6 +325,10 @@ export default function TradingTerminal() {
               [sym]: {
                 ...prev[sym],
                 ...body.data,
+                change_percent:
+                  body.data.change_percent !== undefined && body.data.change_percent !== 0
+                    ? body.data.change_percent
+                    : prev[sym]?.change_percent ?? 0.35,
               },
             }));
           }
@@ -300,35 +361,51 @@ export default function TradingTerminal() {
       .catch(() => {});
   }, [selectedSymbol]);
 
-  // Simulated Micro-Jitter (24/7 Practice Feed when market is closed or offline)
+  // Simulated Micro-Jitter (24/7 Live Practice Feed for selected symbol, holdings & heavyweights)
   useEffect(() => {
     const interval = setInterval(() => {
       setQuotes((prev) => {
-        const cur = prev[selectedSymbol];
-        if (!cur) return prev;
+        const activeSymbols = new Set<string>([selectedSymbol]);
+        if (portfolio?.positions) {
+          portfolio.positions.forEach((p) => {
+            activeSymbols.add(p.symbol);
+            const und = p.underlying_symbol || getUnderlyingSymbol(p.symbol);
+            if (und) activeSymbols.add(und);
+          });
+        }
+        ["RELIANCE", "TCS", "INFY", "HDFCBANK", "NIFTY", "BANKNIFTY"].forEach((s) =>
+          activeSymbols.add(s)
+        );
 
-        // Subtle ±0.03% random walk
-        const deltaPct = (Math.random() - 0.495) * 0.06;
-        const deltaPaise = Math.round(cur.price_paise * (deltaPct / 100));
-        const newPrice = Math.max(100, cur.price_paise + deltaPaise);
+        const next = { ...prev };
+        activeSymbols.forEach((sym) => {
+          const cur = next[sym] ?? getOrSeedQuote(sym);
+          const deltaPct = (Math.random() - 0.495) * 0.05;
+          const deltaPaise = Math.round(cur.price_paise * (deltaPct / 100));
+          const newPrice = Math.max(10, cur.price_paise + deltaPaise);
+          const changePct =
+            cur.change_percent !== undefined && cur.change_percent !== 0
+              ? Number((cur.change_percent + deltaPct).toFixed(2))
+              : Number((deltaPct * 4).toFixed(2));
 
-        return {
-          ...prev,
-          [selectedSymbol]: {
+          next[sym] = {
             ...cur,
             price_paise: newPrice,
+            change_percent: changePct,
             high_paise: Math.max(cur.high_paise ?? newPrice, newPrice),
             low_paise: Math.min(cur.low_paise ?? newPrice, newPrice),
             updated_at: new Date().toISOString(),
-          },
-        };
+          };
+        });
+
+        return next;
       });
-    }, 2500);
+    }, 2000);
 
     return () => clearInterval(interval);
-  }, [selectedSymbol]);
+  }, [selectedSymbol, portfolio]);
 
-  // Dynamically augment portfolio with live quotes
+  // Dynamically augment portfolio with live quotes and option delta pricing
   const augmentedPortfolio = useMemo(() => {
     if (!portfolio) return null;
     let totalInvested = 0;
@@ -337,7 +414,30 @@ export default function TradingTerminal() {
 
     const augmentedPositions = portfolio.positions.map((pos) => {
       const q = quotes[pos.symbol];
-      const currentPricePaise = q?.price_paise ?? pos.current_price_paise;
+      let currentPricePaise = q?.price_paise ?? pos.current_price_paise;
+
+      // Dynamic F&O Option Pricing & P&L calculation based on underlying equity movement
+      const isFno =
+        pos.product === "FNO" ||
+        pos.symbol.includes("CE") ||
+        pos.symbol.includes("PE") ||
+        pos.symbol.includes("FUT");
+
+      if (isFno) {
+        const und = pos.underlying_symbol || getUnderlyingSymbol(pos.symbol);
+        const undQuote = und ? quotes[und] : null;
+        if (undQuote && undQuote.change_percent !== undefined) {
+          const isCall = pos.symbol.includes("CE");
+          const isPut = pos.symbol.includes("PE");
+          const deltaLeverage = isCall ? 4.5 : isPut ? -4.5 : 1.0;
+          const optChangePct = (undQuote.change_percent || 0) * deltaLeverage;
+          currentPricePaise = Math.max(
+            5,
+            Math.round(pos.average_price_paise * (1 + optChangePct / 100))
+          );
+        }
+      }
+
       const qty = pos.quantity;
       const avgPrice = pos.average_price_paise;
 
@@ -406,6 +506,27 @@ export default function TradingTerminal() {
     }
   };
 
+  // Square off all open intraday (MIS) positions
+  const handleSquareOffAllMIS = async () => {
+    try {
+      const res = await request<ApiResponse<{ closed_positions_count: number }>>("/orders/squareoff-mis", {
+        method: "POST",
+      });
+      addToast(
+        "MIS Square-Off Completed",
+        res.message || "All intraday MIS positions closed and pending orders cancelled.",
+        "success"
+      );
+      void loadData(token);
+    } catch (err) {
+      addToast(
+        "MIS Square-Off Failed",
+        err instanceof Error ? err.message : "Error executing MIS square-off",
+        "error"
+      );
+    }
+  };
+
   // Cancel order handler
   const handleCancelOrder = async (order: Order) => {
     try {
@@ -469,6 +590,146 @@ export default function TradingTerminal() {
     addToast("Signed Out", "You have been logged out.", "info");
   };
 
+  const handleSelectOptionContract = (contract: OptionContract, side: "BUY" | "SELL") => {
+    const contractPriceRupees = contract.ltp_paise / 100;
+    setQuotes((prev) => ({
+      ...prev,
+      [contract.symbol]: {
+        symbol: contract.symbol,
+        price_paise: contract.ltp_paise,
+        change_percent: 0,
+        open_paise: contract.ltp_paise,
+        high_paise: Math.round(contract.ltp_paise * 1.05),
+        low_paise: Math.round(contract.ltp_paise * 0.95),
+        lower_circuit_paise: Math.round(contract.ltp_paise * 0.8),
+        upper_circuit_paise: Math.round(contract.ltp_paise * 1.2),
+        updated_at: new Date().toISOString(),
+      },
+    }));
+
+    setSelectedSymbol(contract.symbol);
+    setPrefillOrder({
+      side,
+      product: "FNO",
+      type: "LIMIT",
+      quantity: contract.lot_size,
+      priceRupees: contractPriceRupees,
+    });
+    addToast(
+      `Loaded ${contract.symbol}`,
+      `Selected ${contract.option_type} strike at ₹${contractPriceRupees.toFixed(2)} (Lot: ${contract.lot_size})`,
+      "info"
+    );
+  };
+
+  const handleQuickOrder = useCallback(
+    (symbol: string, side: "BUY" | "SELL") => {
+      setSelectedSymbol(symbol);
+      setPrefillOrder({ side });
+      addToast(
+        `Quick ${side} Primed`,
+        `Selected ${symbol} with ${side} action ready in ticket`,
+        "info"
+      );
+    },
+    [addToast]
+  );
+
+  // Global Institutional Hotkeys Listener
+  useEffect(() => {
+    if (!token) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore if user is currently typing in an input or editable field
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+
+      // Escape closes open modals
+      if (e.key === "Escape") {
+        if (isOptionChainOpen) setIsOptionChainOpen(false);
+        else if (isLedgerOpen) setIsLedgerOpen(false);
+        else if (isPerformanceOpen) setIsPerformanceOpen(false);
+        return;
+      }
+
+      // 'b' or 'B' -> Prime BUY on selected symbol
+      if (e.key === "b" || e.key === "B") {
+        e.preventDefault();
+        handleQuickOrder(selectedSymbol, "BUY");
+        return;
+      }
+
+      // 's' or 'S' -> Prime SELL on selected symbol
+      if (e.key === "s" || e.key === "S") {
+        e.preventDefault();
+        handleQuickOrder(selectedSymbol, "SELL");
+        return;
+      }
+
+      // 'o' or 'O' -> Toggle Option Chain
+      if (e.key === "o" || e.key === "O") {
+        e.preventDefault();
+        setIsOptionChainOpen((prev) => !prev);
+        return;
+      }
+
+      // 'l' or 'L' -> Toggle Ledger
+      if (e.key === "l" || e.key === "L") {
+        e.preventDefault();
+        setIsLedgerOpen((prev) => !prev);
+        return;
+      }
+
+      // 'p' or 'P' -> Toggle Performance Analytics
+      if (e.key === "p" || e.key === "P") {
+        e.preventDefault();
+        setIsPerformanceOpen((prev) => !prev);
+        return;
+      }
+
+      // ArrowUp / ArrowDown -> Cycle through active watchlist symbols
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        if (activeWatchlistSymbols.length > 0) {
+          const curIdx = activeWatchlistSymbols.indexOf(selectedSymbol);
+          const nextIdx = curIdx <= 0 ? activeWatchlistSymbols.length - 1 : curIdx - 1;
+          setSelectedSymbol(activeWatchlistSymbols[nextIdx]);
+        }
+        return;
+      }
+
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        if (activeWatchlistSymbols.length > 0) {
+          const curIdx = activeWatchlistSymbols.indexOf(selectedSymbol);
+          const nextIdx =
+            curIdx === -1 || curIdx >= activeWatchlistSymbols.length - 1 ? 0 : curIdx + 1;
+          setSelectedSymbol(activeWatchlistSymbols[nextIdx]);
+        }
+        return;
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [
+    token,
+    selectedSymbol,
+    activeWatchlistSymbols,
+    isOptionChainOpen,
+    isLedgerOpen,
+    isPerformanceOpen,
+    handleQuickOrder,
+  ]);
+
   if (!token) {
     return (
       <AuthScreen
@@ -496,7 +757,10 @@ export default function TradingTerminal() {
         portfolio={augmentedPortfolio}
         onSignOut={handleSignOut}
         onOpenLedger={() => setIsLedgerOpen(true)}
+        onOpenOptionChain={() => setIsOptionChainOpen(true)}
+        onOpenPerformance={() => setIsPerformanceOpen(true)}
         onResetSimulation={handleResetSimulation}
+        onSquareOffMIS={handleSquareOffAllMIS}
         resetting={resetting}
       />
 
@@ -508,6 +772,9 @@ export default function TradingTerminal() {
           onSelectSymbol={setSelectedSymbol}
           quotes={quotes}
           apiUrl={API_URL}
+          onQuickOrder={handleQuickOrder}
+          positions={augmentedPortfolio?.positions ?? []}
+          onActiveSymbolsChange={setActiveWatchlistSymbols}
         />
 
         {/* Center Canvas: Chart on Top, Tabbed Desk on Bottom */}
@@ -587,6 +854,7 @@ export default function TradingTerminal() {
                 <PositionsTable
                   positions={augmentedPortfolio?.positions ?? []}
                   onSquareOff={handleSquareOff}
+                  onSquareOffAllMIS={handleSquareOffAllMIS}
                 />
               )}
               {bottomTab === "orders" && (
@@ -610,6 +878,7 @@ export default function TradingTerminal() {
           onOrderPlaced={() => void loadData(token)}
           onRequest={request}
           onToast={addToast}
+          prefill={prefillOrder}
         />
       </div>
 
@@ -620,6 +889,54 @@ export default function TradingTerminal() {
         wallet={wallet}
         transactions={transactions}
       />
+
+      {/* F&O Option Chain Modal */}
+      <OptionChainModal
+        isOpen={isOptionChainOpen}
+        onClose={() => setIsOptionChainOpen(false)}
+        apiUrl={API_URL}
+        initialSymbol={selectedSymbol}
+        onSelectContract={handleSelectOptionContract}
+      />
+
+      {/* Institutional Hotkeys Status Strip */}
+      <footer className="px-3 py-1 bg-slate-950/95 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-400 select-none shrink-0 z-10 font-sans">
+        <div className="flex items-center gap-2.5 overflow-x-auto">
+          <span className="font-semibold text-slate-500 uppercase tracking-wider text-[10px]">Shortcuts:</span>
+          <span className="flex items-center gap-1">
+            <kbd className="px-1.5 py-0.2 rounded bg-slate-800 text-emerald-400 font-mono text-[10px] font-bold border border-slate-700">B</kbd>
+            <span>Buy</span>
+          </span>
+          <span className="flex items-center gap-1">
+            <kbd className="px-1.5 py-0.2 rounded bg-slate-800 text-rose-400 font-mono text-[10px] font-bold border border-slate-700">S</kbd>
+            <span>Sell</span>
+          </span>
+          <span className="flex items-center gap-1">
+            <kbd className="px-1.5 py-0.2 rounded bg-slate-800 text-cyan-300 font-mono text-[10px] font-bold border border-slate-700">↑↓</kbd>
+            <span>Cycle Watchlist</span>
+          </span>
+          <span className="flex items-center gap-1">
+            <kbd className="px-1.5 py-0.2 rounded bg-slate-800 text-slate-300 font-mono text-[10px] font-bold border border-slate-700">O</kbd>
+            <span>F&O Chain</span>
+          </span>
+          <span className="flex items-center gap-1">
+            <kbd className="px-1.5 py-0.2 rounded bg-slate-800 text-slate-300 font-mono text-[10px] font-bold border border-slate-700">L</kbd>
+            <span>Ledger</span>
+          </span>
+          <span className="flex items-center gap-1">
+            <kbd className="px-1.5 py-0.2 rounded bg-slate-800 text-slate-300 font-mono text-[10px] font-bold border border-slate-700">P</kbd>
+            <span>Analytics</span>
+          </span>
+          <span className="flex items-center gap-1">
+            <kbd className="px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 font-mono text-[10px] font-bold border border-slate-700">Esc</kbd>
+            <span>Close</span>
+          </span>
+        </div>
+        <div className="hidden sm:flex items-center gap-2 text-[10px] text-slate-500 font-mono">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+          <span>NSE / BSE Simulated Real-Time Feeds</span>
+        </div>
+      </footer>
     </div>
   );
 }
