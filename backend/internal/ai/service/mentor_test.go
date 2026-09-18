@@ -77,13 +77,14 @@ func TestMentorService_BuildRuleBasedCritique(t *testing.T) {
 		TotalTradesEvaluated:   10,
 	}
 
-	critique := svc.buildRuleBasedCritique(65, "MODERATE", metrics, "RELIANCE")
+	critique := svc.buildRuleBasedCritique(65, "MODERATE", "B", metrics, "RELIANCE")
 	expectedSubstrings := []string{
-		"Trader Discipline Rating: MODERATE (65 / 100)",
+		"Trader Discipline Grade: B — MODERATE (65 / 100)",
 		"Impulse Warning:",
 		"Concentration Risk:",
 		"RELIANCE",
 		"Execution Discipline:",
+		"Win Rate:",
 	}
 
 	for _, sub := range expectedSubstrings {
@@ -112,7 +113,7 @@ func TestMentorService_PreTradeCheck(t *testing.T) {
 	}
 	svc := New(cfg)
 
-	// Test Slippage Warning on Market order > 50 qty
+	// Test Slippage Warning on Market order > 50 qty + Missing SL warning on INTRADAY
 	req := dto.PreTradeCheckRequest{
 		Symbol:     "RELIANCE",
 		Side:       "BUY",
@@ -131,16 +132,44 @@ func TestMentorService_PreTradeCheck(t *testing.T) {
 		t.Errorf("expected required margin 2500000 paise, got %d", res.RequiredMarginPaise)
 	}
 
-	// Should contain slippage warning
+	// Should contain slippage warning and missing SL warning
 	hasSlippageWarning := false
+	hasMissingSLWarning := false
 	for _, w := range res.Warnings {
 		if strings.Contains(w, "Exchange Slippage Alert") {
 			hasSlippageWarning = true
-			break
+		}
+		if strings.Contains(w, "Missing Stop-Loss Protection") {
+			hasMissingSLWarning = true
 		}
 	}
 	if !hasSlippageWarning {
 		t.Errorf("expected slippage warning for 100 qty market order, warnings: %v", res.Warnings)
+	}
+	if !hasMissingSLWarning {
+		t.Errorf("expected missing stop-loss warning for intraday order without SL, warnings: %v", res.Warnings)
+	}
+
+	// Test Risk-to-Reward calculation
+	reqWithRR := dto.PreTradeCheckRequest{
+		Symbol:        "NIFTY24DEC24000CE",
+		Side:          "BUY",
+		Product:       "FNO",
+		Type:          "LIMIT",
+		Quantity:      25,
+		PricePaise:    10000, // ₹100
+		StopLossPaise: 9000,  // ₹90 (Risk: ₹10)
+		TargetPaise:   12500, // ₹125 (Reward: ₹25) -> R:R = 2.5
+	}
+	resRR, err := svc.PreTradeCheck(context.Background(), "31372e69-2088-45d8-a2d8-8607a58e3685", reqWithRR)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resRR.RiskRewardRatio != 2.5 {
+		t.Errorf("expected R:R 2.5, got %.2f", resRR.RiskRewardRatio)
+	}
+	if resRR.RiskScore <= 0 || resRR.RiskScore > 100 {
+		t.Errorf("expected valid risk score between 1 and 100, got %d", resRR.RiskScore)
 	}
 }
 

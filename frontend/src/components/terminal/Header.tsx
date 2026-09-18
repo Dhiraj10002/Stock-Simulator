@@ -29,6 +29,8 @@ type HeaderProps = {
   onResetSimulation: () => void;
   onSquareOffMIS?: () => void;
   resetting: boolean;
+  offHoursPracticeMode?: boolean;
+  onTogglePracticeMode?: () => void;
 };
 
 export default function Header({
@@ -42,6 +44,8 @@ export default function Header({
   onResetSimulation,
   onSquareOffMIS,
   resetting,
+  offHoursPracticeMode = false,
+  onTogglePracticeMode,
 }: HeaderProps) {
   const [marketStatus, setMarketStatus] = useState(getIndianMarketStatus());
   const [showResetConfirm, setShowResetConfirm] = useState(false);

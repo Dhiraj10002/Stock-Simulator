@@ -3,15 +3,16 @@
 import { useMemo, useState, useEffect } from "react";
 import { formatPaise, getIndianMarketStatus } from "@/lib/format";
 import { generateMarketDepth, getDynamicMetadata } from "@/lib/mockData";
-import { Lock } from "lucide-react";
+import { Lock, MousePointerClick, ArrowUpDown } from "lucide-react";
 import type { Quote } from "@/types";
 
 interface MarketDepthProps {
   symbol: string;
   quote: Quote | null;
+  onSelectPrice?: (priceRupees: number) => void;
 }
 
-export default function MarketDepth({ symbol, quote }: MarketDepthProps) {
+export default function MarketDepth({ symbol, quote, onSelectPrice }: MarketDepthProps) {
   const [marketStatus, setMarketStatus] = useState(() => getIndianMarketStatus());
 
   useEffect(() => {
@@ -32,21 +33,21 @@ export default function MarketDepth({ symbol, quote }: MarketDepthProps) {
   }, [depth]);
 
   const spreadPaise = Math.max(5, (depth.asks[0]?.price_paise ?? ltpPaise) - (depth.bids[0]?.price_paise ?? ltpPaise));
-  const spreadPercent = ((spreadPaise / ltpPaise) * 100).toFixed(3);
-
-  // 52-week position calculation (0 to 100%)
-  const low52W = meta.low52WPaise;
-  const high52W = meta.high52WPaise;
-  const range52W = Math.max(1, high52W - low52W);
-  const position52W = Math.min(100, Math.max(0, ((ltpPaise - low52W) / range52W) * 100));
+  const spreadPercent = ((spreadPaise / ltpPaise) * 100).toFixed(2);
 
   // Buyer vs Seller ratio
   const totalQty = depth.total_bid_qty + depth.total_ask_qty;
   const buyerPercent = totalQty > 0 ? Math.round((depth.total_bid_qty / totalQty) * 100) : 50;
   const sellerPercent = 100 - buyerPercent;
 
+  const handlePriceClick = (pricePaise: number) => {
+    if (onSelectPrice) {
+      onSelectPrice(Number((pricePaise / 100).toFixed(2)));
+    }
+  };
+
   return (
-    <div className="flex flex-col bg-slate-900/50 rounded-xl border border-slate-800/80 p-3 text-xs space-y-3">
+    <div className="flex flex-col bg-slate-900/50 rounded-xl border border-slate-800/80 p-3 text-xs space-y-3 select-none">
       {/* Header */}
       <div className="flex flex-col gap-1.5 border-b border-slate-800/60 pb-2">
         <div className="flex items-center justify-between">
@@ -54,16 +55,21 @@ export default function MarketDepth({ symbol, quote }: MarketDepthProps) {
             <span className="font-bold text-slate-200 uppercase tracking-wider text-[11px]">
               Market Depth (L2)
             </span>
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 font-mono">
+            <span className="text-[9px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 font-mono">
               NSE
             </span>
+            {onSelectPrice && (
+              <span className="hidden sm:inline-flex items-center gap-1 text-[9px] text-cyan-400/80">
+                <MousePointerClick className="w-2.5 h-2.5" /> click price to set limit
+              </span>
+            )}
           </div>
-          <div className="text-[10px] text-slate-400 font-mono">
-            Spread: <span className="text-slate-200">{formatPaise(spreadPaise)}</span> ({spreadPercent}%)
+          <div className="text-[10px] text-slate-400 font-mono font-tabular">
+            Spread: <span className="text-slate-200 font-semibold">{formatPaise(spreadPaise)}</span> ({spreadPercent}%)
           </div>
         </div>
 
-        {/* Clear Market Closed (Frozen Depth) Badge */}
+        {/* Market Status Badge */}
         {!marketStatus.isOpen ? (
           <div className="flex items-center justify-between px-2 py-1 rounded bg-amber-500/10 border border-amber-500/30 text-[10px] text-amber-300">
             <span className="flex items-center gap-1.5 font-semibold">
@@ -75,15 +81,18 @@ export default function MarketDepth({ symbol, quote }: MarketDepthProps) {
             </span>
           </div>
         ) : (
-          <div className="flex items-center gap-1.5 text-[10px] text-emerald-400">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            <span>Live Order Book</span>
+          <div className="flex items-center justify-between text-[10px]">
+            <div className="flex items-center gap-1.5 text-emerald-400">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              <span>Live Order Book</span>
+            </div>
+            <span className="text-[10px] text-slate-500 font-mono">5 Levels</span>
           </div>
         )}
       </div>
 
       {/* Depth Grid (Bids vs Asks) */}
-      <div className="grid grid-cols-2 gap-2 text-[11px] font-mono">
+      <div className="grid grid-cols-2 gap-2 text-[11px] font-mono font-tabular">
         {/* Bids Column */}
         <div>
           <div className="grid grid-cols-3 text-[10px] text-slate-500 pb-1 border-b border-slate-800/40 font-sans">
@@ -95,14 +104,19 @@ export default function MarketDepth({ symbol, quote }: MarketDepthProps) {
             {depth.bids.map((b, idx) => {
               const widthPct = (b.quantity / maxQty) * 100;
               return (
-                <div key={`bid-${idx}-${b.price_paise}`} className="relative grid grid-cols-3 py-0.5 px-1 items-center rounded overflow-hidden">
+                <div
+                  key={`bid-${idx}-${b.price_paise}`}
+                  onClick={() => handlePriceClick(b.price_paise)}
+                  title={`Set Limit to ₹${(b.price_paise / 100).toFixed(2)}`}
+                  className="relative grid grid-cols-3 py-0.5 px-1 items-center rounded overflow-hidden cursor-pointer hover:bg-slate-800/90 active:scale-[0.98] transition-all group"
+                >
                   <div
-                    className="absolute inset-y-0 right-0 bg-emerald-500/10 pointer-events-none transition-all"
+                    className="absolute inset-y-0 right-0 bg-emerald-500/15 group-hover:bg-emerald-500/25 pointer-events-none transition-all"
                     style={{ width: `${widthPct}%` }}
                   />
                   <span className="text-left text-slate-500 text-[10px] z-10">{b.orders}</span>
                   <span className="text-center text-slate-300 z-10">{b.quantity.toLocaleString()}</span>
-                  <span className="text-right text-emerald-400 font-semibold z-10">
+                  <span className="text-right text-emerald-400 font-bold z-10 group-hover:underline">
                     {(b.price_paise / 100).toFixed(2)}
                   </span>
                 </div>
@@ -122,12 +136,17 @@ export default function MarketDepth({ symbol, quote }: MarketDepthProps) {
             {depth.asks.map((a, idx) => {
               const widthPct = (a.quantity / maxQty) * 100;
               return (
-                <div key={`ask-${idx}-${a.price_paise}`} className="relative grid grid-cols-3 py-0.5 px-1 items-center rounded overflow-hidden">
+                <div
+                  key={`ask-${idx}-${a.price_paise}`}
+                  onClick={() => handlePriceClick(a.price_paise)}
+                  title={`Set Limit to ₹${(a.price_paise / 100).toFixed(2)}`}
+                  className="relative grid grid-cols-3 py-0.5 px-1 items-center rounded overflow-hidden cursor-pointer hover:bg-slate-800/90 active:scale-[0.98] transition-all group"
+                >
                   <div
-                    className="absolute inset-y-0 left-0 bg-rose-500/10 pointer-events-none transition-all"
+                    className="absolute inset-y-0 left-0 bg-rose-500/15 group-hover:bg-rose-500/25 pointer-events-none transition-all"
                     style={{ width: `${widthPct}%` }}
                   />
-                  <span className="text-left text-rose-400 font-semibold z-10">
+                  <span className="text-left text-rose-400 font-bold z-10 group-hover:underline">
                     {(a.price_paise / 100).toFixed(2)}
                   </span>
                   <span className="text-center text-slate-300 z-10">{a.quantity.toLocaleString()}</span>
@@ -139,29 +158,24 @@ export default function MarketDepth({ symbol, quote }: MarketDepthProps) {
         </div>
       </div>
 
-      {/* Buyer / Seller Pressure Bar */}
-      <div className="pt-1">
-        <div className="flex justify-between text-[10px] font-mono mb-1">
-          <span className="text-emerald-400">{buyerPercent}% Buyers ({depth.total_bid_qty.toLocaleString()})</span>
-          <span className="text-rose-400">{sellerPercent}% Sellers ({depth.total_ask_qty.toLocaleString()})</span>
+      {/* Cumulative Buyer vs. Seller Strength Bar */}
+      <div className="pt-2 border-t border-slate-800/60 flex flex-col gap-1 text-[10px]">
+        <div className="flex justify-between font-mono font-tabular text-slate-400">
+          <span className="text-emerald-400 font-semibold">
+            Bids: {depth.total_bid_qty.toLocaleString()} ({buyerPercent}%)
+          </span>
+          <span className="text-rose-400 font-semibold">
+            Asks: {depth.total_ask_qty.toLocaleString()} ({sellerPercent}%)
+          </span>
         </div>
-        <div className="w-full h-1.5 bg-slate-800 rounded-full flex overflow-hidden">
-          <div className="bg-emerald-500 transition-all duration-300" style={{ width: `${buyerPercent}%` }} />
-          <div className="bg-rose-500 transition-all duration-300" style={{ width: `${sellerPercent}%` }} />
-        </div>
-      </div>
-
-      {/* 52-Week Range Bar */}
-      <div className="pt-2 border-t border-slate-800/60 space-y-1.5">
-        <div className="flex justify-between text-[10px] text-slate-400">
-          <span>52W Low: <strong className="text-slate-300">{formatPaise(low52W)}</strong></span>
-          <span className="font-semibold text-slate-300">52-Week Range</span>
-          <span>52W High: <strong className="text-slate-300">{formatPaise(high52W)}</strong></span>
-        </div>
-        <div className="relative w-full h-2 bg-slate-800 rounded-full overflow-hidden">
+        <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden flex">
           <div
-            className="absolute top-0 bottom-0 bg-gradient-to-r from-emerald-500 via-cyan-400 to-indigo-500 rounded-full"
-            style={{ width: `${position52W}%` }}
+            className="bg-emerald-500 transition-all duration-300"
+            style={{ width: `${buyerPercent}%` }}
+          />
+          <div
+            className="bg-rose-500 transition-all duration-300"
+            style={{ width: `${sellerPercent}%` }}
           />
         </div>
       </div>

@@ -3,6 +3,8 @@ package repository
 import (
 	"errors"
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/database"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
@@ -112,13 +114,124 @@ func (r *OrderRepository) FindByUUID(userUUID, orderUUID uuid.UUID) (*model.Orde
 	return &order, err
 }
 
+var knownLotSizes = map[string]int64{
+	"NIFTY":      25,
+	"BANKNIFTY":  15,
+	"RELIANCE":   250,
+	"TCS":        175,
+	"INFY":       400,
+	"HDFCBANK":   550,
+	"TATAMOTORS": 575,
+	"SBIN":       750,
+}
+
+func parseFnoInstrument(symbol string) *model.Instrument {
+	clean := strings.ToUpper(strings.TrimSpace(symbol))
+	if clean == "" {
+		return nil
+	}
+
+	var underlying string
+	for _, u := range []string{"BANKNIFTY", "NIFTY", "RELIANCE", "TATAMOTORS", "HDFCBANK", "SBIN", "TCS", "INFY"} {
+		if strings.HasPrefix(clean, u) {
+			underlying = u
+			break
+		}
+	}
+	if underlying == "" {
+		return nil
+	}
+
+	lotSize := int64(1)
+	if l, ok := knownLotSizes[underlying]; ok {
+		lotSize = l
+	}
+
+	isOption := strings.HasSuffix(clean, "CE") || strings.HasSuffix(clean, "PE")
+	isFuture := strings.HasSuffix(clean, "FUT")
+
+	if !isOption && !isFuture {
+		return nil
+	}
+
+	var optType, instType string
+	if isOption {
+		if strings.HasSuffix(clean, "CE") {
+			optType = "CE"
+		} else {
+			optType = "PE"
+		}
+		if underlying == "NIFTY" || underlying == "BANKNIFTY" {
+			instType = "OPTIDX"
+		} else {
+			instType = "OPTSTK"
+		}
+	} else {
+		if underlying == "NIFTY" || underlying == "BANKNIFTY" {
+			instType = "FUTIDX"
+		} else {
+			instType = "FUTSTK"
+		}
+	}
+
+	now := time.Now()
+	daysUntilThursday := (int(time.Thursday) - int(now.Weekday()) + 7) % 7
+	if daysUntilThursday == 0 && now.Hour() >= 15 && now.Minute() >= 30 {
+		daysUntilThursday = 7
+	}
+	nextThursday := now.AddDate(0, 0, daysUntilThursday)
+	expiryStr := nextThursday.Format("02-Jan-2006")
+
+	strike := ""
+	if isOption {
+		rest := strings.TrimPrefix(clean, underlying)
+		rest = strings.TrimSuffix(rest, optType)
+		var digits []rune
+		for i := len(rest) - 1; i >= 0; i-- {
+			r := rune(rest[i])
+			if r >= '0' && r <= '9' {
+				digits = append([]rune{r}, digits...)
+			} else {
+				break
+			}
+		}
+		if len(digits) > 0 {
+			strike = string(digits)
+		}
+	}
+
+	return &model.Instrument{
+		Token:            fmt.Sprintf("FNO_%s", clean),
+		Symbol:           clean,
+		Name:             fmt.Sprintf("%s %s %s", underlying, strike, optType),
+		UnderlyingSymbol: underlying,
+		Expiry:           expiryStr,
+		Strike:           strike,
+		OptionType:       optType,
+		LotSize:          lotSize,
+		InstrumentType:   instType,
+		ExchangeSegment:  "NFO",
+		TickSize:         "0.05",
+	}
+}
+
 func (r *OrderRepository) FindInstrument(symbol string) (*model.Instrument, error) {
 	if database.GetDB() == nil {
 		return nil, errors.New("database not connected")
 	}
 	var instrument model.Instrument
 	err := database.GetDB().Where("symbol = ?", symbol).First(&instrument).Error
-	return &instrument, err
+	if err == nil {
+		return &instrument, nil
+	}
+
+	// Auto-register dynamically generated F&O derivative contracts
+	if autoInst := parseFnoInstrument(symbol); autoInst != nil {
+		_ = database.GetDB().Create(autoInst).Error
+		return autoInst, nil
+	}
+
+	return nil, err
 }
 
 // ListOpenLimitOrders returns candidates in FIFO order. Settlement still locks

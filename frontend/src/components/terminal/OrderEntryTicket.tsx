@@ -9,6 +9,8 @@ import {
   Zap,
   Sparkles,
   Bot,
+  Target,
+  Crosshair,
 } from "lucide-react";
 import { formatPaise } from "@/lib/format";
 import { INSTRUMENT_METADATA } from "@/lib/mockData";
@@ -20,7 +22,15 @@ type OrderEntryTicketProps = {
   quote: Quote | null;
   wallet: Wallet | null;
   positions?: Position[];
-  onOrderPlaced: () => void;
+  onOrderPlaced: (gtt?: {
+    targetPriceRupees?: number;
+    stopLossPriceRupees?: number;
+    side: "BUY" | "SELL";
+    product: "DELIVERY" | "INTRADAY" | "FNO";
+    quantity: number;
+    symbol: string;
+    entryPriceRupees: number;
+  }) => void;
   onRequest: <T>(path: string, options?: RequestInit) => Promise<T>;
   onToast: (title: string, message?: string, type?: "success" | "error" | "info") => void;
   prefill?: {
@@ -30,6 +40,7 @@ type OrderEntryTicketProps = {
     quantity?: number;
     priceRupees?: number;
   } | null;
+  onPriceLevelsChange?: (targetRupees: number | null, stopLossRupees: number | null) => void;
 };
 
 const KNOWN_FNO_LOTS: Record<string, number> = {
@@ -62,6 +73,7 @@ export default function OrderEntryTicket({
   onRequest,
   onToast,
   prefill,
+  onPriceLevelsChange,
 }: OrderEntryTicketProps) {
   const meta = INSTRUMENT_METADATA[symbol] ?? {
     basePricePaise: 250000,
@@ -82,6 +94,16 @@ export default function OrderEntryTicket({
   const [product, setProduct] = useState<"DELIVERY" | "INTRADAY" | "FNO">(() =>
     isFnoSymbol ? "FNO" : "DELIVERY"
   );
+  const [variety, setVariety] = useState<"REGULAR" | "COVER" | "BRACKET">("REGULAR");
+  const [targetEnabled, setTargetEnabled] = useState(false);
+  const [stopLossEnabled, setStopLossEnabled] = useState(false);
+  const [targetRupees, setTargetRupees] = useState<number>(() =>
+    Number((defaultPriceRupees * 1.02).toFixed(2))
+  );
+  const [stopLossRupees, setStopLossRupees] = useState<number>(() =>
+    Number((defaultPriceRupees * 0.99).toFixed(2))
+  );
+
   const [lotSize, setLotSize] = useState<number>(() => inferFnoLotSize(symbol));
   const [type, setType] = useState<"MARKET" | "LIMIT" | "SL" | "SL-M">("MARKET");
   const [quantity, setQuantity] = useState<number>(() => {
@@ -91,6 +113,30 @@ export default function OrderEntryTicket({
   const [limitRupees, setLimitRupees] = useState<number>(defaultPriceRupees);
   const [triggerRupees, setTriggerRupees] = useState<number>(defaultPriceRupees);
   const [submitting, setSubmitting] = useState(false);
+
+  // Sync default target and SL when symbol changes
+  useEffect(() => {
+    const isBuy = side === "BUY";
+    setTargetRupees(
+      Number((defaultPriceRupees * (isBuy ? 1.02 : 0.98)).toFixed(2))
+    );
+    setStopLossRupees(
+      Number((defaultPriceRupees * (isBuy ? 0.99 : 1.01)).toFixed(2))
+    );
+  }, [symbol, defaultPriceRupees, side]);
+
+  // Sync Price Levels to Chart
+  useEffect(() => {
+    if (onPriceLevelsChange) {
+      const isTargetActive = (variety === "BRACKET" || targetEnabled) && targetRupees > 0;
+      const isSLActive =
+        (variety === "COVER" || variety === "BRACKET" || stopLossEnabled) && stopLossRupees > 0;
+      onPriceLevelsChange(
+        isTargetActive ? targetRupees : null,
+        isSLActive ? stopLossRupees : null
+      );
+    }
+  }, [variety, targetEnabled, targetRupees, stopLossEnabled, stopLossRupees, onPriceLevelsChange]);
 
   // Auto switch product to FNO if FNO contract selected
   useEffect(() => {
@@ -246,6 +292,10 @@ export default function OrderEntryTicket({
     setCheckingRisk(true);
     try {
       const pricePaise = Math.round(activePriceRupees * 100);
+      const isTargetActive = (variety === "BRACKET" || targetEnabled) && targetRupees > 0;
+      const isSLActive =
+        (variety === "COVER" || variety === "BRACKET" || stopLossEnabled) && stopLossRupees > 0;
+
       const res = await onRequest<ApiResponse<PreTradeCheckResponse>>("/ai/pretrade-check", {
         method: "POST",
         body: JSON.stringify({
@@ -255,6 +305,8 @@ export default function OrderEntryTicket({
           type,
           quantity,
           price_paise: pricePaise > 0 ? pricePaise : meta.basePricePaise,
+          stop_loss_paise: isSLActive ? Math.round(stopLossRupees * 100) : 0,
+          target_paise: isTargetActive ? Math.round(targetRupees * 100) : 0,
         }),
       });
       if (res.success && res.data) {
@@ -333,6 +385,48 @@ export default function OrderEntryTicket({
       return;
     }
 
+    const isTargetActive = (variety === "BRACKET" || targetEnabled) && targetRupees > 0;
+    const isSLActive =
+      (variety === "COVER" || variety === "BRACKET" || stopLossEnabled) && stopLossRupees > 0;
+
+    if (isTargetActive) {
+      if (side === "BUY" && targetRupees <= activePriceRupees) {
+        onToast(
+          "Invalid Target Price",
+          `BUY target price (₹${targetRupees.toFixed(2)}) must be higher than entry price (₹${activePriceRupees.toFixed(2)})`,
+          "error"
+        );
+        return;
+      }
+      if (side === "SELL" && targetRupees >= activePriceRupees) {
+        onToast(
+          "Invalid Target Price",
+          `SELL target price (₹${targetRupees.toFixed(2)}) must be lower than entry price (₹${activePriceRupees.toFixed(2)})`,
+          "error"
+        );
+        return;
+      }
+    }
+
+    if (isSLActive) {
+      if (side === "BUY" && stopLossRupees >= activePriceRupees) {
+        onToast(
+          "Invalid Stop-Loss Price",
+          `BUY stop-loss price (₹${stopLossRupees.toFixed(2)}) must be lower than entry price (₹${activePriceRupees.toFixed(2)})`,
+          "error"
+        );
+        return;
+      }
+      if (side === "SELL" && stopLossRupees <= activePriceRupees) {
+        onToast(
+          "Invalid Stop-Loss Price",
+          `SELL stop-loss price (₹${stopLossRupees.toFixed(2)}) must be higher than entry price (₹${activePriceRupees.toFixed(2)})`,
+          "error"
+        );
+        return;
+      }
+    }
+
     setSubmitting(true);
     try {
       const pricePaise = isLimitOrder ? Math.round(limitRupees * 100) : 0;
@@ -355,7 +449,20 @@ export default function OrderEntryTicket({
         `${side} ${quantity} ${symbol} (${product} - ${type}) submitted successfully`,
         "success"
       );
-      onOrderPlaced();
+
+      if (isTargetActive || isSLActive) {
+        onOrderPlaced({
+          targetPriceRupees: isTargetActive ? targetRupees : undefined,
+          stopLossPriceRupees: isSLActive ? stopLossRupees : undefined,
+          side,
+          product,
+          quantity,
+          symbol,
+          entryPriceRupees: activePriceRupees,
+        });
+      } else {
+        onOrderPlaced();
+      }
     } catch (err) {
       onToast(
         "Order Failed",
@@ -430,6 +537,47 @@ export default function OrderEntryTicket({
                 <span className="text-[9px] font-normal text-slate-500">
                   {prod.tip}
                 </span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Order Variety (Regular vs Cover vs Bracket) */}
+        <div className="space-y-1">
+          <div className="flex items-center justify-between text-[11px] font-semibold text-slate-400">
+            <span>Order Variety</span>
+            <span className="text-[10px] text-cyan-400 font-mono">
+              {variety === "BRACKET" ? "Target + SL" : variety === "COVER" ? "Cover SL" : "Standard"}
+            </span>
+          </div>
+          <div className="grid grid-cols-3 gap-1">
+            {[
+              { id: "REGULAR", label: "Regular", tip: "Normal" },
+              { id: "COVER", label: "Cover (CO)", tip: "With SL" },
+              { id: "BRACKET", label: "Bracket (BO)", tip: "Tgt + SL" },
+            ].map((v) => (
+              <button
+                key={v.id}
+                type="button"
+                onClick={() => {
+                  const newVar = v.id as "REGULAR" | "COVER" | "BRACKET";
+                  setVariety(newVar);
+                  if (newVar === "COVER") {
+                    setStopLossEnabled(true);
+                    setTargetEnabled(false);
+                  } else if (newVar === "BRACKET") {
+                    setStopLossEnabled(true);
+                    setTargetEnabled(true);
+                  }
+                }}
+                className={`py-1.5 px-1 rounded-xl border text-center transition-all ${
+                  variety === v.id
+                    ? "bg-slate-800 border-cyan-500/60 text-cyan-300 shadow-sm shadow-cyan-500/10 font-bold"
+                    : "bg-slate-900/60 border-slate-800 text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                <div className="text-xs">{v.label}</div>
+                <div className="text-[9px] text-slate-500">{v.tip}</div>
               </button>
             ))}
           </div>
@@ -649,6 +797,148 @@ export default function OrderEntryTicket({
           </div>
         )}
 
+        {/* Bracket / Cover / GTT Target & Stop-Loss Desk */}
+        {(variety === "BRACKET" || variety === "COVER" || targetEnabled || stopLossEnabled) && (
+          <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 space-y-3 shadow-inner">
+            <div className="flex items-center justify-between text-[11px] font-semibold border-b border-slate-800/80 pb-1.5">
+              <span className="flex items-center gap-1.5 text-slate-300">
+                <Crosshair className="w-3.5 h-3.5 text-cyan-400" />
+                Bracket Order Trigger Desk
+              </span>
+              <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-cyan-950/60 text-cyan-300 border border-cyan-800/40">
+                OCO Auto Exit
+              </span>
+            </div>
+
+            {/* Target Input */}
+            {(variety === "BRACKET" || targetEnabled) && (
+              <div className="space-y-1">
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="font-semibold text-emerald-400 flex items-center gap-1">
+                    <Target className="w-3 h-3" />
+                    Target (Take Profit)
+                  </span>
+                  <div className="flex gap-1">
+                    {[1, 2, 5, 10].map((pct) => (
+                      <button
+                        key={pct}
+                        type="button"
+                        onClick={() => {
+                          const delta = activePriceRupees * (pct / 100);
+                          const calculated = isBuy ? activePriceRupees + delta : activePriceRupees - delta;
+                          setTargetRupees(Number(calculated.toFixed(2)));
+                        }}
+                        className="px-1.5 py-0.2 rounded bg-emerald-950/60 border border-emerald-500/30 text-[9px] font-mono font-bold text-emerald-300 hover:bg-emerald-900/60 transition-colors cursor-pointer"
+                      >
+                        +{pct}%
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-500 text-xs font-bold">
+                    ₹
+                  </span>
+                  <input
+                    type="number"
+                    step="0.05"
+                    min="0.05"
+                    value={targetRupees}
+                    onChange={(e) => setTargetRupees(parseFloat(e.target.value) || 0)}
+                    className="w-full pl-7 pr-3 py-1.5 bg-slate-950/90 border border-slate-800 focus:border-emerald-500 rounded-lg text-xs font-bold text-emerald-400 focus:outline-none font-mono"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Stop-Loss Input */}
+            {(variety === "COVER" || variety === "BRACKET" || stopLossEnabled) && (
+              <div className="space-y-1">
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="font-semibold text-rose-400 flex items-center gap-1">
+                    <ShieldAlert className="w-3 h-3" />
+                    Stop-Loss Price
+                  </span>
+                  <div className="flex gap-1">
+                    {[0.5, 1, 2, 5].map((pct) => (
+                      <button
+                        key={pct}
+                        type="button"
+                        onClick={() => {
+                          const delta = activePriceRupees * (pct / 100);
+                          const calculated = isBuy ? activePriceRupees - delta : activePriceRupees + delta;
+                          setStopLossRupees(Number(calculated.toFixed(2)));
+                        }}
+                        className="px-1.5 py-0.2 rounded bg-rose-950/60 border border-rose-500/30 text-[9px] font-mono font-bold text-rose-300 hover:bg-rose-900/60 transition-colors cursor-pointer"
+                      >
+                        -{pct}%
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-rose-500 text-xs font-bold">
+                    ₹
+                  </span>
+                  <input
+                    type="number"
+                    step="0.05"
+                    min="0.05"
+                    value={stopLossRupees}
+                    onChange={(e) => setStopLossRupees(parseFloat(e.target.value) || 0)}
+                    className="w-full pl-7 pr-3 py-1.5 bg-slate-950/90 border border-slate-800 focus:border-rose-500 rounded-lg text-xs font-bold text-rose-400 focus:outline-none font-mono"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Live Risk-to-Reward & P&L Projection */}
+            {(variety === "BRACKET" || (targetEnabled && stopLossEnabled)) && (
+              <div className="pt-1.5 border-t border-slate-800/80 flex items-center justify-between text-[10px] font-mono">
+                <div className="flex items-center gap-1 text-slate-400">
+                  <span>R:R</span>
+                  <span className="font-bold text-cyan-300 px-1 py-0.2 rounded bg-cyan-950/80 border border-cyan-800/50">
+                    1 : {Math.abs(activePriceRupees - stopLossRupees) > 0 ? (Math.abs(targetRupees - activePriceRupees) / Math.abs(activePriceRupees - stopLossRupees)).toFixed(1) : "0"}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-emerald-400 font-medium">
+                    +₹{(Math.abs(targetRupees - activePriceRupees) * quantity).toFixed(2)}
+                  </span>
+                  <span className="text-slate-600">/</span>
+                  <span className="text-rose-400 font-medium">
+                    -₹{(Math.abs(activePriceRupees - stopLossRupees) * quantity).toFixed(2)}
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Regular Order Optional Toggles */}
+        {variety === "REGULAR" && (
+          <div className="flex items-center justify-between text-[11px] text-slate-400 pt-0.5 px-0.5">
+            <label className="flex items-center gap-1.5 cursor-pointer hover:text-slate-200">
+              <input
+                type="checkbox"
+                checked={targetEnabled}
+                onChange={(e) => setTargetEnabled(e.target.checked)}
+                className="rounded border-slate-700 bg-slate-900 text-emerald-500 focus:ring-0"
+              />
+              <span>Attach Target</span>
+            </label>
+            <label className="flex items-center gap-1.5 cursor-pointer hover:text-slate-200">
+              <input
+                type="checkbox"
+                checked={stopLossEnabled}
+                onChange={(e) => setStopLossEnabled(e.target.checked)}
+                className="rounded border-slate-700 bg-slate-900 text-rose-500 focus:ring-0"
+              />
+              <span>Attach Stop-Loss</span>
+            </label>
+          </div>
+        )}
+
         {/* Margin Requirement Summary */}
         <div className="bg-slate-900/50 rounded-xl border border-slate-800/60 p-2.5 space-y-1.5 text-xs font-mono">
           <div className="flex justify-between text-slate-400">
@@ -715,7 +1005,7 @@ export default function OrderEntryTicket({
 
           {preTradeRisk && (
             <div
-              className={`p-2.5 rounded-xl border text-[11px] space-y-1.5 animate-fade-in ${
+              className={`p-2.5 rounded-xl border text-[11px] space-y-2 animate-fade-in ${
                 preTradeRisk.risk_level === "HIGH_RISK"
                   ? "bg-rose-950/40 border-rose-500/40 text-rose-300"
                   : preTradeRisk.risk_level === "MODERATE"
@@ -724,17 +1014,27 @@ export default function OrderEntryTicket({
               }`}
             >
               <div className="flex items-center justify-between font-bold">
-                <span className="flex items-center gap-1">
+                <span className="flex items-center gap-1.5">
                   {preTradeRisk.risk_level === "HIGH_RISK" ? (
                     <ShieldAlert className="w-3.5 h-3.5 text-rose-400" />
                   ) : (
                     <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
                   )}
-                  Risk Level: {preTradeRisk.risk_level}
+                  <span>{preTradeRisk.risk_level}</span>
+                  {preTradeRisk.risk_score !== undefined && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-900/80 border border-slate-700/60 text-slate-200">
+                      Score: {preTradeRisk.risk_score}/100
+                    </span>
+                  )}
                 </span>
-                <span className="text-[10px] font-mono">
-                  Margin: {preTradeRisk.margin_impact_pct.toFixed(0)}%
-                </span>
+                <div className="flex items-center gap-1.5 text-[10px] font-mono">
+                  <span>Margin: {preTradeRisk.margin_impact_pct.toFixed(0)}%</span>
+                  {preTradeRisk.risk_reward_ratio !== undefined && preTradeRisk.risk_reward_ratio > 0 && (
+                    <span className="px-1.5 py-0.5 rounded bg-cyan-950/60 border border-cyan-500/40 text-cyan-300 font-bold">
+                      1:{preTradeRisk.risk_reward_ratio.toFixed(1)} R:R
+                    </span>
+                  )}
+                </div>
               </div>
 
               {preTradeRisk.warnings.length > 0 && (
@@ -748,6 +1048,52 @@ export default function OrderEntryTicket({
               <p className="text-[10px] text-slate-400 pt-1 border-t border-slate-800/60 leading-tight">
                 💡 {preTradeRisk.advice}
               </p>
+
+              {/* Actionable Quick Fixes */}
+              {(preTradeRisk.warnings.some((w) => w.includes("Missing Stop-Loss")) ||
+                preTradeRisk.margin_impact_pct > 50) && (
+                <div className="flex flex-wrap gap-1.5 pt-1 border-t border-slate-800/40">
+                  {preTradeRisk.warnings.some((w) => w.includes("Missing Stop-Loss")) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setStopLossEnabled(true);
+                        setStopLossRupees(
+                          Number(
+                            (
+                              activePriceRupees * (side === "BUY" ? 0.985 : 1.015)
+                            ).toFixed(2)
+                          )
+                        );
+                        onToast(
+                          "Stop-Loss Attached",
+                          "Attached 1.5% SL guardrail. Re-run risk check to verify score.",
+                          "info"
+                        );
+                      }}
+                      className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[10px] font-medium text-slate-200 transition-colors"
+                    >
+                      🛡️ Auto-Set 1.5% SL
+                    </button>
+                  )}
+                  {preTradeRisk.margin_impact_pct > 50 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleMarginPercent(25);
+                        onToast(
+                          "Position Downsized",
+                          "Reduced quantity to safe 25% margin allocation.",
+                          "info"
+                        );
+                      }}
+                      className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[10px] font-medium text-slate-200 transition-colors"
+                    >
+                      ⚖️ Resize to 25% Margin
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -782,7 +1128,19 @@ export default function OrderEntryTicket({
       </form>
 
       {/* Embedded Level 2 Market Depth Widget */}
-      <MarketDepth symbol={symbol} quote={quote} />
+      <MarketDepth
+        symbol={symbol}
+        quote={quote}
+        onSelectPrice={(price) => {
+          setLimitRupees(price);
+          setType("LIMIT");
+          onToast(
+            "Price Loaded",
+            `Limit price set to ₹${price.toFixed(2)} from Market Depth`,
+            "info"
+          );
+        }}
+      />
 
       {/* Footer Safeguard Note */}
       <div className="pt-1 text-[10px] text-slate-500 flex items-center gap-1.5 leading-tight">

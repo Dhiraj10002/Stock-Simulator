@@ -7,6 +7,8 @@ import {
   Newspaper,
   Bot,
   RefreshCw,
+  Crosshair,
+  TrendingUp,
 } from "lucide-react";
 import Header from "@/components/terminal/Header";
 import WatchlistSidebar from "@/components/terminal/WatchlistSidebar";
@@ -14,12 +16,14 @@ import ChartPanel from "@/components/terminal/ChartPanel";
 import OrderEntryTicket from "@/components/terminal/OrderEntryTicket";
 import PositionsTable from "@/components/terminal/PositionsTable";
 import OrdersTable from "@/components/terminal/OrdersTable";
+import GTTTriggersTable from "@/components/terminal/GTTTriggersTable";
 import LedgerModal from "@/components/terminal/LedgerModal";
 import TradeCopilot from "@/components/terminal/TradeCopilot";
 import OptionChainModal from "@/components/terminal/OptionChainModal";
 import PerformanceModal from "@/components/terminal/PerformanceModal";
 import { useToast } from "@/components/terminal/ToastProvider";
 import { getDefaultQuotes, getOrSeedQuote } from "@/lib/mockData";
+import { getIndianMarketStatus } from "@/lib/format";
 import type {
   User,
   Wallet,
@@ -31,6 +35,7 @@ import type {
   Article,
   ApiResponse,
   OptionContract,
+  GTTTrigger,
 } from "@/types";
 
 const API_URL =
@@ -77,8 +82,21 @@ export default function TradingTerminal() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [quotes, setQuotes] = useState<Record<string, Quote>>(() => getDefaultQuotes());
 
-  // Bottom Tabs: positions | orders | news | mentor
-  const [bottomTab, setBottomTab] = useState<"positions" | "orders" | "news" | "mentor">("positions");
+  // Bottom Tabs: positions | orders | gtt | news | mentor
+  const [bottomTab, setBottomTab] = useState<"positions" | "orders" | "gtt" | "news" | "mentor">("positions");
+
+  // Bracket & GTT State
+  const [gttTriggers, setGttTriggers] = useState<GTTTrigger[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const saved = localStorage.getItem("stock-simulator-gtt-triggers");
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [previewTargetPrice, setPreviewTargetPrice] = useState<number | null>(null);
+  const [previewStopLossPrice, setPreviewStopLossPrice] = useState<number | null>(null);
 
   // Modals & Async States
   const [isLedgerOpen, setIsLedgerOpen] = useState(false);
@@ -361,9 +379,15 @@ export default function TradingTerminal() {
       .catch(() => {});
   }, [selectedSymbol]);
 
-  // Simulated Micro-Jitter (24/7 Live Practice Feed for selected symbol, holdings & heavyweights)
+  // Simulated Micro-Jitter (Only active during live trading session: 09:15-15:30 IST Mon-Fri)
   useEffect(() => {
     const interval = setInterval(() => {
+      // Check market status: Freeze all quotes and portfolio valuations when market is closed
+      const status = getIndianMarketStatus();
+      if (!status.isOpen) {
+        return;
+      }
+
       setQuotes((prev) => {
         const activeSymbols = new Set<string>([selectedSymbol]);
         if (portfolio?.positions) {
@@ -571,6 +595,152 @@ export default function TradingTerminal() {
       setResetting(false);
     }
   };
+
+  // Register GTT / Bracket Order Triggers
+  const handleRegisterGTT = useCallback(
+    (gtt: {
+      targetPriceRupees?: number;
+      stopLossPriceRupees?: number;
+      side: "BUY" | "SELL";
+      product: "DELIVERY" | "INTRADAY" | "FNO";
+      quantity: number;
+      symbol: string;
+      entryPriceRupees: number;
+    }) => {
+      const newTrigger: GTTTrigger = {
+        id: `gtt-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        symbol: gtt.symbol,
+        side: gtt.side,
+        product: gtt.product,
+        quantity: gtt.quantity,
+        entry_price_paise: Math.round(gtt.entryPriceRupees * 100),
+        target_price_paise: gtt.targetPriceRupees
+          ? Math.round(gtt.targetPriceRupees * 100)
+          : undefined,
+        stop_loss_price_paise: gtt.stopLossPriceRupees
+          ? Math.round(gtt.stopLossPriceRupees * 100)
+          : undefined,
+        status: "ACTIVE",
+        created_at: new Date().toISOString(),
+      };
+
+      setGttTriggers((prev) => {
+        const updated = [newTrigger, ...prev];
+        localStorage.setItem("stock-simulator-gtt-triggers", JSON.stringify(updated));
+        return updated;
+      });
+
+      addToast(
+        "Bracket Order Armed",
+        `Active OCO triggers: Target ${
+          gtt.targetPriceRupees ? `₹${gtt.targetPriceRupees.toFixed(2)}` : "None"
+        } | SL ${
+          gtt.stopLossPriceRupees ? `₹${gtt.stopLossPriceRupees.toFixed(2)}` : "None"
+        }`,
+        "info"
+      );
+    },
+    [addToast]
+  );
+
+  // Cancel GTT Trigger
+  const handleCancelGTT = useCallback(
+    (triggerId: string) => {
+      setGttTriggers((prev) => {
+        const updated = prev.map((t) =>
+          t.id === triggerId ? { ...t, status: "CANCELLED" as const } : t
+        );
+        localStorage.setItem("stock-simulator-gtt-triggers", JSON.stringify(updated));
+        return updated;
+      });
+      addToast("Trigger Cancelled", "Automated bracket trigger deactivated.", "info");
+    },
+    [addToast]
+  );
+
+  // Live Automated Bracket / GTT Execution Monitor
+  useEffect(() => {
+    if (!token || !gttTriggers.some((t) => t.status === "ACTIVE")) return;
+
+    gttTriggers.forEach((trigger) => {
+      if (trigger.status !== "ACTIVE") return;
+
+      const quote = quotes[trigger.symbol];
+      if (!quote || quote.price_paise <= 0) return;
+
+      const ltpPaise = quote.price_paise;
+      const isLong = trigger.side === "BUY";
+      const exitSide = isLong ? "SELL" : "BUY";
+
+      let triggeredReason: "TARGET" | "SL" | null = null;
+
+      if (isLong) {
+        if (trigger.stop_loss_price_paise && ltpPaise <= trigger.stop_loss_price_paise) {
+          triggeredReason = "SL";
+        } else if (trigger.target_price_paise && ltpPaise >= trigger.target_price_paise) {
+          triggeredReason = "TARGET";
+        }
+      } else {
+        if (trigger.stop_loss_price_paise && ltpPaise >= trigger.stop_loss_price_paise) {
+          triggeredReason = "SL";
+        } else if (trigger.target_price_paise && ltpPaise <= trigger.target_price_paise) {
+          triggeredReason = "TARGET";
+        }
+      }
+
+      if (triggeredReason) {
+        // Mark trigger executed immediately to prevent duplicate requests
+        const newStatus: "TRIGGERED_TARGET" | "TRIGGERED_SL" =
+          triggeredReason === "TARGET" ? "TRIGGERED_TARGET" : "TRIGGERED_SL";
+
+        setGttTriggers((prev) => {
+          const updated: GTTTrigger[] = prev.map((t) =>
+            t.id === trigger.id
+              ? { ...t, status: newStatus, triggered_at: new Date().toISOString() }
+              : t
+          );
+          localStorage.setItem("stock-simulator-gtt-triggers", JSON.stringify(updated));
+          return updated;
+        });
+
+        // Submit automated exit order to server
+        request<Order>("/orders", {
+          method: "POST",
+          body: JSON.stringify({
+            symbol: trigger.symbol,
+            side: exitSide,
+            type: "MARKET",
+            product: trigger.product,
+            quantity: trigger.quantity,
+            price_paise: 0,
+          }),
+        })
+          .then(() => {
+            if (triggeredReason === "TARGET") {
+              addToast(
+                "🎯 GTT Target Achieved!",
+                `Booked profit on ${trigger.quantity} ${trigger.symbol}. Bracket closed.`,
+                "success"
+              );
+            } else {
+              addToast(
+                "🛑 GTT Stop-Loss Executed!",
+                `Protected capital on ${trigger.quantity} ${trigger.symbol}. Position squared off.`,
+                "error"
+              );
+            }
+            void loadData(token);
+          })
+          .catch((err) => {
+            addToast(
+              "GTT Auto-Exit Error",
+              err instanceof Error ? err.message : "Failed to execute automated GTT exit",
+              "error"
+            );
+          });
+      }
+    });
+  }, [quotes, gttTriggers, token, request, addToast, loadData]);
 
   const handleSignOut = async () => {
     if (refreshToken) {
@@ -784,9 +954,20 @@ export default function TradingTerminal() {
             symbol={selectedSymbol}
             quote={activeQuote}
             apiUrl={API_URL}
+            targetPriceRupees={previewTargetPrice}
+            stopLossPriceRupees={previewStopLossPrice}
+            entryPriceRupees={
+              augmentedPortfolio?.positions?.find(
+                (p) => p.symbol === selectedSymbol && p.quantity !== 0
+              )
+                ? (augmentedPortfolio.positions.find(
+                    (p) => p.symbol === selectedSymbol && p.quantity !== 0
+                  )!.average_price_paise / 100)
+                : null
+            }
           />
 
-          {/* Bottom Tabbed Desk: Positions | Orders | News | AI Mentor */}
+          {/* Bottom Tabbed Desk: Positions | Orders | GTT | News | AI Mentor */}
           <div className="h-[280px] lg:h-[300px] flex flex-col border-t border-slate-800/80 bg-slate-950/80 backdrop-blur-sm">
             {/* Tab Selector Strip */}
             <div className="flex items-center justify-between px-4 border-b border-slate-800/80 bg-slate-900/40">
@@ -805,6 +986,12 @@ export default function TradingTerminal() {
                     count: orders.length,
                   },
                   {
+                    id: "gtt",
+                    label: "GTT / Triggers",
+                    icon: Crosshair,
+                    count: gttTriggers.filter((t) => t.status === "ACTIVE").length,
+                  },
+                  {
                     id: "news",
                     label: "Market News",
                     icon: Newspaper,
@@ -814,13 +1001,26 @@ export default function TradingTerminal() {
                     label: "AI Mentor",
                     icon: Bot,
                   },
+                  {
+                    id: "analytics",
+                    label: "Analytics & P&L",
+                    icon: TrendingUp,
+                  },
                 ].map((tab) => {
                   const Icon = tab.icon;
                   const isActive = bottomTab === tab.id;
                   return (
                     <button
                       key={tab.id}
-                      onClick={() => setBottomTab(tab.id as "positions" | "orders" | "news" | "mentor")}
+                      onClick={() => {
+                        if (tab.id === "analytics") {
+                          setIsPerformanceOpen(true);
+                        } else {
+                          setBottomTab(
+                            tab.id as "positions" | "orders" | "gtt" | "news" | "mentor"
+                          );
+                        }
+                      }}
                       className={`flex items-center gap-1.5 py-2.5 px-3 text-xs font-semibold border-b-2 transition-all ${
                         isActive
                           ? "border-cyan-400 text-cyan-300"
@@ -863,6 +1063,13 @@ export default function TradingTerminal() {
                   onCancelOrder={handleCancelOrder}
                 />
               )}
+              {bottomTab === "gtt" && (
+                <GTTTriggersTable
+                  triggers={gttTriggers}
+                  quotes={quotes}
+                  onCancelTrigger={handleCancelGTT}
+                />
+              )}
               {bottomTab === "news" && <NewsFeed token={token} apiUrl={API_URL} />}
               {bottomTab === "mentor" && <TradeCopilot token={token} apiUrl={API_URL} />}
             </div>
@@ -875,10 +1082,19 @@ export default function TradingTerminal() {
           quote={activeQuote}
           wallet={wallet}
           positions={augmentedPortfolio?.positions ?? []}
-          onOrderPlaced={() => void loadData(token)}
+          onOrderPlaced={(gtt) => {
+            void loadData(token);
+            if (gtt && (gtt.targetPriceRupees || gtt.stopLossPriceRupees)) {
+              handleRegisterGTT(gtt);
+            }
+          }}
           onRequest={request}
           onToast={addToast}
           prefill={prefillOrder}
+          onPriceLevelsChange={(target, sl) => {
+            setPreviewTargetPrice(target);
+            setPreviewStopLossPrice(sl);
+          }}
         />
       </div>
 
@@ -895,8 +1111,22 @@ export default function TradingTerminal() {
         isOpen={isOptionChainOpen}
         onClose={() => setIsOptionChainOpen(false)}
         apiUrl={API_URL}
+        token={token}
         initialSymbol={selectedSymbol}
         onSelectContract={handleSelectOptionContract}
+        onStrategyExecuted={() => {
+          if (token) {
+            void loadData(token);
+          }
+        }}
+      />
+
+      {/* Performance Analytics & Trade Journal Modal */}
+      <PerformanceModal
+        isOpen={isPerformanceOpen}
+        onClose={() => setIsPerformanceOpen(false)}
+        apiUrl={API_URL}
+        token={token}
       />
 
       {/* Institutional Hotkeys Status Strip */}
@@ -933,8 +1163,17 @@ export default function TradingTerminal() {
           </span>
         </div>
         <div className="hidden sm:flex items-center gap-2 text-[10px] text-slate-500 font-mono">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-          <span>NSE / BSE Simulated Real-Time Feeds</span>
+          {getIndianMarketStatus().isOpen ? (
+            <>
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              <span>NSE / BSE Simulated Real-Time Feeds</span>
+            </>
+          ) : (
+            <>
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+              <span>Market Closed (Prices & Portfolio Frozen at 15:30 IST)</span>
+            </>
+          )}
         </div>
       </footer>
     </div>

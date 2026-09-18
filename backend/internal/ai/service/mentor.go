@@ -179,14 +179,14 @@ func (s *MentorService) PreTradeCheck(ctx context.Context, userID string, req dt
 		riskLevel = "HIGH_RISK"
 		deficitRupees := float64(requiredMarginPaise-availablePaise) / 100.0
 		warnings = append(warnings, fmt.Sprintf("Insufficient available margin: Deficit of ₹%.2f. Order will be rejected.", deficitRupees))
-	} else if marginImpactPct >= 75.0 {
+	} else if marginImpactPct >= 50.0 {
 		riskLevel = "HIGH_RISK"
-		warnings = append(warnings, fmt.Sprintf("High Capital Depletion: This order consumes %.1f%% of your total available cash.", marginImpactPct))
-	} else if marginImpactPct >= 40.0 {
+		warnings = append(warnings, fmt.Sprintf("Excessive Margin Commitment: Order consumes %.1f%% (>50%%) of total available cash balance.", marginImpactPct))
+	} else if marginImpactPct >= 25.0 {
 		if riskLevel == "SAFE" {
 			riskLevel = "MODERATE"
 		}
-		warnings = append(warnings, fmt.Sprintf("Elevated Margin Commitment: Order utilizes %.1f%% of available trading balance.", marginImpactPct))
+		warnings = append(warnings, fmt.Sprintf("Elevated Margin Commitment: Order utilizes %.1f%% (>25%%) of available trading balance.", marginImpactPct))
 	}
 
 	// 2. Slippage Warning on Market Orders
@@ -213,20 +213,99 @@ func (s *MentorService) PreTradeCheck(ctx context.Context, userID string, req dt
 		warnings = append(warnings, "MIS Leverage Notice: Mandatory automated square-off at 15:20 IST applies to this position.")
 	}
 
-	// 5. Synthesis Advice
+	// 5. Missing Stop-Loss Warning on Volatile / Derivative Symbols
+	isDerivativeOrIntraday := req.Product == "FNO" || req.Product == "INTRADAY" ||
+		strings.Contains(req.Symbol, "NIFTY") || strings.Contains(req.Symbol, "BANKNIFTY") ||
+		strings.Contains(req.Symbol, "CE") || strings.Contains(req.Symbol, "PE")
+	if isDerivativeOrIntraday && req.StopLossPaise <= 0 {
+		if riskLevel == "SAFE" {
+			riskLevel = "MODERATE"
+		}
+		warnings = append(warnings, "Missing Stop-Loss Protection: Derivative & intraday positions carry high gamma and gap risk. Trading without an active Stop-Loss exposes capital to unbounded drawdowns.")
+	}
+
+	// 6. Risk-Reward Ratio Calculation
+	var riskRewardRatio float64 = 0.0
+	if req.StopLossPaise > 0 && req.TargetPaise > 0 {
+		var riskPaise, rewardPaise int64
+		if req.Side == "BUY" {
+			riskPaise = req.PricePaise - req.StopLossPaise
+			rewardPaise = req.TargetPaise - req.PricePaise
+		} else {
+			riskPaise = req.StopLossPaise - req.PricePaise
+			rewardPaise = req.PricePaise - req.TargetPaise
+		}
+		if riskPaise > 0 && rewardPaise > 0 {
+			riskRewardRatio = float64(rewardPaise) / float64(riskPaise)
+			if riskRewardRatio < 1.0 {
+				if riskLevel == "SAFE" {
+					riskLevel = "MODERATE"
+				}
+				warnings = append(warnings, fmt.Sprintf("Sub-optimal Risk-to-Reward Ratio (1:%.2f): Potential loss outweighs projected target gain. Target at least 1:1.50.", riskRewardRatio))
+			} else if riskRewardRatio >= 2.0 {
+				warnings = append(warnings, fmt.Sprintf("Favorable Asymmetric R:R (1:%.2f): Target upside gives a 2x+ buffer over defined stop risk.", riskRewardRatio))
+			}
+		}
+	}
+
+	// 7. Safety / Discipline Score Calculation (0 - 100)
+	score := 100
+	if requiredMarginPaise > availablePaise {
+		score -= 50
+	} else if marginImpactPct >= 75.0 {
+		score -= 35
+	} else if marginImpactPct >= 50.0 {
+		score -= 25
+	} else if marginImpactPct >= 25.0 {
+		score -= 15
+	}
+
+	if concentrationImpactPct > 40.0 {
+		score -= 20
+	} else if concentrationImpactPct > 25.0 {
+		score -= 10
+	}
+
+	if isDerivativeOrIntraday && req.StopLossPaise <= 0 {
+		score -= 15
+	}
+
+	if riskRewardRatio > 0 && riskRewardRatio < 1.0 {
+		score -= 10
+	} else if riskRewardRatio >= 1.5 {
+		score += 5
+	}
+
+	if req.Type == "MARKET" && req.Quantity > 50 {
+		score -= 5
+	}
+
+	if score < 10 {
+		score = 10
+	} else if score > 100 {
+		score = 100
+	}
+
+	// 8. Synthesis Advice
 	advice := "Systematic execution: Parameters fall within normal institutional risk tolerance."
 	if riskLevel == "HIGH_RISK" {
 		advice = "Exercise caution: High capital commitment or portfolio concentration detected. Consider reducing quantity or setting a tight Stop-Loss."
 	} else if riskLevel == "MODERATE" {
-		advice = "Balanced setup: Consider using a Limit order to guarantee entry price and minimize spread cost."
+		if isDerivativeOrIntraday && req.StopLossPaise <= 0 {
+			advice = "Protect downside: Set an automated Stop-Loss (e.g. 1.5% below entry) before executing leveraged or derivative trades."
+		} else {
+			advice = "Balanced setup: Consider using a Limit order to guarantee entry price and minimize spread cost."
+		}
 	}
 
 	return &dto.PreTradeCheckResponse{
 		RiskLevel:              riskLevel,
+		RiskScore:              score,
 		RequiredMarginPaise:    requiredMarginPaise,
 		AvailableBalancePaise:  availablePaise,
 		MarginImpactPct:        marginImpactPct,
 		ConcentrationImpactPct: concentrationImpactPct,
+		RiskRewardRatio:        riskRewardRatio,
 		Warnings:               warnings,
 		Advice:                 advice,
 	}, nil
@@ -239,6 +318,7 @@ func (s *MentorService) Critique(ctx context.Context, userID string) (*dto.Trade
 	}
 
 	var positions []model.Position
+	var allPositions []model.Position
 	var wallet model.Wallet
 	var orders []model.Order
 
@@ -246,6 +326,7 @@ func (s *MentorService) Critique(ctx context.Context, userID string) (*dto.Trade
 	if db != nil {
 		_ = db.Where("user_uuid = ?", userUUID).First(&wallet).Error
 		_ = db.Where("user_uuid = ? AND quantity <> 0", userUUID).Find(&positions).Error
+		_ = db.Where("user_uuid = ?", userUUID).Find(&allPositions).Error
 		_ = db.Where("user_uuid = ?", userUUID).Order("created_at DESC").Limit(50).Find(&orders).Error
 	}
 
@@ -332,6 +413,30 @@ func (s *MentorService) Critique(ctx context.Context, userID string) (*dto.Trade
 		score -= 15
 	}
 
+	// 5. Evaluate Closed Trades Win-Rate and Realized P&L
+	var totalClosed int = 0
+	var winningTrades int = 0
+	var totalRealizedPnlPaise int64 = 0
+	for _, p := range allPositions {
+		totalRealizedPnlPaise += p.RealizedPnlPaise
+		if p.RealizedPnlPaise != 0 {
+			totalClosed++
+			if p.RealizedPnlPaise > 0 {
+				winningTrades++
+			}
+		}
+	}
+
+	winRate := 66.7 // default baseline
+	if totalClosed > 0 {
+		winRate = (float64(winningTrades) / float64(totalClosed)) * 100.0
+		if winRate < 40.0 {
+			score -= 10
+		} else if winRate >= 70.0 {
+			score += 5
+		}
+	}
+
 	if score < 10 {
 		score = 10
 	} else if score > 100 {
@@ -345,7 +450,24 @@ func (s *MentorService) Critique(ctx context.Context, userID string) (*dto.Trade
 		riskRating = "MODERATE"
 	}
 
-	// 5. Behavioral Flags
+	grade := "B"
+	if score >= 92 {
+		grade = "A+"
+	} else if score >= 82 {
+		grade = "A"
+	} else if score >= 72 {
+		grade = "B+"
+	} else if score >= 60 {
+		grade = "B"
+	} else if score >= 45 {
+		grade = "C"
+	} else if score >= 30 {
+		grade = "D"
+	} else {
+		grade = "F"
+	}
+
+	// 6. Behavioral Flags
 	var flags []dto.BehavioralFlag
 	if revengeDetected {
 		flags = append(flags, dto.BehavioralFlag{
@@ -375,6 +497,13 @@ func (s *MentorService) Critique(ctx context.Context, userID string) (*dto.Trade
 			Description: fmt.Sprintf("%.0f%% of your orders used Limit orders, securing controlled execution without paying bid-ask spread slippage.", limitUsagePct),
 		})
 	}
+	if totalClosed > 0 && winRate >= 60.0 {
+		flags = append(flags, dto.BehavioralFlag{
+			Type:        "POSITIVE",
+			Title:       "Positive Expectancy Adherence",
+			Description: fmt.Sprintf("Solid closed trade win rate of %.1f%% demonstrates strong risk discipline and exit timing.", winRate),
+		})
+	}
 	if len(flags) == 0 {
 		flags = append(flags, dto.BehavioralFlag{
 			Type:        "POSITIVE",
@@ -384,20 +513,21 @@ func (s *MentorService) Critique(ctx context.Context, userID string) (*dto.Trade
 	}
 
 	metrics := dto.CritiqueMetrics{
-		WinRate:                66.7, // benchmark baseline
+		WinRate:                winRate,
 		ConcentrationRisk:      concentrationRisk,
 		LeverageRisk:           leverageRisk,
 		RevengeTradingDetected: revengeDetected,
 		LimitOrderUsagePct:     limitUsagePct,
 		TotalTradesEvaluated:   totalTrades,
+		RealizedPnlPaise:       totalRealizedPnlPaise,
 	}
 
-	critiqueText := s.buildRuleBasedCritique(score, riskRating, metrics, maxSymbol)
+	critiqueText := s.buildRuleBasedCritique(score, riskRating, grade, metrics, maxSymbol)
 
 	// If Gemini API is available, optionally synthesize an executive narrative
 	if strings.TrimSpace(s.apiKey) != "" {
-		prompt := fmt.Sprintf("Act as an institutional risk officer. Evaluate this simulated trader: Discipline Score: %d/100 (%s). Revenge Trading: %t. Concentration: %s (%s). Leverage Risk: %s. Limit Order Usage: %.0f%% across %d trades. Provide a concise 2-paragraph professional executive critique with actionable recommendations.",
-			score, riskRating, revengeDetected, concentrationRisk, maxSymbol, leverageRisk, limitUsagePct, totalTrades)
+		prompt := fmt.Sprintf("Act as an institutional risk officer. Evaluate this simulated trader: Grade: %s, Discipline Score: %d/100 (%s). Win Rate: %.1f%%. Revenge Trading: %t. Concentration: %s (%s). Leverage Risk: %s. Limit Order Usage: %.0f%% across %d trades. Provide a concise 2-paragraph professional executive critique with actionable recommendations.",
+			grade, score, riskRating, winRate, revengeDetected, concentrationRisk, maxSymbol, leverageRisk, limitUsagePct, totalTrades)
 		llmCritique, err := s.callGemini(ctx, prompt)
 		if err == nil && strings.TrimSpace(llmCritique) != "" {
 			critiqueText = llmCritique
@@ -407,16 +537,17 @@ func (s *MentorService) Critique(ctx context.Context, userID string) (*dto.Trade
 	return &dto.TradeCritiqueResponse{
 		DisciplineScore: score,
 		RiskRating:      riskRating,
+		Grade:           grade,
 		Metrics:         metrics,
 		BehavioralFlags: flags,
 		Critique:        critiqueText,
 	}, nil
 }
 
-func (s *MentorService) buildRuleBasedCritique(score int, rating string, metrics dto.CritiqueMetrics, topSymbol string) string {
+func (s *MentorService) buildRuleBasedCritique(score int, rating, grade string, metrics dto.CritiqueMetrics, topSymbol string) string {
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("📊 **Institutional Trade Post-Mortem Assessment**\n\n"))
-	b.WriteString(fmt.Sprintf("**Trader Discipline Rating: %s (%d / 100)**\n\n", rating, score))
+	b.WriteString(fmt.Sprintf("**Trader Discipline Grade: %s — %s (%d / 100)**\n\n", grade, rating, score))
 
 	if metrics.RevengeTradingDetected {
 		b.WriteString("⚠️ **Impulse Warning:** High-frequency clustering of orders was detected within narrow timeframes. Systematic traders pause after losing trades rather than re-entering impulsively.\n\n")
@@ -432,6 +563,10 @@ func (s *MentorService) buildRuleBasedCritique(score int, rating string, metrics
 		b.WriteString("✅ **Execution Discipline:** Solid utilization of Limit orders protects your portfolio against adverse market slippage.\n\n")
 	} else if metrics.TotalTradesEvaluated >= 3 {
 		b.WriteString("💡 **Recommendation:** You are relying predominantly on Market orders. Using Limit orders allows you to capture favorable liquidity and avoid crossing the spread.\n\n")
+	}
+
+	if metrics.WinRate >= 60.0 {
+		b.WriteString(fmt.Sprintf("🎯 **Win Rate:** %.1f%% realized win rate aligns with profitable trading setups.\n\n", metrics.WinRate))
 	}
 
 	b.WriteString("Remember: Consistent profitability is driven by loss prevention, hard stops, and risk-reward asymmetry.")

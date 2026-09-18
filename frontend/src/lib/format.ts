@@ -24,6 +24,7 @@ export function getIndianMarketStatus(): {
   isOpen: boolean;
   statusText: string;
   istTime: string;
+  sessionCloseSeconds: number;
 } {
   const now = new Date();
   // Get time in Asia/Kolkata
@@ -31,6 +32,9 @@ export function getIndianMarketStatus(): {
     timeZone: "Asia/Kolkata",
     hour12: false,
     weekday: "short",
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
     hour: "numeric",
     minute: "numeric",
     second: "numeric",
@@ -41,6 +45,9 @@ export function getIndianMarketStatus(): {
     parts.find((p) => p.type === type)?.value || "";
 
   const weekday = findPart("weekday");
+  const year = parseInt(findPart("year"), 10) || now.getFullYear();
+  const month = parseInt(findPart("month"), 10) || now.getMonth() + 1;
+  const day = parseInt(findPart("day"), 10) || now.getDate();
   const hour = parseInt(findPart("hour"), 10);
   const minute = parseInt(findPart("minute"), 10);
 
@@ -48,12 +55,21 @@ export function getIndianMarketStatus(): {
     .toString()
     .padStart(2, "0")} IST`;
 
+  // 15:30 IST corresponds to 10:00:00 UTC
+  const todayCloseUtcMs = Date.UTC(year, month - 1, day, 10, 0, 0);
+  const oneDayMs = 24 * 60 * 60 * 1000;
+
+  let sessionCloseSeconds = Math.floor(todayCloseUtcMs / 1000);
+
   const isWeekend = weekday === "Sat" || weekday === "Sun";
   if (isWeekend) {
+    const daysBack = weekday === "Sat" ? 1 : 2;
+    sessionCloseSeconds = Math.floor((todayCloseUtcMs - daysBack * oneDayMs) / 1000);
     return {
       isOpen: false,
       statusText: "MARKET CLOSED (Weekend)",
       istTime: istTimeString,
+      sessionCloseSeconds,
     };
   }
 
@@ -62,16 +78,21 @@ export function getIndianMarketStatus(): {
   const closeMinutes = 15 * 60 + 30; // 15:30 IST
 
   if (totalMinutes < openMinutes) {
+    const daysBack = weekday === "Mon" ? 3 : 1;
+    sessionCloseSeconds = Math.floor((todayCloseUtcMs - daysBack * oneDayMs) / 1000);
     return {
       isOpen: false,
       statusText: "PRE-MARKET (Opens 09:15 IST)",
       istTime: istTimeString,
+      sessionCloseSeconds,
     };
   } else if (totalMinutes > closeMinutes) {
+    sessionCloseSeconds = Math.floor(todayCloseUtcMs / 1000);
     return {
       isOpen: false,
       statusText: "MARKET CLOSED (Closed 15:30 IST)",
       istTime: istTimeString,
+      sessionCloseSeconds,
     };
   }
 
@@ -79,5 +100,6 @@ export function getIndianMarketStatus(): {
     isOpen: true,
     statusText: "MARKET OPEN",
     istTime: istTimeString,
+    sessionCloseSeconds: Math.floor(Date.now() / 1000),
   };
 }

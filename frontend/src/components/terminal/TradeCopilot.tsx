@@ -14,7 +14,9 @@ import {
   Trash2,
   User,
   Activity,
+  TrendingUp,
 } from "lucide-react";
+import { formatPaise } from "@/lib/format";
 import type { TradeCritiqueResponse } from "@/types";
 
 interface TradeCopilotProps {
@@ -30,6 +32,7 @@ interface ChatMessage {
 }
 
 const PROMPT_CHIPS = [
+  "Audit my trading discipline & errors",
   "Analyze my portfolio risk right now",
   "How do I hedge my open positions?",
   "What happens during 15:20 MIS square-off?",
@@ -65,6 +68,10 @@ export default function TradeCopilot({ token, apiUrl }: TradeCopilotProps) {
   const handleAsk = async (queryText?: string) => {
     const q = (queryText || question).trim();
     if (!q || asking) return;
+
+    if (q.toLowerCase().includes("audit") || q.toLowerCase().includes("critique")) {
+      void handleCritique();
+    }
 
     const userMsgId = "u-" + Date.now();
     const timeStr = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -154,6 +161,7 @@ export default function TradeCopilot({ token, apiUrl }: TradeCopilotProps) {
 
   const score = critique?.discipline_score ?? 100;
   const rating = critique?.risk_rating ?? "EXCELLENT";
+  const grade = critique?.grade ?? (score >= 85 ? "A" : score >= 70 ? "B" : "C");
 
   const getScoreBadge = () => {
     if (score >= 80) return "bg-emerald-950/80 border-emerald-500/40 text-emerald-300";
@@ -203,12 +211,17 @@ export default function TradeCopilot({ token, apiUrl }: TradeCopilotProps) {
       {/* Post-Mortem Dashboard Scorecard */}
       {critique && showCritique && (
         <div className="space-y-3.5 animate-fade-in">
-          <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5">
-            {/* Discipline Score */}
-            <div className={`p-3 rounded-xl border flex flex-col justify-between ${getScoreBadge()}`}>
-              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                Discipline Score
-              </span>
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+            {/* Discipline Score & Grade */}
+            <div className={`p-3 rounded-xl border flex flex-col justify-between col-span-2 sm:col-span-1 ${getScoreBadge()}`}>
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  Discipline Grade
+                </span>
+                <span className="text-xs px-1.5 py-0.5 rounded font-black bg-white/10 text-white">
+                  {grade}
+                </span>
+              </div>
               <div className="flex items-baseline gap-1 my-1">
                 <span className="text-3xl font-black">{score}</span>
                 <span className="text-xs text-slate-400">/ 100</span>
@@ -219,9 +232,27 @@ export default function TradeCopilot({ token, apiUrl }: TradeCopilotProps) {
               </div>
             </div>
 
+            {/* Win Rate & Realized PnL */}
+            <div className="p-3 bg-slate-900/60 border border-slate-800 rounded-xl flex flex-col justify-between">
+              <span className="text-[10px] text-slate-400 font-medium flex items-center gap-1">
+                <TrendingUp className="w-3 h-3 text-cyan-400" />
+                Win Rate
+              </span>
+              <span
+                className={`text-base font-bold my-1 ${
+                  critique.metrics.win_rate >= 50 ? "text-emerald-400" : "text-amber-400"
+                }`}
+              >
+                {critique.metrics.win_rate.toFixed(1)}%
+              </span>
+              <span className="text-[10px] text-slate-500 font-mono">
+                P&L: {formatPaise(critique.metrics.realized_pnl_paise ?? 0)}
+              </span>
+            </div>
+
             {/* Concentration Risk */}
             <div className="p-3 bg-slate-900/60 border border-slate-800 rounded-xl flex flex-col justify-between">
-              <span className="text-[10px] text-slate-400 font-medium">Concentration Risk</span>
+              <span className="text-[10px] text-slate-400 font-medium">Concentration</span>
               <span
                 className={`text-base font-bold my-1 ${
                   critique.metrics.concentration_risk === "HIGH" ? "text-rose-400" : "text-emerald-400"
@@ -229,7 +260,7 @@ export default function TradeCopilot({ token, apiUrl }: TradeCopilotProps) {
               >
                 {critique.metrics.concentration_risk}
               </span>
-              <span className="text-[10px] text-slate-500">Max single asset exposure</span>
+              <span className="text-[10px] text-slate-500">Max asset exposure</span>
             </div>
 
             {/* Leverage Risk */}
@@ -242,16 +273,16 @@ export default function TradeCopilot({ token, apiUrl }: TradeCopilotProps) {
               >
                 {critique.metrics.leverage_risk}
               </span>
-              <span className="text-[10px] text-slate-500">Intraday cash utilization</span>
+              <span className="text-[10px] text-slate-500">Intraday margin</span>
             </div>
 
             {/* Limit Order Usage */}
-            <div className="p-3 bg-slate-900/60 border border-slate-800 rounded-xl flex flex-col justify-between">
-              <span className="text-[10px] text-slate-400 font-medium">Limit Order Discipline</span>
+            <div className="p-3 bg-slate-900/60 border border-slate-800 rounded-xl flex flex-col justify-between col-span-2 sm:col-span-1">
+              <span className="text-[10px] text-slate-400 font-medium">Limit Order Disc.</span>
               <span className="text-base font-bold my-1 text-cyan-400">
                 {critique.metrics.limit_order_usage_pct.toFixed(0)}%
               </span>
-              <span className="text-[10px] text-slate-500">{critique.metrics.total_trades_evaluated} orders evaluated</span>
+              <span className="text-[10px] text-slate-500">{critique.metrics.total_trades_evaluated} orders audited</span>
             </div>
           </div>
 

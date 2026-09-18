@@ -1,4 +1,5 @@
 import type { Candle, MarketDepth, Quote } from "@/types";
+import { getIndianMarketStatus } from "@/lib/format";
 
 export interface InstrumentMetadata {
   symbol: string;
@@ -232,9 +233,14 @@ export function generateSyntheticCandles(
       ? 15
       : 1440; // 1D
 
-  const nowSeconds = Math.floor(Date.now() / 1000);
+  const marketStatus = getIndianMarketStatus();
+  const effectiveEndSeconds = marketStatus.isOpen
+    ? Math.floor(Date.now() / 1000)
+    : marketStatus.sessionCloseSeconds;
+
   const intervalSeconds = stepMinutes * 60;
-  const startSeconds = nowSeconds - count * intervalSeconds;
+  const alignedEndSeconds = Math.floor(effectiveEndSeconds / intervalSeconds) * intervalSeconds;
+  const startSeconds = alignedEndSeconds - count * intervalSeconds;
 
   // Walk backwards from targetPrice to generate an authentic random walk
   const prices: number[] = new Array(count);

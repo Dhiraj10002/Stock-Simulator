@@ -14,9 +14,12 @@ import {
   AlertCircle,
   Award,
   RefreshCw,
+  FileText,
 } from "lucide-react";
 import { formatPaise } from "@/lib/format";
 import type { PerformanceOverview, PnlCalendarResponse, DailyPnlDay, Trade } from "@/types";
+import ContractNoteView from "./ContractNoteView";
+import LedgerStatementView from "./LedgerStatementView";
 
 type PerformanceModalProps = {
   isOpen: boolean;
@@ -53,7 +56,9 @@ export default function PerformanceModal({
   apiUrl,
   token,
 }: PerformanceModalProps) {
-  const [activeTab, setActiveTab] = useState<"analytics" | "journal">("analytics");
+  const [activeTab, setActiveTab] = useState<
+    "analytics" | "journal" | "contract-note" | "statement"
+  >("analytics");
 
   // Performance data states
   const [performance, setPerformance] = useState<PerformanceOverview | null>(null);
@@ -327,6 +332,28 @@ export default function PerformanceModal({
                     {trades.length}
                   </span>
                 )}
+              </button>
+              <button
+                onClick={() => setActiveTab("contract-note")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  activeTab === "contract-note"
+                    ? "bg-cyan-600 text-white shadow-lg shadow-cyan-900/30"
+                    : "text-slate-400 hover:text-white"
+                }`}
+              >
+                <FileText className="w-3.5 h-3.5" />
+                Contract Notes
+              </button>
+              <button
+                onClick={() => setActiveTab("statement")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  activeTab === "statement"
+                    ? "bg-cyan-600 text-white shadow-lg shadow-cyan-900/30"
+                    : "text-slate-400 hover:text-white"
+                }`}
+              >
+                <BookOpen className="w-3.5 h-3.5" />
+                Statement
               </button>
             </div>
 
@@ -862,6 +889,18 @@ export default function PerformanceModal({
                   })}
                 </div>
               )}
+            </div>
+          )}
+
+          {activeTab === "contract-note" && (
+            <div className="p-6">
+              <ContractNoteView token={token || ""} apiUrl={baseApi} />
+            </div>
+          )}
+
+          {activeTab === "statement" && (
+            <div className="p-6">
+              <LedgerStatementView token={token || ""} apiUrl={baseApi} />
             </div>
           )}
         </div>

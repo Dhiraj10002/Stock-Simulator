@@ -105,6 +105,20 @@ export type MarketDepth = {
   total_ask_qty: number;
 };
 
+export type GTTTrigger = {
+  id: string;
+  symbol: string;
+  side: "BUY" | "SELL";
+  product: "DELIVERY" | "INTRADAY" | "FNO";
+  quantity: number;
+  entry_price_paise: number;
+  target_price_paise?: number;
+  stop_loss_price_paise?: number;
+  status: "ACTIVE" | "TRIGGERED_TARGET" | "TRIGGERED_SL" | "CANCELLED";
+  created_at: string;
+  triggered_at?: string;
+};
+
 export type BehavioralFlag = {
   type: "POSITIVE" | "WARNING" | "CRITICAL";
   title: string;
@@ -118,11 +132,13 @@ export type CritiqueMetrics = {
   revenge_trading_detected: boolean;
   limit_order_usage_pct: number;
   total_trades_evaluated: number;
+  realized_pnl_paise?: number;
 };
 
 export type TradeCritiqueResponse = {
   discipline_score: number;
   risk_rating: "EXCELLENT" | "MODERATE" | "HIGH_RISK";
+  grade?: string;
   metrics: CritiqueMetrics;
   behavioral_flags: BehavioralFlag[];
   critique: string;
@@ -191,10 +207,12 @@ export type PreTradeCheckRequest = {
 
 export type PreTradeCheckResponse = {
   risk_level: "SAFE" | "MODERATE" | "HIGH_RISK";
+  risk_score?: number;
   required_margin_paise: number;
   available_balance_paise: number;
   margin_impact_pct: number;
   concentration_impact_pct: number;
+  risk_reward_ratio?: number;
   warnings: string[];
   advice: string;
 };
@@ -247,4 +265,67 @@ export type PnlCalendarResponse = {
   profitable_days_count: number;
   loss_days_count: number;
 };
+
+export type ChargesBreakdown = {
+  brokerage_paise: number;
+  stt_paise: number;
+  exchange_txn_paise: number;
+  sebi_charges_paise: number;
+  stamp_duty_paise: number;
+  gst_paise: number;
+  total_tax_charges_paise: number;
+};
+
+export type ContractNoteItem = {
+  trade_uuid: string;
+  order_uuid: string;
+  symbol: string;
+  side: "BUY" | "SELL";
+  product: "DELIVERY" | "INTRADAY" | "FNO";
+  quantity: number;
+  price_paise: number;
+  gross_total_paise: number;
+  charges: ChargesBreakdown;
+  net_obligation_paise: number;
+  executed_at: string;
+};
+
+export type ContractNoteResponse = {
+  contract_note_number: string;
+  trade_date: string;
+  settlement_date: string;
+  exchange: string;
+  client_name: string;
+  client_email: string;
+  client_uuid: string;
+  total_trades: number;
+  total_buy_turnover_paise: number;
+  total_sell_turnover_paise: number;
+  gross_turnover_paise: number;
+  charges_summary: ChargesBreakdown;
+  net_payin_payout_paise: number;
+  items: ContractNoteItem[];
+};
+
+export type LedgerEntry = {
+  uuid: string;
+  date: string;
+  type: "CREDIT" | "DEBIT";
+  narration: string;
+  debit_paise: number;
+  credit_paise: number;
+  balance_paise: number;
+};
+
+export type LedgerStatementResponse = {
+  period_from: string;
+  period_to: string;
+  opening_balance_paise: number;
+  closing_balance_paise: number;
+  total_debit_paise: number;
+  total_credit_paise: number;
+  total_entries: number;
+  entries: LedgerEntry[];
+};
+
 

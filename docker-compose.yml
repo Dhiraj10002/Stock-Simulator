@@ -20,6 +20,9 @@ services:
       - backend/.env
     environment:
       - REDIS_URL=redis://redis:6379/0
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     ports:
       - "8080:8080"
     restart: on-failure
@@ -34,6 +37,9 @@ services:
       - backend/.env
     environment:
       - REDIS_URL=redis://redis:6379/0
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     restart: on-failure
     depends_on:
       redis:
@@ -46,6 +52,9 @@ services:
       - backend/.env
     environment:
       - REDIS_URL=redis://redis:6379/0
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     restart: on-failure
     depends_on:
       redis:

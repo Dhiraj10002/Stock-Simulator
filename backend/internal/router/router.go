@@ -17,6 +17,7 @@ import (
 	newsHandler "github.com/Dhiraj10002/Stock-Simulator/backend/internal/news/handler"
 	orderHandler "github.com/Dhiraj10002/Stock-Simulator/backend/internal/order/handler"
 	portfolioHandler "github.com/Dhiraj10002/Stock-Simulator/backend/internal/portfolio/handler"
+	reportsHandler "github.com/Dhiraj10002/Stock-Simulator/backend/internal/reports/handler"
 	riskHandler "github.com/Dhiraj10002/Stock-Simulator/backend/internal/risk/handler"
 	simulationHandler "github.com/Dhiraj10002/Stock-Simulator/backend/internal/simulation/handler"
 	stockHandler "github.com/Dhiraj10002/Stock-Simulator/backend/internal/stock/handler"
@@ -64,6 +65,7 @@ func Setup(ctx context.Context, cfg *config.Config) *gin.Engine {
 	risk := riskHandler.New(market.Service())
 	fno := fnoHandler.New(market.Service())
 	analytics := analyticsHandler.New()
+	reports := reportsHandler.New()
 	news, err := newsHandler.New(cfg.RedisURL, cfg.RedisOperationTimeout)
 	if err != nil {
 		panic(err)
@@ -131,6 +133,8 @@ func Setup(ctx context.Context, cfg *config.Config) *gin.Engine {
 		protected.PATCH("/trades/:uuid/journal", trades.UpdateJournal)
 		protected.GET("/analytics/performance", analytics.GetPerformanceOverview)
 		protected.GET("/analytics/pnl-calendar", analytics.GetPnlCalendar)
+		protected.GET("/reports/contract-note", reports.GetContractNote)
+		protected.GET("/reports/ledger-statement", reports.GetLedgerStatement)
 		protected.GET("/watchlist", watchlist.List)
 		protected.POST("/watchlist", watchlist.Add)
 		protected.DELETE("/watchlist/:symbol", watchlist.Remove)

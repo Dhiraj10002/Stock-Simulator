@@ -98,6 +98,20 @@ func (s *OptionChainService) GetOptionChain(symbol, expiry string) (*dto.OptionC
 		ceSymbol := fmt.Sprintf("%s%s%.0fCE", symbol, strings.ToUpper(monthCode), strikeRupees)
 		peSymbol := fmt.Sprintf("%s%s%.0fPE", symbol, strings.ToUpper(monthCode), strikeRupees)
 
+		ceLTPPaise := int64(math.Round(callGreeks.Price * 100))
+		if ceLTPPaise < 50 {
+			ceLTPPaise = 50
+		}
+		peLTPPaise := int64(math.Round(putGreeks.Price * 100))
+		if peLTPPaise < 50 {
+			peLTPPaise = 50
+		}
+
+		if s.market != nil {
+			_ = s.market.SetQuote(ceSymbol, ceLTPPaise, callOI)
+			_ = s.market.SetQuote(peSymbol, peLTPPaise, putOI)
+		}
+
 		strikeRows = append(strikeRows, dto.StrikeRow{
 			StrikePricePaise: strikePaise,
 			IsATM:            isATM,
@@ -105,7 +119,7 @@ func (s *OptionChainService) GetOptionChain(symbol, expiry string) (*dto.OptionC
 				Symbol:           ceSymbol,
 				OptionType:       "CE",
 				StrikePricePaise: strikePaise,
-				LTPPaise:         int64(math.Round(callGreeks.Price * 100)),
+				LTPPaise:         ceLTPPaise,
 				OpenInterest:     callOI,
 				IV:               callGreeks.IV,
 				Delta:            callGreeks.Delta,
@@ -118,7 +132,7 @@ func (s *OptionChainService) GetOptionChain(symbol, expiry string) (*dto.OptionC
 				Symbol:           peSymbol,
 				OptionType:       "PE",
 				StrikePricePaise: strikePaise,
-				LTPPaise:         int64(math.Round(putGreeks.Price * 100)),
+				LTPPaise:         peLTPPaise,
 				OpenInterest:     putOI,
 				IV:               putGreeks.IV,
 				Delta:            putGreeks.Delta,

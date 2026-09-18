@@ -61,8 +61,34 @@ func fallbackPriceForSymbol(symbol string) int64 {
 	if hash < 0 {
 		hash = -hash
 	}
-	// Dynamic price between ₹120.00 and ₹4,800.00
+
+	// For F&O Option contracts (ending in CE or PE), premium is realistically ₹15.00 to ₹350.00 (1500 to 35000 paise)
+	if strings.HasSuffix(clean, "CE") || strings.HasSuffix(clean, "PE") {
+		return 1500 + (hash % 33500)
+	}
+
+	// Dynamic price between ₹120.00 and ₹4,800.00 for equities
 	return (12000 + (hash % 468000))
+}
+
+func (s *Service) SetQuote(symbol string, pricePaise int64, volume int64) error {
+	symbol = strings.ToUpper(strings.TrimSpace(symbol))
+	if symbol == "" {
+		return fmt.Errorf("symbol is required")
+	}
+	if pricePaise <= 0 {
+		return fmt.Errorf("price must be positive")
+	}
+	ctx, cancel := cache.Context(context.Background(), s.timeout)
+	defer cancel()
+
+	nowStr := time.Now().Format(time.RFC3339)
+	return s.client.HSet(ctx, quoteKey(symbol), map[string]interface{}{
+		"price_paise": pricePaise,
+		"volume":      volume,
+		"source":      "fno_engine",
+		"updated_at":  nowStr,
+	}).Err()
 }
 
 func (s *Service) CurrentQuote(symbol string) (*dto.QuoteResponse, error) {
