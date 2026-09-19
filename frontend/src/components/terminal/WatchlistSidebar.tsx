@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   Search,
   TrendingUp,
@@ -87,7 +87,19 @@ export default function WatchlistSidebar({
   positions = [],
   onActiveSymbolsChange,
 }: WatchlistSidebarProps) {
-  const [activeTab, setActiveTab] = useState<WatchlistTabId>("wl1");
+  const [activeTab, setActiveTab] = useState<WatchlistTabId>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const savedTab = localStorage.getItem("stock-simulator-active-wl-tab-v2");
+        if (savedTab && ["wl1", "wl2", "fno", "holdings"].includes(savedTab)) {
+          return savedTab as WatchlistTabId;
+        }
+      } catch {
+        // ignore
+      }
+    }
+    return "wl1";
+  });
   const [search, setSearch] = useState("");
   const [searchResults, setSearchResults] = useState<WatchlistItem[]>([]);
   const [searching, setSearching] = useState(false);
@@ -107,18 +119,6 @@ export default function WatchlistSidebar({
     }
     return DEFAULT_WATCHLIST_DATA;
   });
-
-  // Restore active tab
-  useEffect(() => {
-    try {
-      const savedTab = localStorage.getItem("stock-simulator-active-wl-tab-v2");
-      if (savedTab && ["wl1", "wl2", "fno", "holdings"].includes(savedTab)) {
-        setActiveTab(savedTab as WatchlistTabId);
-      }
-    } catch {
-      // ignore
-    }
-  }, []);
 
   const handleTabChange = (tabId: WatchlistTabId) => {
     setActiveTab(tabId);
@@ -171,14 +171,14 @@ export default function WatchlistSidebar({
 
   // Live Exchange Search via Backend
   useEffect(() => {
-    const trimmed = search.trim();
-    if (!trimmed) {
-      setSearchResults([]);
-      setSearching(false);
-      return;
-    }
-
     const timer = setTimeout(async () => {
+      const trimmed = search.trim();
+      if (!trimmed) {
+        setSearchResults([]);
+        setSearching(false);
+        return;
+      }
+
       setSearching(true);
       try {
         const res = await fetch(`${apiUrl}/stocks?q=${encodeURIComponent(trimmed)}`);

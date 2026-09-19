@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import {
   TrendingUp,
   TrendingDown,
@@ -14,9 +15,12 @@ import {
   Zap,
   Layers,
   BarChart2,
+  Search,
+  LayoutDashboard,
 } from "lucide-react";
 import { formatPaise, formatPercent, getIndianMarketStatus } from "@/lib/format";
 import type { User, Wallet, Portfolio } from "@/types";
+import { useUIStore } from "@/stores/ui-store";
 
 type HeaderProps = {
   user: User | null;
@@ -49,6 +53,7 @@ export default function Header({
 }: HeaderProps) {
   const [marketStatus, setMarketStatus] = useState(getIndianMarketStatus());
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const setSearchPaletteOpen = useUIStore((s) => s.setSearchPaletteOpen);
 
   // Re-calculate market hours every 10 seconds
   useEffect(() => {
@@ -79,11 +84,11 @@ export default function Header({
   const isMarginWarning = marginUtilization >= 80;
 
   return (
-    <header className="border-b border-slate-800/80 bg-slate-950/70 backdrop-blur-md px-4 lg:px-6 py-2.5 flex items-center justify-between gap-4 sticky top-0 z-30">
+    <header className="border-b border-slate-800/80 bg-slate-950/70 backdrop-blur-md px-4 lg:px-6 py-2 flex items-center justify-between gap-4 sticky top-0 z-30">
       {/* Brand & Market Session Pill */}
       <div className="flex items-center gap-3">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-cyan-600 to-emerald-500 flex items-center justify-center font-black text-slate-950 text-sm shadow-lg shadow-cyan-500/20">
+        <Link href="/" className="flex items-center gap-2 group">
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-cyan-600 to-emerald-500 flex items-center justify-center font-black text-slate-950 text-sm shadow-lg shadow-cyan-500/20 group-hover:scale-105 transition-transform">
             SS
           </div>
           <div>
@@ -94,7 +99,25 @@ export default function Header({
               Paper Execution Engine
             </span>
           </div>
-        </div>
+        </Link>
+
+        {/* Quick Nav to Dashboard */}
+        <Link
+          href="/"
+          className="hidden xl:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-xs text-slate-300 hover:text-cyan-400 transition-colors"
+        >
+          <LayoutDashboard className="w-3.5 h-3.5" />
+          <span>Dashboard</span>
+        </Link>
+
+        {/* Global Search Button */}
+        <button
+          onClick={() => setSearchPaletteOpen(true)}
+          className="hidden sm:flex items-center gap-2 px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-xs text-slate-400 hover:text-slate-200 transition-colors"
+        >
+          <Search className="w-3 h-3 text-cyan-400" />
+          <span className="truncate max-w-[120px]">Search (Ctrl+K)</span>
+        </button>
 
         {/* Live Market Status Pill */}
         <div

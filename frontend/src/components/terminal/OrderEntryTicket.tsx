@@ -15,6 +15,10 @@ import {
 import { formatPaise } from "@/lib/format";
 import { INSTRUMENT_METADATA } from "@/lib/mockData";
 import MarketDepth from "./MarketDepth";
+import { orderFormSchema } from "@/schemas/order";
+import OrderConfirmationModal, {
+  OrderConfirmationDetails,
+} from "@/components/trading/OrderConfirmationModal";
 import type { Wallet, Quote, Position, PreTradeCheckResponse, ApiResponse } from "@/types";
 
 type OrderEntryTicketProps = {
@@ -114,17 +118,6 @@ export default function OrderEntryTicket({
   const [triggerRupees, setTriggerRupees] = useState<number>(defaultPriceRupees);
   const [submitting, setSubmitting] = useState(false);
 
-  // Sync default target and SL when symbol changes
-  useEffect(() => {
-    const isBuy = side === "BUY";
-    setTargetRupees(
-      Number((defaultPriceRupees * (isBuy ? 1.02 : 0.98)).toFixed(2))
-    );
-    setStopLossRupees(
-      Number((defaultPriceRupees * (isBuy ? 0.99 : 1.01)).toFixed(2))
-    );
-  }, [symbol, defaultPriceRupees, side]);
-
   // Sync Price Levels to Chart
   useEffect(() => {
     if (onPriceLevelsChange) {
@@ -138,20 +131,9 @@ export default function OrderEntryTicket({
     }
   }, [variety, targetEnabled, targetRupees, stopLossEnabled, stopLossRupees, onPriceLevelsChange]);
 
-  // Auto switch product to FNO if FNO contract selected
-  useEffect(() => {
-    if (isFnoSymbol) {
-      setProduct("FNO");
-    }
-  }, [isFnoSymbol, symbol]);
-
-  // Dynamically query instrument master to resolve authoritative lot size
+  // Dynamically query instrument master to resolve authoritative lot size asynchronously
   useEffect(() => {
     let isMounted = true;
-    const inferred = inferFnoLotSize(symbol);
-    if (inferred > 1) {
-      setLotSize(inferred);
-    }
 
     if (product === "FNO" || isFnoSymbol) {
       onRequest<ApiResponse<Array<{ symbol: string; lot_size: number }>>>(
@@ -173,8 +155,6 @@ export default function OrderEntryTicket({
           }
         })
         .catch(() => {});
-    } else {
-      setLotSize(1);
     }
 
     return () => {
@@ -182,25 +162,38 @@ export default function OrderEntryTicket({
     };
   }, [symbol, product, isFnoSymbol, onRequest]);
 
+  const [confirmModalOpen, setConfirmModalOpen] = useState(false);
+  const [confirmationDetails, setConfirmationDetails] = useState<OrderConfirmationDetails | null>(null);
+
   const [preTradeRisk, setPreTradeRisk] = useState<PreTradeCheckResponse | null>(null);
   const [checkingRisk, setCheckingRisk] = useState(false);
 
-  useEffect(() => {
-    setPreTradeRisk(null);
-  }, [symbol, quantity, side, product, type]);
-
-  useEffect(() => {
-    if (prefill) {
-      if (prefill.side) setSide(prefill.side);
-      if (prefill.product) setProduct(prefill.product);
-      if (prefill.type) setType(prefill.type);
-      if (prefill.quantity) setQuantity(prefill.quantity);
-      if (prefill.priceRupees) {
-        setLimitRupees(prefill.priceRupees);
-        setTriggerRupees(prefill.priceRupees);
-      }
+  // Synchronize prefill prop during render (avoids cascading render warnings)
+  const [prevPrefill, setPrevPrefill] = useState(prefill);
+  if (prevPrefill !== prefill && prefill) {
+    setPrevPrefill(prefill);
+    if (prefill.side) setSide(prefill.side);
+    if (prefill.product) setProduct(prefill.product);
+    if (prefill.type) setType(prefill.type);
+    if (prefill.quantity) setQuantity(prefill.quantity);
+    if (prefill.priceRupees) {
+      setLimitRupees(prefill.priceRupees);
+      setTriggerRupees(prefill.priceRupees);
     }
-  }, [prefill]);
+  }
+
+  // Invalidate preTradeRisk when trade parameters change
+  const [prevRiskParams, setPrevRiskParams] = useState({ symbol, quantity, side, product, type });
+  if (
+    prevRiskParams.symbol !== symbol ||
+    prevRiskParams.quantity !== quantity ||
+    prevRiskParams.side !== side ||
+    prevRiskParams.product !== product ||
+    prevRiskParams.type !== type
+  ) {
+    setPrevRiskParams({ symbol, quantity, side, product, type });
+    setPreTradeRisk(null);
+  }
 
   const [prevSymbol, setPrevSymbol] = useState(symbol);
   if (prevSymbol !== symbol) {
@@ -208,6 +201,19 @@ export default function OrderEntryTicket({
     const newPrice = (quote?.price_paise ?? meta.basePricePaise) / 100;
     setLimitRupees(newPrice);
     setTriggerRupees(newPrice);
+    const isBuy = side === "BUY";
+    setTargetRupees(Number((newPrice * (isBuy ? 1.02 : 0.98)).toFixed(2)));
+    setStopLossRupees(Number((newPrice * (isBuy ? 0.99 : 1.01)).toFixed(2)));
+    if (isFnoSymbol) {
+      setProduct("FNO");
+      const inferred = inferFnoLotSize(symbol);
+      if (inferred > 1) {
+        setLotSize(inferred);
+        setQuantity(inferred);
+      }
+    } else {
+      setLotSize(1);
+    }
   }
 
   const ltpRupees = (quote?.price_paise ?? meta.basePricePaise) / 100;
@@ -365,11 +371,11 @@ export default function OrderEntryTicket({
       return;
     }
 
-    if (side === "SELL" && product === "DELIVERY" && !isAffordable) {
+    if (side === "SELL" && product === "DELIVERY" && quantity > sharesOwned) {
       onToast(
-        "Short-Selling Restricted",
+        "Insufficient Holdings",
         sharesOwned === 0
-          ? `You have 0 shares of ${symbol} in CNC Delivery holdings. Delivery short-selling is prohibited.`
+          ? `You don't own any shares of ${symbol} for Delivery sale.`
           : `You only own ${sharesOwned} shares of ${symbol}, cannot sell ${quantity}.`,
         "error"
       );
@@ -388,6 +394,29 @@ export default function OrderEntryTicket({
     const isTargetActive = (variety === "BRACKET" || targetEnabled) && targetRupees > 0;
     const isSLActive =
       (variety === "COVER" || variety === "BRACKET" || stopLossEnabled) && stopLossRupees > 0;
+
+    // Zod Schema Validation
+    const validation = orderFormSchema.safeParse({
+      symbol,
+      side,
+      product,
+      type,
+      variety,
+      quantity,
+      price_rupees: isLimitOrder ? limitRupees : 0,
+      trigger_price_rupees: isStopOrder ? triggerRupees : 0,
+      target_rupees: isTargetActive ? targetRupees : undefined,
+      stop_loss_rupees: isSLActive ? stopLossRupees : undefined,
+      targetEnabled: isTargetActive,
+      stopLossEnabled: isSLActive,
+      lotSize,
+    });
+
+    if (!validation.success) {
+      const firstError = validation.error.errors[0]?.message || "Invalid order parameters";
+      onToast("Validation Error", firstError, "error");
+      return;
+    }
 
     if (isTargetActive) {
       if (side === "BUY" && targetRupees <= activePriceRupees) {
@@ -427,6 +456,27 @@ export default function OrderEntryTicket({
       }
     }
 
+    // Prepare confirmation details and show modal (fat-finger protection)
+    setConfirmationDetails({
+      symbol,
+      side,
+      product,
+      type,
+      variety,
+      quantity,
+      priceRupees: isLimitOrder ? limitRupees : activePriceRupees,
+      triggerPriceRupees: isStopOrder ? triggerRupees : undefined,
+      targetRupees: isTargetActive ? targetRupees : undefined,
+      stopLossRupees: isSLActive ? stopLossRupees : undefined,
+      requiredMarginPaise: requiredMarginPaise,
+      availableBalancePaise: availablePaise,
+    });
+    setConfirmModalOpen(true);
+  };
+
+  const handleConfirmExecuteOrder = async () => {
+    if (!confirmationDetails) return;
+
     setSubmitting(true);
     try {
       const pricePaise = isLimitOrder ? Math.round(limitRupees * 100) : 0;
@@ -449,6 +499,12 @@ export default function OrderEntryTicket({
         `${side} ${quantity} ${symbol} (${product} - ${type}) submitted successfully`,
         "success"
       );
+
+      setConfirmModalOpen(false);
+
+      const isTargetActive = (variety === "BRACKET" || targetEnabled) && targetRupees > 0;
+      const isSLActive =
+        (variety === "COVER" || variety === "BRACKET" || stopLossEnabled) && stopLossRupees > 0;
 
       if (isTargetActive || isSLActive) {
         onOrderPlaced({
@@ -1147,6 +1203,15 @@ export default function OrderEntryTicket({
         <ShieldCheck className="w-3.5 h-3.5 text-cyan-500/60 shrink-0" />
         <span>Pre-trade ledger checks & 15:20 MIS square-off enforced by server.</span>
       </div>
+
+      {/* Institutional Order Confirmation Modal (Fat-Finger Safeguard) */}
+      <OrderConfirmationModal
+        isOpen={confirmModalOpen}
+        onClose={() => setConfirmModalOpen(false)}
+        onConfirm={handleConfirmExecuteOrder}
+        details={confirmationDetails}
+        submitting={submitting}
+      />
     </div>
   );
 }
