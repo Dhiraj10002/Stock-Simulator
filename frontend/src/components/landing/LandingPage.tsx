@@ -1,10 +1,175 @@
 "use client";
 
-import React, { useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
-import MeshFlowBackground from "@/components/landing/MeshFlowBackground";
+import {
+  ArrowRight,
+  Zap,
+  Activity,
+  Compass,
+  Sparkles,
+  ChevronDown,
+  Shield,
+  Sliders,
+  CheckCircle2,
+  Award,
+  Star,
+  ExternalLink,
+  Code2,
+  Globe,
+  BrainCircuit,
+} from "lucide-react";
 
-/* Live Ticker Items */
+/* -------------------------------------------------------------
+   1. HARDWARE-ACCELERATED SPATIAL 3D CANVAS
+   ------------------------------------------------------------- */
+function SpatialCanvas({ scrollProgress, mousePos }: { scrollProgress: number; mousePos: { x: number; y: number } }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    let animId: number;
+    let width = (canvas.width = window.innerWidth);
+    let height = (canvas.height = window.innerHeight);
+
+    const onResize = () => {
+      if (!canvas) return;
+      width = canvas.width = window.innerWidth;
+      height = canvas.height = window.innerHeight;
+    };
+    window.addEventListener("resize", onResize);
+
+    const count = 420;
+    const particles = Array.from({ length: count }, () => ({
+      x: (Math.random() - 0.5) * 2200,
+      y: (Math.random() - 0.5) * 2200,
+      z: Math.random() * 1000 + 1,
+      size: Math.random() * 2.2 + 0.8,
+      color: Math.random() > 0.35 ? "rgba(6, 182, 212, " : "rgba(16, 185, 129, ",
+    }));
+
+    const render = () => {
+      ctx.clearRect(0, 0, width, height);
+
+      const fov = 400;
+      const cx = width / 2 + mousePos.x * 70;
+      const cy = height / 2 + mousePos.y * 70;
+      const speed = 1.2 + scrollProgress * 6;
+
+      for (let i = 0; i < count; i++) {
+        const p = particles[i];
+        p.z -= speed;
+        if (p.z <= 0) {
+          p.z = 1000;
+          p.x = (Math.random() - 0.5) * 2200;
+          p.y = (Math.random() - 0.5) * 2200;
+        }
+
+        const k = fov / p.z;
+        const x = p.x * k + cx;
+        const y = p.y * k + cy;
+
+        if (x >= 0 && x <= width && y >= 0 && y <= height) {
+          const alpha = Math.min(1, Math.max(0.08, (1 - p.z / 1000) * 1.25));
+          const rad = Math.max(0.6, p.size * k * 0.8);
+
+          ctx.beginPath();
+          ctx.arc(x, y, rad, 0, Math.PI * 2);
+          ctx.fillStyle = `${p.color}${alpha})`;
+          ctx.shadowColor = alpha > 0.6 ? "#06b6d4" : "transparent";
+          ctx.shadowBlur = alpha > 0.6 ? 8 : 0;
+          ctx.fill();
+        }
+      }
+
+      animId = requestAnimationFrame(render);
+    };
+
+    animId = requestAnimationFrame(render);
+
+    return () => {
+      window.removeEventListener("resize", onResize);
+      cancelAnimationFrame(animId);
+    };
+  }, [scrollProgress, mousePos]);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      className="fixed inset-0 pointer-events-none z-0"
+      style={{ opacity: 0.88 }}
+    />
+  );
+}
+
+/* -------------------------------------------------------------
+   2. REUSABLE 3D TILT CARD (MOTIONSITES SIGNATURE)
+   ------------------------------------------------------------- */
+function TiltCard({
+  children,
+  className = "",
+  glowColor = "rgba(6, 182, 212, 0.2)",
+}: {
+  children: React.ReactNode;
+  className?: string;
+  glowColor?: string;
+}) {
+  const cardRef = useRef<HTMLDivElement>(null);
+  const [rotate, setRotate] = useState({ x: 0, y: 0 });
+  const [glare, setGlare] = useState({ x: 50, y: 50, opacity: 0 });
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!cardRef.current) return;
+    const rect = cardRef.current.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / rect.width;
+    const y = (e.clientY - rect.top) / rect.height;
+    setRotate({
+      x: (y - 0.5) * -14,
+      y: (x - 0.5) * 14,
+    });
+    setGlare({
+      x: x * 100,
+      y: y * 100,
+      opacity: 0.25,
+    });
+  };
+
+  const handleMouseLeave = () => {
+    setRotate({ x: 0, y: 0 });
+    setGlare((g) => ({ ...g, opacity: 0 }));
+  };
+
+  return (
+    <div
+      ref={cardRef}
+      onMouseMove={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
+      className={`relative rounded-3xl transition-transform duration-200 ease-out ${className}`}
+      style={{
+        transform: `perspective(1100px) rotateX(${rotate.x}deg) rotateY(${rotate.y}deg) translateZ(8px)`,
+        transformStyle: "preserve-3d",
+      }}
+    >
+      {/* Specular glare layer */}
+      <div
+        className="absolute inset-0 rounded-3xl pointer-events-none z-20 transition-opacity duration-300"
+        style={{
+          background: `radial-gradient(circle at ${glare.x}% ${glare.y}%, ${glowColor}, transparent 60%)`,
+          opacity: glare.opacity,
+        }}
+      />
+      {children}
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------
+   3. DATA CONSTANTS
+   ------------------------------------------------------------- */
 const TICKERS = [
   { s: "NIFTY 50", p: "25,378.40", c: "+0.49%", d: "up" },
   { s: "SENSEX", p: "82,890.94", c: "+0.48%", d: "up" },
@@ -16,780 +181,668 @@ const TICKERS = [
   { s: "ICICIBANK", p: "₹1,284.70", c: "+1.04%", d: "up" },
 ];
 
-interface Candle {
-  open: number;
-  close: number;
-  high: number;
-  low: number;
-  vol: number;
-}
+const FEATURES_DATA = [
+  {
+    icon: Activity,
+    badge: "ORDER DEPTH",
+    title: "Level 2 Market Depth (DOM)",
+    description: "5-tier bid/ask ladder with visual depth bars that reveal order-queue dynamics in real time.",
+  },
+  {
+    icon: Sliders,
+    badge: "DERIVATIVES",
+    title: "Options Chain & Greek Analytics",
+    description: "Live NIFTY / BANKNIFTY calls and puts with real-time Delta, Gamma, Theta and Vega on every strike.",
+  },
+  {
+    icon: Zap,
+    badge: "LOW LATENCY",
+    title: "Real-Time WebSocket Engine",
+    description: "Sub-50ms tick streaming mirrored from exchange broadcasts for lifelike, low-latency price action.",
+  },
+  {
+    icon: Shield,
+    badge: "PROTECTION",
+    title: "Institutional Risk Guard",
+    description: "Max daily-loss limits, automatic circuit-breaker cutoffs and margin-call alerts keep discipline enforced.",
+  },
+  {
+    icon: BrainCircuit,
+    badge: "AI COPILOT",
+    title: "AI Trading Mentor",
+    description: "Instant post-trade feedback analysing your risk-reward ratio and flagging revenge-trading behaviour.",
+  },
+  {
+    icon: Compass,
+    badge: "PORTFOLIO",
+    title: "Multi-Wallet Management",
+    description: "Segregate strategies into distinct accounts - Scalping, Swing and F&O Hedging - with isolated P&L.",
+  },
+];
 
-const rnd = (a: number, b: number) => a + Math.random() * (b - a);
+const LEADERBOARD_DATA = [
+  { rank: "1", name: "Arjun_FnO", returnRate: "+84.2%", winRate: "Win 78%", badge: "Gold #1", color: "from-amber-400 to-amber-600" },
+  { rank: "2", name: "SwingQueen", returnRate: "+62.1%", winRate: "Win 71%", badge: "Silver #2", color: "from-slate-200 to-slate-400" },
+  { rank: "3", name: "Scalp_Raja", returnRate: "+45.8%", winRate: "Win 69%", badge: "Bronze #3", color: "from-amber-600 to-amber-800" },
+];
 
-function genCandles(n: number, start: number, vol: number): Candle[] {
-  let price = start;
-  const out: Candle[] = [];
-  for (let i = 0; i < n; i++) {
-    const open = price;
-    const close = open + rnd(-vol, vol) * (Math.random() > 0.46 ? 1 : -1);
-    const high = Math.max(open, close) + rnd(0, vol * 0.7);
-    const low = Math.min(open, close) - rnd(0, vol * 0.7);
-    out.push({ open, close, high, low, vol: rnd(0.3, 1) });
-    price = close;
-  }
-  return out;
-}
+const TESTIMONIALS_DATA = [
+  {
+    quote: "Tested my Iron Condor strategy for 3 months here before risking real capital. The Greeks and margin behaviour matched my broker almost exactly.",
+    name: "Neha Kulkarni",
+    role: "College Finance Student",
+    initials: "NK",
+  },
+  {
+    quote: "Execution speed and Level 2 depth feel identical to my real broker terminal. I run my morning warm-up scalps here every single day.",
+    name: "Rohit Verma",
+    role: "Full-Time Intraday Scalper",
+    initials: "RV",
+  },
+  {
+    quote: "I train 500+ students with zero financial risk. The AI mentor feedback and leaderboard turn practice into a genuinely competitive classroom.",
+    name: "Sanjay Menon",
+    role: "Finance Educator",
+    initials: "SM",
+  },
+];
 
+/* -------------------------------------------------------------
+   4. HOMEPAGE COMPONENT (3D MOTIONSITES FINAL)
+   ------------------------------------------------------------- */
 export default function LandingPage() {
-  const heroChartRef = useRef<HTMLDivElement>(null);
-  const heroMockRef = useRef<HTMLDivElement>(null);
-  const meshRef = useRef<HTMLDivElement>(null);
+  const [scrollProgress, setScrollProgress] = useState(0);
+  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+  const [cameraMode, setCameraMode] = useState<"scroll" | "orbit">("scroll");
 
-  /* Candlestick SVG renderer */
-  const renderCandleSVG = useCallback(
-    (data: Candle[], w = 560, h = 250, volH = 40) => {
-      const pad = 8;
-      const chartH = h - volH - pad;
-      const highs = data.map((d) => d.high);
-      const lows = data.map((d) => d.low);
-      const max = Math.max(...highs);
-      const min = Math.min(...lows);
-      const rng = max - min || 1;
-      const cw = w / data.length;
-      const bw = Math.max(2, cw * 0.6);
-      const y = (v: number) => pad + chartH - ((v - min) / rng) * (chartH - pad);
-
-      let s = `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="width:100%;height:100%;display:block">`;
-      for (let g = 0; g <= 4; g++) {
-        const gy = pad + ((chartH - pad) * g) / 4;
-        s += `<line x1="0" y1="${gy}" x2="${w}" y2="${gy}" stroke="rgba(255,255,255,0.04)"/>`;
-      }
-      data.forEach((d, i) => {
-        const x = i * cw + cw / 2;
-        const up = d.close >= d.open;
-        const col = up ? "#10B981" : "#F43F5E";
-        s += `<line x1="${x}" y1="${y(d.high)}" x2="${x}" y2="${y(d.low)}" stroke="${col}" stroke-width="1"/>`;
-        const ry = y(Math.max(d.open, d.close));
-        const rh = Math.max(1.5, Math.abs(y(d.open) - y(d.close)));
-        s += `<rect x="${x - bw / 2}" y="${ry}" width="${bw}" height="${rh}" fill="${col}" rx="1"/>`;
-        const vh = d.vol * volH;
-        s += `<rect x="${x - bw / 2}" y="${h - vh}" width="${bw}" height="${vh}" fill="rgba(6,182,212,0.35)" rx="1"/>`;
-      });
-      const last = data[data.length - 1].close;
-      s += `<line x1="0" y1="${y(last)}" x2="${w}" y2="${y(last)}" stroke="rgba(6,182,212,0.5)" stroke-width="1" stroke-dasharray="4 4"/>`;
-      s += "</svg>";
-      return s;
-    },
-    []
-  );
-
-  /* Render hero chart once mounted */
   useEffect(() => {
-    if (heroChartRef.current) {
-      const candles = genCandles(34, 1180, 14);
-      heroChartRef.current.innerHTML = renderCandleSVG(candles, 560, 250, 40);
-    }
-  }, [renderCandleSVG]);
-
-  /* Parallax mesh and hero 3D card tilt */
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      const cx = e.clientX / window.innerWidth - 0.5;
-      const cy = e.clientY / window.innerHeight - 0.5;
-      if (meshRef.current) {
-        meshRef.current.style.transform = `translate(${cx * 20}px, ${cy * 20}px)`;
-      }
-      if (heroMockRef.current) {
-        heroMockRef.current.style.transform = `rotateX(${14 - cy * 10}deg) rotateY(${cx * 12}deg)`;
-      }
+    const onScroll = () => {
+      const total = document.documentElement.scrollHeight - window.innerHeight;
+      setScrollProgress(total > 0 ? window.scrollY / total : 0);
     };
-    window.addEventListener("mousemove", handleMouseMove);
-    return () => window.removeEventListener("mousemove", handleMouseMove);
-  }, []);
 
-  /* Reveal on scroll */
-  useEffect(() => {
-    const elements = document.querySelectorAll(".reveal");
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((e) => {
-          if (e.isIntersecting) {
-            e.target.classList.add("in");
-            observer.unobserve(e.target);
-          }
-        });
-      },
-      { threshold: 0.12 }
-    );
-    elements.forEach((el) => observer.observe(el));
-    return () => observer.disconnect();
+    const onMouseMove = (e: MouseEvent) => {
+      setMousePos({
+        x: e.clientX / window.innerWidth - 0.5,
+        y: e.clientY / window.innerHeight - 0.5,
+      });
+    };
+
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("mousemove", onMouseMove, { passive: true });
+
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("mousemove", onMouseMove);
+    };
   }, []);
 
   return (
-    <div className="stock-sim-root">
-      {/* SCOPED EXACT CSS FROM USER'S NEW HOMEPAGE SPEC */}
-      <style>{`
-        :root {
-          --canvas: #060910;
-          --canvas-2: #080C16;
-          --glass: rgba(15, 23, 42, 0.65);
-          --glass-solid: rgba(15, 23, 42, 0.9);
-          --gb: rgba(255, 255, 255, 0.08);
-          --gbh: rgba(6, 182, 212, 0.30);
-          --cyan: #06B6D4;
-          --emerald: #10B981;
-          --rose: #F43F5E;
-          --amber: #F59E0B;
-          --t1: #F8FAFC;
-          --t2: #94A3B8;
-          --t3: #64748B;
-          --brand: linear-gradient(135deg, #06B6D4 0%, #10B981 100%);
-          --r-btn: 10px;
-          --r-card: 16px;
-          --r-hero: 20px;
-          --r-pill: 9999px;
-          --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-          --display: "Outfit", "Inter", sans-serif;
-          --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-        }
+    <div className="relative min-h-screen bg-[#04060b] text-slate-100 font-sans overflow-x-hidden selection:bg-cyan-500/30 selection:text-cyan-200">
+      {/* 3D Global Perspective Particle Canvas */}
+      <SpatialCanvas scrollProgress={scrollProgress} mousePos={mousePos} />
 
-        .stock-sim-root {
-          font-family: var(--sans);
-          background: var(--canvas);
-          color: var(--t1);
-          line-height: 1.5;
-          -webkit-font-smoothing: antialiased;
-          overflow-x: hidden;
-          min-height: 100vh;
-        }
-
-        .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
-        .grad-text {
-          background: var(--brand);
-          -webkit-background-clip: text;
-          background-clip: text;
-          -webkit-text-fill-color: transparent;
-          color: transparent;
-        }
-
-        /* Ambient depth */
-        .ambient { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
-        .blob { position: absolute; border-radius: 50%; filter: blur(90px); opacity: .55; animation: float 20s ease-in-out infinite; will-change: transform; }
-        .b1 { width: 680px; height: 680px; top: -200px; left: -140px; background: radial-gradient(circle, rgba(6,182,212,.22), transparent 70%); }
-        .b2 { width: 600px; height: 600px; top: 18%; right: -180px; background: radial-gradient(circle, rgba(16,185,129,.18), transparent 70%); animation-delay: -7s; }
-        .b3 { width: 560px; height: 560px; bottom: -180px; left: 28%; background: radial-gradient(circle, rgba(6,182,212,.13), transparent 70%); animation-delay: -13s; }
-        .mesh {
-          position: absolute; inset: -10%;
-          background-image: linear-gradient(rgba(255,255,255,.028) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.028) 1px, transparent 1px);
-          background-size: 58px 58px;
-          mask-image: radial-gradient(circle at 50% 25%, #000, transparent 78%);
-          -webkit-mask-image: radial-gradient(circle at 50% 25%, #000, transparent 78%);
-          will-change: transform;
-        }
-        @keyframes float { 0%,100% { transform: translate(0,0) scale(1) } 50% { transform: translate(46px,-34px) scale(1.09) } }
-
-        .wrap { max-width: 1440px; margin: 0 auto; padding: 0 80px; position: relative; z-index: 2; }
-        .reveal { opacity: 0; transform: translateY(34px); transition: opacity .8s cubic-bezier(.22,1,.36,1), transform .8s cubic-bezier(.22,1,.36,1); }
-        .reveal.in { opacity: 1; transform: none; }
-
-        .pill { display: inline-flex; align-items: center; gap: 8px; padding: 7px 14px; border-radius: var(--r-pill); border: 1px solid var(--gb); background: rgba(255,255,255,.03); font-size: 12px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--t2); }
-        .pill .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--emerald); box-shadow: 0 0 10px var(--emerald); animation: pulse 2s infinite; }
-        @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: .35 } }
-
-        .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; font-size: 14px; font-weight: 600; border-radius: var(--r-btn); padding: 11px 18px; transition: transform .18s ease, box-shadow .25s ease, background .2s, border-color .2s; white-space: nowrap; cursor: pointer; text-decoration: none; }
-        .btn:active { transform: translateY(1px); }
-        .btn-primary { background: var(--brand); color: #04121a; box-shadow: 0 8px 24px rgba(6,182,212,.32), inset 0 1px 0 rgba(255,255,255,.35); }
-        .btn-primary:hover { box-shadow: 0 12px 34px rgba(6,182,212,.5), inset 0 1px 0 rgba(255,255,255,.4); transform: translateY(-2px); color: #04121a; }
-        .btn-ghost { border: 1px solid var(--gb); background: rgba(255,255,255,.02); color: var(--t1); }
-        .btn-ghost:hover { border-color: var(--gbh); background: rgba(6,182,212,.06); color: var(--t1); }
-        .btn-lg { padding: 15px 26px; font-size: 15px; }
-
-        /* Nav */
-        .nav { position: sticky; top: 0; z-index: 60; height: 64px; background: rgba(6,9,16,.8); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border-bottom: 1px solid rgba(255,255,255,.06); }
-        .nav-inner { max-width: 1440px; margin: 0 auto; padding: 0 80px; height: 64px; display: flex; align-items: center; justify-content: space-between; gap: 24px; }
-        .brand { display: flex; align-items: center; gap: 12px; flex-shrink: 0; text-decoration: none; }
-        .brand-icon { width: 36px; height: 36px; border-radius: 10px; background: var(--brand); display: grid; place-items: center; font-family: var(--display); font-weight: 800; font-size: 14px; color: #04121a; box-shadow: 0 0 22px rgba(6,182,212,.55), inset 0 1px 0 rgba(255,255,255,.45); }
-        .brand-name { font-family: var(--display); font-weight: 700; letter-spacing: .14em; font-size: 13.5px; color: var(--t1); }
-        .nav-links { display: flex; gap: 32px; }
-        .nav-links a { font-size: 14px; color: var(--t2); font-weight: 500; transition: color .2s; text-decoration: none; }
-        .nav-links a:hover { color: var(--t1); }
-        .nav-right { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
-        .link-btn { font-size: 14px; font-weight: 500; color: var(--t2); padding: 9px 12px; border-radius: var(--r-btn); transition: color .2s; text-decoration: none; }
-        .link-btn:hover { color: var(--t1); }
-
-        /* Ticker */
-        .ticker { height: 36px; overflow: hidden; border-bottom: 1px solid rgba(255,255,255,.05); background: rgba(8,12,22,.6); backdrop-filter: blur(10px); position: sticky; top: 64px; z-index: 55; }
-        .ticker-track { display: flex; align-items: center; gap: 0; height: 36px; white-space: nowrap; animation: marquee 38s linear infinite; will-change: transform; }
-        .ticker:hover .ticker-track { animation-play-state: paused; }
-        @keyframes marquee { 0% { transform: translateX(0) } 100% { transform: translateX(-50%) } }
-        .tk { display: inline-flex; align-items: center; gap: 8px; padding: 0 22px; font-size: 12.5px; font-weight: 500; border-right: 1px solid rgba(255,255,255,.05); }
-        .tk .sym { color: var(--t2); font-weight: 600; letter-spacing: .04em; }
-        .tk .px { color: var(--t1); }
-        .tk .chg { font-weight: 600; }
-        .up { color: var(--emerald); } .down { color: var(--rose); } .flat { color: var(--t3); }
-
-        /* Hero */
-        .hero { padding: 88px 0 64px; text-align: center; position: relative; }
-        .hero .pill { margin-bottom: 26px; }
-        .hero h1 { font-family: var(--display); font-weight: 800; font-size: 64px; line-height: 1.05; letter-spacing: -.02em; max-width: 820px; margin: 0 auto 22px; }
-        .hero p.sub { font-size: 18px; color: var(--t2); max-width: 640px; margin: 0 auto 34px; }
-        .hero .ctas { display: flex; gap: 14px; justify-content: center; margin-bottom: 64px; }
-
-        /* Hero terminal mockup */
-        .hero-mock-stage { perspective: 1800px; max-width: 960px; margin: 0 auto; }
-        .hero-mock { width: 100%; max-width: 960px; border-radius: var(--r-hero); background: var(--glass); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid var(--gb); box-shadow: 0 40px 120px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.03), inset 0 1px 0 rgba(255,255,255,.06); overflow: hidden; transform: rotateX(14deg) rotateY(0deg); transition: transform .25s ease; transform-style: preserve-3d; will-change: transform; text-align: left; }
-        .hm-top { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--gb); background: rgba(8,12,22,.5); }
-        .hm-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
-        .hm-body { display: grid; grid-template-columns: 1fr 1.7fr; gap: 1px; background: var(--gb); }
-        .hm-left, .hm-right { background: var(--canvas-2); padding: 18px; }
-        .hm-label { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--t3); margin-bottom: 8px; }
-        .hm-wallet { font-family: var(--mono); font-size: 26px; font-weight: 700; color: var(--t1); margin-bottom: 4px; }
-        .hm-sub { font-size: 12px; color: var(--t2); }
-        .hm-pnl { display: inline-flex; flex-direction: column; margin-top: 20px; padding: 12px 14px; border-radius: 12px; background: rgba(16,185,129,.1); border: 1px solid rgba(16,185,129,.28); }
-        .hm-pnl .big { font-family: var(--mono); font-size: 20px; font-weight: 700; color: var(--emerald); }
-        .hm-pnl .lbl { font-size: 11px; color: var(--t2); margin-top: 2px; }
-        .hm-chart-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-        .hm-chart-head .nm { font-weight: 700; font-size: 15px; }
-        .hm-chart-head .nm span { color: var(--t3); font-weight: 500; font-size: 12px; margin-left: 6px; }
-        .chip { font-family: var(--mono); font-size: 12px; font-weight: 600; padding: 3px 9px; border-radius: var(--r-pill); }
-        .chip.up { background: rgba(16,185,129,.12); color: var(--emerald); } .chip.down { background: rgba(244,63,94,.12); color: var(--rose); }
-
-        /* Section shells */
-        .section { padding: 100px 0; }
-        .sec-head { text-align: center; margin-bottom: 56px; }
-        .sec-head .pill { margin-bottom: 18px; }
-        .sec-head h2 { font-family: var(--display); font-weight: 800; font-size: 42px; letter-spacing: -.02em; line-height: 1.1; }
-        .sec-head p { color: var(--t2); font-size: 16px; max-width: 560px; margin: 14px auto 0; }
-
-        .glass { background: var(--glass); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid var(--gb); border-radius: var(--r-card); box-shadow: inset 0 1px 0 rgba(255,255,255,.05); }
-        .glass-hover { transition: transform .3s cubic-bezier(.22,1,.36,1), border-color .3s, box-shadow .3s; }
-        .glass-hover:hover { transform: translateY(-6px); border-color: var(--gbh); box-shadow: 0 24px 60px rgba(0,0,0,.45), 0 0 30px rgba(6,182,212,.14), inset 0 1px 0 rgba(255,255,255,.07); }
-
-        /* About */
-        .about-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; align-items: center; }
-        .about-left h2 { font-family: var(--display); font-weight: 800; font-size: 38px; letter-spacing: -.02em; line-height: 1.12; margin-bottom: 18px; }
-        .about-left p.lead { color: var(--t2); font-size: 16px; margin-bottom: 24px; }
-        .checks { display: flex; flex-direction: column; gap: 14px; }
-        .check { display: flex; gap: 12px; align-items: flex-start; }
-        .check .ic { width: 24px; height: 24px; border-radius: 8px; background: rgba(16,185,129,.14); border: 1px solid rgba(16,185,129,.3); color: var(--emerald); display: grid; place-items: center; flex-shrink: 0; font-size: 13px; margin-top: 1px; }
-        .check .tx b { display: block; font-size: 14.5px; font-weight: 600; margin-bottom: 2px; }
-        .check .tx span { font-size: 13.5px; color: var(--t2); }
-        .stats-2x2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-        .stat { padding: 26px 22px; border-radius: var(--r-card); }
-        .stat .v { font-family: var(--display); font-weight: 800; font-size: 34px; letter-spacing: -.02em; margin-bottom: 6px; }
-        .stat .k { font-size: 13px; color: var(--t2); }
-        .stat:nth-child(1) .v { color: var(--cyan); } .stat:nth-child(2) .v { color: var(--emerald); }
-        .stat:nth-child(3) .v { color: var(--amber); } .stat:nth-child(4) .v { color: var(--t1); }
-
-        /* Bento */
-        .bento { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
-        .fcard { padding: 28px; position: relative; overflow: hidden; }
-        .fcard .fic { width: 48px; height: 48px; border-radius: 12px; display: grid; place-items: center; margin-bottom: 18px; background: rgba(6,182,212,.1); border: 1px solid rgba(6,182,212,.22); color: var(--cyan); font-size: 20px; }
-        .fcard h3 { font-family: var(--display); font-weight: 700; font-size: 18px; margin-bottom: 8px; letter-spacing: -.01em; }
-        .fcard p { font-size: 14px; color: var(--t2); line-height: 1.55; }
-        .fcard .glow { position: absolute; top: -40%; right: -30%; width: 220px; height: 220px; background: radial-gradient(circle, rgba(6,182,212,.16), transparent 70%); opacity: 0; transition: opacity .35s; pointer-events: none; }
-        .fcard:hover .glow { opacity: 1; }
-
-        .mini-dom { margin-top: 16px; display: flex; flex-direction: column; gap: 4px; }
-        .mini-dom .row { display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 11px; }
-        .mini-dom .bar { height: 14px; border-radius: 4px; flex-shrink: 0; }
-        .mini-dom .bid .bar { background: rgba(6,182,212,.25); } .mini-dom .ask .bar { background: rgba(244,63,94,.25); }
-        .mini-dom .bid span { color: var(--cyan); } .mini-dom .ask span { color: var(--rose); }
-        .greek-row { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
-        .greek { font-family: var(--mono); font-size: 11px; padding: 5px 9px; border-radius: 8px; background: rgba(255,255,255,.04); border: 1px solid var(--gb); }
-        .greek b { color: var(--cyan); }
-
-        /* Leaderboard */
-        .leader { padding: 30px 32px; margin-bottom: 40px; }
-        .leader-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 22px; }
-        .leader-head h3 { font-family: var(--display); font-weight: 700; font-size: 20px; }
-        .leader-head .pill { margin: 0; }
-        .podium { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
-        .rank { display: flex; align-items: center; gap: 14px; padding: 18px; border-radius: 14px; background: rgba(255,255,255,.02); border: 1px solid var(--gb); }
-        .rank .medal { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; font-family: var(--display); font-weight: 800; font-size: 16px; color: #04121a; flex-shrink: 0; }
-        .rank.g .medal { background: linear-gradient(135deg, #FDE68A, #F59E0B); box-shadow: 0 0 20px rgba(245,158,11,.4); }
-        .rank.s .medal { background: linear-gradient(135deg, #E2E8F0, #94A3B8); }
-        .rank.b .medal { background: linear-gradient(135deg, #FBBF77, #B45309); }
-        .rank .nm { font-weight: 600; font-size: 14px; }
-        .rank .meta { display: flex; gap: 8px; margin-top: 6px; }
-        .rank .pf { font-family: var(--mono); font-weight: 700; color: var(--emerald); font-size: 14px; }
-        .wr { font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 9999px; background: rgba(6,182,212,.12); color: var(--cyan); }
-
-        /* Testimonials */
-        .tgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
-        .tcard { padding: 26px; }
-        .stars { color: var(--amber); font-size: 14px; margin-bottom: 14px; letter-spacing: 2px; }
-        .tcard p { font-size: 14.5px; color: var(--t1); line-height: 1.6; margin-bottom: 20px; }
-        .tuser { display: flex; align-items: center; gap: 12px; }
-        .tuser .av { width: 42px; height: 42px; border-radius: 50%; background: var(--brand); display: grid; place-items: center; font-weight: 700; color: #04121a; font-size: 15px; }
-        .tuser .nm { font-weight: 600; font-size: 14px; } .tuser .rl { font-size: 12.5px; color: var(--t2); }
-
-        /* Pre-footer CTA */
-        .cta-banner { position: relative; overflow: hidden; text-align: center; padding: 64px 40px; border-radius: 24px; background: linear-gradient(135deg, rgba(6,182,212,.12), rgba(16,185,129,.1)); border: 1px solid rgba(6,182,212,.24); }
-        .cta-banner::before { content: ""; position: absolute; inset: 0; background: radial-gradient(circle at 50% 0%, rgba(6,182,212,.22), transparent 60%); pointer-events: none; }
-        .cta-banner h2 { font-family: var(--display); font-weight: 800; font-size: 40px; letter-spacing: -.02em; position: relative; margin-bottom: 12px; }
-        .cta-banner p { color: var(--t2); position: relative; margin-bottom: 28px; font-size: 16px; }
-
-        /* Footer */
-        .footer { border-top: 1px solid rgba(255,255,255,.06); padding: 64px 0 34px; margin-top: 80px; }
-        .foot-grid { display: grid; grid-template-columns: 1.6fr 1fr 1fr 1fr; gap: 40px; margin-bottom: 44px; }
-        .foot-brand p { color: var(--t2); font-size: 14px; margin: 16px 0 20px; max-width: 280px; }
-        .socials { display: flex; gap: 10px; }
-        .socials a { width: 38px; height: 38px; border-radius: 10px; border: 1px solid var(--gb); display: grid; place-items: center; color: var(--t2); transition: .2s; text-decoration: none; }
-        .socials a:hover { border-color: var(--gbh); color: var(--cyan); background: rgba(6,182,212,.06); }
-        .foot-col h4 { font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--t3); margin-bottom: 16px; }
-        .foot-col a { display: block; font-size: 14px; color: var(--t2); margin-bottom: 11px; transition: color .2s; text-decoration: none; }
-        .foot-col a:hover { color: var(--t1); }
-        .disclaimer { border-top: 1px solid rgba(255,255,255,.06); padding-top: 24px; font-size: 12.5px; color: var(--t3); display: flex; justify-content: space-between; gap: 24px; flex-wrap: wrap; }
-
-        @media(max-width: 1080px) {
-          .wrap, .nav-inner { padding: 0 32px; }
-          .nav-links { display: none; }
-          .hero h1 { font-size: 46px; }
-          .about-grid, .bento, .tgrid, .podium, .foot-grid { grid-template-columns: 1fr; }
-          .hm-body { grid-template-columns: 1fr; }
-        }
-        @media(max-width: 560px) {
-          .wrap, .nav-inner { padding: 0 20px; }
-          .hero { padding: 52px 0 40px; }
-          .hero h1 { font-size: 34px; }
-          .sec-head h2, .cta-banner h2 { font-size: 28px; }
-          .section { padding: 64px 0; }
-          .stats-2x2 { grid-template-columns: 1fr; }
-        }
-      `}</style>
-
-      {/* AMBIENT LAYERS + GLOBAL MESH FLOW */}
-      <div className="ambient">
-        <div className="blob b1"></div>
-        <div className="blob b2"></div>
-        <div className="blob b3"></div>
-        <div className="mesh" ref={meshRef}></div>
-        {/* Interactive gravitational mesh flow canvas everywhere */}
-        <MeshFlowBackground
-          gridSpacing={46}
-          dotRadius={1.2}
-          influenceRadius={180}
-          sigma={85}
-          maxDisplacement={26}
-          damping={0.88}
-          springStrength={0.045}
-          attractionStrength={0.6}
-          dotColor="rgba(255, 255, 255, 0.04)"
-          lineColor="rgba(255, 255, 255, 0.025)"
-          activeDotColor="rgba(6, 182, 212, 0.5)"
-          activeLineColor="rgba(6, 182, 212, 0.2)"
+      {/* Floating Aurora Plasma Spheres (MotionSites signature glow) */}
+      <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
+        <div
+          className="absolute -top-40 -left-40 w-[700px] h-[700px] rounded-full blur-[140px] opacity-40 animate-pulse"
+          style={{
+            background: "radial-gradient(circle, rgba(6, 182, 212, 0.35), transparent 70%)",
+            transform: `translate(${mousePos.x * 50}px, ${mousePos.y * 50}px)`,
+          }}
+        />
+        <div
+          className="absolute top-1/3 -right-40 w-[650px] h-[650px] rounded-full blur-[160px] opacity-30"
+          style={{
+            background: "radial-gradient(circle, rgba(16, 185, 129, 0.3), transparent 70%)",
+            transform: `translate(${mousePos.x * -40}px, ${mousePos.y * -40}px)`,
+          }}
+        />
+        <div
+          className="absolute -bottom-40 left-1/3 w-[800px] h-[800px] rounded-full blur-[180px] opacity-25"
+          style={{
+            background: "radial-gradient(circle, rgba(147, 51, 234, 0.25), transparent 70%)",
+          }}
         />
       </div>
 
-      {/* ================= EXACT NEW HOMEPAGE ================= */}
-      <div id="landing">
-        {/* NAV */}
-        <nav className="nav">
-          <div className="nav-inner">
-            <Link href="/" className="brand">
-              <div className="brand-icon">SS</div>
-              <div className="brand-name">STOCK SIMULATOR</div>
-            </Link>
-            <div className="nav-links">
-              <a href="#home">Home</a>
-              <a href="#about">About</a>
-              <a href="#features">Features</a>
-              <a href="#testimonials">Testimonials</a>
-              <Link href="/trade">Terminal</Link>
+      {/* ================= HUD HEADER ================= */}
+      <header className="fixed top-0 left-0 right-0 z-50 px-6 py-4 flex items-center justify-between bg-[#04060b]/75 backdrop-blur-xl border-b border-white/[0.06]">
+        <div className="flex items-center gap-3">
+          <Link href="/" className="flex items-center gap-2.5 group">
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-cyan-400 via-teal-300 to-emerald-400 p-[1px] shadow-lg shadow-cyan-500/25">
+              <div className="w-full h-full bg-slate-950 rounded-[11px] flex items-center justify-center font-black text-xs text-white">
+                SS
+              </div>
             </div>
-            <div className="nav-right">
-              <Link href="/trade" className="link-btn">
-                Sign In
-              </Link>
-              <Link href="/trade" className="btn btn-primary">
-                Start Trading Free →
-              </Link>
-            </div>
-          </div>
-        </nav>
-
-        {/* TICKER */}
-        <div className="ticker">
-          <div className="ticker-track">
-            {[...TICKERS, ...TICKERS].map((t, idx) => (
-              <span className="tk" key={idx}>
-                <span className="sym">{t.s}</span>
-                <span className="px mono">{t.p}</span>
-                <span className={`chg mono ${t.d}`}>{t.c}</span>
+            <div className="font-extrabold text-sm tracking-widest uppercase text-white flex items-center gap-2">
+              <span>STOCK SIMULATOR</span>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                3D SPATIAL
               </span>
-            ))}
+            </div>
+          </Link>
+        </div>
+
+        {/* Center Nav Anchors */}
+        <div className="hidden lg:flex items-center gap-7 text-xs font-mono">
+          <a href="#hero" className="text-slate-400 hover:text-white transition-colors">HOME</a>
+          <a href="#about" className="text-slate-400 hover:text-white transition-colors">ABOUT</a>
+          <a href="#features" className="text-slate-400 hover:text-white transition-colors">FEATURES</a>
+          <a href="#testimonials" className="text-slate-400 hover:text-white transition-colors">TESTIMONIALS</a>
+          <a href="#portal" className="text-cyan-400 hover:text-cyan-300 transition-colors">PORTAL</a>
+        </div>
+
+        {/* Right Actions */}
+        <div className="flex items-center gap-3">
+          <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-950/80 border border-white/[0.08] text-xs font-mono">
+            <button
+              onClick={() => setCameraMode("scroll")}
+              className={`px-2.5 py-0.5 rounded-full text-[11px] transition-all ${
+                cameraMode === "scroll" ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40" : "text-slate-500 hover:text-slate-300"
+              }`}
+            >
+              Scroll
+            </button>
+            <button
+              onClick={() => setCameraMode("orbit")}
+              className={`px-2.5 py-0.5 rounded-full text-[11px] transition-all ${
+                cameraMode === "orbit" ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40" : "text-slate-500 hover:text-slate-300"
+              }`}
+            >
+              Gyro
+            </button>
+          </div>
+
+          <Link
+            href="/trade"
+            className="px-5 py-2 rounded-xl bg-gradient-to-r from-cyan-400 to-emerald-400 hover:from-cyan-300 hover:to-emerald-300 text-slate-950 font-bold text-xs shadow-lg shadow-cyan-500/25 transition-all hover:scale-105"
+          >
+            Launch Terminal →
+          </Link>
+        </div>
+      </header>
+
+      {/* ================= TICKER MARQUEE ================= */}
+      <div className="fixed top-16 left-0 right-0 z-40 bg-[#060912]/80 backdrop-blur-md border-b border-white/[0.05] overflow-hidden">
+        <div className="flex animate-ticker-scroll py-2">
+          {[...TICKERS, ...TICKERS, ...TICKERS].map((t, idx) => (
+            <div key={idx} className="flex items-center gap-2 px-6 whitespace-nowrap text-[11px] font-mono shrink-0">
+              <span className="text-slate-400 font-semibold">{t.s}</span>
+              <span className="text-white">{t.p}</span>
+              <span className={`font-bold ${t.d === "up" ? "text-emerald-400" : t.d === "down" ? "text-rose-400" : "text-slate-500"}`}>
+                {t.c}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ================= 1. SECTION 1: SPATIAL 3D HERO ================= */}
+      <section id="hero" className="relative z-10 min-h-screen flex flex-col items-center justify-center pt-36 pb-24 px-6 text-center">
+        {/* Iridescent Pill */}
+        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-cyan-950/40 border border-cyan-500/30 text-cyan-300 text-xs font-mono uppercase tracking-widest backdrop-blur-xl shadow-lg shadow-cyan-500/10 mb-8 animate-bounce">
+          <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+          <span>MOTIONSITES 3D ENGINE • SPATIAL PAPER TRADING</span>
+        </div>
+
+        {/* Kinetic 3D Heading */}
+        <div
+          className="relative max-w-5xl mx-auto space-y-4"
+          style={{
+            transform: `perspective(1200px) rotateX(${mousePos.y * -8}deg) rotateY(${mousePos.x * 8}deg)`,
+            transition: "transform 0.15s ease-out",
+          }}
+        >
+          <h1 className="text-5xl sm:text-7xl lg:text-8xl font-black uppercase tracking-tighter leading-[0.95] text-white">
+            MASTER THE MARKET.
+            <br />
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 via-teal-200 to-emerald-400 drop-shadow-[0_0_35px_rgba(6,182,212,0.45)]">
+              ZERO FINANCIAL RISK.
+            </span>
+          </h1>
+
+          <p className="text-slate-400 text-base sm:text-xl max-w-2xl mx-auto leading-relaxed pt-3">
+            Experience institutional-grade paper trading with ₹10,00,000 virtual capital in spatial 3D.
+            Practice intraday equities, F&amp;O options strategies, and algo risk rules on real-time market data.
+          </p>
+        </div>
+
+        {/* Dual 3D Buttons */}
+        <div className="flex flex-wrap items-center justify-center gap-5 pt-8">
+          <Link
+            href="/trade"
+            className="group px-8 py-4 rounded-2xl bg-gradient-to-r from-cyan-400 via-teal-300 to-emerald-400 text-slate-950 font-black text-sm tracking-wide uppercase shadow-2xl shadow-cyan-500/40 hover:shadow-cyan-500/60 hover:scale-105 transition-all flex items-center gap-2"
+          >
+            <span>Enter 3D Terminal</span>
+            <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+          </Link>
+          <a
+            href="#about"
+            className="px-8 py-4 rounded-2xl bg-[#0a1122]/80 hover:bg-[#0f1b36] border border-cyan-500/30 text-white font-bold text-sm tracking-wide transition-all backdrop-blur-xl hover:border-cyan-400/60"
+          >
+            Explore 3D Features ↓
+          </a>
+        </div>
+
+        {/* 3D FLOATING HOLOGRAPHIC TERMINAL SLAB */}
+        <div
+          className="relative mt-16 max-w-4xl w-full mx-auto"
+          style={{
+            perspective: "1600px",
+          }}
+        >
+          <div
+            className="rounded-3xl bg-gradient-to-b from-[#0a1122]/90 to-[#060a14]/95 backdrop-blur-3xl border border-cyan-500/30 p-7 sm:p-8 shadow-2xl transition-transform duration-300 ease-out text-left"
+            style={{
+              transform: `rotateX(${15 - mousePos.y * 18 - scrollProgress * 14}deg) rotateY(${mousePos.x * 20}deg) translateZ(30px)`,
+              boxShadow: "0 0 100px rgba(6, 182, 212, 0.22), 0 35px 80px rgba(0, 0, 0, 0.8)",
+            }}
+          >
+            {/* Hologram Header Bar */}
+            <div className="flex items-center justify-between border-b border-white/[0.08] pb-4 mb-6">
+              <div className="flex items-center gap-3">
+                <span className="w-3 h-3 rounded-full bg-rose-500 shadow-sm shadow-rose-500/50" />
+                <span className="w-3 h-3 rounded-full bg-amber-500 shadow-sm shadow-amber-500/50" />
+                <span className="w-3 h-3 rounded-full bg-emerald-500 shadow-sm shadow-emerald-500/50" />
+                <span className="font-mono text-xs font-bold tracking-wider text-cyan-300 ml-2">
+                  stocksimulator.app // SPATIAL SCANNER
+                </span>
+              </div>
+              <div className="flex items-center gap-2 font-mono text-xs">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                <span className="text-emerald-400 font-bold">LIVE FEED</span>
+              </div>
+            </div>
+
+            {/* Split Slabs */}
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-stretch">
+              {/* Left Column: Wallet & Positions */}
+              <div className="md:col-span-5 space-y-4 border-b md:border-b-0 md:border-r border-white/[0.06] md:pr-6 pb-6 md:pb-0 flex flex-col justify-between">
+                <div>
+                  <span className="text-[10px] font-mono uppercase tracking-widest text-slate-400 block">
+                    PAPER WALLET — BUYING POWER
+                  </span>
+                  <div className="text-3xl font-black font-mono text-white mt-1">₹10,00,000.00</div>
+                  <span className="text-xs font-mono text-slate-400">Margin used ₹1,24,528 • Free ₹8,75,472</span>
+                </div>
+
+                <div className="p-3.5 rounded-2xl bg-emerald-950/50 border border-emerald-500/30">
+                  <div className="text-2xl font-black font-mono text-emerald-400">+₹14,280.50</div>
+                  <div className="text-xs text-emerald-300 font-mono">Intraday P&amp;L • +1.42% today</div>
+                </div>
+
+                <div className="space-y-1.5 font-mono text-xs">
+                  <span className="text-[10px] text-slate-500 uppercase tracking-widest">Live Positions</span>
+                  <div className="flex justify-between py-1 border-b border-white/[0.04]">
+                    <span className="text-white">RELIANCE</span>
+                    <span className="text-emerald-400 font-bold">+2.1%</span>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-white/[0.04]">
+                    <span className="text-white">NIFTY 25400 CE</span>
+                    <span className="text-emerald-400 font-bold">+18.4%</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Right Column: Candlestick & Greeks */}
+              <div className="md:col-span-7 flex flex-col justify-between">
+                <div className="flex justify-between items-center mb-3">
+                  <div>
+                    <span className="text-sm font-bold text-white font-mono">RELIANCE</span>
+                    <span className="text-xs text-slate-500 font-mono ml-2">NSE • 1D</span>
+                  </div>
+                  <span className="text-xs font-mono font-bold text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-500/30">
+                    ₹1,226.40 +1.42%
+                  </span>
+                </div>
+
+                {/* Candlestick Hologram */}
+                <div className="h-36 rounded-2xl bg-slate-950/80 border border-white/[0.05] p-3 flex items-end justify-between gap-1.5 overflow-hidden">
+                  {[50, 65, 45, 75, 55, 85, 70, 95, 80, 100, 88].map((h, idx) => (
+                    <div key={idx} className="flex-1 flex flex-col items-center justify-end h-full">
+                      <div
+                        className={`w-full rounded-t ${
+                          idx % 2 === 0 ? "bg-emerald-400 shadow-md shadow-emerald-500/40" : "bg-rose-500 shadow-md shadow-rose-500/40"
+                        }`}
+                        style={{ height: `${h}%` }}
+                      />
+                    </div>
+                  ))}
+                </div>
+
+                <div className="grid grid-cols-4 gap-2 text-[11px] font-mono text-center pt-3 mt-2 border-t border-white/[0.06]">
+                  <div className="p-1 rounded bg-white/[0.02]">Δ <b className="text-cyan-400">0.52</b></div>
+                  <div className="p-1 rounded bg-white/[0.02]">Γ <b className="text-cyan-400">0.008</b></div>
+                  <div className="p-1 rounded bg-white/[0.02]">Θ <b className="text-rose-400">-4.21</b></div>
+                  <div className="p-1 rounded bg-white/[0.02]">IV <b className="text-amber-400">12.6%</b></div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* HERO */}
-        <section className="wrap hero" id="home">
-          <span className="pill">
-            <span className="dot"></span>
-            🟢 NEW: REAL-TIME F&amp;O OPTIONS SIMULATOR • LIVE NSE/BSE FEED
-          </span>
-          <h1>
-            Master the Market.
-            <br />
-            <span className="grad-text">Zero Financial Risk.</span>
-          </h1>
-          <p className="sub">
-            Experience institutional-grade paper trading with ₹10,00,000 virtual capital.
-            Practice intraday equities, F&amp;O options strategies, and algo risk rules on real-time market data.
-          </p>
-          <div className="ctas">
-            <Link href="/trade" className="btn btn-primary btn-lg">
-              Open Free Terminal →
-            </Link>
-            <a href="#features" className="btn btn-ghost btn-lg">
-              Explore Features
-            </a>
+        {/* Scroll Indicator */}
+        <div className="pt-20 flex flex-col items-center gap-2 text-slate-500 text-xs font-mono uppercase tracking-widest">
+          <span>SCROLL TO DIVE DEEPER</span>
+          <ChevronDown className="w-4 h-4 animate-bounce text-cyan-400" />
+        </div>
+      </section>
+
+      {/* ================= 2. SECTION 2: 3D ABOUT & MATCHING ENGINE ================= */}
+      <section id="about" className="relative z-10 py-32 px-6">
+        <div className="max-w-6xl mx-auto space-y-16">
+          <div className="text-center space-y-3">
+            <span className="text-xs font-mono uppercase tracking-widest text-cyan-400">
+              WHY CHOOSE US // ENGINE ARCHITECTURE
+            </span>
+            <h2 className="text-4xl sm:text-5xl font-black uppercase text-white tracking-tight">
+              Built for Serious Traders, Not Gamblers.
+            </h2>
+            <p className="text-slate-400 text-sm sm:text-base max-w-2xl mx-auto leading-relaxed">
+              Our realistic matching engine goes far beyond a simple price feed. Every fill simulates real slippage,
+              live liquidity queues, STT and exchange transaction taxes, and circuit breakers.
+            </p>
           </div>
 
-          {/* HERO MOCK STAGE WITH TILT */}
-          <div className="hero-mock-stage">
-            <div className="hero-mock" ref={heroMockRef} id="heroMock">
-              <div className="hm-top">
-                <span className="hm-dot" style={{ background: "#F43F5E" }}></span>
-                <span className="hm-dot" style={{ background: "#F59E0B" }}></span>
-                <span className="hm-dot" style={{ background: "#10B981" }}></span>
-                <span style={{ marginLeft: "12px", fontSize: "12px", color: "var(--t3)" }} className="mono">
-                  stocksimulator.app — paper terminal
-                </span>
-                <span className="pill" style={{ marginLeft: "auto", padding: "4px 10px", fontSize: "10px" }}>
-                  <span className="dot"></span>LIVE
-                </span>
-              </div>
-              <div className="hm-body">
-                <div className="hm-left">
-                  <div className="hm-label">Paper Wallet — Buying Power</div>
-                  <div className="hm-wallet">₹10,00,000.00</div>
-                  <div className="hm-sub">Margin used ₹1,24,528 • Free ₹8,75,472</div>
-                  <div className="hm-pnl">
-                    <span className="big">+₹14,280.50</span>
-                    <span className="lbl">Intraday P&amp;L • +1.42% today</span>
-                  </div>
-                  <div style={{ marginTop: "18px" }} className="hm-label">Positions</div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "6px" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px" }} className="mono">
-                      <span>RELIANCE</span>
-                      <span className="up">+2.1%</span>
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+            {/* Left 3D Trust Column */}
+            <div className="lg:col-span-6 space-y-6">
+              {[
+                {
+                  title: "True-to-market execution",
+                  desc: "Order fills respect Level 2 bid/ask depth, partial fills, and queue priority.",
+                },
+                {
+                  title: "Accurate cost modelling",
+                  desc: "STT, brokerage, GST, stamp duty and slippage are baked into every P&L calculation.",
+                },
+                {
+                  title: "Circuit breaker safety",
+                  desc: "Upper and lower circuits, margin calls, and squared-off positions behave like real NSE/BSE.",
+                },
+              ].map((item, idx) => (
+                <TiltCard key={idx}>
+                  <div className="rounded-2xl bg-[#090e1c]/80 backdrop-blur-xl border border-white/[0.08] p-6 flex items-start gap-4">
+                    <div className="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0 mt-0.5">
+                      <CheckCircle2 className="w-5 h-5" />
                     </div>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px" }} className="mono">
-                      <span>NIFTY 25400 CE</span>
-                      <span className="up">+18.4%</span>
-                    </div>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px" }} className="mono">
-                      <span>HDFCBANK</span>
-                      <span className="down">-0.4%</span>
+                    <div>
+                      <h4 className="text-base font-bold text-white mb-1">{item.title}</h4>
+                      <p className="text-xs text-slate-400 leading-relaxed">{item.desc}</p>
                     </div>
                   </div>
-                </div>
-                <div className="hm-right">
-                  <div className="hm-chart-head">
-                    <div className="nm">
-                      RELIANCE <span>NSE • 1D</span>
+                </TiltCard>
+              ))}
+            </div>
+
+            {/* Right 2x2 Stats Bento with 3D Pop */}
+            <div className="lg:col-span-6 grid grid-cols-1 sm:grid-cols-2 gap-5">
+              {[
+                { val: "₹10,00,000", label: "Virtual capital on signup", color: "text-cyan-400", border: "border-cyan-500/30" },
+                { val: "100% Free", label: "Zero commissions, zero fees forever", color: "text-emerald-400", border: "border-emerald-500/30" },
+                { val: "< 10ms", label: "Simulated institutional latency", color: "text-amber-400", border: "border-amber-500/30" },
+                { val: "1,200+", label: "NSE Equities, Indices, F&O", color: "text-purple-400", border: "border-purple-500/30" },
+              ].map((stat, idx) => (
+                <TiltCard key={idx} glowColor="rgba(6, 182, 212, 0.25)">
+                  <div className={`h-full rounded-3xl bg-[#0a1122]/80 backdrop-blur-2xl border ${stat.border} p-8 flex flex-col justify-between shadow-xl`}>
+                    <div className={`text-3xl sm:text-4xl font-black font-mono ${stat.color} mb-2`}>
+                      {stat.val}
                     </div>
-                    <div className="chip up mono">₹1,226.40 +1.42%</div>
+                    <div className="text-xs text-slate-400 leading-relaxed font-medium">
+                      {stat.label}
+                    </div>
                   </div>
-                  <div id="heroChart" ref={heroChartRef}></div>
-                </div>
-              </div>
+                </TiltCard>
+              ))}
             </div>
           </div>
-        </section>
+        </div>
+      </section>
 
-        {/* ABOUT */}
-        <section className="wrap section reveal" id="about">
-          <div className="about-grid">
-            <div className="about-left">
-              <span className="pill">Why Choose Us</span>
-              <h2 style={{ marginTop: "16px" }}>
-                Built for Serious Traders,
-                <br />
-                Not Gamblers.
+      {/* ================= 3. SECTION 3: 3D PRO FEATURES BENTO ================= */}
+      <section id="features" className="relative z-10 py-32 px-6">
+        <div className="max-w-6xl mx-auto space-y-16">
+          <div className="text-center space-y-3">
+            <span className="text-xs font-mono uppercase tracking-widest text-emerald-400">
+              PLATFORM FEATURES // COMPLETE SUITE
+            </span>
+            <h2 className="text-4xl sm:text-5xl font-black uppercase text-white tracking-tight">
+              Everything a Pro Desk Needs
+            </h2>
+            <p className="text-slate-400 text-sm max-w-lg mx-auto leading-relaxed">
+              Institutional tooling, retail simplicity. 6 spatial modules engineered to build disciplined traders.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {FEATURES_DATA.map((feature, idx) => (
+              <TiltCard key={idx} glowColor="rgba(6, 182, 212, 0.2)">
+                <div className="h-full rounded-3xl bg-[#0a1122]/85 backdrop-blur-2xl border border-white/[0.08] hover:border-cyan-500/40 p-7 flex flex-col justify-between shadow-2xl transition-all">
+                  <div>
+                    <div className="flex items-center justify-between mb-5">
+                      <div className="w-11 h-11 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
+                        <feature.icon className="w-5 h-5" />
+                      </div>
+                      <span className="text-[10px] font-mono text-slate-500 px-2 py-0.5 rounded bg-white/[0.03] border border-white/[0.06]">
+                        {feature.badge}
+                      </span>
+                    </div>
+                    <h3 className="text-lg font-bold text-white mb-2">{feature.title}</h3>
+                    <p className="text-xs text-slate-400 leading-relaxed">{feature.description}</p>
+                  </div>
+
+                  <div className="pt-4 mt-4 border-t border-white/[0.06] flex items-center justify-between text-xs font-mono text-cyan-400">
+                    <span>EXPLORE MODULE</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </div>
+                </div>
+              </TiltCard>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ================= 4. SECTION 4: 3D LEADERBOARD & REVIEWS ================= */}
+      <section id="testimonials" className="relative z-10 py-32 px-6">
+        <div className="max-w-6xl mx-auto space-y-16">
+          {/* Weekly Leaderboard 3D Podium */}
+          <TiltCard glowColor="rgba(245, 158, 11, 0.2)">
+            <div className="rounded-3xl bg-[#090e1c]/90 backdrop-blur-2xl border border-amber-500/30 p-8 sm:p-10 shadow-2xl">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8 border-b border-white/[0.08] pb-5">
+                <div className="flex items-center gap-3">
+                  <Award className="w-6 h-6 text-amber-400" />
+                  <h3 className="text-2xl font-black uppercase text-white tracking-tight">
+                    Weekly Simulated Leaderboard
+                  </h3>
+                </div>
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-950/60 border border-emerald-500/30 text-emerald-300 text-xs font-mono">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  <span>LIVE • RESETS MONDAY</span>
+                </div>
+              </div>
+
+              {/* 3 Podium Ranks */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {LEADERBOARD_DATA.map((trader, i) => (
+                  <div
+                    key={i}
+                    className="p-6 rounded-2xl bg-slate-950/70 border border-white/[0.06] flex items-center gap-4 hover:border-amber-500/40 transition-all"
+                  >
+                    <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${trader.color} flex items-center justify-center font-black text-slate-950 text-base shadow-lg shrink-0`}>
+                      {trader.rank}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-bold text-white truncate">{trader.name}</div>
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className="text-xs font-mono font-bold text-emerald-400">{trader.returnRate}</span>
+                        <span className="text-[10px] font-mono text-cyan-300 px-1.5 py-0.5 rounded bg-cyan-950/50 border border-cyan-500/20">
+                          {trader.winRate}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </TiltCard>
+
+          {/* Testimonials */}
+          <div className="space-y-6">
+            <div className="text-center space-y-2">
+              <span className="text-xs font-mono uppercase tracking-widest text-cyan-400">
+                VERIFIED SOCIAL PROOF
+              </span>
+              <h2 className="text-3xl sm:text-4xl font-black uppercase text-white tracking-tight">
+                Trusted by Students, Scalpers &amp; Educators
               </h2>
-              <p className="lead">
-                Our realistic matching engine goes far beyond a price feed. Every fill simulates real slippage,
-                live liquidity queues, STT and exchange transaction taxes, and exchange circuit breakers — so your
-                paper track record actually reflects live-market behavior.
-              </p>
-              <div className="checks">
-                <div className="check">
-                  <div className="ic">✓</div>
-                  <div className="tx">
-                    <b>True-to-market execution</b>
-                    <span>Order fills respect bid/ask depth, partial fills, and queue priority.</span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {TESTIMONIALS_DATA.map((t, idx) => (
+                <TiltCard key={idx} glowColor="rgba(6, 182, 212, 0.2)">
+                  <div className="h-full rounded-3xl bg-[#090e1c]/80 backdrop-blur-xl border border-white/[0.08] p-7 flex flex-col justify-between shadow-xl">
+                    <div>
+                      <div className="flex items-center gap-1 text-amber-400 mb-4">
+                        {[...Array(5)].map((_, i) => (
+                          <Star key={i} className="w-3.5 h-3.5 fill-amber-400" />
+                        ))}
+                      </div>
+                      <p className="text-xs text-slate-300 leading-relaxed italic mb-6">
+                        &ldquo;{t.quote}&rdquo;
+                      </p>
+                    </div>
+
+                    <div className="pt-4 border-t border-white/[0.06] flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-cyan-400 to-emerald-400 flex items-center justify-center font-bold text-slate-950 text-xs">
+                        {t.initials}
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold text-white">{t.name}</div>
+                        <div className="text-[10px] text-slate-400">{t.role}</div>
+                      </div>
+                    </div>
                   </div>
-                </div>
-                <div className="check">
-                  <div className="ic">✓</div>
-                  <div className="tx">
-                    <b>Accurate cost modelling</b>
-                    <span>STT, brokerage, GST, stamp duty and slippage baked into every P&amp;L.</span>
-                  </div>
-                </div>
-                <div className="check">
-                  <div className="ic">✓</div>
-                  <div className="tx">
-                    <b>Circuit breaker safety</b>
-                    <span>Upper/lower circuits and margin calls behave like the real NSE/BSE.</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div className="stats-2x2">
-              <div className="stat glass glass-hover">
-                <div className="v">₹10,00,000</div>
-                <div className="k">Virtual capital on signup</div>
-              </div>
-              <div className="stat glass glass-hover">
-                <div className="v">100% Free</div>
-                <div className="k">Zero commissions, zero fees forever</div>
-              </div>
-              <div className="stat glass glass-hover">
-                <div className="v">&lt; 10ms</div>
-                <div className="k">Simulated institutional execution latency</div>
-              </div>
-              <div className="stat glass glass-hover">
-                <div className="v">1,200+</div>
-                <div className="k">NSE Equities, Indices, Futures &amp; Options</div>
-              </div>
+                </TiltCard>
+              ))}
             </div>
           </div>
-        </section>
+        </div>
+      </section>
 
-        {/* FEATURES */}
-        <section className="wrap section reveal" id="features">
-          <div className="sec-head">
-            <span className="pill">Platform Features</span>
-            <h2>Everything a Pro Desk Needs</h2>
-            <p>Institutional tooling, retail simplicity. Built to make disciplined traders out of ambitious ones.</p>
-          </div>
-          <div className="bento">
-            <div className="fcard glass glass-hover">
-              <div className="glow"></div>
-              <div className="fic">☷</div>
-              <h3>Level 2 Market Depth (DOM)</h3>
-              <p>5-tier bid/ask ladder with visual depth bars that reveal order-queue dynamics in real time.</p>
-              <div className="mini-dom">
-                <div className="row bid">
-                  <span>1,226.05</span>
-                  <div className="bar" style={{ width: "70%" }}></div>
-                </div>
-                <div className="row bid">
-                  <span>1,226.00</span>
-                  <div className="bar" style={{ width: "48%" }}></div>
-                </div>
-                <div className="row ask">
-                  <span>1,226.40</span>
-                  <div className="bar" style={{ width: "60%" }}></div>
-                </div>
-                <div className="row ask">
-                  <span>1,226.45</span>
-                  <div className="bar" style={{ width: "38%" }}></div>
-                </div>
-              </div>
-            </div>
+      {/* ================= 5. SECTION 5: 3D PORTAL CTA & FOOTER ================= */}
+      <section id="portal" className="relative z-10 py-32 px-6 text-center">
+        <div className="max-w-4xl mx-auto">
+          <TiltCard glowColor="rgba(6, 182, 212, 0.35)">
+            <div
+              className="relative rounded-3xl p-12 overflow-hidden bg-gradient-to-b from-[#0b1428]/95 to-[#050914]/95 border border-cyan-500/40 shadow-2xl"
+              style={{
+                boxShadow: "0 0 120px rgba(6, 182, 212, 0.25)",
+              }}
+            >
+              {/* Glowing Center Core */}
+              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-cyan-500/15 rounded-full blur-3xl pointer-events-none" />
 
-            <div className="fcard glass glass-hover">
-              <div className="glow"></div>
-              <div className="fic">Δ</div>
-              <h3>Options Chain &amp; Greek Analytics</h3>
-              <p>Live NIFTY / BANKNIFTY calls and puts with real-time Delta, Gamma, Theta and Vega on every strike.</p>
-              <div className="greek-row">
-                <span className="greek">Δ <b>0.52</b></span>
-                <span className="greek">Γ <b>0.008</b></span>
-                <span className="greek">Θ <b>-4.21</b></span>
-                <span className="greek">ν <b>12.6</b></span>
-              </div>
-            </div>
-
-            <div className="fcard glass glass-hover">
-              <div className="glow"></div>
-              <div className="fic">⚡</div>
-              <h3>Real-Time WebSocket Engine</h3>
-              <p>Sub-50ms tick streaming mirrored from exchange broadcasts for lifelike, low-latency price action.</p>
-            </div>
-
-            <div className="fcard glass glass-hover">
-              <div className="glow"></div>
-              <div className="fic">⛨</div>
-              <h3>Institutional Risk Guard</h3>
-              <p>Max daily-loss limits, automatic circuit-breaker cutoffs and margin-call alerts keep discipline enforced.</p>
-            </div>
-
-            <div className="fcard glass glass-hover">
-              <div className="glow"></div>
-              <div className="fic">✦</div>
-              <h3>AI Trading Mentor</h3>
-              <p>Instant post-trade feedback analysing your risk-reward ratio and flagging revenge-trading behaviour.</p>
-            </div>
-
-            <div className="fcard glass glass-hover">
-              <div className="glow"></div>
-              <div className="fic">▣</div>
-              <h3>Multi-Wallet Management</h3>
-              <p>Segregate strategies into distinct accounts — Scalping, Swing and F&amp;O Hedging — with isolated P&amp;L.</p>
-            </div>
-          </div>
-        </section>
-
-        {/* SOCIAL PROOF */}
-        <section className="wrap section reveal" id="testimonials">
-          <div className="leader glass">
-            <div className="leader-head">
-              <h3>🏆 Weekly Leaderboard</h3>
-              <span className="pill">
-                <span className="dot"></span>Live • Resets Monday
-              </span>
-            </div>
-            <div className="podium">
-              <div className="rank g">
-                <div className="medal">1</div>
-                <div>
-                  <div className="nm">Arjun_FnO</div>
-                  <div className="meta">
-                    <span className="pf">+84.2%</span>
-                    <span className="wr">Win 78%</span>
-                  </div>
-                </div>
-              </div>
-              <div className="rank s">
-                <div className="medal">2</div>
-                <div>
-                  <div className="nm">SwingQueen</div>
-                  <div className="meta">
-                    <span className="pf">+62.1%</span>
-                    <span className="wr">Win 71%</span>
-                  </div>
-                </div>
-              </div>
-              <div className="rank b">
-                <div className="medal">3</div>
-                <div>
-                  <div className="nm">Scalp_Raja</div>
-                  <div className="meta">
-                    <span className="pf">+45.8%</span>
-                    <span className="wr">Win 69%</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="sec-head" style={{ marginBottom: "40px" }}>
-            <span className="pill">Loved By Traders</span>
-            <h2>Trusted by Students, Scalpers &amp; Educators</h2>
-          </div>
-
-          <div className="tgrid">
-            <div className="tcard glass glass-hover">
-              <div className="stars">★★★★★</div>
-              <p>
-                &ldquo;Tested my Iron Condor strategy for 3 months here before risking real capital. The Greeks and margin
-                behaviour matched my broker almost exactly.&rdquo;
-              </p>
-              <div className="tuser">
-                <div className="av">NK</div>
-                <div>
-                  <div className="nm">Neha Kulkarni</div>
-                  <div className="rl">College Finance Student</div>
-                </div>
-              </div>
-            </div>
-
-            <div className="tcard glass glass-hover">
-              <div className="stars">★★★★★</div>
-              <p>
-                &ldquo;Execution speed and Level 2 depth feel identical to my real broker terminal. I run my morning warm-up
-                scalps here every single day.&rdquo;
-              </p>
-              <div className="tuser">
-                <div className="av">RV</div>
-                <div>
-                  <div className="nm">Rohit Verma</div>
-                  <div className="rl">Full-Time Intraday Scalper</div>
-                </div>
-              </div>
-            </div>
-
-            <div className="tcard glass glass-hover">
-              <div className="stars">★★★★★</div>
-              <p>
-                &ldquo;I train 500+ students with zero financial risk. The AI mentor feedback and leaderboard turn practice
-                into a genuinely competitive classroom.&rdquo;
-              </p>
-              <div className="tuser">
-                <div className="av">SM</div>
-                <div>
-                  <div className="nm">Sanjay Menon</div>
-                  <div className="rl">Finance Educator</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* CTA BANNER */}
-        <section className="wrap reveal">
-          <div className="cta-banner">
-            <h2>Ready to test your edge without risking your capital?</h2>
-            <p>Join thousands of traders sharpening their strategy on live Indian markets — completely free.</p>
-            <Link href="/trade" className="btn btn-primary btn-lg">
-              Launch Simulator Now — It&apos;s Free →
-            </Link>
-          </div>
-        </section>
-
-        {/* FOOTER */}
-        <footer className="footer">
-          <div className="wrap">
-            <div className="foot-grid">
-              <div className="foot-brand">
-                <div className="brand">
-                  <div className="brand-icon">SS</div>
-                  <div className="brand-name">STOCK SIMULATOR</div>
-                </div>
-                <p>
-                  The institutional-grade paper-trading platform for Indian markets. Practice, compete and master NSE/BSE equities &amp; F&amp;O — risk-free.
+              <div className="relative z-10 space-y-6">
+                <span className="text-xs font-mono uppercase tracking-widest text-cyan-300">
+                  ZERO BARRIERS • ZERO CAPITAL RISK
+                </span>
+                <h2 className="text-4xl sm:text-5xl font-black uppercase text-white tracking-tight leading-tight">
+                  READY TO TEST YOUR EDGE WITHOUT RISKING CAPITAL?
+                </h2>
+                <p className="text-slate-300 text-sm sm:text-base max-w-xl mx-auto leading-relaxed">
+                  Join thousands of traders sharpening their strategy on live Indian markets. ₹10,00,000 demo capital granted instantly.
                 </p>
-                <div className="socials">
-                  <a href="#" title="X">𝕏</a>
-                  <a href="#" title="GitHub">◓</a>
-                  <a href="#" title="Discord">◈</a>
-                  <a href="#" title="LinkedIn">in</a>
+                <div className="flex flex-wrap items-center justify-center gap-4 pt-4">
+                  <Link
+                    href="/trade"
+                    className="px-8 py-4 rounded-2xl bg-gradient-to-r from-cyan-400 to-emerald-400 hover:from-cyan-300 hover:to-emerald-300 text-slate-950 font-black text-sm uppercase tracking-wide shadow-xl shadow-cyan-500/30 hover:scale-105 transition-all"
+                  >
+                    Start Trading Free →
+                  </Link>
+                  <a
+                    href="#features"
+                    className="px-8 py-4 rounded-2xl border border-slate-700/80 bg-slate-900/60 hover:bg-slate-800 text-white font-bold text-sm tracking-wide transition-all"
+                  >
+                    Explore 3D Features
+                  </a>
                 </div>
               </div>
-              <div className="foot-col">
-                <h4>Product</h4>
-                <Link href="/trade">Equities</Link>
-                <Link href="/options">Options Chain</Link>
-                <Link href="/options">Strategy Builder</Link>
-                <Link href="/trade">API Docs</Link>
+            </div>
+          </TiltCard>
+        </div>
+
+        {/* Comprehensive Institutional Footer */}
+        <footer className="pt-28 pb-12 max-w-6xl mx-auto text-left border-t border-white/[0.06] mt-24">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-8 mb-12">
+            {/* Brand Column */}
+            <div className="col-span-2 space-y-4">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-cyan-400 to-emerald-400 flex items-center justify-center font-black text-slate-950 text-xs">
+                  SS
+                </div>
+                <span className="font-extrabold text-sm text-white">STOCK SIMULATOR</span>
               </div>
-              <div className="foot-col">
-                <h4>Resources</h4>
-                <a href="#">Market Holidays</a>
-                <a href="#">Trading Glossary</a>
-                <a href="#">Risk Calculator</a>
-              </div>
-              <div className="foot-col">
-                <h4>Legal</h4>
-                <a href="#">SEBI Compliance Notice</a>
-                <a href="#">Terms of Service</a>
-                <a href="#">Privacy Policy</a>
+              <p className="text-xs text-slate-400 leading-relaxed max-w-sm">
+                The institutional-grade 3D paper-trading platform for Indian markets. Practice, compete and master NSE/BSE equities &amp; F&amp;O — risk-free.
+              </p>
+              <div className="flex items-center gap-3">
+                {[ExternalLink, Code2, Globe].map((Icon, i) => (
+                  <a
+                    key={i}
+                    href="#"
+                    className="w-8 h-8 rounded-lg bg-slate-900 border border-white/[0.06] flex items-center justify-center text-slate-400 hover:text-cyan-400 transition-colors"
+                  >
+                    <Icon className="w-3.5 h-3.5" />
+                  </a>
+                ))}
               </div>
             </div>
-            <div className="disclaimer">
-              <span>
-                Stock Simulator is an educational paper-trading platform. No real financial transactions are executed. Market data is for simulation purposes only.
-              </span>
-              <span>© 2026 Stock Simulator</span>
+
+            {/* Product */}
+            <div className="space-y-3 font-mono text-xs">
+              <h4 className="text-[11px] font-bold text-white uppercase tracking-wider">PRODUCT</h4>
+              <ul className="space-y-2 text-slate-400">
+                <li><Link href="/trade" className="hover:text-white transition-colors">Equities</Link></li>
+                <li><Link href="/options" className="hover:text-white transition-colors">Options Chain</Link></li>
+                <li><Link href="/options" className="hover:text-white transition-colors">Strategy Builder</Link></li>
+                <li><Link href="/trade" className="hover:text-white transition-colors">API Docs</Link></li>
+              </ul>
             </div>
+
+            {/* Resources */}
+            <div className="space-y-3 font-mono text-xs">
+              <h4 className="text-[11px] font-bold text-white uppercase tracking-wider">RESOURCES</h4>
+              <ul className="space-y-2 text-slate-400">
+                <li><a href="#" className="hover:text-white transition-colors">Market Holidays</a></li>
+                <li><a href="#" className="hover:text-white transition-colors">Trading Glossary</a></li>
+                <li><a href="#" className="hover:text-white transition-colors">Risk Calculator</a></li>
+              </ul>
+            </div>
+
+            {/* Legal */}
+            <div className="space-y-3 font-mono text-xs">
+              <h4 className="text-[11px] font-bold text-white uppercase tracking-wider">LEGAL</h4>
+              <ul className="space-y-2 text-slate-400">
+                <li><a href="#" className="hover:text-white transition-colors">SEBI Compliance Notice</a></li>
+                <li><a href="#" className="hover:text-white transition-colors">Terms of Service</a></li>
+                <li><a href="#" className="hover:text-white transition-colors">Privacy Policy</a></li>
+              </ul>
+            </div>
+          </div>
+
+          {/* SEBI Disclaimer Banner */}
+          <div className="p-4 rounded-2xl bg-rose-950/20 border border-rose-500/20 text-xs text-slate-400 leading-relaxed mb-8">
+            <span className="font-bold text-rose-400 block mb-1">SEBI COMPLIANCE &amp; PAPER TRADING DISCLAIMER:</span>
+            Stock Simulator is purely an educational paper-trading simulation. No real financial transactions are executed. Market data is for simulation purposes only.
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 font-mono gap-4">
+            <div>© 2026 Stock Simulator. All rights reserved.</div>
+            <div>POWERED BY MOTIONSITES 3D KINETIC ENGINE</div>
           </div>
         </footer>
-      </div>
+      </section>
     </div>
   );
 }
