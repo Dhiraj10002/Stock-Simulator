@@ -8,7 +8,6 @@ import {
   ArrowRightLeft,
   Zap,
   Briefcase,
-  Activity,
   Flame,
   AlertTriangle,
 } from "lucide-react";

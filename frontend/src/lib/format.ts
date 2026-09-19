@@ -16,6 +16,13 @@ export function formatPercent(value: number = 0): string {
   return `${sign}${value.toFixed(2)}%`;
 }
 
+export function formatNumber(value: number = 0, decimals: number = 2): string {
+  return value.toLocaleString("en-IN", {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  });
+}
+
 /**
  * Checks whether the Indian Market (NSE/BSE) is currently in regular trading session.
  * Regular hours: Monday to Friday, 09:15 to 15:30 IST.
