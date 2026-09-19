@@ -113,8 +113,8 @@ export default function MeshFlowBackground({
       mouseRef.current = { x: -9999, y: -9999 };
     };
 
-    canvas.addEventListener("mousemove", handleMouseMove);
-    canvas.addEventListener("mouseleave", handleMouseLeave);
+    window.addEventListener("mousemove", handleMouseMove, { passive: true });
+    document.addEventListener("mouseleave", handleMouseLeave);
 
     const twoSigmaSquared = 2 * sigma * sigma;
     const influenceRadiusSq = influenceRadius * influenceRadius;
@@ -258,8 +258,8 @@ export default function MeshFlowBackground({
     return () => {
       cancelAnimationFrame(animRef.current);
       window.removeEventListener("resize", resizeCanvas);
-      canvas.removeEventListener("mousemove", handleMouseMove);
-      canvas.removeEventListener("mouseleave", handleMouseLeave);
+      window.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseleave", handleMouseLeave);
     };
   }, [
     initGrid,
@@ -280,7 +280,7 @@ export default function MeshFlowBackground({
   return (
     <canvas
       ref={canvasRef}
-      className={`absolute inset-0 pointer-events-auto z-0 ${className}`}
+      className={`absolute inset-0 pointer-events-none z-0 ${className}`}
       style={{ display: "block" }}
     />
   );

@@ -1,860 +1,795 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
-import {
-  ArrowRight,
-  Zap,
-  TrendingUp,
-  Activity,
-  Layers,
-  BrainCircuit,
-  Star,
-  ChevronRight,
-  ExternalLink,
-  Code2,
-  Globe,
-  Menu,
-  X,
-  ShieldCheck,
-  Briefcase,
-  Sliders,
-  CheckCircle2,
-  Award,
-} from "lucide-react";
 import MeshFlowBackground from "@/components/landing/MeshFlowBackground";
 
-/* Live Ticker Data */
-const TICKER_DATA = [
-  { symbol: "NIFTY 50", price: "25,378.40", change: "+0.49%", up: true },
-  { symbol: "SENSEX", price: "82,890.94", change: "+0.48%", up: true },
-  { symbol: "BANKNIFTY", price: "51,942.30", change: "+0.61%", up: true },
-  { symbol: "RELIANCE", price: "₹1,226.40", change: "+0.00%", up: true },
-  { symbol: "TCS", price: "₹2,105.00", change: "+0.03%", up: true },
-  { symbol: "HDFCBANK", price: "₹1,642.10", change: "-0.35%", up: false },
-  { symbol: "TATA MOTORS", price: "₹964.80", change: "-0.85%", up: false },
-  { symbol: "INFY", price: "₹1,504.20", change: "+0.42%", up: true },
+/* Live Ticker Items */
+const TICKERS = [
+  { s: "NIFTY 50", p: "25,378.40", c: "+0.49%", d: "up" },
+  { s: "SENSEX", p: "82,890.94", c: "+0.48%", d: "up" },
+  { s: "BANKNIFTY", p: "51,942.30", c: "+0.61%", d: "up" },
+  { s: "RELIANCE", p: "₹1,226.40", c: "+0.00%", d: "flat" },
+  { s: "HDFCBANK", p: "₹1,642.10", c: "-0.35%", d: "down" },
+  { s: "TCS", p: "₹3,912.55", c: "+0.82%", d: "up" },
+  { s: "INFY", p: "₹1,498.20", c: "-0.21%", d: "down" },
+  { s: "ICICIBANK", p: "₹1,284.70", c: "+1.04%", d: "up" },
 ];
 
-/* 6 Pro Terminal Features */
-const PRO_FEATURES = [
-  {
-    icon: Activity,
-    iconColor: "text-cyan-400",
-    iconBg: "bg-cyan-500/10 border-cyan-500/20",
-    title: "Level 2 DOM Depth",
-    description:
-      "Full order book visibility showcasing true market buy/sell depth across 5 bid/ask tiers.",
-  },
-  {
-    icon: Sliders,
-    iconColor: "text-cyan-400",
-    iconBg: "bg-cyan-500/10 border-cyan-500/20",
-    title: "Options Chain & Greeks",
-    description:
-      "Analyze Delta, Gamma, Theta, and Vega on live NIFTY and BankNIFTY contracts instantaneously.",
-  },
-  {
-    icon: Zap,
-    iconColor: "text-emerald-400",
-    iconBg: "bg-emerald-500/10 border-emerald-500/20",
-    title: "Real-Time WebSockets",
-    description:
-      "No polling or lag. Feeds stream live directly from active market exchanges with sub-50ms tick updates.",
-  },
-  {
-    icon: ShieldCheck,
-    iconColor: "text-emerald-400",
-    iconBg: "bg-emerald-500/10 border-emerald-500/20",
-    title: "Institutional Risk Guard",
-    description:
-      "Configure max drawdown thresholds, automatic circuit breaker cutoffs, and margin call safety alerts.",
-  },
-  {
-    icon: BrainCircuit,
-    iconColor: "text-cyan-400",
-    iconBg: "bg-cyan-500/10 border-cyan-500/20",
-    title: "AI Trading Mentor",
-    description:
-      "Instant feedback on your trades, pattern errors, risk-reward skew, and revenge trading behavior.",
-  },
-  {
-    icon: Briefcase,
-    iconColor: "text-emerald-400",
-    iconBg: "bg-emerald-500/10 border-emerald-500/20",
-    title: "Multi-Wallet Accounts",
-    description:
-      "Manage multiple paper portfolios to test intraday scalping, swing trading, and F&O hedging concurrently.",
-  },
-];
+interface Candle {
+  open: number;
+  close: number;
+  high: number;
+  low: number;
+  vol: number;
+}
 
-/* Top Simulated Traders Leaderboard */
-const LEADERBOARD = [
-  {
-    rank: "#1",
-    name: "Arjun Mehta",
-    handle: "@arjun_trades",
-    returnRate: "+84.2%",
-    color: "text-amber-400 bg-amber-500/10 border-amber-500/20",
-  },
-  {
-    rank: "#2",
-    name: "Priya Sharma",
-    handle: "@priya_fno",
-    returnRate: "+62.8%",
-    color: "text-slate-300 bg-slate-500/10 border-slate-500/20",
-  },
-  {
-    rank: "#3",
-    name: "Karthik Iyer",
-    handle: "@karthik_quants",
-    returnRate: "+52.1%",
-    color: "text-amber-600 bg-amber-700/10 border-amber-700/20",
-  },
-];
+const rnd = (a: number, b: number) => a + Math.random() * (b - a);
 
-/* Testimonials */
-const TESTIMONIALS = [
-  {
-    quote:
-      "The options Greeks simulation is so precise. My transition to live NSE trading felt totally seamless.",
-    author: "Siddharth R.",
-    handle: "@sidd_trader",
-    verified: true,
-  },
-  {
-    quote:
-      "Perfect matching engine. I tested my proprietary algorithmic scripts using WebSockets without losing single real rupee.",
-    author: "Aditi G.",
-    handle: "@aditi_quants",
-    verified: true,
-  },
-  {
-    quote:
-      "Having Restorable ₹10 Lakhs demo fund allows me to try absurd high-leverage trades guilt-free.",
-    author: "Rahul S.",
-    handle: "@rahul_scalper",
-    verified: true,
-  },
-];
-
-/* Level 2 Market Depth Sample Data */
-const ORDER_DEPTH_ROWS = [
-  { price: "25,414.50", qty: "350", width: "70%" },
-  { price: "25,413.80", qty: "120", width: "30%" },
-  { price: "25,413.00", qty: "240", width: "55%" },
-  { price: "25,412.10", qty: "480", width: "90%" },
-  { price: "25,411.50", qty: "190", width: "45%" },
-  { price: "25,410.00", qty: "510", width: "95%" },
-];
-
-/* Navigation Links */
-const NAV_LINKS = [
-  { label: "Home", href: "#hero" },
-  { label: "About", href: "#about" },
-  { label: "Features", href: "#features" },
-  { label: "Testimonials", href: "#testimonials" },
-  { label: "Terminal", href: "/trade" },
-];
+function genCandles(n: number, start: number, vol: number): Candle[] {
+  let price = start;
+  const out: Candle[] = [];
+  for (let i = 0; i < n; i++) {
+    const open = price;
+    const close = open + rnd(-vol, vol) * (Math.random() > 0.46 ? 1 : -1);
+    const high = Math.max(open, close) + rnd(0, vol * 0.7);
+    const low = Math.min(open, close) - rnd(0, vol * 0.7);
+    out.push({ open, close, high, low, vol: rnd(0.3, 1) });
+    price = close;
+  }
+  return out;
+}
 
 export default function LandingPage() {
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [scrollY, setScrollY] = useState(0);
-  const [isVisible, setIsVisible] = useState(false);
+  const heroChartRef = useRef<HTMLDivElement>(null);
+  const heroMockRef = useRef<HTMLDivElement>(null);
+  const meshRef = useRef<HTMLDivElement>(null);
 
+  /* Candlestick SVG renderer */
+  const renderCandleSVG = useCallback(
+    (data: Candle[], w = 560, h = 250, volH = 40) => {
+      const pad = 8;
+      const chartH = h - volH - pad;
+      const highs = data.map((d) => d.high);
+      const lows = data.map((d) => d.low);
+      const max = Math.max(...highs);
+      const min = Math.min(...lows);
+      const rng = max - min || 1;
+      const cw = w / data.length;
+      const bw = Math.max(2, cw * 0.6);
+      const y = (v: number) => pad + chartH - ((v - min) / rng) * (chartH - pad);
+
+      let s = `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="width:100%;height:100%;display:block">`;
+      for (let g = 0; g <= 4; g++) {
+        const gy = pad + ((chartH - pad) * g) / 4;
+        s += `<line x1="0" y1="${gy}" x2="${w}" y2="${gy}" stroke="rgba(255,255,255,0.04)"/>`;
+      }
+      data.forEach((d, i) => {
+        const x = i * cw + cw / 2;
+        const up = d.close >= d.open;
+        const col = up ? "#10B981" : "#F43F5E";
+        s += `<line x1="${x}" y1="${y(d.high)}" x2="${x}" y2="${y(d.low)}" stroke="${col}" stroke-width="1"/>`;
+        const ry = y(Math.max(d.open, d.close));
+        const rh = Math.max(1.5, Math.abs(y(d.open) - y(d.close)));
+        s += `<rect x="${x - bw / 2}" y="${ry}" width="${bw}" height="${rh}" fill="${col}" rx="1"/>`;
+        const vh = d.vol * volH;
+        s += `<rect x="${x - bw / 2}" y="${h - vh}" width="${bw}" height="${vh}" fill="rgba(6,182,212,0.35)" rx="1"/>`;
+      });
+      const last = data[data.length - 1].close;
+      s += `<line x1="0" y1="${y(last)}" x2="${w}" y2="${y(last)}" stroke="rgba(6,182,212,0.5)" stroke-width="1" stroke-dasharray="4 4"/>`;
+      s += "</svg>";
+      return s;
+    },
+    []
+  );
+
+  /* Render hero chart once mounted */
   useEffect(() => {
-    setIsVisible(true);
-    const handleScroll = () => setScrollY(window.scrollY);
-    window.addEventListener("scroll", handleScroll, { passive: true });
-    return () => window.removeEventListener("scroll", handleScroll);
+    if (heroChartRef.current) {
+      const candles = genCandles(34, 1180, 14);
+      heroChartRef.current.innerHTML = renderCandleSVG(candles, 560, 250, 40);
+    }
+  }, [renderCandleSVG]);
+
+  /* Parallax mesh and hero 3D card tilt */
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      const cx = e.clientX / window.innerWidth - 0.5;
+      const cy = e.clientY / window.innerHeight - 0.5;
+      if (meshRef.current) {
+        meshRef.current.style.transform = `translate(${cx * 20}px, ${cy * 20}px)`;
+      }
+      if (heroMockRef.current) {
+        heroMockRef.current.style.transform = `rotateX(${14 - cy * 10}deg) rotateY(${cx * 12}deg)`;
+      }
+    };
+    window.addEventListener("mousemove", handleMouseMove);
+    return () => window.removeEventListener("mousemove", handleMouseMove);
   }, []);
 
-  const navOpacity = Math.min(scrollY / 100, 1);
+  /* Reveal on scroll */
+  useEffect(() => {
+    const elements = document.querySelectorAll(".reveal");
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((e) => {
+          if (e.isIntersecting) {
+            e.target.classList.add("in");
+            observer.unobserve(e.target);
+          }
+        });
+      },
+      { threshold: 0.12 }
+    );
+    elements.forEach((el) => observer.observe(el));
+    return () => observer.disconnect();
+  }, []);
 
   return (
-    <div className="min-h-screen bg-[#060910] text-slate-100 font-sans overflow-x-hidden selection:bg-cyan-500/30 selection:text-cyan-200">
-      {/* 1. STICKY GLASSMORPHIC NAVBAR */}
-      <nav
-        className="fixed top-0 left-0 right-0 z-50 transition-all duration-300"
-        style={{
-          backgroundColor: `rgba(6, 9, 16, ${0.65 + navOpacity * 0.3})`,
-          backdropFilter: `blur(${12 + navOpacity * 8}px)`,
-          borderBottom: `1px solid rgba(255, 255, 255, ${0.05 + navOpacity * 0.05})`,
-        }}
-      >
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          {/* Brand Logo */}
-          <Link href="/" className="flex items-center gap-2.5 group">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-500 to-emerald-500 flex items-center justify-center font-black text-slate-950 text-xs shadow-lg shadow-cyan-500/20 group-hover:scale-105 transition-transform">
-              SS
-            </div>
-            <div className="font-extrabold text-sm tracking-tight text-white flex items-center gap-1">
-              <span>Stock</span>
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-emerald-400">
-                Simulator
-              </span>
-            </div>
-          </Link>
+    <div className="stock-sim-root">
+      {/* SCOPED EXACT CSS FROM USER'S NEW HOMEPAGE SPEC */}
+      <style>{`
+        :root {
+          --canvas: #060910;
+          --canvas-2: #080C16;
+          --glass: rgba(15, 23, 42, 0.65);
+          --glass-solid: rgba(15, 23, 42, 0.9);
+          --gb: rgba(255, 255, 255, 0.08);
+          --gbh: rgba(6, 182, 212, 0.30);
+          --cyan: #06B6D4;
+          --emerald: #10B981;
+          --rose: #F43F5E;
+          --amber: #F59E0B;
+          --t1: #F8FAFC;
+          --t2: #94A3B8;
+          --t3: #64748B;
+          --brand: linear-gradient(135deg, #06B6D4 0%, #10B981 100%);
+          --r-btn: 10px;
+          --r-card: 16px;
+          --r-hero: 20px;
+          --r-pill: 9999px;
+          --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+          --display: "Outfit", "Inter", sans-serif;
+          --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+        }
 
-          {/* Desktop Nav Links */}
-          <div className="hidden md:flex items-center gap-7">
-            {NAV_LINKS.map((link) => (
-              <a
-                key={link.label}
-                href={link.href}
-                className="text-[13px] font-medium text-slate-400 hover:text-white transition-colors"
-              >
-                {link.label}
-              </a>
-            ))}
-          </div>
+        .stock-sim-root {
+          font-family: var(--sans);
+          background: var(--canvas);
+          color: var(--t1);
+          line-height: 1.5;
+          -webkit-font-smoothing: antialiased;
+          overflow-x: hidden;
+          min-height: 100vh;
+        }
 
-          {/* Desktop Actions */}
-          <div className="hidden md:flex items-center gap-3">
-            <Link
-              href="/trade"
-              className="text-[13px] font-medium text-slate-300 hover:text-white px-4 py-2 rounded-lg hover:bg-slate-800/40 transition-colors"
-            >
-              Sign In
+        .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+        .grad-text {
+          background: var(--brand);
+          -webkit-background-clip: text;
+          background-clip: text;
+          -webkit-text-fill-color: transparent;
+          color: transparent;
+        }
+
+        /* Ambient depth */
+        .ambient { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+        .blob { position: absolute; border-radius: 50%; filter: blur(90px); opacity: .55; animation: float 20s ease-in-out infinite; will-change: transform; }
+        .b1 { width: 680px; height: 680px; top: -200px; left: -140px; background: radial-gradient(circle, rgba(6,182,212,.22), transparent 70%); }
+        .b2 { width: 600px; height: 600px; top: 18%; right: -180px; background: radial-gradient(circle, rgba(16,185,129,.18), transparent 70%); animation-delay: -7s; }
+        .b3 { width: 560px; height: 560px; bottom: -180px; left: 28%; background: radial-gradient(circle, rgba(6,182,212,.13), transparent 70%); animation-delay: -13s; }
+        .mesh {
+          position: absolute; inset: -10%;
+          background-image: linear-gradient(rgba(255,255,255,.028) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.028) 1px, transparent 1px);
+          background-size: 58px 58px;
+          mask-image: radial-gradient(circle at 50% 25%, #000, transparent 78%);
+          -webkit-mask-image: radial-gradient(circle at 50% 25%, #000, transparent 78%);
+          will-change: transform;
+        }
+        @keyframes float { 0%,100% { transform: translate(0,0) scale(1) } 50% { transform: translate(46px,-34px) scale(1.09) } }
+
+        .wrap { max-width: 1440px; margin: 0 auto; padding: 0 80px; position: relative; z-index: 2; }
+        .reveal { opacity: 0; transform: translateY(34px); transition: opacity .8s cubic-bezier(.22,1,.36,1), transform .8s cubic-bezier(.22,1,.36,1); }
+        .reveal.in { opacity: 1; transform: none; }
+
+        .pill { display: inline-flex; align-items: center; gap: 8px; padding: 7px 14px; border-radius: var(--r-pill); border: 1px solid var(--gb); background: rgba(255,255,255,.03); font-size: 12px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--t2); }
+        .pill .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--emerald); box-shadow: 0 0 10px var(--emerald); animation: pulse 2s infinite; }
+        @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: .35 } }
+
+        .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; font-size: 14px; font-weight: 600; border-radius: var(--r-btn); padding: 11px 18px; transition: transform .18s ease, box-shadow .25s ease, background .2s, border-color .2s; white-space: nowrap; cursor: pointer; text-decoration: none; }
+        .btn:active { transform: translateY(1px); }
+        .btn-primary { background: var(--brand); color: #04121a; box-shadow: 0 8px 24px rgba(6,182,212,.32), inset 0 1px 0 rgba(255,255,255,.35); }
+        .btn-primary:hover { box-shadow: 0 12px 34px rgba(6,182,212,.5), inset 0 1px 0 rgba(255,255,255,.4); transform: translateY(-2px); color: #04121a; }
+        .btn-ghost { border: 1px solid var(--gb); background: rgba(255,255,255,.02); color: var(--t1); }
+        .btn-ghost:hover { border-color: var(--gbh); background: rgba(6,182,212,.06); color: var(--t1); }
+        .btn-lg { padding: 15px 26px; font-size: 15px; }
+
+        /* Nav */
+        .nav { position: sticky; top: 0; z-index: 60; height: 64px; background: rgba(6,9,16,.8); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border-bottom: 1px solid rgba(255,255,255,.06); }
+        .nav-inner { max-width: 1440px; margin: 0 auto; padding: 0 80px; height: 64px; display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+        .brand { display: flex; align-items: center; gap: 12px; flex-shrink: 0; text-decoration: none; }
+        .brand-icon { width: 36px; height: 36px; border-radius: 10px; background: var(--brand); display: grid; place-items: center; font-family: var(--display); font-weight: 800; font-size: 14px; color: #04121a; box-shadow: 0 0 22px rgba(6,182,212,.55), inset 0 1px 0 rgba(255,255,255,.45); }
+        .brand-name { font-family: var(--display); font-weight: 700; letter-spacing: .14em; font-size: 13.5px; color: var(--t1); }
+        .nav-links { display: flex; gap: 32px; }
+        .nav-links a { font-size: 14px; color: var(--t2); font-weight: 500; transition: color .2s; text-decoration: none; }
+        .nav-links a:hover { color: var(--t1); }
+        .nav-right { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+        .link-btn { font-size: 14px; font-weight: 500; color: var(--t2); padding: 9px 12px; border-radius: var(--r-btn); transition: color .2s; text-decoration: none; }
+        .link-btn:hover { color: var(--t1); }
+
+        /* Ticker */
+        .ticker { height: 36px; overflow: hidden; border-bottom: 1px solid rgba(255,255,255,.05); background: rgba(8,12,22,.6); backdrop-filter: blur(10px); position: sticky; top: 64px; z-index: 55; }
+        .ticker-track { display: flex; align-items: center; gap: 0; height: 36px; white-space: nowrap; animation: marquee 38s linear infinite; will-change: transform; }
+        .ticker:hover .ticker-track { animation-play-state: paused; }
+        @keyframes marquee { 0% { transform: translateX(0) } 100% { transform: translateX(-50%) } }
+        .tk { display: inline-flex; align-items: center; gap: 8px; padding: 0 22px; font-size: 12.5px; font-weight: 500; border-right: 1px solid rgba(255,255,255,.05); }
+        .tk .sym { color: var(--t2); font-weight: 600; letter-spacing: .04em; }
+        .tk .px { color: var(--t1); }
+        .tk .chg { font-weight: 600; }
+        .up { color: var(--emerald); } .down { color: var(--rose); } .flat { color: var(--t3); }
+
+        /* Hero */
+        .hero { padding: 88px 0 64px; text-align: center; position: relative; }
+        .hero .pill { margin-bottom: 26px; }
+        .hero h1 { font-family: var(--display); font-weight: 800; font-size: 64px; line-height: 1.05; letter-spacing: -.02em; max-width: 820px; margin: 0 auto 22px; }
+        .hero p.sub { font-size: 18px; color: var(--t2); max-width: 640px; margin: 0 auto 34px; }
+        .hero .ctas { display: flex; gap: 14px; justify-content: center; margin-bottom: 64px; }
+
+        /* Hero terminal mockup */
+        .hero-mock-stage { perspective: 1800px; max-width: 960px; margin: 0 auto; }
+        .hero-mock { width: 100%; max-width: 960px; border-radius: var(--r-hero); background: var(--glass); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid var(--gb); box-shadow: 0 40px 120px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.03), inset 0 1px 0 rgba(255,255,255,.06); overflow: hidden; transform: rotateX(14deg) rotateY(0deg); transition: transform .25s ease; transform-style: preserve-3d; will-change: transform; text-align: left; }
+        .hm-top { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--gb); background: rgba(8,12,22,.5); }
+        .hm-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+        .hm-body { display: grid; grid-template-columns: 1fr 1.7fr; gap: 1px; background: var(--gb); }
+        .hm-left, .hm-right { background: var(--canvas-2); padding: 18px; }
+        .hm-label { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--t3); margin-bottom: 8px; }
+        .hm-wallet { font-family: var(--mono); font-size: 26px; font-weight: 700; color: var(--t1); margin-bottom: 4px; }
+        .hm-sub { font-size: 12px; color: var(--t2); }
+        .hm-pnl { display: inline-flex; flex-direction: column; margin-top: 20px; padding: 12px 14px; border-radius: 12px; background: rgba(16,185,129,.1); border: 1px solid rgba(16,185,129,.28); }
+        .hm-pnl .big { font-family: var(--mono); font-size: 20px; font-weight: 700; color: var(--emerald); }
+        .hm-pnl .lbl { font-size: 11px; color: var(--t2); margin-top: 2px; }
+        .hm-chart-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+        .hm-chart-head .nm { font-weight: 700; font-size: 15px; }
+        .hm-chart-head .nm span { color: var(--t3); font-weight: 500; font-size: 12px; margin-left: 6px; }
+        .chip { font-family: var(--mono); font-size: 12px; font-weight: 600; padding: 3px 9px; border-radius: var(--r-pill); }
+        .chip.up { background: rgba(16,185,129,.12); color: var(--emerald); } .chip.down { background: rgba(244,63,94,.12); color: var(--rose); }
+
+        /* Section shells */
+        .section { padding: 100px 0; }
+        .sec-head { text-align: center; margin-bottom: 56px; }
+        .sec-head .pill { margin-bottom: 18px; }
+        .sec-head h2 { font-family: var(--display); font-weight: 800; font-size: 42px; letter-spacing: -.02em; line-height: 1.1; }
+        .sec-head p { color: var(--t2); font-size: 16px; max-width: 560px; margin: 14px auto 0; }
+
+        .glass { background: var(--glass); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid var(--gb); border-radius: var(--r-card); box-shadow: inset 0 1px 0 rgba(255,255,255,.05); }
+        .glass-hover { transition: transform .3s cubic-bezier(.22,1,.36,1), border-color .3s, box-shadow .3s; }
+        .glass-hover:hover { transform: translateY(-6px); border-color: var(--gbh); box-shadow: 0 24px 60px rgba(0,0,0,.45), 0 0 30px rgba(6,182,212,.14), inset 0 1px 0 rgba(255,255,255,.07); }
+
+        /* About */
+        .about-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; align-items: center; }
+        .about-left h2 { font-family: var(--display); font-weight: 800; font-size: 38px; letter-spacing: -.02em; line-height: 1.12; margin-bottom: 18px; }
+        .about-left p.lead { color: var(--t2); font-size: 16px; margin-bottom: 24px; }
+        .checks { display: flex; flex-direction: column; gap: 14px; }
+        .check { display: flex; gap: 12px; align-items: flex-start; }
+        .check .ic { width: 24px; height: 24px; border-radius: 8px; background: rgba(16,185,129,.14); border: 1px solid rgba(16,185,129,.3); color: var(--emerald); display: grid; place-items: center; flex-shrink: 0; font-size: 13px; margin-top: 1px; }
+        .check .tx b { display: block; font-size: 14.5px; font-weight: 600; margin-bottom: 2px; }
+        .check .tx span { font-size: 13.5px; color: var(--t2); }
+        .stats-2x2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+        .stat { padding: 26px 22px; border-radius: var(--r-card); }
+        .stat .v { font-family: var(--display); font-weight: 800; font-size: 34px; letter-spacing: -.02em; margin-bottom: 6px; }
+        .stat .k { font-size: 13px; color: var(--t2); }
+        .stat:nth-child(1) .v { color: var(--cyan); } .stat:nth-child(2) .v { color: var(--emerald); }
+        .stat:nth-child(3) .v { color: var(--amber); } .stat:nth-child(4) .v { color: var(--t1); }
+
+        /* Bento */
+        .bento { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+        .fcard { padding: 28px; position: relative; overflow: hidden; }
+        .fcard .fic { width: 48px; height: 48px; border-radius: 12px; display: grid; place-items: center; margin-bottom: 18px; background: rgba(6,182,212,.1); border: 1px solid rgba(6,182,212,.22); color: var(--cyan); font-size: 20px; }
+        .fcard h3 { font-family: var(--display); font-weight: 700; font-size: 18px; margin-bottom: 8px; letter-spacing: -.01em; }
+        .fcard p { font-size: 14px; color: var(--t2); line-height: 1.55; }
+        .fcard .glow { position: absolute; top: -40%; right: -30%; width: 220px; height: 220px; background: radial-gradient(circle, rgba(6,182,212,.16), transparent 70%); opacity: 0; transition: opacity .35s; pointer-events: none; }
+        .fcard:hover .glow { opacity: 1; }
+
+        .mini-dom { margin-top: 16px; display: flex; flex-direction: column; gap: 4px; }
+        .mini-dom .row { display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 11px; }
+        .mini-dom .bar { height: 14px; border-radius: 4px; flex-shrink: 0; }
+        .mini-dom .bid .bar { background: rgba(6,182,212,.25); } .mini-dom .ask .bar { background: rgba(244,63,94,.25); }
+        .mini-dom .bid span { color: var(--cyan); } .mini-dom .ask span { color: var(--rose); }
+        .greek-row { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
+        .greek { font-family: var(--mono); font-size: 11px; padding: 5px 9px; border-radius: 8px; background: rgba(255,255,255,.04); border: 1px solid var(--gb); }
+        .greek b { color: var(--cyan); }
+
+        /* Leaderboard */
+        .leader { padding: 30px 32px; margin-bottom: 40px; }
+        .leader-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 22px; }
+        .leader-head h3 { font-family: var(--display); font-weight: 700; font-size: 20px; }
+        .leader-head .pill { margin: 0; }
+        .podium { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+        .rank { display: flex; align-items: center; gap: 14px; padding: 18px; border-radius: 14px; background: rgba(255,255,255,.02); border: 1px solid var(--gb); }
+        .rank .medal { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; font-family: var(--display); font-weight: 800; font-size: 16px; color: #04121a; flex-shrink: 0; }
+        .rank.g .medal { background: linear-gradient(135deg, #FDE68A, #F59E0B); box-shadow: 0 0 20px rgba(245,158,11,.4); }
+        .rank.s .medal { background: linear-gradient(135deg, #E2E8F0, #94A3B8); }
+        .rank.b .medal { background: linear-gradient(135deg, #FBBF77, #B45309); }
+        .rank .nm { font-weight: 600; font-size: 14px; }
+        .rank .meta { display: flex; gap: 8px; margin-top: 6px; }
+        .rank .pf { font-family: var(--mono); font-weight: 700; color: var(--emerald); font-size: 14px; }
+        .wr { font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 9999px; background: rgba(6,182,212,.12); color: var(--cyan); }
+
+        /* Testimonials */
+        .tgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+        .tcard { padding: 26px; }
+        .stars { color: var(--amber); font-size: 14px; margin-bottom: 14px; letter-spacing: 2px; }
+        .tcard p { font-size: 14.5px; color: var(--t1); line-height: 1.6; margin-bottom: 20px; }
+        .tuser { display: flex; align-items: center; gap: 12px; }
+        .tuser .av { width: 42px; height: 42px; border-radius: 50%; background: var(--brand); display: grid; place-items: center; font-weight: 700; color: #04121a; font-size: 15px; }
+        .tuser .nm { font-weight: 600; font-size: 14px; } .tuser .rl { font-size: 12.5px; color: var(--t2); }
+
+        /* Pre-footer CTA */
+        .cta-banner { position: relative; overflow: hidden; text-align: center; padding: 64px 40px; border-radius: 24px; background: linear-gradient(135deg, rgba(6,182,212,.12), rgba(16,185,129,.1)); border: 1px solid rgba(6,182,212,.24); }
+        .cta-banner::before { content: ""; position: absolute; inset: 0; background: radial-gradient(circle at 50% 0%, rgba(6,182,212,.22), transparent 60%); pointer-events: none; }
+        .cta-banner h2 { font-family: var(--display); font-weight: 800; font-size: 40px; letter-spacing: -.02em; position: relative; margin-bottom: 12px; }
+        .cta-banner p { color: var(--t2); position: relative; margin-bottom: 28px; font-size: 16px; }
+
+        /* Footer */
+        .footer { border-top: 1px solid rgba(255,255,255,.06); padding: 64px 0 34px; margin-top: 80px; }
+        .foot-grid { display: grid; grid-template-columns: 1.6fr 1fr 1fr 1fr; gap: 40px; margin-bottom: 44px; }
+        .foot-brand p { color: var(--t2); font-size: 14px; margin: 16px 0 20px; max-width: 280px; }
+        .socials { display: flex; gap: 10px; }
+        .socials a { width: 38px; height: 38px; border-radius: 10px; border: 1px solid var(--gb); display: grid; place-items: center; color: var(--t2); transition: .2s; text-decoration: none; }
+        .socials a:hover { border-color: var(--gbh); color: var(--cyan); background: rgba(6,182,212,.06); }
+        .foot-col h4 { font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--t3); margin-bottom: 16px; }
+        .foot-col a { display: block; font-size: 14px; color: var(--t2); margin-bottom: 11px; transition: color .2s; text-decoration: none; }
+        .foot-col a:hover { color: var(--t1); }
+        .disclaimer { border-top: 1px solid rgba(255,255,255,.06); padding-top: 24px; font-size: 12.5px; color: var(--t3); display: flex; justify-content: space-between; gap: 24px; flex-wrap: wrap; }
+
+        @media(max-width: 1080px) {
+          .wrap, .nav-inner { padding: 0 32px; }
+          .nav-links { display: none; }
+          .hero h1 { font-size: 46px; }
+          .about-grid, .bento, .tgrid, .podium, .foot-grid { grid-template-columns: 1fr; }
+          .hm-body { grid-template-columns: 1fr; }
+        }
+        @media(max-width: 560px) {
+          .wrap, .nav-inner { padding: 0 20px; }
+          .hero { padding: 52px 0 40px; }
+          .hero h1 { font-size: 34px; }
+          .sec-head h2, .cta-banner h2 { font-size: 28px; }
+          .section { padding: 64px 0; }
+          .stats-2x2 { grid-template-columns: 1fr; }
+        }
+      `}</style>
+
+      {/* AMBIENT LAYERS + GLOBAL MESH FLOW */}
+      <div className="ambient">
+        <div className="blob b1"></div>
+        <div className="blob b2"></div>
+        <div className="blob b3"></div>
+        <div className="mesh" ref={meshRef}></div>
+        {/* Interactive gravitational mesh flow canvas everywhere */}
+        <MeshFlowBackground
+          gridSpacing={46}
+          dotRadius={1.2}
+          influenceRadius={180}
+          sigma={85}
+          maxDisplacement={26}
+          damping={0.88}
+          springStrength={0.045}
+          attractionStrength={0.6}
+          dotColor="rgba(255, 255, 255, 0.04)"
+          lineColor="rgba(255, 255, 255, 0.025)"
+          activeDotColor="rgba(6, 182, 212, 0.5)"
+          activeLineColor="rgba(6, 182, 212, 0.2)"
+        />
+      </div>
+
+      {/* ================= EXACT NEW HOMEPAGE ================= */}
+      <div id="landing">
+        {/* NAV */}
+        <nav className="nav">
+          <div className="nav-inner">
+            <Link href="/" className="brand">
+              <div className="brand-icon">SS</div>
+              <div className="brand-name">STOCK SIMULATOR</div>
             </Link>
-            <Link
-              href="/trade"
-              className="text-[13px] font-bold text-slate-950 px-4 py-2 rounded-lg bg-gradient-to-r from-cyan-400 to-emerald-400 hover:from-cyan-300 hover:to-emerald-300 shadow-md shadow-cyan-500/20 hover:shadow-cyan-500/30 transition-all hover:scale-[1.02]"
-            >
-              Start Trading Free →
-            </Link>
-          </div>
-
-          {/* Mobile Menu Toggle */}
-          <button
-            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="md:hidden p-2 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800/50 transition-colors"
-            aria-label="Toggle menu"
-          >
-            {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-          </button>
-        </div>
-
-        {/* Mobile Menu Dropdown */}
-        {mobileMenuOpen && (
-          <div className="md:hidden border-t border-white/10 bg-[#060910]/95 backdrop-blur-2xl p-4 space-y-3">
-            {NAV_LINKS.map((link) => (
-              <a
-                key={link.label}
-                href={link.href}
-                onClick={() => setMobileMenuOpen(false)}
-                className="block text-sm font-medium text-slate-300 hover:text-white py-2 px-3 rounded-lg hover:bg-slate-800/50"
-              >
-                {link.label}
-              </a>
-            ))}
-            <div className="pt-3 border-t border-white/10 space-y-2">
-              <Link
-                href="/trade"
-                className="block text-center text-sm font-bold text-slate-950 py-2.5 rounded-lg bg-gradient-to-r from-cyan-400 to-emerald-400"
-              >
+            <div className="nav-links">
+              <a href="#home">Home</a>
+              <a href="#about">About</a>
+              <a href="#features">Features</a>
+              <a href="#testimonials">Testimonials</a>
+              <Link href="/trade">Terminal</Link>
+            </div>
+            <div className="nav-right">
+              <Link href="/trade" className="link-btn">
+                Sign In
+              </Link>
+              <Link href="/trade" className="btn btn-primary">
                 Start Trading Free →
               </Link>
             </div>
           </div>
-        )}
-      </nav>
+        </nav>
 
-      {/* 2. LIVE TICKER TAPE */}
-      <div className="fixed top-16 left-0 right-0 z-40 bg-[#080c14]/90 backdrop-blur-md border-b border-white/[0.06] overflow-hidden">
-        <div className="flex animate-ticker-scroll py-2">
-          {[...TICKER_DATA, ...TICKER_DATA].map((item, i) => (
-            <div
-              key={`${item.symbol}-${i}`}
-              className="flex items-center gap-2 px-6 whitespace-nowrap text-[11px] shrink-0"
-            >
-              <span className="font-semibold text-slate-300">{item.symbol}</span>
-              <span className="font-mono text-slate-400">{item.price}</span>
-              <span
-                className={`font-bold font-mono ${
-                  item.up ? "text-emerald-400" : "text-rose-400"
-                }`}
-              >
-                {item.up ? "↑" : "↓"} {item.change}
+        {/* TICKER */}
+        <div className="ticker">
+          <div className="ticker-track">
+            {[...TICKERS, ...TICKERS].map((t, idx) => (
+              <span className="tk" key={idx}>
+                <span className="sym">{t.s}</span>
+                <span className="px mono">{t.p}</span>
+                <span className={`chg mono ${t.d}`}>{t.c}</span>
               </span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* 3. SECTION 1: ASYMMETRIC HERO */}
-      <section
-        id="hero"
-        className="relative min-h-screen flex items-center justify-center pt-32 pb-20 px-4 sm:px-6 lg:px-8"
-      >
-        {/* Mesh Flow Gravitational Canvas Background */}
-        <div className="absolute inset-0 overflow-hidden pointer-events-auto">
-          <MeshFlowBackground />
-        </div>
-
-        {/* Ambient Cyan / Emerald Glows */}
-        <div className="absolute top-1/4 right-1/4 w-[500px] h-[500px] bg-cyan-500/[0.07] rounded-full blur-[140px] pointer-events-none" />
-        <div className="absolute bottom-10 left-10 w-[450px] h-[450px] bg-emerald-500/[0.05] rounded-full blur-[120px] pointer-events-none" />
-
-        <div className="relative z-10 max-w-7xl mx-auto w-full grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
-          {/* Left Column (Copy + Dual CTAs + Social Proof) */}
-          <div
-            className={`lg:col-span-6 space-y-6 transition-all duration-1000 ${
-              isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
-            }`}
-          >
-            {/* Pill Badge */}
-            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-950/60 border border-emerald-500/30 text-emerald-300 text-xs font-semibold backdrop-blur-md">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span>REAL-TIME F&O SIMULATOR • LIVE NSE FEED</span>
-            </div>
-
-            {/* Main Headline */}
-            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black tracking-tight leading-[1.1] text-white">
-              Master the Market.
-              <br />
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-teal-300 to-emerald-400">
-                Zero Financial Risk.
-              </span>
-            </h1>
-
-            {/* Subheadline */}
-            <p className="text-slate-400 text-base sm:text-lg leading-relaxed max-w-lg">
-              Trade NSE & BSE derivatives with <span className="text-white font-semibold">₹10,00,000</span> virtual capital.
-              Experience identical matching execution speeds, live Level 2 order books, and real-time options Greeks.
-            </p>
-
-            {/* Dual CTAs */}
-            <div className="flex flex-wrap items-center gap-4 pt-2">
-              <Link
-                href="/trade"
-                className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-cyan-400 to-emerald-400 hover:from-cyan-300 hover:to-emerald-300 text-slate-950 font-bold text-sm shadow-lg shadow-cyan-500/25 hover:shadow-cyan-500/35 transition-all hover:scale-105"
-              >
-                <span>Start Trading Free</span>
-                <ArrowRight className="w-4 h-4" />
-              </Link>
-              <a
-                href="#features"
-                className="inline-flex items-center gap-2 px-5 py-3 rounded-xl border border-slate-700/80 bg-slate-900/40 hover:bg-slate-800/60 text-slate-300 hover:text-white font-medium text-sm transition-all"
-              >
-                Explore Instruments
-              </a>
-            </div>
-
-            {/* Social Proof Avatar Stack */}
-            <div className="flex items-center gap-3 pt-3">
-              <div className="flex -space-x-2 overflow-hidden">
-                <span className="inline-block h-8 w-8 rounded-full ring-2 ring-[#060910] bg-cyan-600 text-[11px] font-bold text-white flex items-center justify-center">
-                  AM
-                </span>
-                <span className="inline-block h-8 w-8 rounded-full ring-2 ring-[#060910] bg-emerald-600 text-[11px] font-bold text-white flex items-center justify-center">
-                  PS
-                </span>
-                <span className="inline-block h-8 w-8 rounded-full ring-2 ring-[#060910] bg-purple-600 text-[11px] font-bold text-white flex items-center justify-center">
-                  RK
-                </span>
-                <span className="inline-block h-8 w-8 rounded-full ring-2 ring-[#060910] bg-amber-600 text-[11px] font-bold text-white flex items-center justify-center">
-                  VG
-                </span>
-              </div>
-              <p className="text-xs text-slate-400">
-                Over <span className="font-bold text-slate-200">45,000+</span> active paper traders in India
-              </p>
-            </div>
-          </div>
-
-          {/* Right Column: Floating Terminal Mockup Card */}
-          <div
-            className={`lg:col-span-6 transition-all duration-1000 delay-200 ${
-              isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
-            }`}
-          >
-            <div className="relative">
-              {/* Floating P&L Pill Badge */}
-              <div className="absolute -top-4 -right-2 z-20 px-3 py-1.5 rounded-lg bg-emerald-950/90 border border-emerald-500/40 text-emerald-300 text-xs font-mono font-bold shadow-xl flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-                <span>+₹14,280.00 Today&apos;s P&L</span>
-              </div>
-
-              {/* Main Terminal Card */}
-              <div
-                className="rounded-2xl bg-[#090e1a]/85 backdrop-blur-2xl border border-cyan-500/20 shadow-2xl p-5 sm:p-6"
-                style={{
-                  boxShadow: "0 0 60px rgba(6, 182, 212, 0.12), 0 25px 60px rgba(0,0,0,0.6)",
-                }}
-              >
-                {/* Terminal Header */}
-                <div className="flex items-center justify-between border-b border-white/[0.06] pb-3 mb-4">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full bg-rose-500/80" />
-                    <span className="w-2.5 h-2.5 rounded-full bg-amber-500/80" />
-                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500/80" />
-                    <span className="ml-2 text-xs font-mono font-semibold text-slate-300">
-                      NIFTY SEP FUT • LIVE SIMULATION
-                    </span>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-xs font-mono font-bold text-white">25,412.00</div>
-                    <div className="text-[10px] font-mono text-emerald-400 font-semibold">+16.30 (+0.06%)</div>
-                  </div>
-                </div>
-
-                {/* Candlestick Mock Chart */}
-                <div className="h-40 rounded-xl bg-slate-950/60 border border-white/[0.04] p-3 flex items-end justify-between gap-2 overflow-hidden">
-                  {[
-                    { open: 30, close: 65, high: 80, low: 20, up: true },
-                    { open: 65, close: 45, high: 75, low: 35, up: false },
-                    { open: 45, close: 70, high: 85, low: 40, up: true },
-                    { open: 70, close: 60, high: 75, low: 50, up: false },
-                    { open: 60, close: 88, high: 95, low: 55, up: true },
-                    { open: 88, close: 80, high: 92, low: 70, up: false },
-                    { open: 80, close: 95, high: 100, low: 75, up: true },
-                  ].map((candle, idx) => (
-                    <div key={idx} className="flex-1 flex flex-col items-center justify-end h-full relative">
-                      {/* High-Low Wick */}
-                      <div
-                        className={`w-[1px] absolute ${candle.up ? "bg-emerald-400/60" : "bg-rose-400/60"}`}
-                        style={{
-                          height: `${candle.high - candle.low}%`,
-                          bottom: `${candle.low}%`,
-                        }}
-                      />
-                      {/* Body */}
-                      <div
-                        className={`w-full max-w-[18px] rounded-[2px] z-10 ${
-                          candle.up ? "bg-emerald-400 shadow-sm shadow-emerald-500/50" : "bg-rose-500 shadow-sm shadow-rose-500/50"
-                        }`}
-                        style={{
-                          height: `${Math.max(12, Math.abs(candle.close - candle.open))}%`,
-                          bottom: `${Math.min(candle.open, candle.close)}%`,
-                        }}
-                      />
-                    </div>
-                  ))}
-                </div>
-
-                {/* Virtual Balance & Action Controls */}
-                <div className="grid grid-cols-2 gap-4 mt-4 pt-3 border-t border-white/[0.06]">
-                  <div>
-                    <span className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold block">
-                      Virtual Balance
-                    </span>
-                    <span className="text-lg font-black font-mono text-white">
-                      ₹10,00,000.00
-                    </span>
-                    <span className="text-[10px] text-emerald-400 block font-medium">
-                      ✓ Demo Funds Restored
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-end gap-2">
-                    <Link
-                      href="/trade"
-                      className="px-3.5 py-2 rounded-lg bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-bold hover:bg-emerald-500/30 transition-colors"
-                    >
-                      BUY (Long)
-                    </Link>
-                    <Link
-                      href="/trade"
-                      className="px-3.5 py-2 rounded-lg bg-rose-500/20 border border-rose-500/40 text-rose-300 text-xs font-bold hover:bg-rose-500/30 transition-colors"
-                    >
-                      QUICK SELL
-                    </Link>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* 4. SECTION 2: "ENGINEERED TO MATCH REALITY" (ABOUT / ENGINE) */}
-      <section
-        id="about"
-        className="relative py-28 px-4 sm:px-6 lg:px-8 border-t border-white/[0.04]"
-        style={{
-          background: "linear-gradient(180deg, #060910 0%, #080c16 50%, #060910 100%)",
-        }}
-      >
-        <div className="max-w-7xl mx-auto space-y-12">
-          {/* Section Header */}
-          <div className="text-center space-y-3 max-w-2xl mx-auto">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-950/60 border border-cyan-500/30 text-cyan-300 text-[11px] font-bold tracking-wider uppercase">
-              Institutional Engine
-            </div>
-            <h2 className="text-3xl sm:text-4xl font-black text-white tracking-tight">
-              Engineered to match reality
-            </h2>
-            <p className="text-slate-400 text-sm sm:text-base leading-relaxed">
-              Most simulators lag behind the real markets. Stock Simulator processes full-scale
-              Level 2 data on our dedicated match engine for identical filled prices.
-            </p>
-          </div>
-
-          {/* Asymmetric 2-Column: Left Level 2 Depth Card, Right 2x2 Stats Bento */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
-            {/* Left Card: Realistic Matching Engine Depth Queue */}
-            <div className="lg:col-span-5 rounded-2xl bg-[#0a0f1d]/70 backdrop-blur-xl border border-white/[0.08] p-6 flex flex-col justify-between">
-              <div>
-                <h3 className="text-base font-bold text-white mb-1">
-                  Realistic Matching Engine
-                </h3>
-                <p className="text-xs text-slate-400 leading-relaxed mb-5">
-                  Our order matching algorithm simulates slippage and liquidity depth exactly, ensuring that large orders suffer realistic market impact.
-                </p>
-
-                {/* Level 2 Order Depth Table */}
-                <div className="rounded-xl bg-slate-950/70 border border-white/[0.05] p-3 text-xs font-mono">
-                  <div className="flex items-center justify-between text-slate-500 text-[10px] pb-2 border-b border-white/[0.05] font-semibold">
-                    <span>ASK PRICE</span>
-                    <span>QTY (LOTS)</span>
-                  </div>
-                  <div className="space-y-1.5 pt-2">
-                    {ORDER_DEPTH_ROWS.map((row, idx) => (
-                      <div key={idx} className="relative flex items-center justify-between py-0.5">
-                        <div
-                          className="absolute right-0 top-0 bottom-0 bg-rose-500/[0.12] rounded"
-                          style={{ width: row.width }}
-                        />
-                        <span className="relative z-10 text-rose-400 font-semibold">{row.price}</span>
-                        <span className="relative z-10 text-slate-300">{row.qty}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              <div className="pt-4 mt-4 border-t border-white/[0.05] flex items-center gap-2 text-[11px] text-emerald-400 font-medium">
-                <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-                <span>Sub-millisecond simulated fill latency</span>
-              </div>
-            </div>
-
-            {/* Right 2x2 Stats Bento */}
-            <div className="lg:col-span-7 grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="rounded-2xl bg-[#0a0f1d]/70 backdrop-blur-xl border border-white/[0.08] p-6 hover:border-cyan-500/30 transition-all group">
-                <div className="text-3xl font-black font-mono text-cyan-400 mb-1 group-hover:scale-105 transition-transform">
-                  ₹10L
-                </div>
-                <div className="text-sm font-bold text-white mb-1">Demo Capital</div>
-                <p className="text-xs text-slate-400">
-                  Restorable any time with a single click. Practice high-stakes F&O risk-free.
-                </p>
-              </div>
-
-              <div className="rounded-2xl bg-[#0a0f1d]/70 backdrop-blur-xl border border-white/[0.08] p-6 hover:border-emerald-500/30 transition-all group">
-                <div className="text-3xl font-black font-mono text-emerald-400 mb-1 group-hover:scale-105 transition-transform">
-                  100%
-                </div>
-                <div className="text-sm font-bold text-white mb-1">Always Free</div>
-                <p className="text-xs text-slate-400">
-                  No credit card, zero commissions, and no hidden subscriptions forever.
-                </p>
-              </div>
-
-              <div className="rounded-2xl bg-[#0a0f1d]/70 backdrop-blur-xl border border-white/[0.08] p-6 hover:border-cyan-500/30 transition-all group">
-                <div className="text-3xl font-black font-mono text-cyan-400 mb-1 group-hover:scale-105 transition-transform">
-                  &lt;10ms
-                </div>
-                <div className="text-sm font-bold text-white mb-1">Execution Latency</div>
-                <p className="text-xs text-slate-400">
-                  Instant simulated order routing engineered with high-throughput Go microservices.
-                </p>
-              </div>
-
-              <div className="rounded-2xl bg-[#0a0f1d]/70 backdrop-blur-xl border border-white/[0.08] p-6 hover:border-emerald-500/30 transition-all group">
-                <div className="text-3xl font-black font-mono text-emerald-400 mb-1 group-hover:scale-105 transition-transform">
-                  1,200+
-                </div>
-                <div className="text-sm font-bold text-white mb-1">Active Instruments</div>
-                <p className="text-xs text-slate-400">
-                  Trade NSE equities, NIFTY & BANKNIFTY weekly options, and stock futures.
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* 5. SECTION 3: "PRO TERMINAL CAPABILITIES" (6-CARD BENTO GRID) */}
-      <section id="features" className="relative py-28 px-4 sm:px-6 lg:px-8">
-        {/* Luminous Ambient Glow */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[500px] bg-cyan-500/[0.04] rounded-full blur-[140px] pointer-events-none" />
-
-        <div className="relative z-10 max-w-7xl mx-auto space-y-12">
-          {/* Section Header */}
-          <div className="text-center space-y-3 max-w-2xl mx-auto">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-950/60 border border-cyan-500/30 text-cyan-300 text-[11px] font-bold tracking-wider uppercase">
-              Complete Suite
-            </div>
-            <h2 className="text-3xl sm:text-4xl font-black text-white tracking-tight">
-              Pro terminal capabilities
-            </h2>
-            <p className="text-slate-400 text-sm sm:text-base leading-relaxed">
-              Trade with identical analytical weaponry deployed by institutional derivative desks.
-            </p>
-          </div>
-
-          {/* 3x2 Bento Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {PRO_FEATURES.map((feature) => (
-              <div
-                key={feature.title}
-                className="rounded-2xl bg-[#090e1b]/70 backdrop-blur-xl border border-white/[0.07] hover:border-cyan-500/30 p-6 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-cyan-500/[0.05] group flex flex-col justify-between"
-              >
-                <div>
-                  <div
-                    className={`w-10 h-10 rounded-xl ${feature.iconBg} border flex items-center justify-center mb-4 group-hover:scale-110 transition-transform`}
-                  >
-                    <feature.icon className={`w-5 h-5 ${feature.iconColor}`} />
-                  </div>
-                  <h3 className="text-base font-bold text-white mb-2">
-                    {feature.title}
-                  </h3>
-                  <p className="text-xs text-slate-400 leading-relaxed">
-                    {feature.description}
-                  </p>
-                </div>
-                <div className="pt-4 mt-4 border-t border-white/[0.04] flex items-center gap-1 text-[11px] font-semibold text-cyan-400 group-hover:translate-x-1 transition-transform">
-                  <span>Explore module</span>
-                  <ChevronRight className="w-3.5 h-3.5" />
-                </div>
-              </div>
             ))}
           </div>
         </div>
-      </section>
 
-      {/* 6. SECTION 4: HEAR FROM TOP SIMULATED TRADERS (LEADERBOARD + REVIEWS) */}
-      <section
-        id="testimonials"
-        className="relative py-28 px-4 sm:px-6 lg:px-8 border-t border-white/[0.04]"
-        style={{
-          background: "linear-gradient(180deg, #060910 0%, #080c16 50%, #060910 100%)",
-        }}
-      >
-        <div className="max-w-7xl mx-auto space-y-12">
-          {/* Section Header */}
-          <div className="text-center space-y-3 max-w-2xl mx-auto">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-950/60 border border-emerald-500/30 text-emerald-300 text-[11px] font-bold tracking-wider uppercase">
-              Leaderboard
-            </div>
-            <h2 className="text-3xl sm:text-4xl font-black text-white tracking-tight">
-              Hear from top simulated traders
-            </h2>
-            <p className="text-slate-400 text-sm sm:text-base leading-relaxed">
-              Learn from the best. Watch active simulated traders compete with zero capital exposure.
-            </p>
+        {/* HERO */}
+        <section className="wrap hero" id="home">
+          <span className="pill">
+            <span className="dot"></span>
+            🟢 NEW: REAL-TIME F&amp;O OPTIONS SIMULATOR • LIVE NSE/BSE FEED
+          </span>
+          <h1>
+            Master the Market.
+            <br />
+            <span className="grad-text">Zero Financial Risk.</span>
+          </h1>
+          <p className="sub">
+            Experience institutional-grade paper trading with ₹10,00,000 virtual capital.
+            Practice intraday equities, F&amp;O options strategies, and algo risk rules on real-time market data.
+          </p>
+          <div className="ctas">
+            <Link href="/trade" className="btn btn-primary btn-lg">
+              Open Free Terminal →
+            </Link>
+            <a href="#features" className="btn btn-ghost btn-lg">
+              Explore Features
+            </a>
           </div>
 
-          {/* Grid: Left Top Return Leaderboard + Right 3 Testimonial Cards */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
-            {/* Top Leaderboard Card */}
-            <div className="lg:col-span-4 rounded-2xl bg-[#090e1b]/80 backdrop-blur-xl border border-white/[0.08] p-6 flex flex-col justify-between">
-              <div>
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2">
-                    <Award className="w-4 h-4 text-amber-400" />
-                    <h3 className="text-sm font-bold text-white">
-                      Top Simulated Return (YTD)
-                    </h3>
-                  </div>
-                  <span className="text-[10px] font-mono text-slate-400 uppercase">Live Rank</span>
-                </div>
-
-                <div className="space-y-3">
-                  {LEADERBOARD.map((trader) => (
-                    <div
-                      key={trader.rank}
-                      className="flex items-center justify-between p-3 rounded-xl bg-slate-950/60 border border-white/[0.04]"
-                    >
-                      <div className="flex items-center gap-3">
-                        <span
-                          className={`w-6 h-6 rounded-md text-xs font-bold font-mono flex items-center justify-center border ${trader.color}`}
-                        >
-                          {trader.rank}
-                        </span>
-                        <div>
-                          <div className="text-xs font-bold text-white">{trader.name}</div>
-                          <div className="text-[10px] text-slate-500">{trader.handle}</div>
-                        </div>
-                      </div>
-                      <span className="text-xs font-mono font-bold text-emerald-400 bg-emerald-950/50 px-2 py-0.5 rounded border border-emerald-500/20">
-                        {trader.returnRate}
-                      </span>
-                    </div>
-                  ))}
-                </div>
+          {/* HERO MOCK STAGE WITH TILT */}
+          <div className="hero-mock-stage">
+            <div className="hero-mock" ref={heroMockRef} id="heroMock">
+              <div className="hm-top">
+                <span className="hm-dot" style={{ background: "#F43F5E" }}></span>
+                <span className="hm-dot" style={{ background: "#F59E0B" }}></span>
+                <span className="hm-dot" style={{ background: "#10B981" }}></span>
+                <span style={{ marginLeft: "12px", fontSize: "12px", color: "var(--t3)" }} className="mono">
+                  stocksimulator.app — paper terminal
+                </span>
+                <span className="pill" style={{ marginLeft: "auto", padding: "4px 10px", fontSize: "10px" }}>
+                  <span className="dot"></span>LIVE
+                </span>
               </div>
-
-              <div className="mt-6 pt-3 border-t border-white/[0.05] text-center">
-                <Link
-                  href="/trade"
-                  className="text-xs font-bold text-cyan-400 hover:text-cyan-300 transition-colors"
-                >
-                  Join the Weekly Simulator Contest →
-                </Link>
-              </div>
-            </div>
-
-            {/* 3 Review Cards */}
-            <div className="lg:col-span-8 grid grid-cols-1 md:grid-cols-3 gap-4">
-              {TESTIMONIALS.map((t, idx) => (
-                <div
-                  key={idx}
-                  className="rounded-2xl bg-[#090e1b]/70 backdrop-blur-xl border border-white/[0.07] p-5 flex flex-col justify-between hover:border-white/15 transition-all"
-                >
-                  <div>
-                    {/* 5 Stars */}
-                    <div className="flex items-center gap-1 mb-3">
-                      {[...Array(5)].map((_, i) => (
-                        <Star key={i} className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
-                      ))}
-                    </div>
-                    {/* Quote */}
-                    <p className="text-xs text-slate-300 leading-relaxed italic mb-4">
-                      &ldquo;{t.quote}&rdquo;
-                    </p>
+              <div className="hm-body">
+                <div className="hm-left">
+                  <div className="hm-label">Paper Wallet — Buying Power</div>
+                  <div className="hm-wallet">₹10,00,000.00</div>
+                  <div className="hm-sub">Margin used ₹1,24,528 • Free ₹8,75,472</div>
+                  <div className="hm-pnl">
+                    <span className="big">+₹14,280.50</span>
+                    <span className="lbl">Intraday P&amp;L • +1.42% today</span>
                   </div>
-
-                  <div className="pt-3 border-t border-white/[0.05]">
-                    <div className="text-xs font-bold text-white">{t.author}</div>
-                    <div className="flex items-center gap-1 mt-0.5">
-                      <span className="text-[10px] text-slate-400">{t.handle}</span>
-                      {t.verified && (
-                        <span className="text-[9px] font-bold text-emerald-400 bg-emerald-950/60 px-1 rounded">
-                          VERIFIED
-                        </span>
-                      )}
+                  <div style={{ marginTop: "18px" }} className="hm-label">Positions</div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "6px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px" }} className="mono">
+                      <span>RELIANCE</span>
+                      <span className="up">+2.1%</span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px" }} className="mono">
+                      <span>NIFTY 25400 CE</span>
+                      <span className="up">+18.4%</span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px" }} className="mono">
+                      <span>HDFCBANK</span>
+                      <span className="down">-0.4%</span>
                     </div>
                   </div>
                 </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* 7. SECTION 5: HIGH-CONVERSION CTA CALLOUT BANNER */}
-      <section className="relative py-20 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-4xl mx-auto">
-          <div
-            className="rounded-3xl bg-gradient-to-b from-[#0a1224] to-[#080d18] border border-cyan-500/30 p-8 sm:p-12 text-center space-y-6 relative overflow-hidden"
-            style={{
-              boxShadow: "0 0 80px rgba(6, 182, 212, 0.15)",
-            }}
-          >
-            {/* Background Spotlights */}
-            <div className="absolute top-0 right-1/4 w-72 h-72 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none" />
-            <div className="absolute bottom-0 left-1/4 w-72 h-72 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
-
-            <h2 className="text-3xl sm:text-4xl font-black text-white tracking-tight relative z-10">
-              Ready to test your edge without risking capital?
-            </h2>
-            <p className="text-slate-300 text-sm sm:text-base max-w-xl mx-auto leading-relaxed relative z-10">
-              Instant setups. Instant balance restoration. Learn to execute with absolute confidence on NSE/BSE before placing live money on the line.
-            </p>
-
-            <div className="flex flex-wrap items-center justify-center gap-4 pt-2 relative z-10">
-              <Link
-                href="/trade"
-                className="px-7 py-3 rounded-xl bg-gradient-to-r from-cyan-400 to-emerald-400 hover:from-cyan-300 hover:to-emerald-300 text-slate-950 font-bold text-sm shadow-xl shadow-cyan-500/25 hover:scale-105 transition-all"
-              >
-                Create Free Account
-              </Link>
-              <a
-                href="#footer"
-                className="px-6 py-3 rounded-xl border border-slate-700/80 bg-slate-900/60 hover:bg-slate-800 text-slate-300 hover:text-white font-medium text-sm transition-all"
-              >
-                Read SEBI Rules
-              </a>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* 8. INSTITUTIONAL FOOTER WITH REGULATORY SEBI DISCLAIMER */}
-      <footer id="footer" className="border-t border-white/[0.06] bg-[#050810] pt-16 pb-12 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-7xl mx-auto space-y-12">
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-8">
-            {/* Brand Column */}
-            <div className="col-span-2 space-y-4">
-              <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-cyan-500 to-emerald-500 flex items-center justify-center font-black text-slate-950 text-xs">
-                  SS
+                <div className="hm-right">
+                  <div className="hm-chart-head">
+                    <div className="nm">
+                      RELIANCE <span>NSE • 1D</span>
+                    </div>
+                    <div className="chip up mono">₹1,226.40 +1.42%</div>
+                  </div>
+                  <div id="heroChart" ref={heroChartRef}></div>
                 </div>
-                <span className="font-extrabold text-sm text-white">StockSimulator</span>
               </div>
-              <p className="text-xs text-slate-400 leading-relaxed max-w-sm">
-                Premium paper trading ecosystem engineered specifically for modern Indian index &amp; stock derivatives.
+            </div>
+          </div>
+        </section>
+
+        {/* ABOUT */}
+        <section className="wrap section reveal" id="about">
+          <div className="about-grid">
+            <div className="about-left">
+              <span className="pill">Why Choose Us</span>
+              <h2 style={{ marginTop: "16px" }}>
+                Built for Serious Traders,
+                <br />
+                Not Gamblers.
+              </h2>
+              <p className="lead">
+                Our realistic matching engine goes far beyond a price feed. Every fill simulates real slippage,
+                live liquidity queues, STT and exchange transaction taxes, and exchange circuit breakers — so your
+                paper track record actually reflects live-market behavior.
               </p>
-              <div className="flex items-center gap-3">
-                {[ExternalLink, Code2, Globe].map((Icon, i) => (
-                  <a
-                    key={i}
-                    href="#"
-                    className="w-8 h-8 rounded-lg bg-slate-900 border border-white/[0.06] flex items-center justify-center text-slate-400 hover:text-cyan-400 transition-colors"
-                  >
-                    <Icon className="w-3.5 h-3.5" />
-                  </a>
-                ))}
+              <div className="checks">
+                <div className="check">
+                  <div className="ic">✓</div>
+                  <div className="tx">
+                    <b>True-to-market execution</b>
+                    <span>Order fills respect bid/ask depth, partial fills, and queue priority.</span>
+                  </div>
+                </div>
+                <div className="check">
+                  <div className="ic">✓</div>
+                  <div className="tx">
+                    <b>Accurate cost modelling</b>
+                    <span>STT, brokerage, GST, stamp duty and slippage baked into every P&amp;L.</span>
+                  </div>
+                </div>
+                <div className="check">
+                  <div className="ic">✓</div>
+                  <div className="tx">
+                    <b>Circuit breaker safety</b>
+                    <span>Upper/lower circuits and margin calls behave like the real NSE/BSE.</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="stats-2x2">
+              <div className="stat glass glass-hover">
+                <div className="v">₹10,00,000</div>
+                <div className="k">Virtual capital on signup</div>
+              </div>
+              <div className="stat glass glass-hover">
+                <div className="v">100% Free</div>
+                <div className="k">Zero commissions, zero fees forever</div>
+              </div>
+              <div className="stat glass glass-hover">
+                <div className="v">&lt; 10ms</div>
+                <div className="k">Simulated institutional execution latency</div>
+              </div>
+              <div className="stat glass glass-hover">
+                <div className="v">1,200+</div>
+                <div className="k">NSE Equities, Indices, Futures &amp; Options</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* FEATURES */}
+        <section className="wrap section reveal" id="features">
+          <div className="sec-head">
+            <span className="pill">Platform Features</span>
+            <h2>Everything a Pro Desk Needs</h2>
+            <p>Institutional tooling, retail simplicity. Built to make disciplined traders out of ambitious ones.</p>
+          </div>
+          <div className="bento">
+            <div className="fcard glass glass-hover">
+              <div className="glow"></div>
+              <div className="fic">☷</div>
+              <h3>Level 2 Market Depth (DOM)</h3>
+              <p>5-tier bid/ask ladder with visual depth bars that reveal order-queue dynamics in real time.</p>
+              <div className="mini-dom">
+                <div className="row bid">
+                  <span>1,226.05</span>
+                  <div className="bar" style={{ width: "70%" }}></div>
+                </div>
+                <div className="row bid">
+                  <span>1,226.00</span>
+                  <div className="bar" style={{ width: "48%" }}></div>
+                </div>
+                <div className="row ask">
+                  <span>1,226.40</span>
+                  <div className="bar" style={{ width: "60%" }}></div>
+                </div>
+                <div className="row ask">
+                  <span>1,226.45</span>
+                  <div className="bar" style={{ width: "38%" }}></div>
+                </div>
               </div>
             </div>
 
-            {/* Product Column */}
-            <div className="space-y-3">
-              <h4 className="text-[11px] font-bold text-white uppercase tracking-wider">PRODUCT</h4>
-              <ul className="space-y-2 text-xs text-slate-400">
-                <li><Link href="/trade" className="hover:text-white transition-colors">Derivative Sim</Link></li>
-                <li><Link href="/options" className="hover:text-white transition-colors">Options Chain</Link></li>
-                <li><Link href="/trade" className="hover:text-white transition-colors">Level 2 Book</Link></li>
-                <li><Link href="/trade" className="hover:text-white transition-colors">Indices</Link></li>
-              </ul>
+            <div className="fcard glass glass-hover">
+              <div className="glow"></div>
+              <div className="fic">Δ</div>
+              <h3>Options Chain &amp; Greek Analytics</h3>
+              <p>Live NIFTY / BANKNIFTY calls and puts with real-time Delta, Gamma, Theta and Vega on every strike.</p>
+              <div className="greek-row">
+                <span className="greek">Δ <b>0.52</b></span>
+                <span className="greek">Γ <b>0.008</b></span>
+                <span className="greek">Θ <b>-4.21</b></span>
+                <span className="greek">ν <b>12.6</b></span>
+              </div>
             </div>
 
-            {/* Company Column */}
-            <div className="space-y-3">
-              <h4 className="text-[11px] font-bold text-white uppercase tracking-wider">COMPANY</h4>
-              <ul className="space-y-2 text-xs text-slate-400">
-                <li><a href="#about" className="hover:text-white transition-colors">About Us</a></li>
-                <li><a href="#about" className="hover:text-white transition-colors">Matching Engine</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">Careers</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">Security</a></li>
-              </ul>
+            <div className="fcard glass glass-hover">
+              <div className="glow"></div>
+              <div className="fic">⚡</div>
+              <h3>Real-Time WebSocket Engine</h3>
+              <p>Sub-50ms tick streaming mirrored from exchange broadcasts for lifelike, low-latency price action.</p>
             </div>
 
-            {/* Support Column */}
-            <div className="space-y-3">
-              <h4 className="text-[11px] font-bold text-white uppercase tracking-wider">SUPPORT</h4>
-              <ul className="space-y-2 text-xs text-slate-400">
-                <li><a href="#" className="hover:text-white transition-colors">Documentation</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">API Access</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">Contact Support</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">Status</a></li>
-              </ul>
+            <div className="fcard glass glass-hover">
+              <div className="glow"></div>
+              <div className="fic">⛨</div>
+              <h3>Institutional Risk Guard</h3>
+              <p>Max daily-loss limits, automatic circuit-breaker cutoffs and margin-call alerts keep discipline enforced.</p>
+            </div>
+
+            <div className="fcard glass glass-hover">
+              <div className="glow"></div>
+              <div className="fic">✦</div>
+              <h3>AI Trading Mentor</h3>
+              <p>Instant post-trade feedback analysing your risk-reward ratio and flagging revenge-trading behaviour.</p>
+            </div>
+
+            <div className="fcard glass glass-hover">
+              <div className="glow"></div>
+              <div className="fic">▣</div>
+              <h3>Multi-Wallet Management</h3>
+              <p>Segregate strategies into distinct accounts — Scalping, Swing and F&amp;O Hedging — with isolated P&amp;L.</p>
+            </div>
+          </div>
+        </section>
+
+        {/* SOCIAL PROOF */}
+        <section className="wrap section reveal" id="testimonials">
+          <div className="leader glass">
+            <div className="leader-head">
+              <h3>🏆 Weekly Leaderboard</h3>
+              <span className="pill">
+                <span className="dot"></span>Live • Resets Monday
+              </span>
+            </div>
+            <div className="podium">
+              <div className="rank g">
+                <div className="medal">1</div>
+                <div>
+                  <div className="nm">Arjun_FnO</div>
+                  <div className="meta">
+                    <span className="pf">+84.2%</span>
+                    <span className="wr">Win 78%</span>
+                  </div>
+                </div>
+              </div>
+              <div className="rank s">
+                <div className="medal">2</div>
+                <div>
+                  <div className="nm">SwingQueen</div>
+                  <div className="meta">
+                    <span className="pf">+62.1%</span>
+                    <span className="wr">Win 71%</span>
+                  </div>
+                </div>
+              </div>
+              <div className="rank b">
+                <div className="medal">3</div>
+                <div>
+                  <div className="nm">Scalp_Raja</div>
+                  <div className="meta">
+                    <span className="pf">+45.8%</span>
+                    <span className="wr">Win 69%</span>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
-          {/* SEBI Compliance & Regulatory Disclaimer Banner */}
-          <div className="p-4 rounded-xl bg-rose-950/20 border border-rose-500/20 space-y-2">
-            <div className="flex items-center gap-2 text-rose-400 text-xs font-bold tracking-wide uppercase">
-              <span className="w-2 h-2 rounded-full bg-rose-500" />
-              <span>SEBI Compliance &amp; Paper Trading Disclaimer</span>
-            </div>
-            <p className="text-[11px] text-slate-400 leading-relaxed">
-              Stock Simulator is purely a virtual paper trading platform. We do not accept real capital deposits, nor do we host real-currency financial accounts. All calculations, trades, Option Chains, and virtual portfolio P&amp;Ls are strictly for simulated training and educational purposes. Historical simulated performance does not guarantee future live trading yields. Futures and Options trading contains extreme volatility and risk of capital loss. Please trade responsibly with real funds.
-            </p>
+          <div className="sec-head" style={{ marginBottom: "40px" }}>
+            <span className="pill">Loved By Traders</span>
+            <h2>Trusted by Students, Scalpers &amp; Educators</h2>
           </div>
 
-          {/* Bottom Copyright & Legal Links */}
-          <div className="pt-4 border-t border-white/[0.05] flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500">
-            <div>© 2026 Stock Simulator Inc. All rights reserved.</div>
-            <div className="flex items-center gap-6">
-              <a href="#" className="hover:text-slate-400 transition-colors">Privacy Policy</a>
-              <a href="#" className="hover:text-slate-400 transition-colors">Terms of Service</a>
+          <div className="tgrid">
+            <div className="tcard glass glass-hover">
+              <div className="stars">★★★★★</div>
+              <p>
+                &ldquo;Tested my Iron Condor strategy for 3 months here before risking real capital. The Greeks and margin
+                behaviour matched my broker almost exactly.&rdquo;
+              </p>
+              <div className="tuser">
+                <div className="av">NK</div>
+                <div>
+                  <div className="nm">Neha Kulkarni</div>
+                  <div className="rl">College Finance Student</div>
+                </div>
+              </div>
+            </div>
+
+            <div className="tcard glass glass-hover">
+              <div className="stars">★★★★★</div>
+              <p>
+                &ldquo;Execution speed and Level 2 depth feel identical to my real broker terminal. I run my morning warm-up
+                scalps here every single day.&rdquo;
+              </p>
+              <div className="tuser">
+                <div className="av">RV</div>
+                <div>
+                  <div className="nm">Rohit Verma</div>
+                  <div className="rl">Full-Time Intraday Scalper</div>
+                </div>
+              </div>
+            </div>
+
+            <div className="tcard glass glass-hover">
+              <div className="stars">★★★★★</div>
+              <p>
+                &ldquo;I train 500+ students with zero financial risk. The AI mentor feedback and leaderboard turn practice
+                into a genuinely competitive classroom.&rdquo;
+              </p>
+              <div className="tuser">
+                <div className="av">SM</div>
+                <div>
+                  <div className="nm">Sanjay Menon</div>
+                  <div className="rl">Finance Educator</div>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-      </footer>
+        </section>
+
+        {/* CTA BANNER */}
+        <section className="wrap reveal">
+          <div className="cta-banner">
+            <h2>Ready to test your edge without risking your capital?</h2>
+            <p>Join thousands of traders sharpening their strategy on live Indian markets — completely free.</p>
+            <Link href="/trade" className="btn btn-primary btn-lg">
+              Launch Simulator Now — It&apos;s Free →
+            </Link>
+          </div>
+        </section>
+
+        {/* FOOTER */}
+        <footer className="footer">
+          <div className="wrap">
+            <div className="foot-grid">
+              <div className="foot-brand">
+                <div className="brand">
+                  <div className="brand-icon">SS</div>
+                  <div className="brand-name">STOCK SIMULATOR</div>
+                </div>
+                <p>
+                  The institutional-grade paper-trading platform for Indian markets. Practice, compete and master NSE/BSE equities &amp; F&amp;O — risk-free.
+                </p>
+                <div className="socials">
+                  <a href="#" title="X">𝕏</a>
+                  <a href="#" title="GitHub">◓</a>
+                  <a href="#" title="Discord">◈</a>
+                  <a href="#" title="LinkedIn">in</a>
+                </div>
+              </div>
+              <div className="foot-col">
+                <h4>Product</h4>
+                <Link href="/trade">Equities</Link>
+                <Link href="/options">Options Chain</Link>
+                <Link href="/options">Strategy Builder</Link>
+                <Link href="/trade">API Docs</Link>
+              </div>
+              <div className="foot-col">
+                <h4>Resources</h4>
+                <a href="#">Market Holidays</a>
+                <a href="#">Trading Glossary</a>
+                <a href="#">Risk Calculator</a>
+              </div>
+              <div className="foot-col">
+                <h4>Legal</h4>
+                <a href="#">SEBI Compliance Notice</a>
+                <a href="#">Terms of Service</a>
+                <a href="#">Privacy Policy</a>
+              </div>
+            </div>
+            <div className="disclaimer">
+              <span>
+                Stock Simulator is an educational paper-trading platform. No real financial transactions are executed. Market data is for simulation purposes only.
+              </span>
+              <span>© 2026 Stock Simulator</span>
+            </div>
+          </div>
+        </footer>
+      </div>
     </div>
   );
 }
