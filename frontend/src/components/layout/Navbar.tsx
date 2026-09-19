@@ -18,6 +18,7 @@ import {
   LayoutDashboard,
   BrainCircuit,
   SlidersHorizontal,
+  Layers,
 } from "lucide-react";
 import { formatPaise, getIndianMarketStatus } from "@/lib/format";
 import { useMarketStore } from "@/stores/market-store";
@@ -34,6 +35,7 @@ interface NavbarProps {
 const NAV_LINKS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/trade", label: "Terminal", icon: SlidersHorizontal, highlight: true },
+  { href: "/options", label: "F&O Chain", icon: Layers },
   { href: "/portfolio", label: "Portfolio", icon: PieChart },
   { href: "/orders", label: "Orders", icon: ClipboardList },
   { href: "/watchlist", label: "Watchlist", icon: Bookmark },

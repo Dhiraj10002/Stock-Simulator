@@ -4,11 +4,11 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import Navbar from "@/components/layout/Navbar";
-import WatchlistManagerDesk from "@/components/watchlist/WatchlistManagerDesk";
-import { Bookmark, SlidersHorizontal, ArrowRight } from "lucide-react";
+import OptionChainDesk from "@/components/trading/OptionChainDesk";
+import { Layers, SlidersHorizontal, ArrowRight } from "lucide-react";
 import type { Portfolio, Wallet, ApiResponse } from "@/types";
 
-export default function WatchlistPage() {
+export default function OptionsPage() {
   const [token] = useState<string>(() => {
     if (typeof window !== "undefined") {
       return localStorage.getItem("auth_token") || "";
@@ -70,11 +70,11 @@ export default function WatchlistPage() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
           <div>
             <h1 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
-              <Bookmark className="w-6 h-6 text-cyan-400" />
-              Watchlist Manager
+              <Layers className="w-6 h-6 text-cyan-400" />
+              F&O Option Chain & Derivatives Desk
             </h1>
             <p className="text-xs text-slate-400 mt-1">
-              Organize, search, and monitor custom market groups across NSE & BSE with two-way terminal sync.
+              Live strike ladder, Black-Scholes Greeks, Put-Call Ratio sentiment, and multi-leg strategy executor.
             </p>
           </div>
 
@@ -84,14 +84,14 @@ export default function WatchlistPage() {
               className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs shadow-md shadow-cyan-500/20 transition-all hover:scale-105"
             >
               <SlidersHorizontal className="w-4 h-4" />
-              <span>Launch in Terminal</span>
+              <span>Launch Pro Terminal</span>
               <ArrowRight className="w-3.5 h-3.5" />
             </Link>
           </div>
         </div>
 
-        {/* Watchlist Manager Workspace */}
-        <WatchlistManagerDesk />
+        {/* Option Chain Desk Workspace */}
+        <OptionChainDesk />
       </main>
     </div>
   );
