@@ -2,8 +2,19 @@
 
 @layer base {
   :root {
-    --background: #0b0f19;
+    --background: #080c14;
     --foreground: #f8fafc;
+    --surface: #0f172a;
+    --surface-elevated: #1e293b;
+    --border: #334155;
+    --border-subtle: #1e293b;
+    --primary: #06b6d4;
+    --primary-foreground: #020617;
+    --gain: #10b981;
+    --loss: #f43f5e;
+    --warning: #f59e0b;
+    --muted: #64748b;
+    --muted-foreground: #94a3b8;
   }
 
   body {
