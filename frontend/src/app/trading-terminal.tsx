@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   Layers,
   Clock,
@@ -9,6 +9,8 @@ import {
   RefreshCw,
   Crosshair,
   TrendingUp,
+  ArrowLeft,
+  Bookmark,
 } from "lucide-react";
 import Header from "@/components/terminal/Header";
 import WatchlistSidebar from "@/components/terminal/WatchlistSidebar";
@@ -23,7 +25,7 @@ import OptionChainModal from "@/components/terminal/OptionChainModal";
 import PerformanceModal from "@/components/terminal/PerformanceModal";
 import { useToast } from "@/components/terminal/ToastProvider";
 import { getDefaultQuotes, getOrSeedQuote } from "@/lib/mockData";
-import { getIndianMarketStatus } from "@/lib/format";
+import { getIndianMarketStatus, formatPaise } from "@/lib/format";
 import type {
   User,
   Wallet,
@@ -74,6 +76,9 @@ export default function TradingTerminal() {
 
   // Active Selected Symbol
   const [selectedSymbol, setSelectedSymbol] = useState("RELIANCE");
+
+  // Mobile responsive view panel: "workspace" | "watchlist" | "ticket"
+  const [mobilePanel, setMobilePanel] = useState<"workspace" | "watchlist" | "ticket">("workspace");
 
   // Domain State
   const [wallet, setWallet] = useState<Wallet | null>(null);
@@ -147,7 +152,7 @@ export default function TradingTerminal() {
   // Authenticated HTTP Request Helper
   const request = useCallback(
     async <T,>(path: string, options: RequestInit = {}): Promise<T> => {
-      let activeToken = token;
+      const activeToken = token;
       const headers: Record<string, string> = {
         "Content-Type": "application/json",
         ...(activeToken ? { Authorization: `Bearer ${activeToken}` } : {}),
@@ -180,6 +185,7 @@ export default function TradingTerminal() {
   );
 
   // Load account data from backend
+  const loadDataRef = useRef<(token: string) => Promise<void>>(async () => {});
   const loadData = useCallback(
     async (accessToken: string) => {
       try {
@@ -190,7 +196,7 @@ export default function TradingTerminal() {
         if (meRes.status === 401) {
           const newToken = await tryRefreshToken();
           if (newToken) {
-            return loadData(newToken);
+            return loadDataRef.current(newToken);
           }
           return;
         }
@@ -213,18 +219,18 @@ export default function TradingTerminal() {
             })
               .then((r) => r.json())
               .then((b) => (b.data ?? []) as Order[]),
-            fetch(`${API_URL}/wallet/transactions`, {
+            fetch(`${API_URL}/trades`, {
               headers: { Authorization: `Bearer ${accessToken}` },
             })
               .then((r) => r.json())
               .then((b) => (b.data ?? []) as Transaction[]),
           ]);
 
-        setUser(nextUser);
-        setWallet(nextWallet);
-        setPortfolio(nextPortfolio);
-        setOrders(nextOrders);
-        setTransactions(nextTransactions);
+        if (nextUser) setUser(nextUser);
+        if (nextWallet) setWallet(nextWallet);
+        if (nextPortfolio) setPortfolio(nextPortfolio);
+        if (nextOrders) setOrders(nextOrders);
+        if (nextTransactions) setTransactions(nextTransactions);
 
         // Ensure every open position and its underlying stock has an active quote initialized
         if (nextPortfolio && Array.isArray(nextPortfolio.positions)) {
@@ -253,6 +259,9 @@ export default function TradingTerminal() {
     },
     [tryRefreshToken]
   );
+  useEffect(() => {
+    loadDataRef.current = loadData;
+  }, [loadData]);
 
   // Restore session from localStorage
   useEffect(() => {
@@ -355,28 +364,26 @@ export default function TradingTerminal() {
     });
   }, []);
 
-  // Ensure any newly searched or selected symbol has a quote immediately seeded
+  // Fetch quote from backend whenever selectedSymbol changes
   useEffect(() => {
-    if (!quotes[selectedSymbol]) {
-      setQuotes((prev) => ({
-        ...prev,
-        [selectedSymbol]: getOrSeedQuote(selectedSymbol),
-      }));
-    }
+    let isCancelled = false;
     fetch(`${API_URL}/market/quotes/${selectedSymbol}`)
       .then((res) => res.json())
       .then((body) => {
-        if (body.success && body.data) {
+        if (!isCancelled && body.success && body.data) {
           setQuotes((prev) => ({
             ...prev,
             [selectedSymbol]: {
-              ...prev[selectedSymbol],
+              ...(prev[selectedSymbol] || getOrSeedQuote(selectedSymbol)),
               ...body.data,
             },
           }));
         }
       })
       .catch(() => {});
+    return () => {
+      isCancelled = true;
+    };
   }, [selectedSymbol]);
 
   // Simulated Micro-Jitter (Only active during live trading session: 09:15-15:30 IST Mon-Fri)
@@ -796,6 +803,7 @@ export default function TradingTerminal() {
     (symbol: string, side: "BUY" | "SELL") => {
       setSelectedSymbol(symbol);
       setPrefillOrder({ side });
+      setMobilePanel("ticket");
       addToast(
         `Quick ${side} Primed`,
         `Selected ${symbol} with ${side} action ready in ticket`,
@@ -936,19 +944,45 @@ export default function TradingTerminal() {
 
       {/* Main Terminal Workspace */}
       <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
-        {/* Watchlist Sidebar */}
-        <WatchlistSidebar
-          selectedSymbol={selectedSymbol}
-          onSelectSymbol={setSelectedSymbol}
-          quotes={quotes}
-          apiUrl={API_URL}
-          onQuickOrder={handleQuickOrder}
-          positions={augmentedPortfolio?.positions ?? []}
-          onActiveSymbolsChange={setActiveWatchlistSymbols}
-        />
+        {/* Watchlist Sidebar (Responsive: full-width on mobile when mobilePanel === "watchlist", fixed col on desktop) */}
+        <div
+          className={`${
+            mobilePanel === "watchlist" ? "flex" : "hidden"
+          } lg:flex w-full lg:w-80 flex-col shrink-0 border-r border-slate-800/80 bg-slate-950/70`}
+        >
+          {/* Mobile Back Button */}
+          <div className="lg:hidden flex items-center justify-between p-3 bg-slate-900/90 border-b border-slate-800 shrink-0">
+            <button
+              type="button"
+              onClick={() => setMobilePanel("workspace")}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 text-cyan-400 font-semibold text-xs active:scale-95 transition-transform"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              <span>Back to Chart</span>
+            </button>
+            <span className="text-xs font-bold text-slate-200">Market Watchlist</span>
+          </div>
+
+          <WatchlistSidebar
+            selectedSymbol={selectedSymbol}
+            onSelectSymbol={(sym) => {
+              setSelectedSymbol(sym);
+              setMobilePanel("workspace");
+            }}
+            quotes={quotes}
+            apiUrl={API_URL}
+            onQuickOrder={handleQuickOrder}
+            positions={augmentedPortfolio?.positions ?? []}
+            onActiveSymbolsChange={setActiveWatchlistSymbols}
+          />
+        </div>
 
         {/* Center Canvas: Chart on Top, Tabbed Desk on Bottom */}
-        <div className="flex-1 flex flex-col overflow-hidden border-r border-slate-800/80">
+        <div
+          className={`${
+            mobilePanel === "workspace" ? "flex" : "hidden"
+          } lg:flex flex-1 flex-col overflow-hidden border-r border-slate-800/80 min-w-0`}
+        >
           {/* Top: TradingView Candlestick Chart */}
           <ChartPanel
             symbol={selectedSymbol}
@@ -966,6 +1000,58 @@ export default function TradingTerminal() {
                 : null
             }
           />
+
+          {/* Mobile Sticky Quick-Trade Dock (visible only on mobile screens in workspace view) */}
+          <div className="lg:hidden shrink-0 flex items-center justify-between gap-2 p-2.5 bg-slate-950/95 border-t border-slate-800/90 backdrop-blur-md">
+            <button
+              type="button"
+              onClick={() => setMobilePanel("watchlist")}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-xs font-semibold text-slate-300 active:scale-95 transition-transform"
+            >
+              <Bookmark className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Watchlist</span>
+            </button>
+
+            <div className="flex-1 min-w-0 text-center px-1">
+              <div className="text-xs font-bold text-slate-100 truncate">{selectedSymbol}</div>
+              <div className="text-[11px] font-mono text-slate-400">
+                {activeQuote ? formatPaise(activeQuote.price_paise) : "--"}
+                {activeQuote && activeQuote.change_percent !== undefined && (
+                  <span
+                    className={`ml-1 font-semibold ${
+                      activeQuote.change_percent >= 0 ? "text-emerald-400" : "text-rose-400"
+                    }`}
+                  >
+                    {activeQuote.change_percent >= 0 ? "+" : ""}
+                    {activeQuote.change_percent.toFixed(2)}%
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setPrefillOrder({ side: "BUY" });
+                  setMobilePanel("ticket");
+                }}
+                className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-white font-bold text-xs shadow-lg shadow-emerald-500/20 active:scale-95 transition-transform"
+              >
+                BUY
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setPrefillOrder({ side: "SELL" });
+                  setMobilePanel("ticket");
+                }}
+                className="px-4 py-2 rounded-xl bg-rose-500 hover:bg-rose-400 text-white font-bold text-xs shadow-lg shadow-rose-500/20 active:scale-95 transition-transform"
+              >
+                SELL
+              </button>
+            </div>
+          </div>
 
           {/* Bottom Tabbed Desk: Positions | Orders | GTT | News | AI Mentor */}
           <div className="h-[280px] lg:h-[300px] flex flex-col border-t border-slate-800/80 bg-slate-950/80 backdrop-blur-sm">
@@ -1077,25 +1163,47 @@ export default function TradingTerminal() {
         </div>
 
         {/* Right Dock: Order Entry Ticket */}
-        <OrderEntryTicket
-          symbol={selectedSymbol}
-          quote={activeQuote}
-          wallet={wallet}
-          positions={augmentedPortfolio?.positions ?? []}
-          onOrderPlaced={(gtt) => {
-            void loadData(token);
-            if (gtt && (gtt.targetPriceRupees || gtt.stopLossPriceRupees)) {
-              handleRegisterGTT(gtt);
-            }
-          }}
-          onRequest={request}
-          onToast={addToast}
-          prefill={prefillOrder}
-          onPriceLevelsChange={(target, sl) => {
-            setPreviewTargetPrice(target);
-            setPreviewStopLossPrice(sl);
-          }}
-        />
+        <div
+          className={`${
+            mobilePanel === "ticket" ? "flex" : "hidden"
+          } lg:flex w-full lg:w-[320px] xl:w-[350px] flex-col shrink-0 overflow-y-auto`}
+        >
+          {/* Mobile Back Button */}
+          <div className="lg:hidden flex items-center justify-between p-3 bg-slate-900/90 border-b border-slate-800 shrink-0">
+            <button
+              type="button"
+              onClick={() => setMobilePanel("workspace")}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 text-cyan-400 font-semibold text-xs active:scale-95 transition-transform"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              <span>Back to Chart</span>
+            </button>
+            <span className="text-xs font-bold text-slate-200">
+              Order Ticket: {selectedSymbol}
+            </span>
+          </div>
+
+          <OrderEntryTicket
+            symbol={selectedSymbol}
+            quote={activeQuote}
+            wallet={wallet}
+            positions={augmentedPortfolio?.positions ?? []}
+            onOrderPlaced={(gtt) => {
+              void loadData(token);
+              if (gtt && (gtt.targetPriceRupees || gtt.stopLossPriceRupees)) {
+                handleRegisterGTT(gtt);
+              }
+              setMobilePanel("workspace");
+            }}
+            onRequest={request}
+            onToast={addToast}
+            prefill={prefillOrder}
+            onPriceLevelsChange={(target, sl) => {
+              setPreviewTargetPrice(target);
+              setPreviewStopLossPrice(sl);
+            }}
+          />
+        </div>
       </div>
 
       {/* Double-Entry Ledger Statement Modal */}
@@ -1130,7 +1238,7 @@ export default function TradingTerminal() {
       />
 
       {/* Institutional Hotkeys Status Strip */}
-      <footer className="px-3 py-1 bg-slate-950/95 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-400 select-none shrink-0 z-10 font-sans">
+      <footer className="hidden md:flex px-3 py-1 bg-slate-950/95 border-t border-slate-800/80 items-center justify-between text-[11px] text-slate-400 select-none shrink-0 z-10 font-sans">
         <div className="flex items-center gap-2.5 overflow-x-auto">
           <span className="font-semibold text-slate-500 uppercase tracking-wider text-[10px]">Shortcuts:</span>
           <span className="flex items-center gap-1">

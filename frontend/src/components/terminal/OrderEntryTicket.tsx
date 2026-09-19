@@ -11,6 +11,11 @@ import {
   Bot,
   Target,
   Crosshair,
+  SlidersHorizontal,
+  Layers,
+  ChevronDown,
+  ChevronUp,
+  ExternalLink,
 } from "lucide-react";
 import { formatPaise } from "@/lib/format";
 import { INSTRUMENT_METADATA } from "@/lib/mockData";
@@ -98,9 +103,14 @@ export default function OrderEntryTicket({
   const [product, setProduct] = useState<"DELIVERY" | "INTRADAY" | "FNO">(() =>
     isFnoSymbol ? "FNO" : "DELIVERY"
   );
-  const [variety, setVariety] = useState<"REGULAR" | "COVER" | "BRACKET">("REGULAR");
   const [targetEnabled, setTargetEnabled] = useState(false);
   const [stopLossEnabled, setStopLossEnabled] = useState(false);
+  const variety: "REGULAR" | "COVER" | "BRACKET" =
+    targetEnabled && stopLossEnabled
+      ? "BRACKET"
+      : stopLossEnabled
+      ? "COVER"
+      : "REGULAR";
   const [targetRupees, setTargetRupees] = useState<number>(() =>
     Number((defaultPriceRupees * 1.02).toFixed(2))
   );
@@ -117,6 +127,8 @@ export default function OrderEntryTicket({
   const [limitRupees, setLimitRupees] = useState<number>(defaultPriceRupees);
   const [triggerRupees, setTriggerRupees] = useState<number>(defaultPriceRupees);
   const [submitting, setSubmitting] = useState(false);
+  const [activeDeskTab, setActiveDeskTab] = useState<"order" | "depth">("order");
+  const [showAdvancedRisk, setShowAdvancedRisk] = useState<boolean>(false);
 
   // Sync Price Levels to Chart
   useEffect(() => {
@@ -536,673 +548,708 @@ export default function OrderEntryTicket({
   const triggerInputId = useId();
 
   return (
-    <div className="w-full lg:w-[320px] xl:w-[350px] flex flex-col bg-slate-950/80 border-l border-slate-800/80 p-4 shrink-0 overflow-y-auto space-y-4">
-      {/* Order Side Segmented Switch */}
-      <div className="grid grid-cols-2 p-1 bg-slate-900/90 rounded-xl border border-slate-800">
+    <div className="w-full lg:w-[320px] xl:w-[350px] flex flex-col bg-slate-950/90 border-l border-slate-800/80 p-3.5 shrink-0 overflow-y-auto space-y-3.5">
+      {/* Right Dock Header Tabs: Order Ticket vs Market Depth (L2) */}
+      <div className="grid grid-cols-2 p-1 bg-slate-900/90 rounded-xl border border-slate-800 shrink-0">
         <button
           type="button"
-          onClick={() => setSide("BUY")}
-          className={`flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-bold transition-all ${
-            isBuy
-              ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/20"
+          onClick={() => setActiveDeskTab("order")}
+          className={`flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+            activeDeskTab === "order"
+              ? "bg-slate-800 text-slate-100 shadow-sm border border-slate-700/80"
               : "text-slate-400 hover:text-slate-200"
           }`}
         >
-          <TrendingUp className="w-3.5 h-3.5" />
-          BUY
+          <SlidersHorizontal className="w-3.5 h-3.5 text-cyan-400" />
+          <span>Order Ticket</span>
         </button>
         <button
           type="button"
-          onClick={() => setSide("SELL")}
-          className={`flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-bold transition-all ${
-            !isBuy
-              ? "bg-rose-500 text-white shadow-lg shadow-rose-500/20"
+          onClick={() => setActiveDeskTab("depth")}
+          className={`flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+            activeDeskTab === "depth"
+              ? "bg-slate-800 text-slate-100 shadow-sm border border-slate-700/80"
               : "text-slate-400 hover:text-slate-200"
           }`}
         >
-          <TrendingDown className="w-3.5 h-3.5" />
-          SELL
+          <Layers className="w-3.5 h-3.5 text-purple-400" />
+          <span>Market Depth</span>
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
         </button>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-3.5">
-        {/* Product Category (CNC / MIS / F&O) */}
-        <div className="space-y-1">
-          <span className="text-[11px] font-semibold text-slate-400">
-            Product Category
-          </span>
-          <div className="grid grid-cols-3 gap-1.5">
-            {[
-              { id: "DELIVERY", label: "CNC", tip: "Long-only" },
-              { id: "INTRADAY", label: "MIS", tip: "5x Margin" },
-              { id: "FNO", label: "F&O", tip: "Derivatives" },
-            ].map((prod) => (
-              <button
-                key={prod.id}
-                type="button"
-                onClick={() => setProduct(prod.id as "DELIVERY" | "INTRADAY" | "FNO")}
-                className={`flex flex-col items-center py-1.5 px-1 rounded-xl border text-xs font-bold transition-all ${
-                  product === prod.id
-                    ? isBuy
-                      ? "bg-emerald-950/40 border-emerald-500/50 text-emerald-300"
-                      : "bg-rose-950/40 border-rose-500/50 text-rose-300"
-                    : "bg-slate-900/60 border-slate-800 text-slate-400 hover:border-slate-700"
-                }`}
-              >
-                <span>{prod.label}</span>
-                <span className="text-[9px] font-normal text-slate-500">
-                  {prod.tip}
-                </span>
-              </button>
-            ))}
+      {activeDeskTab === "depth" ? (
+        /* Dedicated Full-Height Market Depth Tab */
+        <div className="flex-1 flex flex-col space-y-3">
+          <div className="flex items-center justify-between px-1">
+            <div className="flex items-baseline gap-2">
+              <span className="text-xs font-bold text-slate-200">{symbol}</span>
+              <span className="text-[11px] font-mono font-bold text-cyan-400">
+                ₹{activePriceRupees.toFixed(2)}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setActiveDeskTab("order")}
+              className="text-[11px] text-cyan-400 hover:text-cyan-300 font-semibold flex items-center gap-1"
+            >
+              <span>← Back to Ticket</span>
+            </button>
           </div>
-        </div>
 
-        {/* Order Variety (Regular vs Cover vs Bracket) */}
-        <div className="space-y-1">
-          <div className="flex items-center justify-between text-[11px] font-semibold text-slate-400">
-            <span>Order Variety</span>
-            <span className="text-[10px] text-cyan-400 font-mono">
-              {variety === "BRACKET" ? "Target + SL" : variety === "COVER" ? "Cover SL" : "Standard"}
-            </span>
-          </div>
-          <div className="grid grid-cols-3 gap-1">
-            {[
-              { id: "REGULAR", label: "Regular", tip: "Normal" },
-              { id: "COVER", label: "Cover (CO)", tip: "With SL" },
-              { id: "BRACKET", label: "Bracket (BO)", tip: "Tgt + SL" },
-            ].map((v) => (
-              <button
-                key={v.id}
-                type="button"
-                onClick={() => {
-                  const newVar = v.id as "REGULAR" | "COVER" | "BRACKET";
-                  setVariety(newVar);
-                  if (newVar === "COVER") {
-                    setStopLossEnabled(true);
-                    setTargetEnabled(false);
-                  } else if (newVar === "BRACKET") {
-                    setStopLossEnabled(true);
-                    setTargetEnabled(true);
-                  }
-                }}
-                className={`py-1.5 px-1 rounded-xl border text-center transition-all ${
-                  variety === v.id
-                    ? "bg-slate-800 border-cyan-500/60 text-cyan-300 shadow-sm shadow-cyan-500/10 font-bold"
-                    : "bg-slate-900/60 border-slate-800 text-slate-400 hover:text-slate-200"
-                }`}
-              >
-                <div className="text-xs">{v.label}</div>
-                <div className="text-[9px] text-slate-500">{v.tip}</div>
-              </button>
-            ))}
-          </div>
+          <MarketDepth
+            symbol={symbol}
+            quote={quote}
+            onSelectPrice={(price) => {
+              setLimitRupees(price);
+              setType("LIMIT");
+              setActiveDeskTab("order");
+              onToast(
+                "Price Loaded",
+                `Limit price set to ₹${price.toFixed(2)} from Market Depth`,
+                "info"
+              );
+            }}
+          />
         </div>
-
-        {/* Order Type (Market vs Limit vs SL vs SL-M) */}
-        <div className="space-y-1">
-          <span className="text-[11px] font-semibold text-slate-400">
-            Order Type
-          </span>
-          <div className="grid grid-cols-4 gap-1">
-            {[
-              { id: "MARKET", label: "MKT", sub: "Market" },
-              { id: "LIMIT", label: "LMT", sub: "Limit" },
-              { id: "SL", label: "SL", sub: "Stop Lmt" },
-              { id: "SL-M", label: "SL-M", sub: "Stop Mkt" },
-            ].map((ord) => (
-              <button
-                key={ord.id}
-                type="button"
-                onClick={() => setType(ord.id as "MARKET" | "LIMIT" | "SL" | "SL-M")}
-                className={`py-1.5 px-1 rounded-lg border text-xs font-medium text-center transition-all ${
-                  type === ord.id
-                    ? "bg-slate-800 border-cyan-500/50 text-cyan-300 shadow-sm shadow-cyan-500/10"
-                    : "bg-slate-900/40 border-slate-800 text-slate-400 hover:text-slate-200"
-                }`}
-              >
-                <div className="font-bold">{ord.label}</div>
-                <div className="text-[9px] text-slate-500 truncate">{ord.sub}</div>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Quantity Controls */}
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between text-[11px] text-slate-400">
-            <div className="flex items-center gap-1.5">
-              <label htmlFor={qtyInputId} className="font-semibold text-slate-300">
-                Quantity
-              </label>
-              {isFno && effectiveLotSize > 1 && (
-                <span className="text-[10px] px-1.5 py-0.2 rounded bg-purple-950/80 text-purple-300 border border-purple-800/40 font-mono font-bold">
-                  Lot: {effectiveLotSize} ({(quantity / effectiveLotSize).toFixed(0)} Lots)
+      ) : (
+        /* Streamlined Order Ticket Tab */
+        <div className="flex-1 flex flex-col space-y-3">
+          {/* Active Symbol Header Sub-strip */}
+          <div className="flex items-center justify-between pb-2 border-b border-slate-800/80">
+            <div className="flex items-baseline gap-2">
+              <span className="font-extrabold text-sm text-slate-100">{symbol}</span>
+              <span className="text-xs font-mono font-bold text-slate-200">
+                ₹{activePriceRupees.toFixed(2)}
+              </span>
+              {quote && quote.change_percent !== undefined && (
+                <span
+                  className={`text-[10px] font-mono font-semibold ${
+                    quote.change_percent >= 0 ? "text-emerald-400" : "text-rose-400"
+                  }`}
+                >
+                  {quote.change_percent >= 0 ? "+" : ""}
+                  {quote.change_percent.toFixed(2)}%
                 </span>
               )}
             </div>
-            <div className="flex gap-1">
-              {isFno && effectiveLotSize > 1
-                ? [1, 2, 5, 10].map((multiplier) => (
-                    <button
-                      key={multiplier}
-                      type="button"
-                      onClick={() => setQuantity((q) => q + multiplier * effectiveLotSize)}
-                      className="px-1.5 py-0.5 rounded bg-purple-950/60 border border-purple-800/40 text-[10px] text-purple-300 hover:bg-purple-900/60 transition-colors font-mono"
-                    >
-                      +{multiplier}L
-                    </button>
-                  ))
-                : [1, 5, 25, 100].map((step) => (
-                    <button
-                      key={step}
-                      type="button"
-                      onClick={() => setQuantity((q) => q + step)}
-                      className="px-1.5 py-0.5 rounded bg-slate-800 text-[10px] text-slate-300 hover:bg-slate-700 transition-colors font-mono"
-                    >
-                      +{step}
-                    </button>
-                  ))}
-            </div>
-          </div>
-          <div
-            className={`flex items-center border rounded-xl bg-slate-900/80 overflow-hidden transition-colors ${
-              isInvalidFnoQty ? "border-rose-500/70" : "border-slate-800"
-            }`}
-          >
             <button
               type="button"
-              onClick={() => setQuantity((q) => Math.max(effectiveLotSize, q - effectiveLotSize))}
-              className="px-3 py-1.5 text-slate-400 hover:text-white bg-slate-800/40 hover:bg-slate-800 transition-colors font-bold"
+              onClick={() => setActiveDeskTab("depth")}
+              className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-cyan-400 transition-colors"
             >
-              -
-            </button>
-            <input
-              id={qtyInputId}
-              type="number"
-              min={effectiveLotSize}
-              step={effectiveLotSize}
-              value={quantity}
-              onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
-              className="w-full text-center bg-transparent text-sm font-bold text-white focus:outline-none font-mono"
-            />
-            <button
-              type="button"
-              onClick={() => setQuantity((q) => q + effectiveLotSize)}
-              className="px-3 py-1.5 text-slate-400 hover:text-white bg-slate-800/40 hover:bg-slate-800 transition-colors font-bold"
-            >
-              +
+              <span>L2 Depth</span>
+              <ExternalLink className="w-2.5 h-2.5" />
             </button>
           </div>
 
-          {/* Invalid lot size warning helper */}
-          {isInvalidFnoQty && (
-            <div className="flex items-center justify-between text-[10px] text-rose-300 bg-rose-950/40 border border-rose-900/60 px-2.5 py-1 rounded-lg">
-              <span>Must be a multiple of lot size {effectiveLotSize}</span>
-              <button
-                type="button"
-                onClick={() =>
-                  setQuantity(
-                    Math.max(1, Math.round(quantity / effectiveLotSize)) * effectiveLotSize
-                  )
-                }
-                className="font-bold underline text-cyan-400 hover:text-cyan-300 ml-2 cursor-pointer"
-              >
-                Snap to {Math.max(1, Math.round(quantity / effectiveLotSize)) * effectiveLotSize}
-              </button>
-            </div>
-          )}
-
-          {/* Margin Allocation Shortcuts */}
-          <div className="grid grid-cols-4 gap-1 pt-0.5">
-            {[25, 50, 75, 100].map((pct) => (
-              <button
-                key={pct}
-                type="button"
-                onClick={() => handleMarginPercent(pct)}
-                className="py-1 text-[10px] font-semibold rounded bg-slate-900/80 border border-slate-800/80 text-slate-400 hover:text-cyan-300 hover:border-cyan-500/40 transition-all font-mono"
-              >
-                {pct === 100 ? "MAX" : `${pct}%`}
-              </button>
-            ))}
+          {/* Order Side Segmented Switch */}
+          <div className="grid grid-cols-2 p-1 bg-slate-900/90 rounded-xl border border-slate-800">
+            <button
+              type="button"
+              onClick={() => setSide("BUY")}
+              className={`flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-bold transition-all ${
+                isBuy
+                  ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/20"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              <TrendingUp className="w-3.5 h-3.5" />
+              BUY
+            </button>
+            <button
+              type="button"
+              onClick={() => setSide("SELL")}
+              className={`flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-bold transition-all ${
+                !isBuy
+                  ? "bg-rose-500 text-white shadow-lg shadow-rose-500/20"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              <TrendingDown className="w-3.5 h-3.5" />
+              SELL
+            </button>
           </div>
-        </div>
 
-        {/* Trigger Price Input (For SL and SL-M) */}
-        {isStopOrder && (
-          <div className="space-y-1">
-            <div className="flex items-center justify-between text-[11px]">
-              <label htmlFor={triggerInputId} className="font-semibold text-slate-400">
-                Trigger Price (₹)
-              </label>
-              <span className={`text-[10px] ${isTriggerInvalid ? "text-rose-400 font-semibold" : "text-slate-500"}`}>
-                {side === "BUY" ? `Must be ≥ ₹${ltpRupees.toFixed(2)}` : `Must be ≤ ₹${ltpRupees.toFixed(2)}`}
+          <form onSubmit={handleSubmit} className="space-y-3">
+            {/* Product Category (CNC / MIS / F&O) */}
+            <div className="space-y-1">
+              <span className="text-[11px] font-semibold text-slate-400">
+                Product Category
               </span>
-            </div>
-            <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm font-bold">
-                ₹
-              </span>
-              <input
-                id={triggerInputId}
-                type="number"
-                step="0.05"
-                min="0.05"
-                value={triggerRupees}
-                onChange={(e) => setTriggerRupees(parseFloat(e.target.value) || 0)}
-                className={`w-full pl-8 pr-4 py-1.5 bg-slate-900/80 border rounded-xl text-sm font-bold text-white focus:outline-none ${
-                  isTriggerInvalid ? "border-rose-500/70 focus:border-rose-500" : "border-slate-800 focus:border-cyan-500"
-                }`}
-              />
-            </div>
-          </div>
-        )}
-
-        {/* Limit Price Input (For LIMIT and SL) */}
-        {isLimitOrder && (
-          <div className="space-y-1">
-            <div className="flex items-center justify-between text-[11px]">
-              <label htmlFor={limitInputId} className="font-semibold text-slate-400">
-                Limit Price (₹)
-              </label>
-              <div className="flex items-center gap-1.5 text-[10px] font-mono">
-                <span className="text-rose-400/90 font-medium">LC: ₹{lowerCircuitRupees.toFixed(2)}</span>
-                <span className="text-slate-600">|</span>
-                <span className="text-emerald-400/90 font-medium">UC: ₹{upperCircuitRupees.toFixed(2)}</span>
+              <div className="grid grid-cols-3 gap-1.5">
+                {[
+                  { id: "DELIVERY", label: "CNC", sub: "Delivery" },
+                  { id: "INTRADAY", label: "MIS", sub: "Intraday (5x)" },
+                  { id: "FNO", label: "F&O", sub: "Derivatives" },
+                ].map((prod) => (
+                  <button
+                    key={prod.id}
+                    type="button"
+                    onClick={() => setProduct(prod.id as "DELIVERY" | "INTRADAY" | "FNO")}
+                    className={`py-1.5 px-1 rounded-xl border text-center transition-all ${
+                      product === prod.id
+                        ? isBuy
+                          ? "bg-emerald-950/40 border-emerald-500/50 text-emerald-300 font-bold"
+                          : "bg-rose-950/40 border-rose-500/50 text-rose-300 font-bold"
+                        : "bg-slate-900/60 border-slate-800 text-slate-400 hover:border-slate-700"
+                    }`}
+                  >
+                    <div className="text-xs font-bold">{prod.label}</div>
+                    <div className="text-[9px] text-slate-500">{prod.sub}</div>
+                  </button>
+                ))}
               </div>
             </div>
-            <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm font-bold">
-                ₹
+
+            {/* Order Type (Market vs Limit vs SL vs SL-M) */}
+            <div className="space-y-1">
+              <span className="text-[11px] font-semibold text-slate-400">
+                Order Type
               </span>
-              <input
-                id={limitInputId}
-                type="number"
-                step="0.05"
-                min="0.05"
-                value={limitRupees}
-                onChange={(e) => setLimitRupees(parseFloat(e.target.value) || 0)}
-                className={`w-full pl-8 pr-4 py-1.5 bg-slate-900/80 border rounded-xl text-sm font-bold text-white focus:outline-none ${
-                  isLimitCircuitBreached
-                    ? "border-rose-500/70 focus:border-rose-500"
-                    : "border-slate-800 focus:border-cyan-500"
+              <div className="grid grid-cols-4 gap-1 p-0.5 bg-slate-900/90 rounded-xl border border-slate-800">
+                {[
+                  { id: "MARKET", label: "Market" },
+                  { id: "LIMIT", label: "Limit" },
+                  { id: "SL", label: "SL" },
+                  { id: "SL-M", label: "SL-M" },
+                ].map((ord) => (
+                  <button
+                    key={ord.id}
+                    type="button"
+                    onClick={() => setType(ord.id as "MARKET" | "LIMIT" | "SL" | "SL-M")}
+                    className={`py-1.5 px-1 rounded-lg text-xs font-semibold text-center transition-all ${
+                      type === ord.id
+                        ? "bg-slate-800 text-cyan-300 border border-cyan-500/40 shadow-sm"
+                        : "text-slate-400 hover:text-slate-200"
+                    }`}
+                  >
+                    {ord.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Quantity Controls */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between text-[11px] text-slate-400">
+                <div className="flex items-center gap-1.5">
+                  <label htmlFor={qtyInputId} className="font-semibold text-slate-300">
+                    Quantity
+                  </label>
+                  {isFno && effectiveLotSize > 1 && (
+                    <span className="text-[10px] px-1.5 py-0.2 rounded bg-purple-950/80 text-purple-300 border border-purple-800/40 font-mono font-bold">
+                      Lot: {effectiveLotSize}
+                    </span>
+                  )}
+                </div>
+                {/* Clean consolidated preset row */}
+                <div className="flex gap-1">
+                  {isFno && effectiveLotSize > 1
+                    ? [1, 2, 5, 10].map((multiplier) => (
+                        <button
+                          key={multiplier}
+                          type="button"
+                          onClick={() => setQuantity(multiplier * effectiveLotSize)}
+                          className="px-1.5 py-0.5 rounded bg-purple-950/60 border border-purple-800/40 text-[10px] text-purple-300 hover:bg-purple-900/60 transition-colors font-mono"
+                        >
+                          +{multiplier}L
+                        </button>
+                      ))
+                    : [25, 50, 75, 100].map((pct) => (
+                        <button
+                          key={pct}
+                          type="button"
+                          onClick={() => handleMarginPercent(pct)}
+                          className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800 text-[10px] text-slate-400 hover:text-cyan-300 transition-colors font-mono"
+                        >
+                          {pct === 100 ? "MAX" : `${pct}%`}
+                        </button>
+                      ))}
+                </div>
+              </div>
+
+              <div
+                className={`flex items-center border rounded-xl bg-slate-900/80 overflow-hidden transition-colors ${
+                  isInvalidFnoQty ? "border-rose-500/70" : "border-slate-800 focus-within:border-cyan-500/50"
                 }`}
-              />
-            </div>
-            {isLimitCircuitBreached && (
-              <p className="text-[10px] text-rose-400 font-medium">
-                {limitRupees > upperCircuitRupees ? "Exceeds Upper Circuit Limit (+10%)" : "Falls below Lower Circuit Limit (-10%)"}
-              </p>
-            )}
-          </div>
-        )}
+              >
+                <button
+                  type="button"
+                  onClick={() => setQuantity((q) => Math.max(effectiveLotSize, q - effectiveLotSize))}
+                  className="px-3.5 py-2 text-slate-400 hover:text-white bg-slate-800/40 hover:bg-slate-800 transition-colors font-bold text-sm"
+                >
+                  -
+                </button>
+                <input
+                  id={qtyInputId}
+                  type="number"
+                  min={effectiveLotSize}
+                  step={effectiveLotSize}
+                  value={quantity}
+                  onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
+                  className="w-full text-center bg-transparent text-sm font-bold text-white focus:outline-none font-mono"
+                />
+                <button
+                  type="button"
+                  onClick={() => setQuantity((q) => q + effectiveLotSize)}
+                  className="px-3.5 py-2 text-slate-400 hover:text-white bg-slate-800/40 hover:bg-slate-800 transition-colors font-bold text-sm"
+                >
+                  +
+                </button>
+              </div>
 
-        {/* Slippage Estimation Warning for Large Market / SL-M Orders */}
-        {hasSlippage && (
-          <div className="px-2.5 py-1.5 rounded-xl bg-amber-950/20 border border-amber-500/30 text-amber-300 text-[11px] space-y-0.5">
-            <div className="flex justify-between items-center font-semibold">
-              <span>Simulated Slippage (Qty &gt; 50)</span>
-              <span className="font-mono">~{slippagePercent}%</span>
-            </div>
-            <div className="flex justify-between text-[10px] text-amber-400/80 font-mono">
-              <span>Est. Fill Price:</span>
-              <span>
-                ₹{(side === "BUY" ? activePriceRupees * (1 + slippageBps / 10000) : activePriceRupees * (1 - slippageBps / 10000)).toFixed(2)} ({side === "BUY" ? "+" : "-"}₹{slippageDeltaRupees})
-              </span>
-            </div>
-          </div>
-        )}
-
-        {/* Bracket / Cover / GTT Target & Stop-Loss Desk */}
-        {(variety === "BRACKET" || variety === "COVER" || targetEnabled || stopLossEnabled) && (
-          <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 space-y-3 shadow-inner">
-            <div className="flex items-center justify-between text-[11px] font-semibold border-b border-slate-800/80 pb-1.5">
-              <span className="flex items-center gap-1.5 text-slate-300">
-                <Crosshair className="w-3.5 h-3.5 text-cyan-400" />
-                Bracket Order Trigger Desk
-              </span>
-              <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-cyan-950/60 text-cyan-300 border border-cyan-800/40">
-                OCO Auto Exit
-              </span>
+              {/* Invalid lot size warning helper */}
+              {isInvalidFnoQty && (
+                <div className="flex items-center justify-between text-[10px] text-rose-300 bg-rose-950/40 border border-rose-900/60 px-2.5 py-1 rounded-lg">
+                  <span>Must be a multiple of lot size {effectiveLotSize}</span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setQuantity(
+                        Math.max(1, Math.round(quantity / effectiveLotSize)) * effectiveLotSize
+                      )
+                    }
+                    className="font-bold underline text-cyan-400 hover:text-cyan-300 ml-2 cursor-pointer"
+                  >
+                    Snap to {Math.max(1, Math.round(quantity / effectiveLotSize)) * effectiveLotSize}
+                  </button>
+                </div>
+              )}
             </div>
 
-            {/* Target Input */}
-            {(variety === "BRACKET" || targetEnabled) && (
+            {/* Trigger Price Input (For SL and SL-M) */}
+            {isStopOrder && (
               <div className="space-y-1">
                 <div className="flex items-center justify-between text-[11px]">
-                  <span className="font-semibold text-emerald-400 flex items-center gap-1">
-                    <Target className="w-3 h-3" />
-                    Target (Take Profit)
+                  <label htmlFor={triggerInputId} className="font-semibold text-slate-400">
+                    Trigger Price (₹)
+                  </label>
+                  <span className={`text-[10px] ${isTriggerInvalid ? "text-rose-400 font-semibold" : "text-slate-500"}`}>
+                    {side === "BUY" ? `Must be ≥ ₹${ltpRupees.toFixed(2)}` : `Must be ≤ ₹${ltpRupees.toFixed(2)}`}
                   </span>
-                  <div className="flex gap-1">
-                    {[1, 2, 5, 10].map((pct) => (
-                      <button
-                        key={pct}
-                        type="button"
-                        onClick={() => {
-                          const delta = activePriceRupees * (pct / 100);
-                          const calculated = isBuy ? activePriceRupees + delta : activePriceRupees - delta;
-                          setTargetRupees(Number(calculated.toFixed(2)));
-                        }}
-                        className="px-1.5 py-0.2 rounded bg-emerald-950/60 border border-emerald-500/30 text-[9px] font-mono font-bold text-emerald-300 hover:bg-emerald-900/60 transition-colors cursor-pointer"
-                      >
-                        +{pct}%
-                      </button>
-                    ))}
-                  </div>
                 </div>
                 <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-500 text-xs font-bold">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm font-bold">
                     ₹
                   </span>
                   <input
+                    id={triggerInputId}
                     type="number"
                     step="0.05"
                     min="0.05"
-                    value={targetRupees}
-                    onChange={(e) => setTargetRupees(parseFloat(e.target.value) || 0)}
-                    className="w-full pl-7 pr-3 py-1.5 bg-slate-950/90 border border-slate-800 focus:border-emerald-500 rounded-lg text-xs font-bold text-emerald-400 focus:outline-none font-mono"
+                    value={triggerRupees}
+                    onChange={(e) => setTriggerRupees(parseFloat(e.target.value) || 0)}
+                    className={`w-full pl-8 pr-4 py-1.5 bg-slate-900/80 border rounded-xl text-sm font-bold text-white focus:outline-none ${
+                      isTriggerInvalid ? "border-rose-500/70 focus:border-rose-500" : "border-slate-800 focus:border-cyan-500"
+                    }`}
                   />
                 </div>
               </div>
             )}
 
-            {/* Stop-Loss Input */}
-            {(variety === "COVER" || variety === "BRACKET" || stopLossEnabled) && (
+            {/* Limit Price Input (For LIMIT and SL) */}
+            {isLimitOrder && (
               <div className="space-y-1">
                 <div className="flex items-center justify-between text-[11px]">
-                  <span className="font-semibold text-rose-400 flex items-center gap-1">
-                    <ShieldAlert className="w-3 h-3" />
-                    Stop-Loss Price
-                  </span>
-                  <div className="flex gap-1">
-                    {[0.5, 1, 2, 5].map((pct) => (
-                      <button
-                        key={pct}
-                        type="button"
-                        onClick={() => {
-                          const delta = activePriceRupees * (pct / 100);
-                          const calculated = isBuy ? activePriceRupees - delta : activePriceRupees + delta;
-                          setStopLossRupees(Number(calculated.toFixed(2)));
-                        }}
-                        className="px-1.5 py-0.2 rounded bg-rose-950/60 border border-rose-500/30 text-[9px] font-mono font-bold text-rose-300 hover:bg-rose-900/60 transition-colors cursor-pointer"
-                      >
-                        -{pct}%
-                      </button>
-                    ))}
+                  <label htmlFor={limitInputId} className="font-semibold text-slate-400">
+                    Limit Price (₹)
+                  </label>
+                  <div className="flex items-center gap-1.5 text-[10px] font-mono">
+                    <span className="text-rose-400/90 font-medium">LC: ₹{lowerCircuitRupees.toFixed(2)}</span>
+                    <span className="text-slate-600">|</span>
+                    <span className="text-emerald-400/90 font-medium">UC: ₹{upperCircuitRupees.toFixed(2)}</span>
                   </div>
                 </div>
                 <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-rose-500 text-xs font-bold">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm font-bold">
                     ₹
                   </span>
                   <input
+                    id={limitInputId}
                     type="number"
                     step="0.05"
                     min="0.05"
-                    value={stopLossRupees}
-                    onChange={(e) => setStopLossRupees(parseFloat(e.target.value) || 0)}
-                    className="w-full pl-7 pr-3 py-1.5 bg-slate-950/90 border border-slate-800 focus:border-rose-500 rounded-lg text-xs font-bold text-rose-400 focus:outline-none font-mono"
+                    value={limitRupees}
+                    onChange={(e) => setLimitRupees(parseFloat(e.target.value) || 0)}
+                    className={`w-full pl-8 pr-4 py-1.5 bg-slate-900/80 border rounded-xl text-sm font-bold text-white focus:outline-none ${
+                      isLimitCircuitBreached
+                        ? "border-rose-500/70 focus:border-rose-500"
+                        : "border-slate-800 focus:border-cyan-500"
+                    }`}
                   />
                 </div>
+                {isLimitCircuitBreached && (
+                  <p className="text-[10px] text-rose-400 font-medium">
+                    {limitRupees > upperCircuitRupees ? "Exceeds Upper Circuit Limit (+10%)" : "Falls below Lower Circuit Limit (-10%)"}
+                  </p>
+                )}
               </div>
             )}
 
-            {/* Live Risk-to-Reward & P&L Projection */}
-            {(variety === "BRACKET" || (targetEnabled && stopLossEnabled)) && (
-              <div className="pt-1.5 border-t border-slate-800/80 flex items-center justify-between text-[10px] font-mono">
-                <div className="flex items-center gap-1 text-slate-400">
-                  <span>R:R</span>
-                  <span className="font-bold text-cyan-300 px-1 py-0.2 rounded bg-cyan-950/80 border border-cyan-800/50">
-                    1 : {Math.abs(activePriceRupees - stopLossRupees) > 0 ? (Math.abs(targetRupees - activePriceRupees) / Math.abs(activePriceRupees - stopLossRupees)).toFixed(1) : "0"}
-                  </span>
+            {/* Slippage Estimation Warning for Large Market / SL-M Orders */}
+            {hasSlippage && (
+              <div className="px-2.5 py-1.5 rounded-xl bg-amber-950/20 border border-amber-500/30 text-amber-300 text-[11px] space-y-0.5">
+                <div className="flex justify-between items-center font-semibold">
+                  <span>Simulated Slippage (Qty &gt; 50)</span>
+                  <span className="font-mono">~{slippagePercent}%</span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-emerald-400 font-medium">
-                    +₹{(Math.abs(targetRupees - activePriceRupees) * quantity).toFixed(2)}
-                  </span>
-                  <span className="text-slate-600">/</span>
-                  <span className="text-rose-400 font-medium">
-                    -₹{(Math.abs(activePriceRupees - stopLossRupees) * quantity).toFixed(2)}
+                <div className="flex justify-between text-[10px] text-amber-400/80 font-mono">
+                  <span>Est. Fill Price:</span>
+                  <span>
+                    ₹{(side === "BUY" ? activePriceRupees * (1 + slippageBps / 10000) : activePriceRupees * (1 - slippageBps / 10000)).toFixed(2)} ({side === "BUY" ? "+" : "-"}₹{slippageDeltaRupees})
                   </span>
                 </div>
               </div>
             )}
-          </div>
-        )}
 
-        {/* Regular Order Optional Toggles */}
-        {variety === "REGULAR" && (
-          <div className="flex items-center justify-between text-[11px] text-slate-400 pt-0.5 px-0.5">
-            <label className="flex items-center gap-1.5 cursor-pointer hover:text-slate-200">
-              <input
-                type="checkbox"
-                checked={targetEnabled}
-                onChange={(e) => setTargetEnabled(e.target.checked)}
-                className="rounded border-slate-700 bg-slate-900 text-emerald-500 focus:ring-0"
-              />
-              <span>Attach Target</span>
-            </label>
-            <label className="flex items-center gap-1.5 cursor-pointer hover:text-slate-200">
-              <input
-                type="checkbox"
-                checked={stopLossEnabled}
-                onChange={(e) => setStopLossEnabled(e.target.checked)}
-                className="rounded border-slate-700 bg-slate-900 text-rose-500 focus:ring-0"
-              />
-              <span>Attach Stop-Loss</span>
-            </label>
-          </div>
-        )}
+            {/* Collapsible Stop-Loss & Target Accordion */}
+            <div className="border border-slate-800/80 rounded-xl overflow-hidden bg-slate-900/30">
+              <button
+                type="button"
+                onClick={() => setShowAdvancedRisk(!showAdvancedRisk)}
+                className="w-full flex items-center justify-between p-2.5 text-xs font-semibold text-slate-300 hover:text-slate-100 hover:bg-slate-900/60 transition-colors"
+              >
+                <span className="flex items-center gap-1.5 text-[11px]">
+                  <Crosshair className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>Stop-Loss & Target (GTT)</span>
+                  {(targetEnabled || stopLossEnabled) && (
+                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
+                  )}
+                </span>
+                {showAdvancedRisk ? (
+                  <ChevronUp className="w-3.5 h-3.5 text-slate-500" />
+                ) : (
+                  <ChevronDown className="w-3.5 h-3.5 text-slate-500" />
+                )}
+              </button>
 
-        {/* Margin Requirement Summary */}
-        <div className="bg-slate-900/50 rounded-xl border border-slate-800/60 p-2.5 space-y-1.5 text-xs font-mono">
-          <div className="flex justify-between text-slate-400">
-            <span>Estimated Turnover</span>
-            <span className="text-slate-200">
-              {formatPaise(estimatedTurnoverPaise)}
-            </span>
-          </div>
-          <div className="flex justify-between items-center">
-            <span className="text-slate-400 flex items-center gap-1">
-              Required Margin
+              {showAdvancedRisk && (
+                <div className="p-3 border-t border-slate-800/60 space-y-3 bg-slate-950/40">
+                  <div className="flex items-center justify-between text-[11px] text-slate-400 pb-1 border-b border-slate-800/60">
+                    <label className="flex items-center gap-1.5 cursor-pointer hover:text-slate-200">
+                      <input
+                        type="checkbox"
+                        checked={targetEnabled}
+                        onChange={(e) => setTargetEnabled(e.target.checked)}
+                        className="rounded border-slate-700 bg-slate-900 text-emerald-500 focus:ring-0"
+                      />
+                      <span>Enable Target</span>
+                    </label>
+                    <label className="flex items-center gap-1.5 cursor-pointer hover:text-slate-200">
+                      <input
+                        type="checkbox"
+                        checked={stopLossEnabled}
+                        onChange={(e) => setStopLossEnabled(e.target.checked)}
+                        className="rounded border-slate-700 bg-slate-900 text-rose-500 focus:ring-0"
+                      />
+                      <span>Enable Stop-Loss</span>
+                    </label>
+                  </div>
+
+                  {targetEnabled && (
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="font-semibold text-emerald-400 flex items-center gap-1">
+                          <Target className="w-3 h-3" />
+                          Target Price (₹)
+                        </span>
+                        <div className="flex gap-1">
+                          {[1, 2, 5].map((pct) => (
+                            <button
+                              key={pct}
+                              type="button"
+                              onClick={() =>
+                                setTargetRupees(
+                                  Number(
+                                    (
+                                      activePriceRupees *
+                                      (side === "BUY" ? 1 + pct / 100 : 1 - pct / 100)
+                                    ).toFixed(2)
+                                  )
+                                )
+                              }
+                              className="px-1.5 py-0.2 rounded bg-emerald-950/60 border border-emerald-800/40 text-[9px] font-mono text-emerald-300 hover:bg-emerald-900/60"
+                            >
+                              +{pct}%
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="relative">
+                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 text-xs font-bold font-mono">
+                          ₹
+                        </span>
+                        <input
+                          type="number"
+                          step="0.05"
+                          min="0.05"
+                          value={targetRupees}
+                          onChange={(e) => setTargetRupees(parseFloat(e.target.value) || 0)}
+                          className="w-full pl-7 pr-3 py-1.5 bg-slate-950/90 border border-slate-800 focus:border-emerald-500 rounded-lg text-xs font-bold text-emerald-400 focus:outline-none font-mono"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {stopLossEnabled && (
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="font-semibold text-rose-400 flex items-center gap-1">
+                          <ShieldAlert className="w-3 h-3" />
+                          Stop-Loss Price (₹)
+                        </span>
+                        <div className="flex gap-1">
+                          {[1, 1.5, 2].map((pct) => (
+                            <button
+                              key={pct}
+                              type="button"
+                              onClick={() =>
+                                setStopLossRupees(
+                                  Number(
+                                    (
+                                      activePriceRupees *
+                                      (side === "BUY" ? 1 - pct / 100 : 1 + pct / 100)
+                                    ).toFixed(2)
+                                  )
+                                )
+                              }
+                              className="px-1.5 py-0.2 rounded bg-rose-950/60 border border-rose-800/40 text-[9px] font-mono text-rose-300 hover:bg-rose-900/60"
+                            >
+                              -{pct}%
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="relative">
+                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 text-xs font-bold font-mono">
+                          ₹
+                        </span>
+                        <input
+                          type="number"
+                          step="0.05"
+                          min="0.05"
+                          value={stopLossRupees}
+                          onChange={(e) => setStopLossRupees(parseFloat(e.target.value) || 0)}
+                          className="w-full pl-7 pr-3 py-1.5 bg-slate-950/90 border border-slate-800 focus:border-rose-500 rounded-lg text-xs font-bold text-rose-400 focus:outline-none font-mono"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Risk-Reward Projection */}
+                  {targetEnabled && stopLossEnabled && (
+                    <div className="pt-1.5 border-t border-slate-800/80 flex items-center justify-between text-[10px] font-mono">
+                      <div className="flex items-center gap-1 text-slate-400">
+                        <span>R:R</span>
+                        <span className="font-bold text-cyan-300 px-1 py-0.2 rounded bg-cyan-950/80 border border-cyan-800/50">
+                          1 : {Math.abs(activePriceRupees - stopLossRupees) > 0 ? (Math.abs(targetRupees - activePriceRupees) / Math.abs(activePriceRupees - stopLossRupees)).toFixed(1) : "0"}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-emerald-400 font-medium">
+                          +₹{(Math.abs(targetRupees - activePriceRupees) * quantity).toFixed(2)}
+                        </span>
+                        <span className="text-slate-600">/</span>
+                        <span className="text-rose-400 font-medium">
+                          -₹{(Math.abs(activePriceRupees - stopLossRupees) * quantity).toFixed(2)}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Pre-Trade AI Risk Check Pill & Assessment */}
+            <div className="pt-0.5 space-y-1.5">
+              <div className="flex items-center justify-between gap-2 p-2 rounded-xl bg-slate-900/60 border border-slate-800 text-[11px]">
+                <div className="flex items-center gap-1.5 text-slate-400">
+                  <Bot className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>AI Behavioral Risk Check</span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleCheckRisk}
+                  disabled={checkingRisk}
+                  className="px-2.5 py-1 rounded-lg border border-cyan-500/30 bg-cyan-950/40 hover:bg-cyan-900/50 text-cyan-300 font-semibold text-[10px] flex items-center gap-1 transition-all"
+                >
+                  <Sparkles className="w-2.5 h-2.5" />
+                  <span>{checkingRisk ? "Analyzing…" : "Check Risk"}</span>
+                </button>
+              </div>
+
+              {preTradeRisk && (
+                <div
+                  className={`p-2.5 rounded-xl border text-[11px] space-y-2 animate-fade-in ${
+                    preTradeRisk.risk_level === "HIGH_RISK"
+                      ? "bg-rose-950/40 border-rose-500/40 text-rose-300"
+                      : preTradeRisk.risk_level === "MODERATE"
+                      ? "bg-amber-950/40 border-amber-500/40 text-amber-300"
+                      : "bg-emerald-950/40 border-emerald-500/40 text-emerald-300"
+                  }`}
+                >
+                  <div className="flex items-center justify-between font-bold">
+                    <span className="flex items-center gap-1.5">
+                      {preTradeRisk.risk_level === "HIGH_RISK" ? (
+                        <ShieldAlert className="w-3.5 h-3.5 text-rose-400" />
+                      ) : (
+                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                      )}
+                      <span>{preTradeRisk.risk_level}</span>
+                      {preTradeRisk.risk_score !== undefined && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-900/80 border border-slate-700/60 text-slate-200">
+                          Score: {preTradeRisk.risk_score}/100
+                        </span>
+                      )}
+                    </span>
+                    <div className="flex items-center gap-1.5 text-[10px] font-mono">
+                      <span>Margin: {preTradeRisk.margin_impact_pct.toFixed(0)}%</span>
+                      {preTradeRisk.risk_reward_ratio !== undefined && preTradeRisk.risk_reward_ratio > 0 && (
+                        <span className="px-1.5 py-0.5 rounded bg-cyan-950/60 border border-cyan-500/40 text-cyan-300 font-bold">
+                          1:{preTradeRisk.risk_reward_ratio.toFixed(1)} R:R
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {preTradeRisk.warnings.length > 0 && (
+                    <ul className="list-disc list-inside space-y-0.5 text-[10px] text-slate-300">
+                      {preTradeRisk.warnings.map((w, idx) => (
+                        <li key={idx}>{w}</li>
+                      ))}
+                    </ul>
+                  )}
+
+                  <p className="text-[10px] text-slate-400 pt-1 border-t border-slate-800/60 leading-tight">
+                    💡 {preTradeRisk.advice}
+                  </p>
+
+                  {/* Actionable Quick Fixes */}
+                  {(preTradeRisk.warnings.some((w) => w.includes("Missing Stop-Loss")) ||
+                    preTradeRisk.margin_impact_pct > 50) && (
+                    <div className="flex flex-wrap gap-1.5 pt-1 border-t border-slate-800/40">
+                      {preTradeRisk.warnings.some((w) => w.includes("Missing Stop-Loss")) && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setStopLossEnabled(true);
+                            setShowAdvancedRisk(true);
+                            setStopLossRupees(
+                              Number(
+                                (
+                                  activePriceRupees * (side === "BUY" ? 0.985 : 1.015)
+                                ).toFixed(2)
+                              )
+                            );
+                            onToast(
+                              "Stop-Loss Attached",
+                              "Attached 1.5% SL guardrail. Re-run risk check to verify score.",
+                              "info"
+                            );
+                          }}
+                          className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[10px] font-medium text-slate-200 transition-colors"
+                        >
+                          🛡️ Auto-Set 1.5% SL
+                        </button>
+                      )}
+                      {preTradeRisk.margin_impact_pct > 50 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            handleMarginPercent(25);
+                            onToast(
+                              "Position Downsized",
+                              "Reduced quantity to safe 25% margin allocation.",
+                              "info"
+                            );
+                          }}
+                          className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[10px] font-medium text-slate-200 transition-colors"
+                        >
+                          ⚖️ Resize to 25% Margin
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Margin Requirement Summary */}
+            <div className="bg-slate-900/60 rounded-xl border border-slate-800/80 p-2.5 space-y-1.5 text-xs font-mono">
+              <div className="flex justify-between items-center">
+                <span className="text-slate-400">Margin Required:</span>
+                <strong
+                  className={`font-bold ${
+                    isAffordable ? "text-slate-100" : "text-rose-400"
+                  }`}
+                >
+                  {formatPaise(requiredMarginPaise)}
+                </strong>
+              </div>
+              <div className="flex justify-between items-center text-slate-400">
+                <span>Available Margin:</span>
+                <span className="font-semibold text-slate-300">
+                  {formatPaise(availablePaise)}
+                </span>
+              </div>
               {product === "INTRADAY" && (
-                <span className="text-[10px] text-cyan-400 font-semibold">
-                  (5x)
-                </span>
+                <div className="flex justify-between items-center text-[10px] text-slate-500 pt-1 border-t border-slate-800/60">
+                  <span>Intraday Leverage: 5x</span>
+                  <span>Turnover: {formatPaise(estimatedTurnoverPaise)}</span>
+                </div>
               )}
-            </span>
-            <strong
-              className={`font-bold ${
-                isAffordable ? "text-cyan-400" : "text-rose-400"
-              }`}
-            >
-              {formatPaise(requiredMarginPaise)}
-            </strong>
-          </div>
-          <div className="flex justify-between items-center text-slate-400 pt-1 border-t border-slate-800/60">
-            <span>Available Balance</span>
-            <span className="font-semibold text-slate-300">
-              {formatPaise(availablePaise)}
-            </span>
-          </div>
-          {side === "SELL" && product === "DELIVERY" && (
-            <div className="flex justify-between items-center text-slate-400 pt-1 border-t border-slate-800/60">
-              <span>Delivery Holdings</span>
-              <span
-                className={`font-semibold ${
-                  sharesOwned >= quantity ? "text-slate-300" : "text-amber-400"
-                }`}
-              >
-                {sharesOwned} shares
-              </span>
-            </div>
-          )}
-        </div>
-
-        {/* Pre-Trade AI Risk Check Pill & Assessment */}
-        <div className="pt-0.5 space-y-1.5">
-          <div className="flex items-center justify-between gap-2 p-2 rounded-xl bg-slate-900/60 border border-slate-800 text-[11px]">
-            <div className="flex items-center gap-1.5 text-slate-400">
-              <Bot className="w-3.5 h-3.5 text-cyan-400" />
-              <span>AI Behavioral Risk Check</span>
+              {side === "SELL" && product === "DELIVERY" && (
+                <div className="flex justify-between items-center text-slate-400 pt-1 border-t border-slate-800/60">
+                  <span>Delivery Holdings:</span>
+                  <span
+                    className={`font-semibold ${
+                      sharesOwned >= quantity ? "text-slate-300" : "text-amber-400"
+                    }`}
+                  >
+                    {sharesOwned} shares
+                  </span>
+                </div>
+              )}
             </div>
 
+            {/* Submission Button */}
             <button
-              type="button"
-              onClick={handleCheckRisk}
-              disabled={checkingRisk}
-              className="px-2.5 py-1 rounded-lg border border-cyan-500/30 bg-cyan-950/40 hover:bg-cyan-900/50 text-cyan-300 font-semibold text-[10px] flex items-center gap-1 transition-all"
-            >
-              <Sparkles className="w-2.5 h-2.5" />
-              <span>{checkingRisk ? "Analyzing…" : "Check Risk"}</span>
-            </button>
-          </div>
-
-          {preTradeRisk && (
-            <div
-              className={`p-2.5 rounded-xl border text-[11px] space-y-2 animate-fade-in ${
-                preTradeRisk.risk_level === "HIGH_RISK"
-                  ? "bg-rose-950/40 border-rose-500/40 text-rose-300"
-                  : preTradeRisk.risk_level === "MODERATE"
-                  ? "bg-amber-950/40 border-amber-500/40 text-amber-300"
-                  : "bg-emerald-950/40 border-emerald-500/40 text-emerald-300"
+              type="submit"
+              disabled={submitting || !isAffordable}
+              className={`w-full py-3 rounded-xl font-bold text-sm text-white shadow-xl transition-all flex items-center justify-center gap-2 active:scale-98 ${
+                isBuy
+                  ? "bg-emerald-600 hover:bg-emerald-500 shadow-emerald-600/30 disabled:bg-emerald-950/60 disabled:text-emerald-700/60 disabled:cursor-not-allowed"
+                  : "bg-rose-600 hover:bg-rose-500 shadow-rose-600/30 disabled:bg-rose-950/60 disabled:text-rose-700/60 disabled:cursor-not-allowed"
               }`}
             >
-              <div className="flex items-center justify-between font-bold">
-                <span className="flex items-center gap-1.5">
-                  {preTradeRisk.risk_level === "HIGH_RISK" ? (
-                    <ShieldAlert className="w-3.5 h-3.5 text-rose-400" />
-                  ) : (
-                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                  )}
-                  <span>{preTradeRisk.risk_level}</span>
-                  {preTradeRisk.risk_score !== undefined && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-900/80 border border-slate-700/60 text-slate-200">
-                      Score: {preTradeRisk.risk_score}/100
-                    </span>
-                  )}
+              {submitting ? (
+                <span className="animate-pulse">Placing Order…</span>
+              ) : side === "SELL" && product === "DELIVERY" && !isAffordable ? (
+                <span>
+                  {sharesOwned === 0
+                    ? "No CNC Holdings to Sell"
+                    : `Holding: ${sharesOwned} (Need ${quantity})`}
                 </span>
-                <div className="flex items-center gap-1.5 text-[10px] font-mono">
-                  <span>Margin: {preTradeRisk.margin_impact_pct.toFixed(0)}%</span>
-                  {preTradeRisk.risk_reward_ratio !== undefined && preTradeRisk.risk_reward_ratio > 0 && (
-                    <span className="px-1.5 py-0.5 rounded bg-cyan-950/60 border border-cyan-500/40 text-cyan-300 font-bold">
-                      1:{preTradeRisk.risk_reward_ratio.toFixed(1)} R:R
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              {preTradeRisk.warnings.length > 0 && (
-                <ul className="list-disc list-inside space-y-0.5 text-[10px] text-slate-300">
-                  {preTradeRisk.warnings.map((w, idx) => (
-                    <li key={idx}>{w}</li>
-                  ))}
-                </ul>
+              ) : side === "BUY" && !isAffordable ? (
+                <span>Insufficient Balance</span>
+              ) : (
+                <>
+                  <Zap className="w-4 h-4" />
+                  Place {side} Order
+                </>
               )}
+            </button>
+          </form>
 
-              <p className="text-[10px] text-slate-400 pt-1 border-t border-slate-800/60 leading-tight">
-                💡 {preTradeRisk.advice}
-              </p>
-
-              {/* Actionable Quick Fixes */}
-              {(preTradeRisk.warnings.some((w) => w.includes("Missing Stop-Loss")) ||
-                preTradeRisk.margin_impact_pct > 50) && (
-                <div className="flex flex-wrap gap-1.5 pt-1 border-t border-slate-800/40">
-                  {preTradeRisk.warnings.some((w) => w.includes("Missing Stop-Loss")) && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setStopLossEnabled(true);
-                        setStopLossRupees(
-                          Number(
-                            (
-                              activePriceRupees * (side === "BUY" ? 0.985 : 1.015)
-                            ).toFixed(2)
-                          )
-                        );
-                        onToast(
-                          "Stop-Loss Attached",
-                          "Attached 1.5% SL guardrail. Re-run risk check to verify score.",
-                          "info"
-                        );
-                      }}
-                      className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[10px] font-medium text-slate-200 transition-colors"
-                    >
-                      🛡️ Auto-Set 1.5% SL
-                    </button>
-                  )}
-                  {preTradeRisk.margin_impact_pct > 50 && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        handleMarginPercent(25);
-                        onToast(
-                          "Position Downsized",
-                          "Reduced quantity to safe 25% margin allocation.",
-                          "info"
-                        );
-                      }}
-                      className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[10px] font-medium text-slate-200 transition-colors"
-                    >
-                      ⚖️ Resize to 25% Margin
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
+          {/* Footer Safeguard Note */}
+          <div className="pt-1 text-[10px] text-slate-500 flex items-center gap-1.5 leading-tight">
+            <ShieldCheck className="w-3.5 h-3.5 text-cyan-500/60 shrink-0" />
+            <span>Pre-trade ledger checks & 15:20 MIS square-off enforced by server.</span>
+          </div>
         </div>
-
-        {/* Submission Button */}
-        <button
-          type="submit"
-          disabled={submitting || !isAffordable}
-          className={`w-full py-2.5 rounded-xl font-bold text-sm text-white shadow-xl transition-all flex items-center justify-center gap-2 ${
-            isBuy
-              ? "bg-emerald-600 hover:bg-emerald-500 shadow-emerald-600/30 disabled:bg-emerald-950/60 disabled:text-emerald-700/60 disabled:cursor-not-allowed"
-              : "bg-rose-600 hover:bg-rose-500 shadow-rose-600/30 disabled:bg-rose-950/60 disabled:text-rose-700/60 disabled:cursor-not-allowed"
-          }`}
-        >
-          {submitting ? (
-            <span className="animate-pulse">Placing Order…</span>
-          ) : side === "SELL" && product === "DELIVERY" && !isAffordable ? (
-            <span>
-              {sharesOwned === 0
-                ? "No CNC Holdings to Sell"
-                : `Holding: ${sharesOwned} (Need ${quantity})`}
-            </span>
-          ) : side === "BUY" && !isAffordable ? (
-            <span>Insufficient Balance</span>
-          ) : (
-            <>
-              <Zap className="w-4 h-4" />
-              Place {side} Order
-            </>
-          )}
-        </button>
-      </form>
-
-      {/* Embedded Level 2 Market Depth Widget */}
-      <MarketDepth
-        symbol={symbol}
-        quote={quote}
-        onSelectPrice={(price) => {
-          setLimitRupees(price);
-          setType("LIMIT");
-          onToast(
-            "Price Loaded",
-            `Limit price set to ₹${price.toFixed(2)} from Market Depth`,
-            "info"
-          );
-        }}
-      />
-
-      {/* Footer Safeguard Note */}
-      <div className="pt-1 text-[10px] text-slate-500 flex items-center gap-1.5 leading-tight">
-        <ShieldCheck className="w-3.5 h-3.5 text-cyan-500/60 shrink-0" />
-        <span>Pre-trade ledger checks & 15:20 MIS square-off enforced by server.</span>
-      </div>
+      )}
 
       {/* Institutional Order Confirmation Modal (Fat-Finger Safeguard) */}
       <OrderConfirmationModal

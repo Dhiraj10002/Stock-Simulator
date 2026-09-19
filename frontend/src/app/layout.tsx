@@ -4,6 +4,8 @@ import "./globals.css";
 import { ToastProvider } from "@/components/terminal/ToastProvider";
 import { QueryProvider } from "@/providers/query-provider";
 import SearchModal from "@/components/layout/SearchModal";
+import MobileBottomNav from "@/components/layout/MobileBottomNav";
+import ShortcutsModal from "@/components/layout/ShortcutsModal";
 
 const geistSans = Geist({
   variable: "--font-sans",
@@ -31,11 +33,13 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased dark`}
     >
-      <body className="min-h-full flex flex-col bg-slate-950 text-slate-100 font-sans selection:bg-cyan-500 selection:text-slate-950">
+      <body className="min-h-full flex flex-col bg-slate-950 text-slate-100 font-sans selection:bg-cyan-500 selection:text-slate-950 pb-16 md:pb-0">
         <QueryProvider>
           <ToastProvider>
             {children}
             <SearchModal />
+            <ShortcutsModal />
+            <MobileBottomNav />
           </ToastProvider>
         </QueryProvider>
       </body>

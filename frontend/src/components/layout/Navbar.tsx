@@ -19,6 +19,7 @@ import {
   BrainCircuit,
   SlidersHorizontal,
   Layers,
+  Keyboard,
 } from "lucide-react";
 import { formatPaise, getIndianMarketStatus } from "@/lib/format";
 import { useMarketStore } from "@/stores/market-store";
@@ -51,6 +52,7 @@ export default function Navbar({
 }: NavbarProps) {
   const pathname = usePathname();
   const setSearchPaletteOpen = useUIStore((s) => s.setSearchPaletteOpen);
+  const setShortcutsGuideOpen = useUIStore((s) => s.setShortcutsGuideOpen);
   const quotes = useMarketStore((s) => s.quotes);
 
   const [marketStatus, setMarketStatus] = useState(getIndianMarketStatus());
@@ -138,17 +140,28 @@ export default function Navbar({
           </div>
         </div>
 
-        {/* Global Search Button */}
-        <button
-          onClick={() => setSearchPaletteOpen(true)}
-          className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800/80 border border-slate-800 text-xs text-slate-400 hover:text-slate-200 transition-colors w-48 lg:w-64"
-        >
-          <Search className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-          <span className="truncate">Search stocks, F&O...</span>
-          <kbd className="ml-auto hidden sm:inline-block px-1.5 py-0.2 text-[10px] font-mono text-slate-400 bg-slate-800 border border-slate-700/60 rounded">
-            Ctrl+K
-          </kbd>
-        </button>
+        {/* Global Search & Shortcuts */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setSearchPaletteOpen(true)}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800/80 border border-slate-800 text-xs text-slate-400 hover:text-slate-200 transition-colors w-40 sm:w-48 lg:w-64"
+          >
+            <Search className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+            <span className="truncate">Search stocks, F&O...</span>
+            <kbd className="ml-auto hidden sm:inline-block px-1.5 py-0.2 text-[10px] font-mono text-slate-400 bg-slate-800 border border-slate-700/60 rounded">
+              Ctrl+K
+            </kbd>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShortcutsGuideOpen(true)}
+            title="Keyboard Shortcuts Guide (?)"
+            className="hidden sm:flex items-center justify-center w-8 h-8 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-cyan-400 transition-colors"
+          >
+            <Keyboard className="w-3.5 h-3.5" />
+          </button>
+        </div>
 
         {/* Account Info & User Profile */}
         <div className="flex items-center gap-4 text-xs">

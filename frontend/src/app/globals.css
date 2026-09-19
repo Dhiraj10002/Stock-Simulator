@@ -123,3 +123,33 @@
 .glow-cyan {
   box-shadow: 0 0 12px rgba(6, 182, 212, 0.35);
 }
+
+/* Ticker tape infinite scroll animation */
+@keyframes ticker-scroll {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.animate-ticker-scroll {
+  animation: ticker-scroll 30s linear infinite;
+}
+
+/* Landing page hero float animation */
+@keyframes hero-float {
+  0%,
+  100% {
+    transform: translateY(0) perspective(800px) rotateX(1deg);
+  }
+  50% {
+    transform: translateY(-8px) perspective(800px) rotateX(0.5deg);
+  }
+}
+
+.animate-hero-float {
+  animation: hero-float 6s ease-in-out infinite;
+}
+

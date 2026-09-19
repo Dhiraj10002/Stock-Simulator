@@ -5,6 +5,7 @@ interface UIStoreState {
   isPerformanceOpen: boolean;
   isSearchPaletteOpen: boolean;
   isOrderSheetOpen: boolean;
+  isShortcutsGuideOpen: boolean;
   performanceInitialTab: "analytics" | "journal" | "contract-notes" | "statement";
 
   // Actions
@@ -15,6 +16,7 @@ interface UIStoreState {
   ) => void;
   setSearchPaletteOpen: (open: boolean) => void;
   setOrderSheetOpen: (open: boolean) => void;
+  setShortcutsGuideOpen: (open: boolean) => void;
 }
 
 export const useUIStore = create<UIStoreState>((set) => ({
@@ -22,6 +24,7 @@ export const useUIStore = create<UIStoreState>((set) => ({
   isPerformanceOpen: false,
   isSearchPaletteOpen: false,
   isOrderSheetOpen: false,
+  isShortcutsGuideOpen: false,
   performanceInitialTab: "analytics",
 
   setOptionChainOpen: (open) => set({ isOptionChainOpen: open }),
@@ -32,4 +35,5 @@ export const useUIStore = create<UIStoreState>((set) => ({
     }),
   setSearchPaletteOpen: (open) => set({ isSearchPaletteOpen: open }),
   setOrderSheetOpen: (open) => set({ isOrderSheetOpen: open }),
+  setShortcutsGuideOpen: (open) => set({ isShortcutsGuideOpen: open }),
 }));
