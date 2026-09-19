@@ -203,6 +203,8 @@ export type PreTradeCheckRequest = {
   type: "MARKET" | "LIMIT" | "SL" | "SL-M";
   quantity: number;
   price_paise: number;
+  stop_loss_paise?: number;
+  target_paise?: number;
 };
 
 export type PreTradeCheckResponse = {

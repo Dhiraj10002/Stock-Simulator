@@ -1,0 +1,834 @@
+"use client";
+
+import React, { useState, useMemo } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  X,
+  TrendingUp,
+  Calendar as CalendarIcon,
+  BookOpen,
+  ChevronLeft,
+  ChevronRight,
+  CheckCircle2,
+  Tag,
+  AlertCircle,
+  RefreshCw,
+  FileText,
+} from "lucide-react";
+import { formatPaise } from "@/lib/format";
+import type { PerformanceOverview, PnlCalendarResponse, DailyPnlDay, Trade } from "@/types";
+import ContractNoteView from "@/components/terminal/ContractNoteView";
+import LedgerStatementView from "@/components/terminal/LedgerStatementView";
+
+export interface AnalyticsConsoleProps {
+  apiUrl?: string;
+  token?: string | null;
+  onClose?: () => void;
+  initialTab?: "analytics" | "journal" | "contract-note" | "statement";
+}
+
+const SETUP_TAGS = [
+  "Breakout",
+  "Reversal",
+  "Scalp",
+  "Momentum",
+  "Hedge",
+  "F&O Expiry",
+  "Mistake",
+  "Other",
+];
+
+const TAG_COLORS: Record<string, string> = {
+  Breakout: "bg-emerald-950/80 text-emerald-300 border-emerald-600/40",
+  Reversal: "bg-purple-950/80 text-purple-300 border-purple-600/40",
+  Scalp: "bg-cyan-950/80 text-cyan-300 border-cyan-600/40",
+  Momentum: "bg-blue-950/80 text-blue-300 border-blue-600/40",
+  Hedge: "bg-amber-950/80 text-amber-300 border-amber-600/40",
+  "F&O Expiry": "bg-indigo-950/80 text-indigo-300 border-indigo-600/40",
+  Mistake: "bg-rose-950/80 text-rose-300 border-rose-600/40",
+  Other: "bg-slate-800 text-slate-300 border-slate-700",
+};
+
+export default function AnalyticsConsole({
+  apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api/v1",
+  token: propToken,
+  onClose,
+  initialTab = "analytics",
+}: AnalyticsConsoleProps) {
+  const queryClient = useQueryClient();
+  const [activeTab, setActiveTab] = useState<
+    "analytics" | "journal" | "contract-note" | "statement"
+  >(initialTab);
+
+  const [token] = useState<string>(() => {
+    if (propToken) return propToken;
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("auth_token") || "";
+    }
+    return "";
+  });
+
+  // Month navigation: YYYY-MM
+  const [currentMonth, setCurrentMonth] = useState<string>(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  });
+
+  // Journal filtering
+  const [tagFilter, setTagFilter] = useState<string>("ALL");
+  const [outcomeFilter, setOutcomeFilter] = useState<"ALL" | "WIN" | "LOSS">("ALL");
+
+  // Active hover day for calendar tooltip
+  const [hoveredDay, setHoveredDay] = useState<DailyPnlDay | null>(null);
+
+  // Notes update state per trade: { [uuid]: { notes: string, tag: string, saving: boolean, saved: boolean } }
+  const [journalEdits, setJournalEdits] = useState<
+    Record<string, { tag: string; notes: string; saving: boolean; saved: boolean }>
+  >({});
+
+  const baseApi = useMemo(() => {
+    return apiUrl.endsWith("/api/v1") ? apiUrl : `${apiUrl.replace(/\/+$/, "")}/api/v1`;
+  }, [apiUrl]);
+
+  // 1. Fetch Performance Analytics Overview
+  const {
+    data: performance,
+    isLoading: loadingPerformance,
+    error: errorPerformance,
+  } = useQuery<PerformanceOverview | null>({
+    queryKey: ["analytics-performance"],
+    queryFn: async () => {
+      if (!token) return null;
+      const res = await fetch(`${baseApi}/analytics/performance`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      return data.success ? data.data : null;
+    },
+    enabled: !!token,
+  });
+
+  // 2. Fetch PnL Calendar for current month
+  const {
+    data: calendarData,
+    isLoading: loadingCalendar,
+    error: errorCalendar,
+  } = useQuery<PnlCalendarResponse | null>({
+    queryKey: ["analytics-calendar", currentMonth],
+    queryFn: async () => {
+      if (!token) return null;
+      const res = await fetch(`${baseApi}/analytics/pnl-calendar?month=${currentMonth}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      return data.success ? data.data : null;
+    },
+    enabled: !!token,
+  });
+
+  // 3. Fetch Trades list for journal
+  const {
+    data: trades = [],
+    isLoading: loadingTrades,
+    error: errorTrades,
+  } = useQuery<Trade[]>({
+    queryKey: ["trades"],
+    queryFn: async () => {
+      if (!token) return [];
+      const res = await fetch(`${baseApi}/trades`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      return data.success ? data.data || [] : [];
+    },
+    enabled: !!token,
+  });
+
+  const loading = loadingPerformance || loadingCalendar || loadingTrades;
+  const error =
+    (errorPerformance instanceof Error ? errorPerformance.message : null) ||
+    (errorCalendar instanceof Error ? errorCalendar.message : null) ||
+    (errorTrades instanceof Error ? errorTrades.message : null);
+
+  // Calendar grid computation
+  const { monthLabel, leadingDays, daysOfMonth } = useMemo(() => {
+    const [yStr, mStr] = currentMonth.split("-");
+    const y = parseInt(yStr, 10);
+    const m = parseInt(mStr, 10) - 1;
+
+    const dateObj = new Date(y, m, 1);
+    const monthLabel = dateObj.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+
+    const dow = ((dateObj.getDay() + 6) % 7) + 1;
+    const leadingDays = dow - 1;
+
+    const totalDays = new Date(y, m + 1, 0).getDate();
+
+    const daysMap = new Map<string, DailyPnlDay>();
+    (calendarData?.days || []).forEach((d) => {
+      daysMap.set(d.date, d);
+    });
+
+    const daysOfMonth = [];
+    for (let dayNum = 1; dayNum <= totalDays; dayNum++) {
+      const dateStr = `${y}-${String(m + 1).padStart(2, "0")}-${String(dayNum).padStart(2, "0")}`;
+      const dayData = daysMap.get(dateStr);
+      daysOfMonth.push({
+        date: dateStr,
+        dayNum,
+        data: dayData || null,
+      });
+    }
+
+    return { monthLabel, leadingDays, daysOfMonth };
+  }, [currentMonth, calendarData]);
+
+  const handlePrevMonth = () => {
+    const [y, m] = currentMonth.split("-").map(Number);
+    const d = new Date(y, m - 2, 1);
+    setCurrentMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+  };
+
+  const handleNextMonth = () => {
+    const [y, m] = currentMonth.split("-").map(Number);
+    const d = new Date(y, m, 1);
+    setCurrentMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+  };
+
+  const handleCurrentMonth = () => {
+    const d = new Date();
+    setCurrentMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+  };
+
+  // Save Trade Journal (tag and notes)
+  const handleSaveJournal = async (tradeUuid: string, newTag: string, newNotes: string) => {
+    if (!token) return;
+    setJournalEdits((prev) => ({
+      ...prev,
+      [tradeUuid]: { ...prev[tradeUuid], saving: true, saved: false },
+    }));
+
+    try {
+      const res = await fetch(`${baseApi}/trades/${tradeUuid}/journal`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ tag: newTag, notes: newNotes }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        void queryClient.invalidateQueries({ queryKey: ["trades"] });
+        setJournalEdits((prev) => ({
+          ...prev,
+          [tradeUuid]: { tag: newTag, notes: newNotes, saving: false, saved: true },
+        }));
+        setTimeout(() => {
+          setJournalEdits((prev) => ({
+            ...prev,
+            [tradeUuid]: { ...prev[tradeUuid], saved: false },
+          }));
+        }, 2500);
+      }
+    } catch {
+      setJournalEdits((prev) => ({
+        ...prev,
+        [tradeUuid]: { ...prev[tradeUuid], saving: false, saved: false },
+      }));
+    }
+  };
+
+  // Filtered trades for journal
+  const filteredTrades = useMemo(() => {
+    return trades.filter((t) => {
+      if (tagFilter === "UNTAGGED" && t.tag) return false;
+      if (tagFilter !== "ALL" && tagFilter !== "UNTAGGED" && t.tag !== tagFilter) return false;
+
+      if (outcomeFilter === "WIN" && t.realized_pnl_paise <= 0) return false;
+      if (outcomeFilter === "LOSS" && t.realized_pnl_paise >= 0) return false;
+
+      return true;
+    });
+  }, [trades, tagFilter, outcomeFilter]);
+
+  const totalTradingDays =
+    (calendarData?.profitable_days_count ?? 0) + (calendarData?.loss_days_count ?? 0);
+  const winDaysRate =
+    totalTradingDays > 0
+      ? ((calendarData?.profitable_days_count ?? 0) / totalTradingDays) * 100
+      : 0;
+
+  return (
+    <div className="flex flex-col bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden">
+      {/* Top Console Header Bar */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 px-6 py-4 border-b border-slate-800 bg-slate-950/70">
+        <div className="flex items-center gap-3">
+          <div className="p-2 rounded-xl bg-cyan-950/70 border border-cyan-500/30 text-cyan-400">
+            <TrendingUp className="w-5 h-5" />
+          </div>
+          <div>
+            <h2 className="text-base font-bold text-white flex items-center gap-2">
+              Trader Performance & Journal Console
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-950 border border-cyan-500/30 text-cyan-300 font-mono">
+                Institutional v2
+              </span>
+            </h2>
+            <p className="text-xs text-slate-400">
+              Institutional metrics, Zerodha-style P&L calendar heatmap, and trade setups.
+            </p>
+          </div>
+        </div>
+
+        {/* Tab Buttons & Optional Close Button */}
+        <div className="flex items-center gap-3">
+          <div className="flex bg-slate-950 p-1 rounded-xl border border-slate-800 overflow-x-auto scrollbar-none">
+            <button
+              onClick={() => setActiveTab("analytics")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all shrink-0 ${
+                activeTab === "analytics"
+                  ? "bg-cyan-600 text-white shadow-lg shadow-cyan-900/30"
+                  : "text-slate-400 hover:text-white"
+              }`}
+            >
+              <CalendarIcon className="w-3.5 h-3.5" />
+              Analytics & Calendar
+            </button>
+            <button
+              onClick={() => setActiveTab("journal")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all shrink-0 ${
+                activeTab === "journal"
+                  ? "bg-cyan-600 text-white shadow-lg shadow-cyan-900/30"
+                  : "text-slate-400 hover:text-white"
+              }`}
+            >
+              <BookOpen className="w-3.5 h-3.5" />
+              Trade Journal
+              {trades.length > 0 && (
+                <span className="ml-1 text-[10px] px-1.5 py-0.2 rounded-full bg-slate-800 text-slate-300 font-mono">
+                  {trades.length}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => setActiveTab("contract-note")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all shrink-0 ${
+                activeTab === "contract-note"
+                  ? "bg-cyan-600 text-white shadow-lg shadow-cyan-900/30"
+                  : "text-slate-400 hover:text-white"
+              }`}
+            >
+              <FileText className="w-3.5 h-3.5" />
+              Contract Notes
+            </button>
+            <button
+              onClick={() => setActiveTab("statement")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all shrink-0 ${
+                activeTab === "statement"
+                  ? "bg-cyan-600 text-white shadow-lg shadow-cyan-900/30"
+                  : "text-slate-400 hover:text-white"
+              }`}
+            >
+              <BookOpen className="w-3.5 h-3.5" />
+              Statement
+            </button>
+          </div>
+
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+              title="Close modal"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Main Tab Views */}
+      <div className="p-6 overflow-y-auto max-h-[calc(85vh-80px)] space-y-6">
+        {loading && (
+          <div className="flex items-center justify-center p-12 text-slate-400 text-sm gap-2">
+            <RefreshCw className="w-4 h-4 animate-spin text-cyan-400" />
+            <span>Calculating trading ledger metrics…</span>
+          </div>
+        )}
+
+        {error && (
+          <div className="p-4 rounded-xl bg-rose-950/40 border border-rose-800 text-rose-300 text-xs flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
+
+        {/* TAB 1: ANALYTICS & PNL CALENDAR */}
+        {activeTab === "analytics" && (
+          <div className="space-y-6">
+            {/* Top Metric Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {/* 1. Net Realized P&L */}
+              <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800 space-y-1">
+                <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                  Net Realized P&L
+                </span>
+                <div
+                  className={`text-2xl font-bold font-tabular ${
+                    (performance?.net_realized_pnl_paise ?? 0) >= 0
+                      ? "text-emerald-400"
+                      : "text-rose-400"
+                  }`}
+                >
+                  {formatPaise(performance?.net_realized_pnl_paise ?? 0)}
+                </div>
+                <div className="text-[10px] text-slate-500 flex items-center justify-between pt-1">
+                  <span>Gross Profit: {formatPaise(performance?.gross_profit_paise ?? 0)}</span>
+                  <span>Gross Loss: {formatPaise(performance?.gross_loss_paise ?? 0)}</span>
+                </div>
+              </div>
+
+              {/* 2. Win Rate */}
+              <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800 space-y-1">
+                <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                  Win Rate %
+                </span>
+                <div className="text-2xl font-bold font-tabular text-slate-100 flex items-baseline gap-2">
+                  <span>{(performance?.win_rate_pct ?? 0).toFixed(1)}%</span>
+                  <span className="text-xs text-slate-500 font-normal">
+                    ({performance?.winning_trades ?? 0}W / {performance?.losing_trades ?? 0}L)
+                  </span>
+                </div>
+                {/* Win rate progress bar */}
+                <div className="w-full h-1.5 rounded-full bg-slate-800 overflow-hidden mt-1.5">
+                  <div
+                    className="h-full bg-emerald-500 rounded-full transition-all"
+                    style={{ width: `${Math.min(100, Math.max(0, performance?.win_rate_pct ?? 0))}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* 3. Profit Factor */}
+              <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800 space-y-1">
+                <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                  Profit Factor
+                </span>
+                <div className="text-2xl font-bold font-tabular text-slate-100 flex items-baseline gap-2">
+                  <span>{(performance?.profit_factor ?? 0).toFixed(2)}</span>
+                  <span
+                    className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                      (performance?.profit_factor ?? 0) >= 2.0
+                        ? "bg-emerald-950 text-emerald-400 border border-emerald-800"
+                        : (performance?.profit_factor ?? 0) >= 1.0
+                        ? "bg-cyan-950 text-cyan-400 border border-cyan-800"
+                        : "bg-rose-950 text-rose-400 border border-rose-800"
+                    }`}
+                  >
+                    {(performance?.profit_factor ?? 0) >= 2.0
+                      ? "Elite"
+                      : (performance?.profit_factor ?? 0) >= 1.0
+                      ? "Profitable"
+                      : "Developing"}
+                  </span>
+                </div>
+                <div className="text-[10px] text-slate-500 pt-1">
+                  Total Trades: {performance?.total_trades ?? 0}
+                </div>
+              </div>
+
+              {/* 4. Avg Win vs Avg Loss */}
+              <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800 space-y-1">
+                <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                  Avg Win / Avg Loss
+                </span>
+                <div className="text-sm font-bold font-tabular flex items-center justify-between text-slate-200 mt-1">
+                  <span className="text-emerald-400">
+                    +{formatPaise(performance?.average_win_paise ?? 0)}
+                  </span>
+                  <span className="text-slate-600">/</span>
+                  <span className="text-rose-400">
+                    -{formatPaise(performance?.average_loss_paise ?? 0)}
+                  </span>
+                </div>
+                <div className="text-[10px] text-slate-500 pt-1 flex justify-between">
+                  <span>Max Win: {formatPaise(performance?.largest_win_paise ?? 0)}</span>
+                  <span>Max Loss: {formatPaise(performance?.largest_loss_paise ?? 0)}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Zerodha-Style Monthly P&L Calendar Heatmap */}
+            <div className="p-5 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-4">
+              {/* Calendar Header with Controls */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-800/80">
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <CalendarIcon className="w-4 h-4 text-cyan-400" />
+                    <h3 className="font-bold text-sm text-slate-100">
+                      Monthly P&L Heatmap — {monthLabel}
+                    </h3>
+                  </div>
+
+                  {hoveredDay && (
+                    <span
+                      className={`text-[11px] font-bold font-tabular px-2 py-0.5 rounded border animate-in fade-in ${
+                        hoveredDay.realized_pnl_paise >= 0
+                          ? "bg-emerald-950/80 text-emerald-300 border-emerald-700/50"
+                          : "bg-rose-950/80 text-rose-300 border-rose-700/50"
+                      }`}
+                    >
+                      {hoveredDay.date}: {formatPaise(hoveredDay.realized_pnl_paise)} ({hoveredDay.trades_count} trades)
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handlePrevMonth}
+                    className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-white transition-colors"
+                    title="Previous Month"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={handleCurrentMonth}
+                    className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-xs font-semibold text-slate-300 hover:text-white transition-colors"
+                  >
+                    Current
+                  </button>
+                  <button
+                    onClick={handleNextMonth}
+                    className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-white transition-colors"
+                    title="Next Month"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              {/* 7-Column Day Names Header */}
+              <div className="grid grid-cols-7 gap-2 text-center text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                <div>Mon</div>
+                <div>Tue</div>
+                <div>Wed</div>
+                <div>Thu</div>
+                <div>Fri</div>
+                <div className="text-slate-600">Sat</div>
+                <div className="text-slate-600">Sun</div>
+              </div>
+
+              {/* Calendar Days Grid */}
+              <div className="grid grid-cols-7 gap-2">
+                {/* Empty leading cells */}
+                {Array.from({ length: leadingDays }).map((_, i) => (
+                  <div
+                    key={`lead-${i}`}
+                    className="h-20 rounded-xl bg-slate-950/20 border border-slate-900/40 opacity-20"
+                  />
+                ))}
+
+                {/* Actual month days */}
+                {daysOfMonth.map(({ date, dayNum, data }) => {
+                  const hasTrades = !!data && data.trades_count > 0;
+                  const isProfit = hasTrades && data.realized_pnl_paise >= 0;
+
+                  return (
+                    <div
+                      key={date}
+                      onMouseEnter={() => setHoveredDay(data)}
+                      onMouseLeave={() => setHoveredDay(null)}
+                      className={`h-20 rounded-xl p-2 flex flex-col justify-between transition-all relative border select-none ${
+                        !hasTrades
+                          ? "bg-slate-900/40 border-slate-800/60 text-slate-600"
+                          : isProfit
+                          ? "bg-emerald-950/40 border-emerald-500/50 text-emerald-400 hover:border-emerald-400 shadow-md shadow-emerald-950/40 hover:scale-[1.02]"
+                          : "bg-rose-950/40 border-rose-500/50 text-rose-400 hover:border-rose-400 shadow-md shadow-rose-950/40 hover:scale-[1.02]"
+                      }`}
+                    >
+                      {/* Day Number Header */}
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-slate-300 font-mono">
+                          {dayNum}
+                        </span>
+                        {hasTrades && (
+                          <span
+                            className={`text-[9px] font-bold px-1.5 py-0.2 rounded font-mono ${
+                              isProfit
+                                ? "bg-emerald-900/60 text-emerald-300 border border-emerald-700/50"
+                                : "bg-rose-900/60 text-rose-300 border border-rose-700/50"
+                            }`}
+                          >
+                            {data.trades_count}t
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Day P&L Label */}
+                      {hasTrades ? (
+                        <div className="text-right">
+                          <span className="text-[11px] font-extrabold font-tabular block leading-tight">
+                            {formatPaise(data.realized_pnl_paise)}
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="text-[10px] text-slate-700 text-right">—</div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Monthly Net Totals Banner */}
+              <div className="mt-4 p-3 rounded-xl bg-slate-900 border border-slate-800 flex flex-wrap items-center justify-between text-xs gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-slate-400">Monthly Net Realized:</span>
+                  <span
+                    className={`font-bold font-tabular text-sm ${
+                      (calendarData?.month_total_pnl_paise ?? 0) >= 0
+                        ? "text-emerald-400"
+                        : "text-rose-400"
+                    }`}
+                  >
+                    {formatPaise(calendarData?.month_total_pnl_paise ?? 0)}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-4 text-slate-400 font-tabular">
+                  <span>
+                    Profitable Days:{" "}
+                    <strong className="text-emerald-400">
+                      {calendarData?.profitable_days_count ?? 0}
+                    </strong>
+                  </span>
+                  <span>
+                    Loss Days:{" "}
+                    <strong className="text-rose-400">
+                      {calendarData?.loss_days_count ?? 0}
+                    </strong>
+                  </span>
+                  <span>
+                    Win Days %:{" "}
+                    <strong className="text-white">{winDaysRate.toFixed(1)}%</strong>
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* TAB 2: TRADE JOURNAL & PSYCHOLOGICAL TAGGING */}
+        {activeTab === "journal" && (
+          <div className="space-y-4">
+            {/* Filter Bar */}
+            <div className="flex flex-wrap items-center justify-between gap-3 p-3 bg-slate-950/60 border border-slate-800 rounded-xl">
+              {/* Setup Tag Pills */}
+              <div className="flex flex-wrap items-center gap-1.5">
+                <button
+                  onClick={() => setTagFilter("ALL")}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
+                    tagFilter === "ALL"
+                      ? "bg-cyan-600 text-white shadow-sm"
+                      : "bg-slate-900 text-slate-400 hover:text-white"
+                  }`}
+                >
+                  All Setups
+                </button>
+                {SETUP_TAGS.map((tag) => (
+                  <button
+                    key={tag}
+                    onClick={() => setTagFilter(tag)}
+                    className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all border ${
+                      tagFilter === tag
+                        ? TAG_COLORS[tag] || "bg-cyan-950 text-cyan-300 border-cyan-600"
+                        : "bg-slate-900/60 border-slate-800 text-slate-400 hover:text-slate-200"
+                    }`}
+                  >
+                    {tag}
+                  </button>
+                ))}
+                <button
+                  onClick={() => setTagFilter("UNTAGGED")}
+                  className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all ${
+                    tagFilter === "UNTAGGED"
+                      ? "bg-amber-950 text-amber-300 border border-amber-600"
+                      : "bg-slate-900 text-slate-400 hover:text-white"
+                  }`}
+                >
+                  Untagged
+                </button>
+              </div>
+
+              {/* Outcome filter */}
+              <div className="flex items-center gap-1 bg-slate-900 p-1 rounded-lg border border-slate-800 text-xs">
+                <button
+                  onClick={() => setOutcomeFilter("ALL")}
+                  className={`px-2.5 py-0.5 rounded-md font-semibold ${
+                    outcomeFilter === "ALL" ? "bg-slate-800 text-white" : "text-slate-400"
+                  }`}
+                >
+                  All
+                </button>
+                <button
+                  onClick={() => setOutcomeFilter("WIN")}
+                  className={`px-2.5 py-0.5 rounded-md font-semibold ${
+                    outcomeFilter === "WIN" ? "bg-emerald-950 text-emerald-300" : "text-slate-400"
+                  }`}
+                >
+                  Wins
+                </button>
+                <button
+                  onClick={() => setOutcomeFilter("LOSS")}
+                  className={`px-2.5 py-0.5 rounded-md font-semibold ${
+                    outcomeFilter === "LOSS" ? "bg-rose-950 text-rose-300" : "text-slate-400"
+                  }`}
+                >
+                  Losses
+                </button>
+              </div>
+            </div>
+
+            {/* Trades List with Inline Note Editing */}
+            {filteredTrades.length === 0 ? (
+              <div className="p-12 text-center text-slate-500 text-xs">
+                No trades match the selected journal filters.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {filteredTrades.map((t) => {
+                  const isProfit = t.realized_pnl_paise >= 0;
+                  const edit = journalEdits[t.uuid] || {
+                    tag: t.tag || "",
+                    notes: t.notes || "",
+                    saving: false,
+                    saved: false,
+                  };
+
+                  return (
+                    <div
+                      key={t.uuid}
+                      className="p-4 rounded-xl bg-slate-950/60 border border-slate-800/80 hover:border-slate-700 transition-colors space-y-3"
+                    >
+                      {/* Top Row: Symbol, Side, Execution Details, P&L */}
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-sm text-white">{t.symbol}</span>
+                          <span
+                            className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase ${
+                              t.side === "BUY"
+                                ? "bg-emerald-950 text-emerald-400 border border-emerald-800"
+                                : "bg-rose-950 text-rose-400 border border-rose-800"
+                            }`}
+                          >
+                            {t.side}
+                          </span>
+                          <span className="text-xs text-slate-400">
+                            {t.quantity} qty @ {formatPaise(t.executed_price_paise)}
+                          </span>
+                          <span className="text-[10px] text-slate-500 font-mono">
+                            {new Date(t.executed_at).toLocaleString("en-IN", {
+                              month: "short",
+                              day: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </span>
+                        </div>
+
+                        {/* Realized P&L */}
+                        <div className="text-right">
+                          <span
+                            className={`text-sm font-bold font-tabular ${
+                              isProfit ? "text-emerald-400" : "text-rose-400"
+                            }`}
+                          >
+                            {formatPaise(t.realized_pnl_paise)}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Middle Row: Tag Selector & Notes Input */}
+                      <div className="grid grid-cols-1 md:grid-cols-4 gap-3 pt-1 border-t border-slate-900">
+                        {/* Setup Tag Dropdown */}
+                        <div className="flex flex-col gap-1">
+                          <label className="text-[10px] font-semibold text-slate-500 uppercase flex items-center gap-1">
+                            <Tag className="w-3 h-3 text-cyan-400" />
+                            Setup Setup
+                          </label>
+                          <select
+                            value={edit.tag}
+                            onChange={(e) => {
+                              const newTag = e.target.value;
+                              setJournalEdits((prev) => ({
+                                ...prev,
+                                [t.uuid]: { ...prev[t.uuid], tag: newTag },
+                              }));
+                              void handleSaveJournal(t.uuid, newTag, edit.notes);
+                            }}
+                            className="bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-cyan-500"
+                          >
+                            <option value="">Select Setup Tag...</option>
+                            {SETUP_TAGS.map((tag) => (
+                              <option key={tag} value={tag}>
+                                {tag}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Psychology & Review Notes */}
+                        <div className="md:col-span-3 flex flex-col gap-1">
+                          <div className="flex items-center justify-between">
+                            <label className="text-[10px] font-semibold text-slate-500 uppercase">
+                              Mindset & Review Notes
+                            </label>
+                            {edit.saving && (
+                              <span className="text-[10px] text-cyan-400 animate-pulse">
+                                Saving…
+                              </span>
+                            )}
+                            {edit.saved && (
+                              <span className="text-[10px] text-emerald-400 flex items-center gap-0.5">
+                                <CheckCircle2 className="w-3 h-3" /> Saved
+                              </span>
+                            )}
+                          </div>
+                          <input
+                            type="text"
+                            value={edit.notes}
+                            placeholder="Why did you take this trade? Any FOMO, discipline errors, or plan adherence?"
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setJournalEdits((prev) => ({
+                                ...prev,
+                                [t.uuid]: { ...prev[t.uuid], notes: val },
+                              }));
+                            }}
+                            onBlur={() => {
+                              if (edit.notes !== (t.notes || "")) {
+                                void handleSaveJournal(t.uuid, edit.tag, edit.notes);
+                              }
+                            }}
+                            className="bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-cyan-500"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TAB 3: CONTRACT NOTES */}
+        {activeTab === "contract-note" && (
+          <ContractNoteView token={token} apiUrl={baseApi} />
+        )}
+
+        {/* TAB 4: LEDGER STATEMENT */}
+        {activeTab === "statement" && (
+          <LedgerStatementView token={token} apiUrl={baseApi} />
+        )}
+      </div>
+    </div>
+  );
+}
