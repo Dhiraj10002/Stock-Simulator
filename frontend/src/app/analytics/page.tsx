@@ -58,7 +58,7 @@ export default function AnalyticsPage() {
   });
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-950 text-slate-100">
+    <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-150">
       <Navbar
         availableBalancePaise={wallet?.available_balance_paise}
         unrealizedPnlPaise={portfolio?.unrealized_pnl_paise}
@@ -66,24 +66,31 @@ export default function AnalyticsPage() {
 
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
         {/* Header Title & Navigation Actions */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
           <div>
-            <h1 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
-              <BarChart2 className="w-6 h-6 text-cyan-400" />
-              Console & Statutory Reports
+            <div className="flex items-center gap-2 mb-1">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                Virtual Trading Desk • 100% Risk Free
+              </span>
+            </div>
+            <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2.5">
+              <div className="p-1.5 rounded-xl bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/20">
+                <BarChart2 className="w-5 h-5" />
+              </div>
+              Trading Analytics & Performance Desk
             </h1>
-            <p className="text-xs text-slate-400 mt-1">
-              Monthly P&L calendar heatmap, institutional analytics, trade setups journal, contract notes, and financial statements.
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+              Monthly P&L calendar heatmap, institutional win-rate metrics, psychological trade setups journal, and virtual capital ledger.
             </p>
           </div>
 
           <div className="flex items-center gap-2">
             <Link
-              href="/trade"
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs shadow-md shadow-cyan-500/20 transition-all hover:scale-105"
+              href="/stocks/RELIANCE"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs shadow-md shadow-cyan-500/20 transition-all hover:scale-105 active:scale-95"
             >
               <SlidersHorizontal className="w-4 h-4" />
-              <span>Launch Terminal</span>
+              <span>Explore Market</span>
               <ArrowRight className="w-3.5 h-3.5" />
             </Link>
           </div>

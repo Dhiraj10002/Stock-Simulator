@@ -55,11 +55,11 @@ export default function ErrorBoundary({
           </button>
 
           <Link
-            href="/trade"
+            href="/stocks/ITC"
             className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 font-semibold text-xs transition-colors"
           >
             <SlidersHorizontal className="w-4 h-4 text-cyan-400" />
-            <span>Trading Terminal</span>
+            <span>Explore Stocks</span>
           </Link>
 
           <Link

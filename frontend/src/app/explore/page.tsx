@@ -1,14 +1,12 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import LandingPage from "@/components/landing/LandingPage";
 import DashboardPage from "@/components/dashboard/DashboardPage";
 import AuthModal from "@/components/auth/AuthModal";
 
-export default function HomePage() {
+export default function ExploreRoutePage() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
   const [authModalOpen, setAuthModalOpen] = useState(false);
-  const [authMode, setAuthMode] = useState<"login" | "register">("login");
 
   useEffect(() => {
     const token =
@@ -17,26 +15,15 @@ export default function HomePage() {
     setIsAuthenticated(!!token);
   }, []);
 
-  const handleOpenAuth = (mode: "login" | "register" = "login") => {
-    setAuthMode(mode);
-    setAuthModalOpen(true);
-  };
-
   const handleSignOut = () => {
     localStorage.removeItem("auth_token");
     localStorage.removeItem("stock-simulator-access-token");
     localStorage.removeItem("stock-simulator-refresh-token");
     localStorage.removeItem("user_name");
     localStorage.removeItem("user_email");
-    setIsAuthenticated(false);
+    window.location.href = "/";
   };
 
-  const handleAuthSuccess = () => {
-    setAuthModalOpen(false);
-    setIsAuthenticated(true);
-  };
-
-  // Initial loading state — prevent flash
   if (isAuthenticated === null) {
     return (
       <div className="min-h-screen bg-[#ffffff] flex items-center justify-center">
@@ -45,21 +32,20 @@ export default function HomePage() {
     );
   }
 
-  // Authenticated → Groww-style User Explore Dashboard
-  if (isAuthenticated) {
-    return <DashboardPage onSignOut={handleSignOut} />;
-  }
-
-  // Unauthenticated → 3D Spatial Landing Page with Auth Modal
   return (
     <>
-      <LandingPage onOpenAuth={handleOpenAuth} />
-      <AuthModal
-        isOpen={authModalOpen}
-        mode={authMode}
-        onClose={() => setAuthModalOpen(false)}
-        onSuccess={handleAuthSuccess}
-      />
+      <DashboardPage onSignOut={handleSignOut} />
+      {!isAuthenticated && (
+        <AuthModal
+          isOpen={authModalOpen}
+          mode="login"
+          onClose={() => setAuthModalOpen(false)}
+          onSuccess={() => {
+            setAuthModalOpen(false);
+            setIsAuthenticated(true);
+          }}
+        />
+      )}
     </>
   );
 }

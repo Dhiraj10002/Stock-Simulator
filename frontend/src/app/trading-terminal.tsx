@@ -923,9 +923,10 @@ export default function TradingTerminal() {
         onAuthenticated={(access, refresh) => {
           localStorage.setItem("stock-simulator-access-token", access);
           localStorage.setItem("stock-simulator-refresh-token", refresh);
+          localStorage.setItem("auth_token", access);
           setToken(access);
           setRefreshToken(refresh);
-          void loadData(access);
+          window.location.href = "/";
         }}
         onToast={addToast}
         apiUrl={API_URL}

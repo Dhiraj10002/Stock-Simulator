@@ -6,28 +6,30 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Navbar from "@/components/layout/Navbar";
 import OrdersTable from "@/components/terminal/OrdersTable";
 import TradesTable from "@/components/orders/TradesTable";
-import GTTTriggersTable from "@/components/terminal/GTTTriggersTable";
-import { getDefaultQuotes } from "@/lib/mockData";
+import { DEMO_ORDERS, DEMO_TRADES } from "@/components/orders/OrdersDemoData";
 import { formatPaise } from "@/lib/format";
 import {
   ClipboardList,
-  SlidersHorizontal,
   ArrowRight,
   RefreshCw,
   Clock,
   CheckCircle2,
-  Crosshair,
   TrendingUp,
   TrendingDown,
   Layers,
+  Sparkles,
+  Download,
 } from "lucide-react";
-import type { Order, Trade, GTTTrigger, Quote, Wallet, Portfolio, ApiResponse } from "@/types";
+import type { Order, Trade, Wallet, Portfolio, ApiResponse } from "@/types";
 
-type OrdersTab = "orders" | "trades" | "gtt";
+type OrdersTab = "orders" | "trades";
 
 export default function OrdersPage() {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<OrdersTab>("orders");
+
+  // Showcase Demo vs Live Ledger toggle
+  const [useDemoData, setUseDemoData] = useState(true);
 
   const [token] = useState<string>(() => {
     if (typeof window !== "undefined") {
@@ -40,7 +42,7 @@ export default function OrdersPage() {
 
   // 1. Fetch Orders via TanStack Query
   const {
-    data: orders = [],
+    data: liveOrders = [],
     isLoading: loadingOrders,
     refetch: refetchOrders,
   } = useQuery<Order[]>({
@@ -57,7 +59,7 @@ export default function OrdersPage() {
 
   // 2. Fetch Trades via TanStack Query
   const {
-    data: trades = [],
+    data: liveTrades = [],
     isLoading: loadingTrades,
     refetch: refetchTrades,
   } = useQuery<Trade[]>({
@@ -112,19 +114,6 @@ export default function OrdersPage() {
     refetchInterval: 5000,
   });
 
-  // 5. GTT Triggers state from local storage
-  const [gttTriggers, setGttTriggers] = useState<GTTTrigger[]>(() => {
-    if (typeof window === "undefined") return [];
-    try {
-      const saved = localStorage.getItem("stock-simulator-gtt-triggers");
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
-
-  const [quotes] = useState<Record<string, Quote>>(() => getDefaultQuotes());
-
   // Cancel order action
   const handleCancelOrder = async (order: Order) => {
     if (!token) return;
@@ -138,23 +127,16 @@ export default function OrdersPage() {
     void queryClient.invalidateQueries({ queryKey: ["wallet"] });
   };
 
-  // Cancel GTT trigger action
-  const handleCancelGTT = (triggerId: string) => {
-    setGttTriggers((prev) => {
-      const updated = prev.filter((t) => t.id !== triggerId);
-      try {
-        localStorage.setItem("stock-simulator-gtt-triggers", JSON.stringify(updated));
-      } catch {}
-      return updated;
-    });
-  };
+  // Determine active dataset (Demo vs Live)
+  const displayOrders = useDemoData ? DEMO_ORDERS : liveOrders;
+  const displayTrades = useDemoData ? DEMO_TRADES : liveTrades;
 
   // KPI Calculations
   const orderCounts = useMemo(() => {
     let open = 0;
     let executed = 0;
     let cancelled = 0;
-    orders.forEach((o) => {
+    displayOrders.forEach((o) => {
       if (o.status === "OPEN" || o.status === "PENDING" || o.status === "TRIGGER_PENDING") {
         open++;
       } else if (o.status === "EXECUTED") {
@@ -163,204 +145,298 @@ export default function OrdersPage() {
         cancelled++;
       }
     });
-    return { all: orders.length, open, executed, cancelled };
-  }, [orders]);
+    return { all: displayOrders.length, open, executed, cancelled };
+  }, [displayOrders]);
 
   const tradeMetrics = useMemo(() => {
     let turnoverPaise = 0;
     let realizedPnlPaise = 0;
-    trades.forEach((t) => {
+    displayTrades.forEach((t) => {
       turnoverPaise += t.quantity * t.executed_price_paise;
       realizedPnlPaise += t.realized_pnl_paise ?? 0;
     });
     return {
-      count: trades.length,
+      count: displayTrades.length,
       turnoverPaise,
       realizedPnlPaise,
     };
-  }, [trades]);
-
-  const activeGttCount = useMemo(() => {
-    return gttTriggers.filter((t) => t.status === "ACTIVE").length;
-  }, [gttTriggers]);
+  }, [displayTrades]);
 
   const handleRefreshAll = () => {
     void refetchOrders();
     void refetchTrades();
   };
 
+  // Export CSV
+  const handleExportCSV = () => {
+    const rows = [
+      ["Order UUID", "Symbol", "Side", "Type", "Product", "Quantity", "Price (INR)", "Status", "Time"],
+      ...displayOrders.map((o) => [
+        o.uuid,
+        o.symbol,
+        o.side,
+        o.type,
+        o.product,
+        o.quantity.toString(),
+        (o.price_paise / 100).toFixed(2),
+        o.status,
+        o.created_at,
+      ]),
+    ];
+
+    const csvContent = "data:text/csv;charset=utf-8," + rows.map((e) => e.join(",")).join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `orders_report_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
-    <div className="min-h-screen flex flex-col bg-slate-950 text-slate-100">
+    <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-150">
       <Navbar
         availableBalancePaise={wallet?.available_balance_paise}
         unrealizedPnlPaise={portfolio?.unrealized_pnl_paise}
       />
 
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
-        {/* Header Title & Actions */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
+        {/* ===================================================================== */}
+        {/* TOP HEADER & INSTITUTIONAL ACTIONS BAR                                */}
+        {/* ===================================================================== */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
           <div>
-            <h1 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
-              <ClipboardList className="w-6 h-6 text-cyan-400" />
-              Order Book & Execution Desk
-            </h1>
-            <p className="text-xs text-slate-400 mt-1">
-              Live pending orders, filled trade records, and automated GTT target & stop-loss triggers.
+            <div className="flex items-center gap-3">
+              <h1 className="text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                <ClipboardList className="w-6 h-6 text-cyan-600 dark:text-cyan-400" />
+                <span>Order Book & Execution Desk</span>
+              </h1>
+
+              {/* Elegant Luxury Segmented Capsule Switcher */}
+              <div className="inline-flex items-center p-1 rounded-full bg-slate-100/90 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60 shadow-xs backdrop-blur-md">
+                <button
+                  type="button"
+                  onClick={() => setUseDemoData(true)}
+                  className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold tracking-tight transition-all duration-200 cursor-pointer select-none ${
+                    useDemoData
+                      ? "bg-white dark:bg-slate-900 text-cyan-700 dark:text-cyan-300 shadow-sm border border-slate-200/80 dark:border-slate-700"
+                      : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
+                  }`}
+                >
+                  <Sparkles
+                    className={`w-3.5 h-3.5 transition-colors ${
+                      useDemoData ? "text-cyan-600 dark:text-cyan-400" : "text-slate-400"
+                    }`}
+                  />
+                  <span>Showcase Demo</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setUseDemoData(false)}
+                  className={`flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold tracking-tight transition-all duration-200 cursor-pointer select-none ${
+                    !useDemoData
+                      ? "bg-white dark:bg-slate-900 text-emerald-700 dark:text-emerald-300 shadow-sm border border-slate-200/80 dark:border-slate-700"
+                      : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
+                  }`}
+                >
+                  <span className="relative flex h-2 w-2">
+                    {!useDemoData && (
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    )}
+                    <span
+                      className={`relative inline-flex rounded-full h-2 w-2 ${
+                        !useDemoData ? "bg-emerald-500" : "bg-slate-400"
+                      }`}
+                    ></span>
+                  </span>
+                  <span>Live Ledger</span>
+                </button>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 flex items-center gap-2">
+              <span>Live pending orders, filled trade records, and execution logs across Equity & F&O derivatives.</span>
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="text-[11px] font-mono text-emerald-600 dark:text-emerald-400 font-bold">
+                Exchange Synced
+              </span>
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5">
+            <button
+              onClick={handleExportCSV}
+              className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700/60 text-slate-600 dark:text-slate-300 transition-colors cursor-pointer"
+              title="Export CSV Orders Report"
+            >
+              <Download className="w-4 h-4" />
+            </button>
+
             <button
               onClick={handleRefreshAll}
-              className="p-2 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-slate-200 transition-colors"
+              className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700/60 text-slate-600 dark:text-slate-300 transition-colors cursor-pointer"
               title="Refresh Orders & Trades"
             >
               <RefreshCw className="w-4 h-4" />
             </button>
 
             <Link
-              href="/trade"
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs shadow-md shadow-cyan-500/20 transition-all hover:scale-105"
+              href="/stocks/ITC"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 dark:bg-cyan-500 dark:hover:bg-cyan-400 text-white dark:text-slate-950 font-bold text-xs shadow-md shadow-cyan-500/20 transition-all hover:scale-[1.02]"
             >
-              <SlidersHorizontal className="w-4 h-4" />
-              <span>Trading Terminal</span>
+              <TrendingUp className="w-3.5 h-3.5" />
+              <span>Explore Stocks</span>
               <ArrowRight className="w-3.5 h-3.5" />
             </Link>
           </div>
         </div>
 
-        {/* Top KPI Summary Cards */}
+        {/* ===================================================================== */}
+        {/* TOP KPI CARDS (TOTAL ORDERS, EXECUTED, TURNOVER, REALIZED P&L)         */}
+        {/* ===================================================================== */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {/* Total Orders Card */}
-          <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 space-y-1">
-            <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-              <ClipboardList className="w-3.5 h-3.5 text-cyan-400" />
-              Total Orders
+          <div className="p-5 rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 shadow-xs space-y-2 group hover:border-cyan-500/40 transition-all">
+            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                <ClipboardList className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
+                <span>Total Orders</span>
+              </span>
+              <span className="text-[10px] font-mono text-cyan-600 dark:text-cyan-400">Ledger</span>
             </span>
-            <div className="text-2xl font-bold font-tabular text-slate-100">
+            <div className="text-2xl font-black font-tabular text-slate-900 dark:text-slate-100">
               {orderCounts.all}
             </div>
-            <div className="text-[10px] text-slate-400 flex items-center gap-2">
-              <span className="text-cyan-400 font-semibold">{orderCounts.open} Open</span>
+            <div className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-2 font-mono">
+              <span className="text-cyan-600 dark:text-cyan-400 font-bold">{orderCounts.open} Open</span>
               <span>·</span>
-              <span className="text-emerald-400 font-semibold">{orderCounts.executed} Filled</span>
+              <span className="text-emerald-600 dark:text-emerald-400 font-bold">{orderCounts.executed} Filled</span>
               <span>·</span>
-              <span className="text-slate-500">{orderCounts.cancelled} Cancelled</span>
+              <span className="text-slate-400">{orderCounts.cancelled} Cancelled</span>
             </div>
           </div>
 
-          {/* Trade Fills Card */}
-          <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 space-y-1">
-            <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-              Executed Fills
+          {/* Executed Fills Card */}
+          <div className="p-5 rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 shadow-xs space-y-2 group hover:border-cyan-500/40 transition-all">
+            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                <span>Executed Fills</span>
+              </span>
+              <span className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400">100% Rate</span>
             </span>
-            <div className="text-2xl font-bold font-tabular text-slate-100">
+            <div className="text-2xl font-black font-tabular text-slate-900 dark:text-slate-100">
               {tradeMetrics.count}
             </div>
-            <span className="text-[10px] text-slate-500">Completed exchange transactions</span>
+            <span className="text-[11px] text-slate-400">Completed exchange transactions</span>
           </div>
 
           {/* Gross Turnover Card */}
-          <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 space-y-1">
-            <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-              <Layers className="w-3.5 h-3.5 text-amber-400" />
-              Turnover Today
+          <div className="p-5 rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 shadow-xs space-y-2 group hover:border-cyan-500/40 transition-all">
+            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                <Layers className="w-3.5 h-3.5 text-amber-500" />
+                <span>Turnover Today</span>
+              </span>
+              <span className="text-[10px] font-mono text-amber-600 dark:text-amber-400">NSE Volume</span>
             </span>
-            <div className="text-2xl font-bold font-tabular text-slate-200">
+            <div className="text-2xl font-black font-tabular text-slate-900 dark:text-slate-100">
               {formatPaise(tradeMetrics.turnoverPaise)}
             </div>
-            <span className="text-[10px] text-slate-500">Gross transactional volume</span>
+            <span className="text-[11px] text-slate-400">Gross traded contract value</span>
           </div>
 
           {/* Realized P&L Card */}
-          <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 space-y-1">
-            <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-              {tradeMetrics.realizedPnlPaise >= 0 ? (
-                <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
-              ) : (
-                <TrendingDown className="w-3.5 h-3.5 text-rose-400" />
-              )}
-              Realized P&L
+          <div className="p-5 rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 shadow-xs space-y-2 group hover:border-cyan-500/40 transition-all">
+            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                {tradeMetrics.realizedPnlPaise >= 0 ? (
+                  <TrendingUp className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                ) : (
+                  <TrendingDown className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
+                )}
+                <span>Realized P&L</span>
+              </span>
+              <span
+                className={`text-[10px] font-bold px-1.5 py-0.2 rounded ${
+                  tradeMetrics.realizedPnlPaise >= 0
+                    ? "bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400"
+                    : "bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-400"
+                }`}
+              >
+                Booked
+              </span>
             </span>
             <div
-              className={`text-2xl font-bold font-tabular ${
-                tradeMetrics.realizedPnlPaise >= 0 ? "text-emerald-400" : "text-rose-400"
+              className={`text-2xl font-black font-tabular ${
+                tradeMetrics.realizedPnlPaise >= 0
+                  ? "text-emerald-600 dark:text-emerald-400"
+                  : "text-rose-600 dark:text-rose-400"
               }`}
             >
+              {tradeMetrics.realizedPnlPaise >= 0 ? "+" : ""}
               {formatPaise(tradeMetrics.realizedPnlPaise)}
             </div>
-            <span className="text-[10px] text-slate-500">Closed position returns</span>
+            <span className="text-[11px] text-slate-400">Closed position booked returns</span>
           </div>
         </div>
 
-        {/* Main Orders / Trades / GTT Desk */}
-        <div className="rounded-xl bg-slate-900/40 border border-slate-800 overflow-hidden shadow-xl">
+        {/* ===================================================================== */}
+        {/* MAIN WORKSPACE TABS (ORDERS & TRADE FILLS - GTT REMOVED)              */}
+        {/* ===================================================================== */}
+        <div className="rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
           {/* Segmented Tab Navigation Header */}
-          <div className="px-4 py-2.5 border-b border-slate-800 bg-slate-900/80 flex items-center justify-between">
+          <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-950/60 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <button
+                type="button"
                 onClick={() => setActiveTab("orders")}
-                className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                   activeTab === "orders"
-                    ? "bg-cyan-500 text-slate-950 shadow-sm"
-                    : "text-slate-400 hover:text-slate-200 hover:bg-slate-800"
+                    ? "bg-cyan-600 dark:bg-cyan-500 text-white dark:text-slate-950 shadow-xs"
+                    : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-800"
                 }`}
               >
                 <ClipboardList className="w-3.5 h-3.5" />
                 <span>Orders</span>
                 <span
-                  className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
+                  className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-bold ${
                     activeTab === "orders"
-                      ? "bg-slate-950/30 text-slate-950"
-                      : "bg-slate-800 text-slate-400"
+                      ? "bg-white/25 text-white dark:bg-slate-950/20 dark:text-slate-950"
+                      : "bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-400"
                   }`}
                 >
-                  {orders.length}
+                  {displayOrders.length}
                 </span>
               </button>
 
               <button
+                type="button"
                 onClick={() => setActiveTab("trades")}
-                className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                   activeTab === "trades"
-                    ? "bg-cyan-500 text-slate-950 shadow-sm"
-                    : "text-slate-400 hover:text-slate-200 hover:bg-slate-800"
+                    ? "bg-cyan-600 dark:bg-cyan-500 text-white dark:text-slate-950 shadow-xs"
+                    : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-800"
                 }`}
               >
                 <Clock className="w-3.5 h-3.5" />
                 <span>Trade Fills</span>
                 <span
-                  className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
+                  className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-bold ${
                     activeTab === "trades"
-                      ? "bg-slate-950/30 text-slate-950"
-                      : "bg-slate-800 text-slate-400"
+                      ? "bg-white/25 text-white dark:bg-slate-950/20 dark:text-slate-950"
+                      : "bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-400"
                   }`}
                 >
-                  {trades.length}
+                  {displayTrades.length}
                 </span>
               </button>
+            </div>
 
-              <button
-                onClick={() => setActiveTab("gtt")}
-                className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
-                  activeTab === "gtt"
-                    ? "bg-cyan-500 text-slate-950 shadow-sm"
-                    : "text-slate-400 hover:text-slate-200 hover:bg-slate-800"
-                }`}
-              >
-                <Crosshair className="w-3.5 h-3.5" />
-                <span>GTT Triggers</span>
-                <span
-                  className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
-                    activeTab === "gtt"
-                      ? "bg-slate-950/30 text-slate-950"
-                      : "bg-slate-800 text-slate-400"
-                  }`}
-                >
-                  {activeGttCount}
-                </span>
-              </button>
+            <div className="text-[11px] font-mono text-slate-400">
+              Live Order Stream • NFO / NSE
             </div>
           </div>
 
@@ -368,36 +444,28 @@ export default function OrdersPage() {
           <div>
             {activeTab === "orders" && (
               <>
-                {loadingOrders ? (
+                {!useDemoData && loadingOrders ? (
                   <div className="p-16 text-center text-slate-500">
                     <div className="w-8 h-8 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
                     <p className="text-xs">Loading order book from exchange…</p>
                   </div>
                 ) : (
-                  <OrdersTable orders={orders} onCancelOrder={handleCancelOrder} />
+                  <OrdersTable orders={displayOrders} onCancelOrder={handleCancelOrder} />
                 )}
               </>
             )}
 
             {activeTab === "trades" && (
               <>
-                {loadingTrades ? (
+                {!useDemoData && loadingTrades ? (
                   <div className="p-16 text-center text-slate-500">
                     <div className="w-8 h-8 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
                     <p className="text-xs">Loading trade execution logs…</p>
                   </div>
                 ) : (
-                  <TradesTable trades={trades} />
+                  <TradesTable trades={displayTrades} />
                 )}
               </>
-            )}
-
-            {activeTab === "gtt" && (
-              <GTTTriggersTable
-                triggers={gttTriggers}
-                quotes={quotes}
-                onCancelTrigger={handleCancelGTT}
-              />
             )}
           </div>
         </div>

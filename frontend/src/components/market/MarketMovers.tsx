@@ -218,7 +218,7 @@ export default function MarketMovers() {
 
   const handleTrade = (sym: string) => {
     setSelectedSymbol(sym);
-    router.push("/trade");
+    router.push(`/stocks/${encodeURIComponent(sym)}`);
   };
 
   return (

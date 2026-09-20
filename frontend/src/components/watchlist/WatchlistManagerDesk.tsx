@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useMemo } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTerminalStore } from "@/stores/terminal-store";
 import { getOrSeedQuote } from "@/lib/mockData";
@@ -20,6 +21,7 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   Sparkles,
+  Zap,
 } from "lucide-react";
 import type { Quote } from "@/types";
 
@@ -44,32 +46,45 @@ const DEFAULT_TABS: WatchlistTab[] = [
 
 const DEFAULT_WATCHLIST_DATA: Record<string, WatchlistItem[]> = {
   wl1: [
-    { symbol: "RELIANCE", name: "Reliance Industries", exchange: "NSE" },
-    { symbol: "TCS", name: "Tata Consultancy Services", exchange: "NSE" },
+    { symbol: "RELIANCE", name: "Reliance Industries Ltd", exchange: "NSE" },
+    { symbol: "TCS", name: "Tata Consultancy Services Ltd", exchange: "NSE" },
     { symbol: "INFY", name: "Infosys Ltd", exchange: "NSE" },
     { symbol: "HDFCBANK", name: "HDFC Bank Ltd", exchange: "NSE" },
     { symbol: "ICICIBANK", name: "ICICI Bank Ltd", exchange: "NSE" },
     { symbol: "SBIN", name: "State Bank of India", exchange: "NSE" },
-    { symbol: "BHARTIARTL", name: "Bharti Airtel", exchange: "NSE" },
+    { symbol: "BHARTIARTL", name: "Bharti Airtel Ltd", exchange: "NSE" },
     { symbol: "ITC", name: "ITC Ltd", exchange: "NSE" },
-    { symbol: "LT", name: "Larsen & Toubro", exchange: "NSE" },
+    { symbol: "LT", name: "Larsen & Toubro Ltd", exchange: "NSE" },
   ],
   wl2: [
     { symbol: "TATAMOTORS", name: "Tata Motors Ltd", exchange: "NSE" },
     { symbol: "BAJFINANCE", name: "Bajaj Finance Ltd", exchange: "NSE" },
-    { symbol: "ADANIENT", name: "Adani Enterprises", exchange: "NSE" },
+    { symbol: "ADANIENT", name: "Adani Enterprises Ltd", exchange: "NSE" },
     { symbol: "APARINDS", name: "Apar Industries Ltd", exchange: "NSE" },
-    { symbol: "ETERNAL", name: "Eternal Ltd (Zomato)", exchange: "NSE" },
-    { symbol: "KOTAKBANK", name: "Kotak Mahindra Bank", exchange: "NSE" },
+    { symbol: "ZOMATO", name: "Zomato Ltd (Eternal)", exchange: "NSE" },
+    { symbol: "KOTAKBANK", name: "Kotak Mahindra Bank Ltd", exchange: "NSE" },
     { symbol: "AXISBANK", name: "Axis Bank Ltd", exchange: "NSE" },
   ],
   fno: [
-    { symbol: "NIFTY", name: "Nifty 50 Spot Index", exchange: "NSE" },
-    { symbol: "BANKNIFTY", name: "Bank Nifty Spot Index", exchange: "NSE" },
+    { symbol: "NIFTY", name: "Nifty 50 Benchmark Index", exchange: "NSE" },
+    { symbol: "BANKNIFTY", name: "Bank Nifty Sectoral Index", exchange: "NSE" },
     { symbol: "FINNIFTY", name: "Nifty Financial Services", exchange: "NSE" },
-    { symbol: "TCS23NOV262000CE", name: "TCS Nov 2000 CE (F&O)", exchange: "NFO" },
+    { symbol: "TCS24SEPFUT", name: "TCS 29 Sep Future", exchange: "NFO" },
   ],
 };
+
+const POPULAR_SEARCH_PREVIEWS: WatchlistItem[] = [
+  { symbol: "RELIANCE", name: "Reliance Industries Ltd", exchange: "NSE" },
+  { symbol: "TCS", name: "Tata Consultancy Services Ltd", exchange: "NSE" },
+  { symbol: "HDFCBANK", name: "HDFC Bank Ltd", exchange: "NSE" },
+  { symbol: "INFY", name: "Infosys Ltd", exchange: "NSE" },
+  { symbol: "TATAMOTORS", name: "Tata Motors Ltd", exchange: "NSE" },
+  { symbol: "ITC", name: "ITC Ltd", exchange: "NSE" },
+  { symbol: "ZOMATO", name: "Zomato Ltd", exchange: "NSE" },
+  { symbol: "SUNPHARMA", name: "Sun Pharmaceutical Industries", exchange: "NSE" },
+  { symbol: "TRENT", name: "Trent Ltd (Tata Retail)", exchange: "NSE" },
+  { symbol: "NIFTY24SEPFUT", name: "NIFTY 29 Sep 2026 Fut", exchange: "NFO" },
+];
 
 const STORAGE_CUSTOM_KEY = "stock-simulator-watchlist-custom-v2";
 const STORAGE_TAB_NAMES_KEY = "stock-simulator-watchlist-tab-names";
@@ -117,14 +132,11 @@ export default function WatchlistManagerDesk() {
 
   // Search & New List states
   const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<WatchlistItem[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [isCreatingList, setIsCreatingList] = useState(false);
   const [newListName, setNewListName] = useState("");
   const [renamingTabId, setRenamingTabId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
-
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api/v1";
 
   // Active items
   const currentItems = useMemo(() => {
@@ -148,7 +160,7 @@ export default function WatchlistManagerDesk() {
     } catch {}
   };
 
-  // Persist Tabs
+  // Persist Tab Definitions
   const persistTabs = (updatedTabs: WatchlistTab[]) => {
     setTabs(updatedTabs);
     try {
@@ -156,95 +168,62 @@ export default function WatchlistManagerDesk() {
     } catch {}
   };
 
-  // Tab change handler
-  const handleSelectTab = (id: string) => {
-    setActiveTabId(id);
+  // Handle Tab switch
+  const handleSelectTab = (tabId: string) => {
+    setActiveTabId(tabId);
     try {
-      localStorage.setItem(STORAGE_ACTIVE_TAB_KEY, id);
+      localStorage.setItem(STORAGE_ACTIVE_TAB_KEY, tabId);
     } catch {}
   };
 
-  // Search input change handler
-  const handleSearchChange = (val: string) => {
-    setSearchQuery(val);
-    if (!val.trim()) {
-      setSearchResults([]);
-      setIsSearching(false);
-    }
-  };
+  // Search filter
+  const searchResults = useMemo(() => {
+    const q = searchQuery.trim().toUpperCase();
+    if (!q) return [];
 
-  // Search autocomplete
-  useEffect(() => {
-    const trimmed = searchQuery.trim();
-    if (!trimmed) return;
-
-    const timer = setTimeout(async () => {
-      setIsSearching(true);
-      try {
-        const res = await fetch(`${apiUrl}/stocks?q=${encodeURIComponent(trimmed)}`);
-        const json = await res.json();
-        if (json.success && Array.isArray(json.data)) {
-          const items: WatchlistItem[] = json.data.slice(0, 10).map((d: { symbol: string; name: string; exchange_segment: string }) => {
-            const isZomato = d.symbol.toUpperCase().includes("ETERNAL") && trimmed.toLowerCase().includes("zomato");
-            return {
-              symbol: d.symbol.replace("-EQ", ""),
-              name: isZomato ? "Eternal Ltd (formerly Zomato)" : d.name,
-              exchange: d.exchange_segment || "NSE",
-              isAlias: isZomato ? "ZOMATO" : undefined,
-            };
-          });
-          setSearchResults(items);
-        }
-      } catch {
-        // ignore
-      } finally {
-        setIsSearching(false);
-      }
-    }, 250);
-
-    return () => clearTimeout(timer);
-  }, [searchQuery, apiUrl]);
+    return POPULAR_SEARCH_PREVIEWS.filter(
+      (item) =>
+        item.symbol.toUpperCase().includes(q) || item.name.toUpperCase().includes(q)
+    );
+  }, [searchQuery]);
 
   // Add symbol to active watchlist
   const handleAddSymbol = (item: WatchlistItem) => {
-    const list = watchlists[activeTabId] ?? [];
-    if (list.some((i) => i.symbol === item.symbol)) {
+    const existing = watchlists[activeTabId] ?? [];
+    if (existing.some((i) => i.symbol === item.symbol)) {
       setSearchQuery("");
-      setSearchResults([]);
       return;
     }
+
     const updated = {
       ...watchlists,
-      [activeTabId]: [item, ...list],
+      [activeTabId]: [item, ...existing],
     };
     persistWatchlists(updated);
     setSearchQuery("");
-    setSearchResults([]);
   };
 
   // Remove symbol from active watchlist
   const handleRemoveSymbol = (symbol: string) => {
-    const list = watchlists[activeTabId] ?? [];
+    const existing = watchlists[activeTabId] ?? [];
     const updated = {
       ...watchlists,
-      [activeTabId]: list.filter((i) => i.symbol !== symbol),
+      [activeTabId]: existing.filter((i) => i.symbol !== symbol),
     };
     persistWatchlists(updated);
   };
 
-  // Create new watchlist
+  // Create new custom watchlist tab
   const handleCreateNewList = (e: React.FormEvent) => {
     e.preventDefault();
     const name = newListName.trim();
     if (!name) return;
 
-    const newId = `custom_${Date.now()}`;
+    const newId = `custom-${Date.now()}`;
     const newTab: WatchlistTab = { id: newId, name, isCustom: true };
     const updatedTabs = [...tabs, newTab];
-    const updatedWatchlists = { ...watchlists, [newId]: [] };
 
     persistTabs(updatedTabs);
-    persistWatchlists(updatedWatchlists);
     setActiveTabId(newId);
     setNewListName("");
     setIsCreatingList(false);
@@ -276,10 +255,10 @@ export default function WatchlistManagerDesk() {
     }
   };
 
-  // Navigate to trade
+  // Navigate to stock overview
   const handleTrade = (sym: string) => {
     setSelectedSymbol(sym);
-    router.push("/trade");
+    router.push(`/stocks/${encodeURIComponent(sym)}`);
   };
 
   // Market Breadth Calculations for current watchlist
@@ -314,10 +293,12 @@ export default function WatchlistManagerDesk() {
 
   return (
     <div className="space-y-6">
-      {/* Top Header Strip: Tabs & Watchlist Actions */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-2 border-b border-slate-800">
+      {/* ===================================================================== */}
+      {/* TOP HEADER STRIP: TABS & SEARCH BAR                                    */}
+      {/* ===================================================================== */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-3 border-b border-slate-200 dark:border-slate-800">
         {/* Watchlist Tabs List */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-2 md:pb-0 scrollbar-none">
+        <div className="flex items-center gap-2 overflow-x-auto pb-2 md:pb-0 no-scrollbar">
           {tabs.map((tab) => {
             const isActive = tab.id === activeTabId;
             const isEditing = renamingTabId === tab.id;
@@ -327,14 +308,14 @@ export default function WatchlistManagerDesk() {
               return (
                 <div
                   key={tab.id}
-                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-900 border border-cyan-500/60"
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border-2 border-cyan-500 shadow-sm"
                 >
                   <input
                     type="text"
                     value={renameValue}
                     onChange={(e) => setRenameValue(e.target.value)}
                     autoFocus
-                    className="w-28 bg-transparent text-xs font-bold text-white focus:outline-none"
+                    className="w-28 bg-transparent text-xs font-bold text-slate-900 dark:text-slate-100 focus:outline-none"
                     onKeyDown={(e) => {
                       if (e.key === "Enter") handleSaveRename(tab.id);
                       if (e.key === "Escape") setRenamingTabId(null);
@@ -342,13 +323,13 @@ export default function WatchlistManagerDesk() {
                   />
                   <button
                     onClick={() => handleSaveRename(tab.id)}
-                    className="text-cyan-400 hover:text-cyan-300 p-0.5"
+                    className="text-cyan-600 dark:text-cyan-400 hover:text-cyan-700 p-0.5 cursor-pointer"
                   >
                     <Check className="w-3.5 h-3.5" />
                   </button>
                   <button
                     onClick={() => setRenamingTabId(null)}
-                    className="text-slate-400 hover:text-slate-300 p-0.5"
+                    className="text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer"
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
@@ -360,18 +341,18 @@ export default function WatchlistManagerDesk() {
               <div
                 key={tab.id}
                 onClick={() => handleSelectTab(tab.id)}
-                className={`group flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer select-none shrink-0 ${
+                className={`group flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer select-none shrink-0 ${
                   isActive
-                    ? "bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20"
-                    : "bg-slate-900/60 hover:bg-slate-800 text-slate-300 border border-slate-800"
+                    ? "bg-cyan-600 dark:bg-cyan-500 text-white dark:text-slate-950 shadow-md shadow-cyan-500/20"
+                    : "bg-white dark:bg-slate-900/60 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-800 shadow-xs"
                 }`}
               >
                 <span>{tab.name}</span>
                 <span
-                  className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
+                  className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-bold ${
                     isActive
-                      ? "bg-slate-950/30 text-slate-950"
-                      : "bg-slate-800 text-slate-400"
+                      ? "bg-white/25 text-white dark:bg-slate-950/20 dark:text-slate-950"
+                      : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400"
                   }`}
                 >
                   {itemCount}
@@ -397,7 +378,7 @@ export default function WatchlistManagerDesk() {
                           e.stopPropagation();
                           handleDeleteTab(tab.id);
                         }}
-                        className="hover:scale-110 transition-transform p-0.5 hover:text-rose-900"
+                        className="hover:scale-110 transition-transform p-0.5 hover:text-rose-200"
                         title="Delete Watchlist"
                       >
                         <Trash2 className="w-3 h-3" />
@@ -416,20 +397,20 @@ export default function WatchlistManagerDesk() {
                 type="text"
                 value={newListName}
                 onChange={(e) => setNewListName(e.target.value)}
-                placeholder="List name (e.g. IT, Auto)"
+                placeholder="List name (e.g. EV, IT)"
                 autoFocus
-                className="w-36 px-2.5 py-1.5 rounded-lg bg-slate-900 border border-cyan-500/50 text-xs text-white focus:outline-none"
+                className="w-36 px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-cyan-500 text-xs text-slate-900 dark:text-slate-100 focus:outline-none shadow-xs"
               />
               <button
                 type="submit"
-                className="p-1.5 rounded-lg bg-cyan-500 text-slate-950 font-bold text-xs hover:bg-cyan-400"
+                className="p-1.5 rounded-xl bg-cyan-600 text-white font-bold text-xs hover:bg-cyan-500 shadow-xs cursor-pointer"
               >
                 <Check className="w-3.5 h-3.5" />
               </button>
               <button
                 type="button"
                 onClick={() => setIsCreatingList(false)}
-                className="p-1.5 rounded-lg bg-slate-800 text-slate-400 text-xs hover:text-slate-200"
+                className="p-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-400 text-xs hover:text-slate-600 cursor-pointer"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
@@ -437,7 +418,7 @@ export default function WatchlistManagerDesk() {
           ) : (
             <button
               onClick={() => setIsCreatingList(true)}
-              className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-slate-900/40 hover:bg-slate-800 border border-slate-800 border-dashed text-slate-400 hover:text-cyan-400 text-xs font-semibold transition-colors shrink-0"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white dark:bg-slate-900/60 hover:bg-slate-100 dark:hover:bg-slate-800 border border-dashed border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:text-cyan-600 dark:hover:text-cyan-400 text-xs font-semibold transition-colors shrink-0 shadow-xs cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>New Basket</span>
@@ -446,32 +427,30 @@ export default function WatchlistManagerDesk() {
         </div>
 
         {/* Live Search & Add Instrument */}
-        <div className="relative w-full md:w-72">
+        <div className="relative w-full md:w-80">
           <div className="relative">
-            <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-500" />
+            <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
             <input
               type="text"
               value={searchQuery}
-              onChange={(e) => handleSearchChange(e.target.value)}
+              onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search stocks to add (e.g. RELIANCE)..."
-              className="w-full pl-9 pr-8 py-2 rounded-xl bg-slate-900/90 border border-slate-800 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-500/60 transition-colors"
+              className="w-full pl-9 pr-8 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500 shadow-xs transition-colors"
             />
-            {isSearching ? (
-              <div className="absolute right-2.5 top-2.5 w-4 h-4 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
-            ) : searchQuery ? (
+            {searchQuery && (
               <button
-                onClick={() => handleSearchChange("")}
-                className="absolute right-2.5 top-2.5 text-slate-500 hover:text-slate-300"
+                onClick={() => setSearchQuery("")}
+                className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
-            ) : null}
+            )}
           </div>
 
           {/* Autocomplete Dropdown */}
           {searchResults.length > 0 && (
-            <div className="absolute top-full left-0 right-0 mt-1.5 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl z-50 overflow-hidden divide-y divide-slate-800/60 max-h-72 overflow-y-auto">
-              <div className="p-2 text-[10px] font-semibold text-slate-400 uppercase bg-slate-950/60 flex items-center justify-between">
+            <div className="absolute top-full left-0 right-0 mt-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl z-50 overflow-hidden divide-y divide-slate-100 dark:divide-slate-800 max-h-72 overflow-y-auto">
+              <div className="px-3 py-2 text-[10px] font-bold text-slate-400 uppercase bg-slate-50 dark:bg-slate-950/60 flex items-center justify-between">
                 <span>Add to {activeTabObj.name}</span>
                 <span>{searchResults.length} found</span>
               </div>
@@ -479,27 +458,27 @@ export default function WatchlistManagerDesk() {
                 <div
                   key={item.symbol}
                   onClick={() => handleAddSymbol(item)}
-                  className="p-2.5 hover:bg-slate-800/80 flex items-center justify-between cursor-pointer transition-colors group"
+                  className="p-3 hover:bg-slate-50 dark:hover:bg-slate-800/80 flex items-center justify-between cursor-pointer transition-colors group"
                 >
                   <div>
                     <div className="flex items-center gap-1.5">
-                      <span className="font-bold text-xs text-slate-100 group-hover:text-cyan-400">
+                      <span className="font-bold text-xs text-slate-900 dark:text-slate-100 group-hover:text-cyan-600 dark:group-hover:text-cyan-400">
                         {item.symbol}
                       </span>
-                      <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-slate-800 text-slate-400">
+                      <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
                         {item.exchange}
                       </span>
                     </div>
-                    <span className="text-[10px] text-slate-400 line-clamp-1">{item.name}</span>
+                    <span className="text-[11px] text-slate-400 line-clamp-1">{item.name}</span>
                   </div>
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
                       handleAddSymbol(item);
                     }}
-                    className="inline-flex items-center gap-1 px-2 py-1 rounded bg-cyan-500/20 hover:bg-cyan-500 text-cyan-300 hover:text-slate-950 text-[10px] font-bold transition-colors"
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-cyan-50 hover:bg-cyan-600 text-cyan-700 hover:text-white dark:bg-cyan-950/60 dark:hover:bg-cyan-500 dark:text-cyan-300 dark:hover:text-slate-950 text-[11px] font-bold transition-all cursor-pointer"
                   >
-                    <Plus className="w-3 h-3" />
+                    <Plus className="w-3.5 h-3.5" />
                     <span>Add</span>
                   </button>
                 </div>
@@ -509,121 +488,167 @@ export default function WatchlistManagerDesk() {
         </div>
       </div>
 
-      {/* Market Breadth & Intelligence Bar */}
+      {/* ===================================================================== */}
+      {/* 4 TOP INTELLIGENCE & MARKET BREADTH CARDS                             */}
+      {/* ===================================================================== */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Total Securities */}
-        <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 space-y-1">
-          <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-            <Bookmark className="w-3.5 h-3.5 text-cyan-400" />
-            Watchlist Size
+        {/* Watchlist Size */}
+        <div className="p-5 rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 shadow-xs space-y-2 group hover:border-cyan-500/40 transition-all">
+          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between">
+            <span className="flex items-center gap-1.5">
+              <Bookmark className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
+              <span>Watchlist Size</span>
+            </span>
+            <span className="text-[10px] font-mono text-cyan-600 dark:text-cyan-400">Active</span>
           </span>
-          <div className="text-xl font-bold font-tabular text-slate-100">
+          <div className="text-2xl font-black font-tabular text-slate-900 dark:text-slate-100">
             {breadthMetrics.total} Instruments
           </div>
-          <span className="text-[10px] text-slate-500">Tracked in {activeTabObj.name}</span>
+          <span className="text-[11px] text-slate-400">Tracked in {activeTabObj.name}</span>
         </div>
 
         {/* Market Breadth Bar */}
-        <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 space-y-1">
-          <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-            Market Breadth (Adv / Dec)
+        <div className="p-5 rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 shadow-xs space-y-2 group hover:border-cyan-500/40 transition-all">
+          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between">
+            <span>Market Breadth</span>
+            <span className="text-[10px] font-mono font-bold text-emerald-600 dark:text-emerald-400">
+              {breadthMetrics.advances} Adv / {breadthMetrics.declines} Dec
+            </span>
           </span>
           <div className="flex items-center justify-between text-xs font-bold font-tabular">
-            <span className="text-emerald-400">{breadthMetrics.advances} Advancing</span>
-            <span className="text-rose-400">{breadthMetrics.declines} Declining</span>
+            <span className="text-emerald-600 dark:text-emerald-400">{breadthMetrics.advances} Advancing</span>
+            <span className="text-rose-600 dark:text-rose-400">{breadthMetrics.declines} Declining</span>
           </div>
-          <div className="w-full h-2 rounded-full bg-slate-800 overflow-hidden flex mt-1.5">
+          <div className="w-full h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden flex mt-1">
             <div
-              className="bg-emerald-400 h-full transition-all duration-500"
+              className="bg-emerald-500 h-full transition-all duration-500"
               style={{ width: `${breadthMetrics.advPercent}%` }}
             />
             <div
-              className="bg-rose-400 h-full transition-all duration-500"
+              className="bg-rose-500 h-full transition-all duration-500"
               style={{ width: `${100 - breadthMetrics.advPercent}%` }}
             />
           </div>
         </div>
 
         {/* Average 1D Change */}
-        <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 space-y-1">
-          <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-            Avg. Watchlist 1D Change
+        <div className="p-5 rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 shadow-xs space-y-2 group hover:border-cyan-500/40 transition-all">
+          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between">
+            <span>Avg. 1D Performance</span>
+            <span
+              className={`text-[10px] font-bold px-1.5 py-0.2 rounded ${
+                breadthMetrics.avgChange >= 0
+                  ? "bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400"
+                  : "bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-400"
+              }`}
+            >
+              Basket
+            </span>
           </span>
           <div
-            className={`flex items-center gap-1.5 text-xl font-bold font-tabular ${
-              breadthMetrics.avgChange >= 0 ? "text-emerald-400" : "text-rose-400"
+            className={`flex items-center gap-1 text-2xl font-black font-tabular ${
+              breadthMetrics.avgChange >= 0
+                ? "text-emerald-600 dark:text-emerald-400"
+                : "text-rose-600 dark:text-rose-400"
             }`}
           >
             {breadthMetrics.avgChange >= 0 ? (
-              <TrendingUp className="w-4 h-4 shrink-0" />
+              <TrendingUp className="w-5 h-5 shrink-0" />
             ) : (
-              <TrendingDown className="w-4 h-4 shrink-0" />
+              <TrendingDown className="w-5 h-5 shrink-0" />
             )}
-            <span>{formatPercent(breadthMetrics.avgChange)}</span>
+            <span>
+              {breadthMetrics.avgChange >= 0 ? "+" : ""}
+              {formatPercent(breadthMetrics.avgChange)}
+            </span>
           </div>
-          <span className="text-[10px] text-slate-500">Unweighted basket performance</span>
+          <span className="text-[11px] text-slate-400">Unweighted basket momentum</span>
         </div>
 
-        {/* Pro Terminal Sync Status */}
-        <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 space-y-1 flex flex-col justify-between">
+        {/* Live Market Sync Status */}
+        <div className="p-5 rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 shadow-xs space-y-2 group hover:border-cyan-500/40 transition-all flex flex-col justify-between">
           <div>
-            <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1">
-              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-              Terminal Sync
+            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+              <span>Live Market Sync</span>
             </span>
-            <div className="text-sm font-bold text-slate-200 mt-0.5">
-              Live & Two-Way Synchronized
+            <div className="text-sm font-bold text-slate-900 dark:text-slate-100 mt-1 flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span>Two-Way Terminal Synced</span>
             </div>
           </div>
-          <button
-            onClick={() => router.push("/trade")}
-            className="text-[11px] font-bold text-cyan-400 hover:text-cyan-300 inline-flex items-center gap-1"
+          <Link
+            href="/stocks"
+            className="text-xs font-bold text-cyan-600 dark:text-cyan-400 hover:text-cyan-700 inline-flex items-center gap-1"
           >
-            <span>Launch in Pro Terminal</span>
-            <ArrowUpRight className="w-3 h-3" />
-          </button>
+            <span>Explore All Stocks</span>
+            <ArrowUpRight className="w-3.5 h-3.5" />
+          </Link>
         </div>
       </div>
 
-      {/* Main Watchlist Table */}
-      <div className="rounded-xl bg-slate-900/40 border border-slate-800 overflow-hidden shadow-xl">
-        <div className="px-4 py-3 border-b border-slate-800 bg-slate-900/80 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Layers className="w-4 h-4 text-cyan-400" />
-            <h2 className="font-bold text-sm text-slate-100">
+      {/* ===================================================================== */}
+      {/* MAIN WATCHLIST TABLE CARD                                             */}
+      {/* ===================================================================== */}
+      <div className="rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
+        <div className="px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-950/60 flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <Layers className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
+            <h2 className="font-black text-sm text-slate-900 dark:text-slate-100">
               {activeTabObj.name} Desk
             </h2>
-            <span className="text-[11px] px-2 py-0.5 rounded-full font-mono bg-slate-800 text-slate-400 border border-slate-700">
-              {currentItems.length}
+            <span className="text-[11px] px-2 py-0.5 rounded-full font-mono font-bold bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+              {currentItems.length} Securities
             </span>
+          </div>
+
+          <div className="text-xs text-slate-400 font-mono hidden sm:block">
+            NSE / BSE Live Feeds
           </div>
         </div>
 
         {currentItems.length === 0 ? (
-          <div className="p-16 text-center text-slate-500 space-y-3">
-            <div className="w-12 h-12 rounded-full bg-slate-800/60 border border-slate-700 flex items-center justify-center text-slate-400 mx-auto">
-              <Search className="w-6 h-6" />
+          <div className="p-16 text-center text-slate-500 space-y-4">
+            <div className="w-14 h-14 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 mx-auto">
+              <Search className="w-7 h-7" />
             </div>
-            <h3 className="font-bold text-slate-300 text-sm">Watchlist is Empty</h3>
-            <p className="text-xs text-slate-500 max-w-sm mx-auto">
-              Use the search bar above to look up stocks across NSE and BSE, then click Add to pin them to {activeTabObj.name}.
-            </p>
+            <div className="space-y-1">
+              <h3 className="font-bold text-slate-900 dark:text-slate-100 text-sm">
+                Watchlist is Empty
+              </h3>
+              <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                Use the search bar above to look up stocks across NSE and BSE, then click Add to pin them to {activeTabObj.name}.
+              </p>
+            </div>
+            {/* Quick Suggestions to Add */}
+            <div className="pt-2 flex items-center justify-center gap-2 flex-wrap">
+              {POPULAR_SEARCH_PREVIEWS.slice(0, 4).map((rec) => (
+                <button
+                  key={rec.symbol}
+                  onClick={() => handleAddSymbol(rec)}
+                  className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-cyan-50 dark:bg-slate-800 dark:hover:bg-cyan-950/60 text-xs font-bold text-slate-700 hover:text-cyan-700 dark:text-slate-300 dark:hover:text-cyan-300 border border-slate-200 dark:border-slate-700 transition-all cursor-pointer flex items-center gap-1"
+                >
+                  <Plus className="w-3 h-3" />
+                  <span>{rec.symbol}</span>
+                </button>
+              ))}
+            </div>
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs border-collapse">
               <thead>
-                <tr className="border-b border-slate-800 text-[11px] font-bold text-slate-400 uppercase tracking-wider bg-slate-900/40">
-                  <th className="py-3 px-4">Instrument</th>
-                  <th className="py-3 px-3 text-right">LTP (₹)</th>
-                  <th className="py-3 px-3 text-right">Day Change</th>
-                  <th className="py-3 px-4 hidden md:table-cell">Intraday Range (L - H)</th>
-                  <th className="py-3 px-3 text-right hidden lg:table-cell">Day High / Low</th>
-                  <th className="py-3 px-4 text-center">Fast Execution</th>
-                  <th className="py-3 px-3 text-center">Manage</th>
+                <tr className="border-b border-slate-200 dark:border-slate-800 text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider bg-slate-50/70 dark:bg-slate-900/40">
+                  <th className="py-3.5 px-5">Instrument</th>
+                  <th className="py-3.5 px-3 text-right">LTP (₹)</th>
+                  <th className="py-3.5 px-3 text-right">Day Change</th>
+                  <th className="py-3.5 px-4 hidden md:table-cell">Intraday Range (L - H)</th>
+                  <th className="py-3.5 px-3 text-right hidden lg:table-cell">Day High / Low</th>
+                  <th className="py-3.5 px-4 text-center">Trade & Orders</th>
+                  <th className="py-3.5 px-3 text-center">Manage</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/40 font-medium">
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800/40 font-medium">
                 {currentItems.map((item) => {
                   const quote = quotes[item.symbol] ?? getOrSeedQuote(item.symbol);
                   const ltp = quote.price_paise;
@@ -641,38 +666,43 @@ export default function WatchlistManagerDesk() {
                   return (
                     <tr
                       key={item.symbol}
-                      className="hover:bg-slate-800/40 transition-colors group"
+                      className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors group"
                     >
                       {/* Instrument */}
-                      <td className="py-3 px-4">
-                        <div className="flex flex-col">
-                          <div className="flex items-center gap-1.5">
-                            <span
-                              onClick={() => handleTrade(item.symbol)}
-                              className="font-bold text-slate-100 group-hover:text-cyan-400 transition-colors cursor-pointer"
-                            >
-                              {item.symbol}
-                            </span>
-                            <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-slate-800 text-slate-400">
-                              {item.exchange}
+                      <td className="py-3.5 px-5">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-extrabold text-[11px] flex items-center justify-center shrink-0 border border-slate-200 dark:border-slate-700/60 group-hover:border-cyan-500/40">
+                            {item.symbol.slice(0, 3)}
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-1.5">
+                              <span
+                                onClick={() => handleTrade(item.symbol)}
+                                className="font-bold text-sm text-slate-900 dark:text-slate-100 group-hover:text-cyan-600 dark:group-hover:text-cyan-400 transition-colors cursor-pointer"
+                              >
+                                {item.symbol}
+                              </span>
+                              <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 uppercase font-bold">
+                                {item.exchange}
+                              </span>
+                            </div>
+                            <span className="text-[11px] text-slate-400 line-clamp-1 max-w-[200px]">
+                              {item.name}
                             </span>
                           </div>
-                          <span className="text-[10px] text-slate-400 truncate max-w-[180px]">
-                            {item.name}
-                          </span>
                         </div>
                       </td>
 
                       {/* LTP */}
-                      <td className="py-3 px-3 text-right font-extrabold text-slate-100 font-tabular text-sm">
+                      <td className="py-3.5 px-3 text-right font-black text-slate-900 dark:text-slate-100 font-tabular text-sm">
                         {formatPaise(ltp)}
                       </td>
 
                       {/* Day Change */}
-                      <td className="py-3 px-3 text-right font-tabular">
+                      <td className="py-3.5 px-3 text-right font-tabular">
                         <div
-                          className={`inline-flex items-center justify-end gap-1 font-bold ${
-                            isPos ? "text-emerald-400" : "text-rose-400"
+                          className={`inline-flex items-center justify-end gap-1 font-bold text-xs ${
+                            isPos ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
                           }`}
                         >
                           {isPos ? (
@@ -689,16 +719,16 @@ export default function WatchlistManagerDesk() {
                       </td>
 
                       {/* Intraday Range Bar */}
-                      <td className="py-3 px-4 hidden md:table-cell">
+                      <td className="py-3.5 px-4 hidden md:table-cell">
                         <div className="flex flex-col gap-1 w-36">
-                          <div className="flex justify-between text-[9px] font-mono text-slate-500">
+                          <div className="flex justify-between text-[9px] font-mono text-slate-400">
                             <span>{formatPaise(lowPaise)}</span>
                             <span>{formatPaise(highPaise)}</span>
                           </div>
-                          <div className="w-full h-1.5 rounded-full bg-slate-800 overflow-hidden relative">
+                          <div className="w-full h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden relative">
                             <div
-                              className={`h-full rounded-full ${
-                                isPos ? "bg-emerald-400" : "bg-rose-400"
+                              className={`h-full rounded-full transition-all duration-300 ${
+                                isPos ? "bg-emerald-500" : "bg-rose-500"
                               }`}
                               style={{ width: `${rangePct}%` }}
                             />
@@ -707,30 +737,43 @@ export default function WatchlistManagerDesk() {
                       </td>
 
                       {/* Day High / Low */}
-                      <td className="py-3 px-3 text-right font-mono text-[11px] text-slate-400 hidden lg:table-cell">
+                      <td className="py-3.5 px-3 text-right font-mono text-[11px] text-slate-500 dark:text-slate-400 hidden lg:table-cell font-tabular">
                         <div>H: {formatPaise(highPaise)}</div>
-                        <div className="text-slate-500">L: {formatPaise(lowPaise)}</div>
+                        <div className="text-slate-400">L: {formatPaise(lowPaise)}</div>
                       </td>
 
                       {/* Fast Execution Buttons */}
-                      <td className="py-3 px-4 text-center">
+                      <td className="py-3.5 px-4 text-center">
                         <div className="flex items-center justify-center gap-1.5">
                           <button
                             onClick={() => handleTrade(item.symbol)}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-cyan-500/10 hover:bg-cyan-500 text-cyan-400 hover:text-slate-950 text-[11px] font-bold border border-cyan-500/30 hover:border-cyan-500 transition-all"
-                            title="Open in Pro Terminal"
+                            className="px-2.5 py-1 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold transition-all shadow-xs active:scale-95 cursor-pointer flex items-center gap-1"
+                            title="Buy / Trade"
                           >
-                            <SlidersHorizontal className="w-3 h-3" />
-                            <span>Trade</span>
+                            <span>Buy</span>
+                          </button>
+                          <button
+                            onClick={() => handleTrade(item.symbol)}
+                            className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition-all shadow-xs active:scale-95 cursor-pointer flex items-center gap-1"
+                            title="Sell"
+                          >
+                            <span>Sell</span>
+                          </button>
+                          <button
+                            onClick={() => handleTrade(item.symbol)}
+                            className="p-1 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors cursor-pointer"
+                            title="Open Stock Details"
+                          >
+                            <SlidersHorizontal className="w-3.5 h-3.5" />
                           </button>
                         </div>
                       </td>
 
                       {/* Delete from Watchlist */}
-                      <td className="py-3 px-3 text-center">
+                      <td className="py-3.5 px-3 text-center">
                         <button
                           onClick={() => handleRemoveSymbol(item.symbol)}
-                          className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-950/30 transition-colors opacity-60 group-hover:opacity-100"
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors opacity-60 group-hover:opacity-100 cursor-pointer"
                           title="Remove from Watchlist"
                         >
                           <Trash2 className="w-3.5 h-3.5" />

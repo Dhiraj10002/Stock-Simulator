@@ -224,8 +224,11 @@ func (s *MentorService) PreTradeCheck(ctx context.Context, userID string, req dt
 		warnings = append(warnings, "Missing Stop-Loss Protection: Derivative & intraday positions carry high gamma and gap risk. Trading without an active Stop-Loss exposes capital to unbounded drawdowns.")
 	}
 
-	// 6. Risk-Reward Ratio Calculation
+	// 6. Risk-Reward Ratio Calculation & Feasibility Check
 	var riskRewardRatio float64 = 0.0
+	circuitBreached := false
+	unrealisticTarget := false
+
 	if req.StopLossPaise > 0 && req.TargetPaise > 0 {
 		var riskPaise, rewardPaise int64
 		if req.Side == "BUY" {
@@ -235,15 +238,45 @@ func (s *MentorService) PreTradeCheck(ctx context.Context, userID string, req dt
 			riskPaise = req.StopLossPaise - req.PricePaise
 			rewardPaise = req.PricePaise - req.TargetPaise
 		}
+
+		// Direction validation
+		if riskPaise <= 0 {
+			warnings = append(warnings, fmt.Sprintf("Invalid Stop-Loss Order: For %s orders, stop-loss price must be on the defensive side of entry price.", req.Side))
+		}
+		if rewardPaise <= 0 {
+			warnings = append(warnings, fmt.Sprintf("Invalid Target Order: For %s orders, profit target must be on the favorable side of entry price.", req.Side))
+		}
+
 		if riskPaise > 0 && rewardPaise > 0 {
 			riskRewardRatio = float64(rewardPaise) / float64(riskPaise)
-			if riskRewardRatio < 1.0 {
+
+			// Calculate percentage movements
+			targetMovePct := (float64(rewardPaise) / float64(req.PricePaise)) * 100.0
+			stopMovePct := (float64(riskPaise) / float64(req.PricePaise)) * 100.0
+
+			// Circuit limit checks
+			if req.Product == "INTRADAY" && targetMovePct > 20.0 {
+				circuitBreached = true
+				unrealisticTarget = true
+				warnings = append(warnings, fmt.Sprintf("Circuit Limit Breach (+%.1f%%): Target exceeds maximum NSE daily circuit band (10%%–20%%). Single-day move to ₹%.2f is impossible under exchange price collars.", targetMovePct, float64(req.TargetPaise)/100.0))
+			} else if req.Product == "INTRADAY" && targetMovePct > 8.0 {
+				unrealisticTarget = true
+				warnings = append(warnings, fmt.Sprintf("Aggressive Intraday Target (+%.1f%%): Exceeds normal daily ATR volatility (1.2%%–2.5%%). Statistically rare for single-session execution.", targetMovePct))
+			} else if targetMovePct > 40.0 {
+				unrealisticTarget = true
+				warnings = append(warnings, fmt.Sprintf("Unrealistic Short-Term Target (+%.1f%%): Far exceeds standard swing trading horizons without multi-quarter positioning.", targetMovePct))
+			}
+
+			// Wishful thinking bias / Extreme R:R trap
+			if circuitBreached || (riskRewardRatio > 8.0 && unrealisticTarget) {
+				warnings = append(warnings, fmt.Sprintf("Wishful Thinking Bias (1:%.1f): Extreme asymmetric target against a narrow %.2f%% stop-loss gives near-zero statistical probability. Market noise will almost certainly trigger the stop-loss first.", riskRewardRatio, stopMovePct))
+			} else if riskRewardRatio < 1.0 {
 				if riskLevel == "SAFE" {
 					riskLevel = "MODERATE"
 				}
 				warnings = append(warnings, fmt.Sprintf("Sub-optimal Risk-to-Reward Ratio (1:%.2f): Potential loss outweighs projected target gain. Target at least 1:1.50.", riskRewardRatio))
-			} else if riskRewardRatio >= 2.0 {
-				warnings = append(warnings, fmt.Sprintf("Favorable Asymmetric R:R (1:%.2f): Target upside gives a 2x+ buffer over defined stop risk.", riskRewardRatio))
+			} else if riskRewardRatio >= 1.8 && riskRewardRatio <= 4.0 {
+				warnings = append(warnings, fmt.Sprintf("Favorable Asymmetric R:R (1:%.2f): Balanced reward-to-risk asymmetry aligned with realistic price moves.", riskRewardRatio))
 			}
 		}
 	}
@@ -270,9 +303,17 @@ func (s *MentorService) PreTradeCheck(ctx context.Context, userID string, req dt
 		score -= 15
 	}
 
-	if riskRewardRatio > 0 && riskRewardRatio < 1.0 {
-		score -= 10
-	} else if riskRewardRatio >= 1.5 {
+	if circuitBreached {
+		score = 25
+		riskLevel = "HIGH_RISK"
+	} else if unrealisticTarget {
+		score -= 35
+		if riskLevel == "SAFE" {
+			riskLevel = "MODERATE"
+		}
+	} else if riskRewardRatio > 0 && riskRewardRatio < 1.0 {
+		score -= 15
+	} else if riskRewardRatio >= 1.5 && riskRewardRatio <= 4.5 {
 		score += 5
 	}
 
@@ -288,8 +329,10 @@ func (s *MentorService) PreTradeCheck(ctx context.Context, userID string, req dt
 
 	// 8. Synthesis Advice
 	advice := "Systematic execution: Parameters fall within normal institutional risk tolerance."
-	if riskLevel == "HIGH_RISK" {
-		advice = "Exercise caution: High capital commitment or portfolio concentration detected. Consider reducing quantity or setting a tight Stop-Loss."
+	if circuitBreached {
+		advice = fmt.Sprintf("Critical Risk: Intraday target of ₹%.2f on %s breaches NSE daily circuit limits (10%%–20%%). Normal large-cap daily range is 1.2%%–2.5%%. Recalibrate target to a realistic band for achievable expectancy.", float64(req.TargetPaise)/100.0, req.Symbol)
+	} else if riskLevel == "HIGH_RISK" {
+		advice = "Exercise caution: High capital commitment, portfolio concentration, or unrealistic parameters detected. Consider reducing quantity or setting a realistic Stop-Loss."
 	} else if riskLevel == "MODERATE" {
 		if isDerivativeOrIntraday && req.StopLossPaise <= 0 {
 			advice = "Protect downside: Set an automated Stop-Loss (e.g. 1.5% below entry) before executing leveraged or derivative trades."

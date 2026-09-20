@@ -105,7 +105,7 @@ export default function NewsFeed({
   const handleSymbolClick = (e: React.MouseEvent, sym: string) => {
     e.stopPropagation();
     setSelectedSymbol(sym);
-    router.push("/trade");
+    router.push(`/stocks/${encodeURIComponent(sym)}`);
   };
 
   const [currentTime] = useState(() => Date.now());

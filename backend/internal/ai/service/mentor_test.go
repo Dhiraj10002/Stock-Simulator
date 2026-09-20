@@ -171,5 +171,44 @@ func TestMentorService_PreTradeCheck(t *testing.T) {
 	if resRR.RiskScore <= 0 || resRR.RiskScore > 100 {
 		t.Errorf("expected valid risk score between 1 and 100, got %d", resRR.RiskScore)
 	}
+
+	// Test Circuit Limit Breach & Wishful Thinking Bias on RELIANCE
+	reqCircuitBreach := dto.PreTradeCheckRequest{
+		Symbol:        "RELIANCE",
+		Side:          "BUY",
+		Product:       "INTRADAY",
+		Type:          "LIMIT",
+		Quantity:      50,
+		PricePaise:    298550, // ₹2,985.50
+		StopLossPaise: 294500, // ₹2,945.00
+		TargetPaise:   1000000, // ₹10,000.00 (+235% intraday)
+	}
+	resCB, err := svc.PreTradeCheck(context.Background(), "31372e69-2088-45d8-a2d8-8607a58e3685", reqCircuitBreach)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resCB.RiskLevel != "HIGH_RISK" {
+		t.Errorf("expected HIGH_RISK for +235%% intraday target, got %s", resCB.RiskLevel)
+	}
+	if resCB.RiskScore > 40 {
+		t.Errorf("expected safety score <= 40 for fantasy setup, got %d", resCB.RiskScore)
+	}
+	hasCircuitWarning := false
+	hasWishfulWarning := false
+	for _, w := range resCB.Warnings {
+		if strings.Contains(w, "Circuit Limit Breach") {
+			hasCircuitWarning = true
+		}
+		if strings.Contains(w, "Wishful Thinking Bias") {
+			hasWishfulWarning = true
+		}
+	}
+	if !hasCircuitWarning {
+		t.Errorf("expected circuit limit breach warning, got warnings: %v", resCB.Warnings)
+	}
+	if !hasWishfulWarning {
+		t.Errorf("expected wishful thinking bias warning, got warnings: %v", resCB.Warnings)
+	}
 }
+
 

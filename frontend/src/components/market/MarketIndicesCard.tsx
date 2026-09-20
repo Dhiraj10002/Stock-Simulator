@@ -28,7 +28,7 @@ export default function MarketIndicesCard({ index }: MarketIndicesCardProps) {
 
   const handleClick = () => {
     setSelectedSymbol(index.symbol);
-    router.push("/trade");
+    router.push(`/stocks/${encodeURIComponent(index.symbol)}`);
   };
 
   // Sparkline SVG path calculation

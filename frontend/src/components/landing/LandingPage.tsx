@@ -73,7 +73,18 @@ function SpatialCanvas({ mousePos }: { mousePos: { x: number; y: number } }) {
     let currentOffsetX = 0;
     let currentOffsetY = 0;
 
-    const render = () => {
+    let lastStarTime = 0;
+    const render = (time: number) => {
+      if (document.hidden) {
+        animId = requestAnimationFrame(render);
+        return;
+      }
+      if (time - lastStarTime < 33) {
+        animId = requestAnimationFrame(render);
+        return;
+      }
+      lastStarTime = time;
+
       ctx.clearRect(0, 0, width, height);
 
       const fov = 400;
@@ -109,8 +120,6 @@ function SpatialCanvas({ mousePos }: { mousePos: { x: number; y: number } }) {
           ctx.beginPath();
           ctx.arc(x, y, rad, 0, Math.PI * 2);
           ctx.fillStyle = `${p.colorPrefix}${alpha})`;
-          ctx.shadowColor = alpha > 0.45 ? p.colorHex : "transparent";
-          ctx.shadowBlur = alpha > 0.45 ? 8 : 0;
           ctx.fill();
         }
       }
@@ -205,7 +214,18 @@ function CursorRibbonCanvas() {
     const history: Array<Array<{ x: number; y: number }>> = [];
     let animId: number;
 
-    const render = () => {
+    let lastRibbonTime = 0;
+    const render = (time: number) => {
+      if (document.hidden) {
+        animId = requestAnimationFrame(render);
+        return;
+      }
+      if (time - lastRibbonTime < 25) {
+        animId = requestAnimationFrame(render);
+        return;
+      }
+      lastRibbonTime = time;
+
       ctx.clearRect(0, 0, width, height);
 
       if (!hasMoved) {
@@ -253,7 +273,7 @@ function CursorRibbonCanvas() {
       animId = requestAnimationFrame(render);
     };
 
-    render();
+    render(0);
 
     return () => {
       window.removeEventListener("mousemove", onMouseMove);
@@ -725,7 +745,11 @@ const FEATURES_DATA = [
 /* -------------------------------------------------------------
    MAIN COMPONENT: 3D SPATIAL LANDING PAGE
    ------------------------------------------------------------- */
-export default function LandingPage() {
+interface LandingPageProps {
+  onOpenAuth?: (mode: "login" | "register") => void;
+}
+
+export default function LandingPage({ onOpenAuth }: LandingPageProps = {}) {
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
   const [activeSection, setActiveSection] = useState("hero");
 
@@ -828,18 +852,18 @@ export default function LandingPage() {
 
         {/* Right Actions: Log In & Sign Up (Refined Warm Orange & Purple Mix) */}
         <div className="flex items-center gap-2">
-          <Link
-            href="/trade"
-            className="px-4.5 py-1.5 rounded-full text-xs font-semibold text-slate-200 hover:text-white bg-white/[0.05] hover:bg-white/[0.10] border border-white/10 hover:border-orange-400/40 transition-all shadow-sm"
+          <button
+            onClick={() => (onOpenAuth ? onOpenAuth("login") : (window.location.href = "/stocks/ITC"))}
+            className="px-4.5 py-1.5 rounded-full text-xs font-semibold text-slate-200 hover:text-white bg-white/[0.05] hover:bg-white/[0.10] border border-white/10 hover:border-orange-400/40 transition-all shadow-sm cursor-pointer"
           >
             Log In
-          </Link>
-          <Link
-            href="/trade"
-            className="px-5 py-1.5 rounded-full bg-[linear-gradient(135deg,#ff7a29_0%,#f43f5e_50%,#7c3aed_100%)] hover:bg-[linear-gradient(135deg,#ff8f4a_0%,#fb7185_50%,#8b5cf6_100%)] text-white font-semibold text-xs tracking-wide shadow-[inset_0_1px_1px_rgba(255,255,255,0.4),0_2px_12px_rgba(255,122,41,0.3),0_2px_12px_rgba(124,58,237,0.25)] hover:shadow-[inset_0_1px_1px_rgba(255,255,255,0.5),0_4px_18px_rgba(255,122,41,0.45),0_4px_18px_rgba(124,58,237,0.4)] border border-white/20 transition-all hover:scale-105"
+          </button>
+          <button
+            onClick={() => (onOpenAuth ? onOpenAuth("register") : (window.location.href = "/stocks/ITC"))}
+            className="px-5 py-1.5 rounded-full bg-[linear-gradient(135deg,#ff7a29_0%,#f43f5e_50%,#7c3aed_100%)] hover:bg-[linear-gradient(135deg,#ff8f4a_0%,#fb7185_50%,#8b5cf6_100%)] text-white font-semibold text-xs tracking-wide shadow-[inset_0_1px_1px_rgba(255,255,255,0.4),0_2px_12px_rgba(255,122,41,0.3),0_2px_12px_rgba(124,58,237,0.25)] hover:shadow-[inset_0_1px_1px_rgba(255,255,255,0.5),0_4px_18px_rgba(255,122,41,0.45),0_4px_18px_rgba(124,58,237,0.4)] border border-white/20 transition-all hover:scale-105 cursor-pointer"
           >
             Sign Up
-          </Link>
+          </button>
         </div>
       </header>
 
@@ -891,13 +915,13 @@ export default function LandingPage() {
 
         {/* Interactive Action Hub */}
         <div className="flex flex-wrap items-center justify-center gap-3.5 pt-6">
-          <Link
-            href="/trade"
-            className="group inline-flex items-center gap-2 px-8 py-3.5 rounded-full bg-[linear-gradient(135deg,#ff7a29_0%,#f43f5e_50%,#7c3aed_100%)] hover:bg-[linear-gradient(135deg,#ff8f4a_0%,#fb7185_50%,#8b5cf6_100%)] text-white font-bold text-sm tracking-wide shadow-[inset_0_1px_1px_rgba(255,255,255,0.4),0_8px_25px_-4px_rgba(255,122,41,0.4),0_6px_20px_-4px_rgba(124,58,237,0.35)] hover:shadow-[inset_0_1px_1px_rgba(255,255,255,0.5),0_12px_32px_-4px_rgba(255,122,41,0.55),0_10px_28px_-4px_rgba(124,58,237,0.45)] border border-white/25 hover:scale-105 transition-all duration-200"
+          <button
+            onClick={() => (onOpenAuth ? onOpenAuth("login") : (window.location.href = "/stocks/ITC"))}
+            className="group inline-flex items-center gap-2 px-8 py-3.5 rounded-full bg-[linear-gradient(135deg,#ff7a29_0%,#f43f5e_50%,#7c3aed_100%)] hover:bg-[linear-gradient(135deg,#ff8f4a_0%,#fb7185_50%,#8b5cf6_100%)] text-white font-bold text-sm tracking-wide shadow-[inset_0_1px_1px_rgba(255,255,255,0.4),0_8px_25px_-4px_rgba(255,122,41,0.4),0_6px_20px_-4px_rgba(124,58,237,0.35)] hover:shadow-[inset_0_1px_1px_rgba(255,255,255,0.5),0_12px_32px_-4px_rgba(255,122,41,0.55),0_10px_28px_-4px_rgba(124,58,237,0.45)] border border-white/25 hover:scale-105 transition-all duration-200 cursor-pointer"
           >
             <span>Open Dashboard</span>
             <ArrowRight className="w-3 h-3 transition-transform duration-200 group-hover:translate-x-1" />
-          </Link>
+          </button>
 
           <a
             href="#platform"
@@ -1822,10 +1846,10 @@ export default function LandingPage() {
                 {/* Action Buttons */}
                 <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3.5">
                   <Link
-                    href="/trade"
+                    href="/stocks/ITC"
                     className="group inline-flex items-center justify-center gap-3 px-9 py-4 rounded-full bg-[linear-gradient(135deg,#ff7a29_0%,#f43f5e_50%,#7c3aed_100%)] hover:bg-[linear-gradient(135deg,#ff8f4a_0%,#fb7185_50%,#8b5cf6_100%)] text-white font-bold text-sm sm:text-base tracking-wide shadow-[inset_0_1px_1px_rgba(255,255,255,0.4),0_10px_35px_-4px_rgba(255,122,41,0.5),0_8px_25px_-4px_rgba(124,58,237,0.4)] hover:shadow-[inset_0_1px_1px_rgba(255,255,255,0.5),0_16px_45px_-4px_rgba(255,122,41,0.65),0_12px_32px_-4px_rgba(124,58,237,0.55)] border border-white/25 hover:scale-105 transition-all duration-200 w-full sm:w-auto"
                   >
-                    <span>Launch Trading Terminal</span>
+                    <span>Explore Live Stocks</span>
                     <ArrowRight className="w-4 h-4 transition-transform duration-200 group-hover:translate-x-1.5" />
                   </Link>
 
@@ -1885,11 +1909,11 @@ export default function LandingPage() {
               {/* Developer & Social Badges */}
               <div className="flex flex-wrap items-center gap-2.5 pt-1">
                 <Link
-                  href="/trade"
+                  href="/stocks/ITC"
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.08] hover:border-cyan-500/40 text-slate-400 hover:text-cyan-300 text-xs font-mono transition-all duration-200"
                 >
                   <Code2 className="w-3.5 h-3.5" />
-                  <span>API Docs</span>
+                  <span>Explore Stocks</span>
                 </Link>
                 <a
                   href="#platform"
@@ -1918,8 +1942,8 @@ export default function LandingPage() {
                 </h4>
                 <ul className="space-y-2 text-xs text-slate-400">
                   <li>
-                    <Link href="/trade" className="hover:text-cyan-300 transition-colors flex items-center gap-1.5">
-                      <span>Equities Terminal</span>
+                    <Link href="/stocks/ITC" className="hover:text-cyan-300 transition-colors flex items-center gap-1.5">
+                      <span>Equities Overview</span>
                     </Link>
                   </li>
                   <li>
@@ -1934,7 +1958,7 @@ export default function LandingPage() {
                     </Link>
                   </li>
                   <li>
-                    <Link href="/trade" className="hover:text-cyan-300 transition-colors flex items-center gap-1.5">
+                    <Link href="/mentor" className="hover:text-cyan-300 transition-colors flex items-center gap-1.5">
                       <span>AI Trade Debriefs</span>
                     </Link>
                   </li>
@@ -1951,7 +1975,7 @@ export default function LandingPage() {
                   <li><a href="#how" className="hover:text-orange-300 transition-colors">How It Works</a></li>
                   <li><a href="#features" className="hover:text-orange-300 transition-colors">Terminal Features</a></li>
                   <li><a href="#testimonials" className="hover:text-orange-300 transition-colors">Trader Reviews</a></li>
-                  <li><Link href="/trade" className="hover:text-orange-300 transition-colors">Risk Calculator</Link></li>
+                  <li><Link href="/options" className="hover:text-orange-300 transition-colors">Risk Calculator</Link></li>
                 </ul>
               </div>
 

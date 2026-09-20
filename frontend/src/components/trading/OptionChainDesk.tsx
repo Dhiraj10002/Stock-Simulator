@@ -57,11 +57,21 @@ const UNDERLYINGS = [
   { symbol: "INFY", label: "INFOSYS", lot: 400 },
 ];
 
-export default function OptionChainDesk() {
+interface OptionChainDeskProps {
+  initialUnderlying?: string;
+}
+
+export default function OptionChainDesk({ initialUnderlying = "NIFTY" }: OptionChainDeskProps) {
   const router = useRouter();
   const setSelectedSymbol = useTerminalStore((s) => s.setSelectedSymbol);
 
-  const [selectedUnderlying, setSelectedUnderlying] = useState("NIFTY");
+  const [selectedUnderlying, setSelectedUnderlying] = useState(initialUnderlying);
+
+  React.useEffect(() => {
+    if (initialUnderlying) {
+      setSelectedUnderlying(initialUnderlying);
+    }
+  }, [initialUnderlying]);
 
   // Strategy Builder State
   const [activeStrategy, setActiveStrategy] = useState<StrategyType>("NONE");
@@ -112,10 +122,7 @@ export default function OptionChainDesk() {
   // Route single contract to trade terminal
   const handleSelectContract = (contract: OptionContract, side: "BUY" | "SELL") => {
     setSelectedSymbol(contract.symbol);
-    if (side) {
-      // route directly to trade terminal
-    }
-    router.push("/trade");
+    router.push(`/stocks/${encodeURIComponent(contract.symbol)}`);
   };
 
   // Compute Strategy Definition & Payoffs

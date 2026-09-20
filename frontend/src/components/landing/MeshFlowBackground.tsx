@@ -119,7 +119,21 @@ export default function MeshFlowBackground({
     const twoSigmaSquared = 2 * sigma * sigma;
     const influenceRadiusSq = influenceRadius * influenceRadius;
 
-    const animate = () => {
+    let lastTime = 0;
+    const animate = (timestamp: number) => {
+      // Pause completely if document is in background/hidden
+      if (document.hidden) {
+        animRef.current = requestAnimationFrame(animate);
+        return;
+      }
+
+      // Cap at ~30 FPS to save CPU / battery
+      if (timestamp - lastTime < 32) {
+        animRef.current = requestAnimationFrame(animate);
+        return;
+      }
+      lastTime = timestamp;
+
       const parent = canvas.parentElement;
       if (!parent) return;
       const { width, height } = parent.getBoundingClientRect();
@@ -170,84 +184,83 @@ export default function MeshFlowBackground({
         }
       }
 
-      // Draw lines
+      // Batch normal lines into a single stroke to eliminate thousands of draw calls
+      ctx.beginPath();
+      ctx.strokeStyle = lineColor;
+      ctx.lineWidth = 0.5;
+
       for (let row = 0; row < rows; row++) {
         for (let col = 0; col < cols; col++) {
           const idx = row * cols + col;
           const p = points[idx];
 
-          // Proximity factor for color
+          if (col < cols - 1) {
+            const next = points[idx + 1];
+            ctx.moveTo(p.x, p.y);
+            ctx.lineTo(next.x, next.y);
+          }
+          if (row < rows - 1) {
+            const below = points[idx + cols];
+            ctx.moveTo(p.x, p.y);
+            ctx.lineTo(below.x, below.y);
+          }
+        }
+      }
+      ctx.stroke();
+
+      // Draw active highlight lines near mouse
+      for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < cols; col++) {
+          const idx = row * cols + col;
+          const p = points[idx];
           const pdx = mx - p.x;
           const pdy = my - p.y;
           const pDistSq = pdx * pdx + pdy * pdy;
-          const proximity = Math.max(
-            0,
-            1 - pDistSq / (influenceRadiusSq * 1.5)
-          );
+          const proximity = Math.max(0, 1 - pDistSq / (influenceRadiusSq * 1.5));
 
-          // Horizontal line
-          if (col < cols - 1) {
-            const next = points[idx + 1];
+          if (proximity > 0.08) {
             ctx.beginPath();
-            ctx.moveTo(p.x, p.y);
-            ctx.lineTo(next.x, next.y);
-            ctx.strokeStyle =
-              proximity > 0.01
-                ? activeLineColor.replace(
-                    /[\d.]+\)$/,
-                    `${proximity * 0.12})`
-                  )
-                : lineColor;
-            ctx.lineWidth = 0.5;
-            ctx.stroke();
-          }
-
-          // Vertical line
-          if (row < rows - 1) {
-            const below = points[idx + cols];
-            ctx.beginPath();
-            ctx.moveTo(p.x, p.y);
-            ctx.lineTo(below.x, below.y);
-            ctx.strokeStyle =
-              proximity > 0.01
-                ? activeLineColor.replace(
-                    /[\d.]+\)$/,
-                    `${proximity * 0.12})`
-                  )
-                : lineColor;
-            ctx.lineWidth = 0.5;
+            ctx.strokeStyle = activeLineColor.replace(/[\d.]+\)$/, `${proximity * 0.15})`);
+            ctx.lineWidth = 0.7;
+            if (col < cols - 1) {
+              const next = points[idx + 1];
+              ctx.moveTo(p.x, p.y);
+              ctx.lineTo(next.x, next.y);
+            }
+            if (row < rows - 1) {
+              const below = points[idx + cols];
+              ctx.moveTo(p.x, p.y);
+              ctx.lineTo(below.x, below.y);
+            }
             ctx.stroke();
           }
         }
       }
 
-      // Draw dots
+      // Batch normal dots
+      ctx.beginPath();
+      ctx.fillStyle = dotColor;
+      for (let i = 0; i < points.length; i++) {
+        const p = points[i];
+        ctx.moveTo(p.x + dotRadius, p.y);
+        ctx.arc(p.x, p.y, dotRadius, 0, Math.PI * 2);
+      }
+      ctx.fill();
+
+      // Draw active dots near mouse
       for (let i = 0; i < points.length; i++) {
         const p = points[i];
         const pdx = mx - p.x;
         const pdy = my - p.y;
         const pDistSq = pdx * pdx + pdy * pdy;
-        const proximity = Math.max(
-          0,
-          1 - pDistSq / (influenceRadiusSq * 1.2)
-        );
+        const proximity = Math.max(0, 1 - pDistSq / (influenceRadiusSq * 1.2));
 
-        ctx.beginPath();
-        ctx.arc(
-          p.x,
-          p.y,
-          dotRadius + proximity * 1.5,
-          0,
-          Math.PI * 2
-        );
-        ctx.fillStyle =
-          proximity > 0.01
-            ? activeDotColor.replace(
-                /[\d.]+\)$/,
-                `${0.04 + proximity * 0.35})`
-              )
-            : dotColor;
-        ctx.fill();
+        if (proximity > 0.05) {
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, dotRadius + proximity * 1.5, 0, Math.PI * 2);
+          ctx.fillStyle = activeDotColor.replace(/[\d.]+\)$/, `${0.05 + proximity * 0.35})`);
+          ctx.fill();
+        }
       }
 
       animRef.current = requestAnimationFrame(animate);

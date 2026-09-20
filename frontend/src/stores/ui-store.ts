@@ -6,13 +6,13 @@ interface UIStoreState {
   isSearchPaletteOpen: boolean;
   isOrderSheetOpen: boolean;
   isShortcutsGuideOpen: boolean;
-  performanceInitialTab: "analytics" | "journal" | "contract-notes" | "statement";
+  performanceInitialTab: "analytics" | "journal" | "statement";
 
   // Actions
   setOptionChainOpen: (open: boolean) => void;
   setPerformanceOpen: (
     open: boolean,
-    initialTab?: "analytics" | "journal" | "contract-notes" | "statement"
+    initialTab?: "analytics" | "journal" | "statement"
   ) => void;
   setSearchPaletteOpen: (open: boolean) => void;
   setOrderSheetOpen: (open: boolean) => void;

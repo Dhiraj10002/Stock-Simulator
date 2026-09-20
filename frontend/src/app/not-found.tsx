@@ -39,11 +39,11 @@ export default function NotFound() {
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <Link
-              href="/trade"
+              href="/stocks/ITC"
               className="flex items-center gap-2 p-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-800 text-cyan-300 font-semibold text-xs border border-slate-700/80 transition-colors"
             >
               <SlidersHorizontal className="w-4 h-4 text-cyan-400" />
-              <span>Open Terminal</span>
+              <span>Explore Stocks</span>
               <ArrowRight className="w-3 h-3 ml-auto text-slate-500" />
             </Link>
 
