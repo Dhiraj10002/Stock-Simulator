@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import Link from "next/link";
 import {
   Layers,
   Clock,
@@ -10,7 +11,15 @@ import {
   Crosshair,
   TrendingUp,
   ArrowLeft,
+  ArrowRight,
   Bookmark,
+  Mail,
+  Lock,
+  User as UserIcon,
+  Zap,
+  Shield,
+  CheckCircle2,
+  Sparkles,
 } from "lucide-react";
 import Header from "@/components/terminal/Header";
 import WatchlistSidebar from "@/components/terminal/WatchlistSidebar";
@@ -1347,89 +1356,241 @@ function AuthScreen({
     }
   };
 
-  return (
-    <main className="min-h-screen flex items-center justify-center p-4 bg-slate-950 relative overflow-hidden">
-      {/* Ambient background glows */}
-      <div className="absolute -top-40 -left-40 w-96 h-96 bg-cyan-600/15 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute -bottom-40 -right-40 w-96 h-96 bg-emerald-600/15 rounded-full blur-3xl pointer-events-none" />
+  const handleDemoAutofill = () => {
+    setEmail("trader@example.com");
+    setPassword("password123");
+    if (isRegister) setName("Demo Scalper");
+  };
 
-      <div className="w-full max-w-md bg-slate-900/90 border border-slate-800 rounded-3xl p-8 shadow-2xl backdrop-blur-xl relative z-10 space-y-6">
-        <div className="text-center space-y-1.5">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-cyan-500 to-emerald-400 mx-auto flex items-center justify-center font-black text-slate-950 text-xl shadow-lg shadow-cyan-500/20 mb-4">
-            SS
+  return (
+    <main className="min-h-screen flex items-center justify-center p-4 sm:p-6 lg:p-8 bg-[#03060d] text-slate-100 relative overflow-hidden">
+      {/* Background isometric grid & ambient nebula blooms */}
+      <div className="absolute inset-0 bg-[linear-gradient(to_right,#1e293b0d_1px,transparent_1px),linear-gradient(to_bottom,#1e293b0d_1px,transparent_1px)] bg-[size:4rem_4rem] pointer-events-none" />
+      <div className="absolute -top-40 -left-40 w-[500px] h-[500px] bg-cyan-500/12 rounded-full blur-[130px] pointer-events-none" />
+      <div className="absolute -bottom-40 -right-40 w-[500px] h-[500px] bg-orange-500/10 rounded-full blur-[140px] pointer-events-none" />
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-purple-500/8 rounded-full blur-[160px] pointer-events-none" />
+
+      {/* Main Dual-Pane Flight Console Card */}
+      <div className="w-full max-w-4xl bg-[#090e1a]/90 border border-white/10 rounded-3xl shadow-2xl backdrop-blur-2xl relative z-10 overflow-hidden grid grid-cols-1 lg:grid-cols-12 transition-all">
+        {/* Multi-Spectrum Top Hairline */}
+        <div className="absolute top-0 left-0 right-0 h-[2.5px] bg-gradient-to-r from-cyan-400 via-emerald-400 to-orange-400 z-20" />
+
+        {/* Left Column: Brand & Live Market Telemetry (Col 5) */}
+        <div className="lg:col-span-5 p-6 sm:p-8 bg-slate-950/60 border-b lg:border-b-0 lg:border-r border-white/[0.08] flex flex-col justify-between space-y-6">
+          <div>
+            {/* Back link */}
+            <Link
+              href="/"
+              className="inline-flex items-center gap-1.5 text-xs font-mono text-slate-400 hover:text-cyan-300 mb-6 group transition-colors"
+            >
+              <ArrowLeft className="w-3.5 h-3.5 group-hover:-translate-x-1 transition-transform" />
+              <span>Back to Overview</span>
+            </Link>
+
+            {/* Brand Title */}
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-400 via-teal-300 to-emerald-400 p-[1px] shadow-lg shadow-cyan-500/25 shrink-0">
+                <div className="w-full h-full bg-slate-950 rounded-[11px] flex items-center justify-center font-black text-sm text-white">
+                  SS
+                </div>
+              </div>
+              <div>
+                <h2 className="font-black text-base text-white tracking-tight">STOCK SIMULATOR</h2>
+                <div className="text-[10px] font-mono text-cyan-400 uppercase tracking-widest">
+                  TRADING TERMINAL GATE
+                </div>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-300 leading-relaxed font-normal mb-6">
+              Institutional-grade paper execution for Indian financial markets. Master cash equities, BankNifty options chains, and Greeks in real-time.
+            </p>
+
+            {/* Live Indian Market Telemetry Badges */}
+            <div className="space-y-2.5 mb-6">
+              <div className="p-3 rounded-xl bg-white/[0.03] border border-white/[0.06] flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  <span className="text-xs font-mono font-bold text-white">NIFTY 50</span>
+                </div>
+                <div className="text-right font-mono">
+                  <div className="text-xs font-bold text-slate-200">25,378.40</div>
+                  <div className="text-[10px] text-emerald-400 font-bold">+0.49%</div>
+                </div>
+              </div>
+
+              <div className="p-3 rounded-xl bg-white/[0.03] border border-white/[0.06] flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  <span className="text-xs font-mono font-bold text-white">BANKNIFTY</span>
+                </div>
+                <div className="text-right font-mono">
+                  <div className="text-xs font-bold text-slate-200">51,942.30</div>
+                  <div className="text-[10px] text-emerald-400 font-bold">+0.61%</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Micro Highlights */}
+            <div className="space-y-2 text-[11px] font-mono text-slate-400">
+              <div className="flex items-center gap-2 text-slate-300">
+                <Zap className="w-3.5 h-3.5 text-cyan-400" />
+                <span>Sub-30ms Order Matching Engine</span>
+              </div>
+              <div className="flex items-center gap-2 text-slate-300">
+                <Shield className="w-3.5 h-3.5 text-emerald-400" />
+                <span>₹10,00,000 Free Virtual Capital</span>
+              </div>
+              <div className="flex items-center gap-2 text-slate-300">
+                <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+                <span>AI Mentor Trade Debriefs</span>
+              </div>
+            </div>
           </div>
-          <h1 className="text-2xl font-black tracking-tight text-white">
-            {isRegister ? "Create Account" : "Sign In to Terminal"}
-          </h1>
-          <p className="text-xs text-slate-400">
-            Professional Indian paper trading with real market data.
-          </p>
+
+          {/* Engine Status */}
+          <div className="pt-4 border-t border-white/[0.08] flex items-center justify-between text-[10px] font-mono text-slate-400">
+            <span className="flex items-center gap-1.5 text-emerald-400">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+              NSE FEED ACTIVE
+            </span>
+            <span>LATENCY: 24ms</span>
+          </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {isRegister && (
-            <div className="space-y-1">
-              <label className="text-[11px] font-semibold text-slate-400">
-                Full Name
-              </label>
-              <input
-                type="text"
-                required
-                placeholder="e.g. Rahul Sharma"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="w-full px-3 py-2.5 bg-slate-950/80 border border-slate-800 rounded-xl text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-cyan-500/50"
-              />
+        {/* Right Column: Authentication Form Deck (Col 7) */}
+        <div className="lg:col-span-7 p-6 sm:p-8 lg:p-10 flex flex-col justify-between space-y-6">
+          <div className="space-y-5">
+            {/* Tabbed Segmented Switch */}
+            <div className="flex items-center justify-between gap-3">
+              <div className="p-1 rounded-xl bg-slate-950/80 border border-white/[0.08] inline-flex items-center gap-1 text-xs font-mono">
+                <button
+                  type="button"
+                  onClick={() => setIsRegister(false)}
+                  className={`px-4 py-1.5 rounded-lg font-bold transition-all duration-200 ${
+                    !isRegister
+                      ? "bg-white/[0.12] text-white shadow-sm border border-white/10"
+                      : "text-slate-400 hover:text-white"
+                  }`}
+                >
+                  Sign In
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsRegister(true)}
+                  className={`px-4 py-1.5 rounded-lg font-bold transition-all duration-200 ${
+                    isRegister
+                      ? "bg-white/[0.12] text-white shadow-sm border border-white/10"
+                      : "text-slate-400 hover:text-white"
+                  }`}
+                >
+                  Create Account
+                </button>
+              </div>
+
+              {/* 1-Click Fast-Track Demo Autofill Button */}
+              <button
+                type="button"
+                onClick={handleDemoAutofill}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 text-[11px] font-mono font-bold transition-all hover:scale-105"
+                title="Autofill with sample credentials for rapid review"
+              >
+                <Zap className="w-3.5 h-3.5" />
+                <span>1-Click Demo Fill</span>
+              </button>
             </div>
-          )}
 
-          <div className="space-y-1">
-            <label className="text-[11px] font-semibold text-slate-400">
-              Email Address
-            </label>
-            <input
-              type="email"
-              required
-              placeholder="trader@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-3 py-2.5 bg-slate-950/80 border border-slate-800 rounded-xl text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-cyan-500/50"
-            />
+            <div>
+              <h1 className="text-xl sm:text-2xl font-black tracking-tight text-white">
+                {isRegister ? "Activate Your Trader Account" : "Sign In to Terminal"}
+              </h1>
+              <p className="text-xs text-slate-400 mt-1 font-normal">
+                {isRegister
+                  ? "Instant signup with ₹10,00,000 risk-free seed allocation."
+                  : "Enter your trader credentials to unlock your active positions & orders."}
+              </p>
+            </div>
+
+            <form onSubmit={handleSubmit} className="space-y-4">
+              {isRegister && (
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-mono font-semibold text-slate-300 flex items-center gap-1.5">
+                    <UserIcon className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>Full Name</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Rahul Sharma"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-slate-950/80 border border-white/10 rounded-xl text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-400/80 focus:ring-1 focus:ring-cyan-400/30 transition-all font-mono"
+                  />
+                </div>
+              )}
+
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-mono font-semibold text-slate-300 flex items-center gap-1.5">
+                  <Mail className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>Email Address</span>
+                </label>
+                <input
+                  type="email"
+                  required
+                  placeholder="trader@example.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-slate-950/80 border border-white/10 rounded-xl text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-400/80 focus:ring-1 focus:ring-cyan-400/30 transition-all font-mono"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-mono font-semibold text-slate-300 flex items-center gap-1.5">
+                  <Lock className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>Password</span>
+                </label>
+                <input
+                  type="password"
+                  required
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-slate-950/80 border border-white/10 rounded-xl text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-400/80 focus:ring-1 focus:ring-cyan-400/30 transition-all font-mono"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full py-3.5 rounded-xl bg-[linear-gradient(135deg,#ff7a29_0%,#f43f5e_50%,#7c3aed_100%)] hover:bg-[linear-gradient(135deg,#ff8f4a_0%,#fb7185_50%,#8b5cf6_100%)] text-white font-bold text-sm tracking-wide shadow-[inset_0_1px_1px_rgba(255,255,255,0.4),0_8px_25px_-4px_rgba(255,122,41,0.5),0_6px_20px_-4px_rgba(124,58,237,0.4)] hover:shadow-[inset_0_1px_1px_rgba(255,255,255,0.5),0_12px_32px_-4px_rgba(255,122,41,0.65),0_8px_25px_-4px_rgba(124,58,237,0.55)] border border-white/20 transition-all hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                <span>
+                  {loading
+                    ? "Authenticating Session…"
+                    : isRegister
+                    ? "Claim ₹10,00,000 & Access Terminal"
+                    : "Access Trading Terminal"}
+                </span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            </form>
           </div>
 
-          <div className="space-y-1">
-            <label className="text-[11px] font-semibold text-slate-400">
-              Password
-            </label>
-            <input
-              type="password"
-              required
-              placeholder="••••••••"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-3 py-2.5 bg-slate-950/80 border border-slate-800 rounded-xl text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-cyan-500/50"
-            />
+          {/* Micro Trust Guarantee Footer */}
+          <div className="pt-4 border-t border-white/[0.08] flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono text-slate-400">
+            <span className="flex items-center gap-1 text-slate-300">
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+              100% Risk-Free
+            </span>
+            <span className="flex items-center gap-1 text-slate-300">
+              <CheckCircle2 className="w-3.5 h-3.5 text-cyan-400" />
+              Zero Credit Card
+            </span>
+            <span className="flex items-center gap-1 text-slate-300">
+              <CheckCircle2 className="w-3.5 h-3.5 text-purple-400" />
+              SEBI-Aligned Mechanics
+            </span>
           </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full py-3 rounded-xl bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-400 hover:to-emerald-400 text-slate-950 font-bold text-sm shadow-xl shadow-cyan-500/20 transition-all disabled:opacity-50"
-          >
-            {loading ? "Authenticating…" : isRegister ? "Register & Receive ₹10,00,000" : "Access Terminal"}
-          </button>
-        </form>
-
-        <div className="text-center">
-          <button
-            type="button"
-            onClick={() => setIsRegister(!isRegister)}
-            className="text-xs text-cyan-400 hover:text-cyan-300 font-medium transition-colors"
-          >
-            {isRegister
-              ? "Already have an account? Sign In"
-              : "New trader? Create account & get ₹10,00,000"}
-          </button>
         </div>
       </div>
     </main>
