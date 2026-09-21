@@ -6,6 +6,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Navbar from "@/components/layout/Navbar";
 import OrdersTable from "@/components/terminal/OrdersTable";
 import TradesTable from "@/components/orders/TradesTable";
+import ContractNoteView from "@/components/terminal/ContractNoteView";
 import { DEMO_ORDERS, DEMO_TRADES } from "@/components/orders/OrdersDemoData";
 import { formatPaise } from "@/lib/format";
 import {
@@ -19,10 +20,11 @@ import {
   Layers,
   Sparkles,
   Download,
+  FileText,
 } from "lucide-react";
 import type { Order, Trade, Wallet, Portfolio, ApiResponse } from "@/types";
 
-type OrdersTab = "orders" | "trades";
+type OrdersTab = "orders" | "trades" | "contract-note";
 
 export default function OrdersPage() {
   const queryClient = useQueryClient();
@@ -39,6 +41,17 @@ export default function OrdersPage() {
   });
 
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api/v1";
+
+  // Check URL query parameters for ?tab=contract-note or ?tab=trades
+  React.useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const tabParam = params.get("tab");
+      if (tabParam === "contract-note" || tabParam === "trades" || tabParam === "orders") {
+        setActiveTab(tabParam as OrdersTab);
+      }
+    }
+  }, []);
 
   // 1. Fetch Orders via TanStack Query
   const {
@@ -499,6 +512,22 @@ export default function OrdersPage() {
                   {displayTrades.length}
                 </span>
               </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab("contract-note")}
+                className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  activeTab === "contract-note"
+                    ? "bg-cyan-600 dark:bg-cyan-500 text-white dark:text-slate-950 shadow-xs"
+                    : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-800"
+                }`}
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>Daily Contract Note</span>
+                <span className="text-[9px] font-mono uppercase px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-700 dark:text-cyan-300 font-bold">
+                  SEBI
+                </span>
+              </button>
             </div>
 
             <div className="text-[11px] font-mono text-slate-400">
@@ -532,6 +561,16 @@ export default function OrdersPage() {
                   <TradesTable trades={displayTrades} />
                 )}
               </>
+            )}
+
+            {activeTab === "contract-note" && (
+              <div className="p-4 sm:p-6">
+                <ContractNoteView
+                  token={token}
+                  apiUrl={apiUrl}
+                  useDemoData={useDemoData}
+                />
+              </div>
             )}
           </div>
         </div>

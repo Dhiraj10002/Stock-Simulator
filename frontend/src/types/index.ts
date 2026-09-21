@@ -340,5 +340,14 @@ export type WatchlistDbItem = {
   created_at?: string;
 };
 
-
-
+export type StockSearchResult = {
+  token: string;
+  symbol: string;
+  name: string;
+  expiry: string;
+  strike: string;
+  lot_size: number;
+  instrument_type: string;
+  exchange_segment: string;
+  tick_size: string;
+};

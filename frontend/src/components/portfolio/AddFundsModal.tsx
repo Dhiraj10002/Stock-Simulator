@@ -86,25 +86,30 @@ export default function AddFundsModal({
     }
   };
 
-  // Handle Reset to initial ₹10,00,000 via backend
+  // Handle Reset to initial ₹10,00,000 via backend simulation reset
   const handleResetWallet = async () => {
     setIsResetting(true);
     setFeedback(null);
 
     try {
       if (token) {
-        await fetch(`${apiUrl}/wallet/reset`, {
+        await fetch(`${apiUrl}/simulation/reset`, {
           method: "POST",
           headers: { Authorization: `Bearer ${token}` },
         });
       }
-      void queryClient.invalidateQueries({ queryKey: ["wallet"] });
-      void queryClient.invalidateQueries({ queryKey: ["wallet-transactions"] });
-      void queryClient.invalidateQueries({ queryKey: ["portfolio"] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["wallet"] }),
+        queryClient.invalidateQueries({ queryKey: ["wallet-transactions"] }),
+        queryClient.invalidateQueries({ queryKey: ["portfolio"] }),
+        queryClient.invalidateQueries({ queryKey: ["orders"] }),
+        queryClient.invalidateQueries({ queryKey: ["trades"] }),
+        queryClient.invalidateQueries({ queryKey: ["risk-overview"] }),
+      ]);
 
       setFeedback({
         type: "success",
-        message: "Wallet successfully reset to initial default ₹10,00,000.00!",
+        message: "Simulation account reset back to ₹10,00,000.00 baseline capital!",
       });
 
       setTimeout(() => {
@@ -114,7 +119,7 @@ export default function AddFundsModal({
     } catch {
       setFeedback({
         type: "error",
-        message: "Could not reset wallet ledger.",
+        message: "Could not reset simulation account.",
       });
     } finally {
       setIsResetting(false);
@@ -262,7 +267,7 @@ export default function AddFundsModal({
                 className="w-full py-2 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-semibold text-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <RefreshCcw className={`w-3.5 h-3.5 ${isResetting ? "animate-spin" : ""}`} />
-                <span>Reset Wallet to Default (₹10,00,000)</span>
+                <span>Reset Simulation Account (₹10,00,000)</span>
               </button>
             </div>
           </div>

@@ -31,6 +31,7 @@ import { useMarketStore } from "@/stores/market-store";
 import { useUIStore } from "@/stores/ui-store";
 import { useTheme } from "@/providers/theme-provider";
 import { useRiskOverview } from "@/hooks/useRiskOverview";
+import ResetSimulationModal from "@/components/modals/ResetSimulationModal";
 
 interface NavbarProps {
   cashBalancePaise?: number;
@@ -67,6 +68,7 @@ export default function Navbar({
 
   const [marketStatus, setMarketStatus] = useState(getIndianMarketStatus());
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [isResetModalOpen, setIsResetModalOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const { overview, isBreached } = useRiskOverview();
 
@@ -341,19 +343,21 @@ export default function Navbar({
                     Console & Statements
                   </Link>
 
-                  {onResetSimulation && (
-                    <button
-                      onClick={() => {
-                        setShowProfileMenu(false);
+                  <button
+                    onClick={() => {
+                      setShowProfileMenu(false);
+                      if (onResetSimulation) {
                         onResetSimulation();
-                      }}
-                      disabled={resetting}
-                      className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded-xl text-left transition-colors cursor-pointer"
-                    >
-                      <RotateCcw className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400" />
-                      Reset Account (₹10L)
-                    </button>
-                  )}
+                      } else {
+                        setIsResetModalOpen(true);
+                      }
+                    }}
+                    disabled={resetting}
+                    className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded-xl text-left transition-colors cursor-pointer"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400" />
+                    Reset Account (₹10L)
+                  </button>
 
                   {onSignOut && (
                     <button
@@ -440,6 +444,12 @@ export default function Navbar({
           );
         })}
       </nav>
+
+      {/* Institutional Simulation Reset Confirmation Modal */}
+      <ResetSimulationModal
+        isOpen={isResetModalOpen}
+        onClose={() => setIsResetModalOpen(false)}
+      />
     </header>
   );
 }

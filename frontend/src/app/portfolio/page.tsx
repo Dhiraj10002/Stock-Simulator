@@ -11,6 +11,7 @@ import PortfolioPnlAnalytics from "@/components/portfolio/PortfolioPnlAnalytics"
 import WalletTransactionsTable from "@/components/portfolio/WalletTransactionsTable";
 import AddFundsModal from "@/components/portfolio/AddFundsModal";
 import PortfolioAiInsightsModal from "@/components/portfolio/PortfolioAiInsightsModal";
+import ResetSimulationModal from "@/components/modals/ResetSimulationModal";
 import {
   DEMO_HOLDINGS,
   DEMO_POSITIONS,
@@ -27,6 +28,7 @@ import {
   TrendingDown,
   Wallet as WalletIcon,
   RefreshCw,
+  RotateCcw,
   Plus,
   Flame,
   Zap,
@@ -89,6 +91,7 @@ export default function PortfolioPage() {
   // Modals state
   const [isAddFundsOpen, setIsAddFundsOpen] = useState(false);
   const [isAiInsightsOpen, setIsAiInsightsOpen] = useState(false);
+  const [isResetModalOpen, setIsResetModalOpen] = useState(false);
 
   // Demo Showcase vs Live Ledger toggle state
   // Defaults to true if user doesn't have live positions yet, giving them an instant rich experience!
@@ -462,10 +465,19 @@ export default function PortfolioPage() {
 
             <button
               onClick={() => setIsAiInsightsOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/60 border border-indigo-200 dark:border-indigo-800/60 text-indigo-700 dark:text-indigo-300 font-bold text-xs transition-colors cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/60 border border-indigo-200 dark:border-indigo-800/60 text-indigo-700 dark:text-indigo-300 font-bold text-xs transition-colors cursor-pointer"
             >
               <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
               <span>AI Audit</span>
+            </button>
+
+            <button
+              onClick={() => setIsResetModalOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/60 dark:hover:bg-amber-900/60 border border-amber-200 dark:border-amber-800/60 text-amber-700 dark:text-amber-300 font-bold text-xs transition-colors cursor-pointer"
+              title="Reset Virtual Paper Account back to ₹10L seed capital"
+            >
+              <RotateCcw className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+              <span>Reset Account</span>
             </button>
 
             <button
@@ -771,6 +783,12 @@ export default function PortfolioPage() {
         holdingsCount={activeHoldings.length}
         totalValuationRupees={totalValuationPaise / 100}
         pnlPercent={totalPnlPercent}
+      />
+
+      {/* Institutional Simulation Reset Confirmation Modal */}
+      <ResetSimulationModal
+        isOpen={isResetModalOpen}
+        onClose={() => setIsResetModalOpen(false)}
       />
     </div>
   );

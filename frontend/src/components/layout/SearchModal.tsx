@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 import {
   Search,
   X,
@@ -12,11 +13,15 @@ import {
   Zap,
   Activity,
   Filter,
+  Loader2,
 } from "lucide-react";
 import { INSTRUMENT_METADATA, InstrumentMetadata } from "@/lib/mockData";
 import { formatPaise, formatPercent } from "@/lib/format";
 import { useTerminalStore } from "@/stores/terminal-store";
 import { useUIStore } from "@/stores/ui-store";
+import { useMarketStore } from "@/stores/market-store";
+import { apiFetch } from "@/lib/api";
+import type { StockSearchResult } from "@/types";
 import FnoOrderModal from "@/components/trading/FnoOrderModal";
 
 type SearchSegmentFilter = "ALL" | "EQUITY" | "FUTURES" | "OPTIONS";
@@ -25,8 +30,43 @@ export default function SearchModal() {
   const router = useRouter();
   const { isSearchPaletteOpen, setSearchPaletteOpen } = useUIStore();
   const setSelectedSymbol = useTerminalStore((s) => s.setSelectedSymbol);
+  const marketQuotes = useMarketStore((s) => s.quotes);
+
   const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
   const [segmentFilter, setSegmentFilter] = useState<SearchSegmentFilter>("ALL");
+
+  // Debounce user input by 200ms to avoid overwhelming the search API
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedQuery(query.trim());
+    }, 200);
+    return () => clearTimeout(handler);
+  }, [query]);
+
+  // Live backend instrument search query from PostgreSQL instrument master
+  const { data: apiResults, isFetching: isSearching } = useQuery<StockSearchResult[]>({
+    queryKey: ["stocks-search", debouncedQuery, segmentFilter],
+    queryFn: async () => {
+      if (!debouncedQuery) return [];
+      let segmentParam = "";
+      if (segmentFilter === "EQUITY") segmentParam = "&segment=NSE";
+      else if (segmentFilter === "FUTURES") segmentParam = "&segment=FUTSTK";
+      else if (segmentFilter === "OPTIONS") segmentParam = "&segment=OPTSTK";
+
+      try {
+        const res = await apiFetch<StockSearchResult[]>(
+          `/stocks?q=${encodeURIComponent(debouncedQuery)}${segmentParam}`
+        );
+        return res || [];
+      } catch (err) {
+        console.warn("Backend stocks search error, falling back to local list:", err);
+        return [];
+      }
+    },
+    enabled: isSearchPaletteOpen && debouncedQuery.length > 0,
+    staleTime: 30_000,
+  });
 
   // F&O Direct Buy/Sell order placement modal state
   const [fnoModalInstrument, setFnoModalInstrument] = useState<InstrumentMetadata | null>(null);
@@ -35,6 +75,7 @@ export default function SearchModal() {
 
   const handleClose = useCallback(() => {
     setQuery("");
+    setDebouncedQuery("");
     setSegmentFilter("ALL");
     setSearchPaletteOpen(false);
   }, [setSearchPaletteOpen]);
@@ -71,6 +112,7 @@ export default function SearchModal() {
           handleClose();
         } else {
           setQuery("");
+          setDebouncedQuery("");
           setSegmentFilter("ALL");
           setSearchPaletteOpen(true);
         }
@@ -82,36 +124,111 @@ export default function SearchModal() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isSearchPaletteOpen, setSearchPaletteOpen, handleClose]);
 
-  // Comprehensive results query across all NSE Stocks & F&O contracts
+  // Comprehensive results query across PostgreSQL database + live market quotes + local instruments
   const results = useMemo(() => {
-    const q = query.trim().toUpperCase();
-    const all = Object.values(INSTRUMENT_METADATA);
+    const q = debouncedQuery.toUpperCase();
+    const allMock = Object.values(INSTRUMENT_METADATA);
 
-    let filtered = all;
-
-    // Filter by active segment tab
-    if (segmentFilter === "EQUITY") {
-      filtered = filtered.filter((i) => i.segment === "EQUITY" || i.segment === "INDEX");
-    } else if (segmentFilter === "FUTURES") {
-      filtered = filtered.filter((i) => i.segment === "FUTURES");
-    } else if (segmentFilter === "OPTIONS") {
-      filtered = filtered.filter((i) => i.segment === "OPTIONS");
-    }
-
+    // If query is empty, show default popular recommendations
     if (!q) {
+      let filtered = allMock;
+      if (segmentFilter === "EQUITY") {
+        filtered = filtered.filter((i) => i.segment === "EQUITY" || i.segment === "INDEX");
+      } else if (segmentFilter === "FUTURES") {
+        filtered = filtered.filter((i) => i.segment === "FUTURES");
+      } else if (segmentFilter === "OPTIONS") {
+        filtered = filtered.filter((i) => i.segment === "OPTIONS");
+      }
       return filtered.slice(0, 10);
     }
 
-    // Match symbol, name, underlying, or optionType
-    return filtered.filter((item) => {
+    const items: InstrumentMetadata[] = [];
+    const seenSymbols = new Set<string>();
+
+    // 1. Process backend API results
+    if (apiResults && apiResults.length > 0) {
+      for (const item of apiResults) {
+        if (seenSymbols.has(item.symbol)) continue;
+        seenSymbols.add(item.symbol);
+
+        const isOpt =
+          item.instrument_type.startsWith("OPT") ||
+          item.symbol.endsWith("CE") ||
+          item.symbol.endsWith("PE") ||
+          item.symbol.includes(" CE") ||
+          item.symbol.includes(" PE");
+        const isFut = item.instrument_type.startsWith("FUT");
+        const isIndex =
+          item.instrument_type === "INDEX" ||
+          item.symbol.startsWith("NIFTY") ||
+          item.symbol.startsWith("BANKNIFTY");
+
+        let seg: "EQUITY" | "INDEX" | "FUTURES" | "OPTIONS" = "EQUITY";
+        if (isOpt) seg = "OPTIONS";
+        else if (isFut) seg = "FUTURES";
+        else if (isIndex) seg = "INDEX";
+
+        const optType: "CE" | "PE" | undefined =
+          item.symbol.endsWith("CE") || item.symbol.includes(" CE")
+            ? "CE"
+            : item.symbol.endsWith("PE") || item.symbol.includes(" PE")
+            ? "PE"
+            : undefined;
+
+        const live = marketQuotes[item.symbol];
+        const basePrice =
+          live?.price_paise ||
+          INSTRUMENT_METADATA[item.symbol]?.basePricePaise ||
+          (parseFloat(item.strike) || 250000);
+        const changePct =
+          live?.change_percent ??
+          (INSTRUMENT_METADATA[item.symbol]?.dayChangePercent ?? 0);
+
+        items.push({
+          symbol: item.symbol,
+          name: item.name || item.symbol,
+          exchange: item.exchange_segment === "NFO" ? "NSE-NFO" : "NSE",
+          basePricePaise: basePrice,
+          lotSize: item.lot_size || 1,
+          dayChangePercent: changePct,
+          segment: seg,
+          expiry: item.expiry,
+          optionType: optType,
+        });
+      }
+    }
+
+    // 2. Also match local instruments for index & stock instant suggestions
+    const localFiltered = allMock.filter((item) => {
       const matchSym = item.symbol.toUpperCase().includes(q);
       const matchName = item.name.toUpperCase().includes(q);
-      const matchUnderlying = item.underlying ? item.underlying.toUpperCase().includes(q) : false;
-      const matchType = item.optionType ? item.optionType.toUpperCase().includes(q) : false;
-      const matchSegment = item.segment ? item.segment.toUpperCase().includes(q) : false;
-      return matchSym || matchName || matchUnderlying || matchType || matchSegment;
+      const matchUnderlying = item.underlying
+        ? item.underlying.toUpperCase().includes(q)
+        : false;
+      const matchType = item.optionType
+        ? item.optionType.toUpperCase().includes(q)
+        : false;
+      return matchSym || matchName || matchUnderlying || matchType;
     });
-  }, [query, segmentFilter]);
+
+    for (const item of localFiltered) {
+      if (!seenSymbols.has(item.symbol)) {
+        seenSymbols.add(item.symbol);
+        items.push(item);
+      }
+    }
+
+    // Filter by active segment tab
+    if (segmentFilter === "EQUITY") {
+      return items.filter((i) => i.segment === "EQUITY" || i.segment === "INDEX");
+    } else if (segmentFilter === "FUTURES") {
+      return items.filter((i) => i.segment === "FUTURES");
+    } else if (segmentFilter === "OPTIONS") {
+      return items.filter((i) => i.segment === "OPTIONS");
+    }
+
+    return items.slice(0, 25);
+  }, [debouncedQuery, apiResults, segmentFilter, marketQuotes]);
 
   if (!isSearchPaletteOpen && !isFnoModalOpen) return null;
 
@@ -131,6 +248,9 @@ export default function SearchModal() {
                 autoFocus
                 className="w-full bg-transparent text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none font-medium"
               />
+              {isSearching && (
+                <Loader2 className="w-4 h-4 text-cyan-500 animate-spin mr-2 shrink-0" />
+              )}
               {query && (
                 <button
                   onClick={() => setQuery("")}
@@ -329,8 +449,9 @@ export default function SearchModal() {
             {/* Footer info */}
             <div className="px-4 py-2.5 bg-slate-50 dark:bg-slate-950/60 border-t border-slate-200 dark:border-slate-800 text-[11px] text-slate-500 dark:text-slate-400 flex items-center justify-between">
               <span>Select any instrument to open order placement or view details</span>
-              <span className="font-mono text-[10px] bg-slate-200/80 dark:bg-slate-800 px-2 py-0.5 rounded">
-                NSE & F&O Live Sync
+              <span className="font-mono text-[10px] bg-slate-200/80 dark:bg-slate-800 px-2 py-0.5 rounded flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                <span>NSE & F&O Live DB Sync</span>
               </span>
             </div>
           </div>
