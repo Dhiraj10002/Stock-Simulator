@@ -8,6 +8,7 @@ import PositionsTable from "@/components/terminal/PositionsTable";
 import PortfolioHoldingsTable from "@/components/portfolio/PortfolioHoldingsTable";
 import PortfolioAllocationView from "@/components/portfolio/PortfolioAllocationView";
 import PortfolioPnlAnalytics from "@/components/portfolio/PortfolioPnlAnalytics";
+import WalletTransactionsTable from "@/components/portfolio/WalletTransactionsTable";
 import AddFundsModal from "@/components/portfolio/AddFundsModal";
 import PortfolioAiInsightsModal from "@/components/portfolio/PortfolioAiInsightsModal";
 import {
@@ -33,6 +34,7 @@ import {
   ShieldCheck,
   ArrowRight,
   SlidersHorizontal,
+  Receipt,
 } from "lucide-react";
 import { formatPaise, formatPercent } from "@/lib/format";
 import { useMarketStore } from "@/stores/market-store";
@@ -76,7 +78,7 @@ const STOCK_INFO_MAP: Record<
   LT: { name: "Larsen & Toubro", sector: "Other" },
 };
 
-type PortfolioTab = "HOLDINGS" | "POSITIONS" | "ALLOCATION" | "ANALYTICS";
+type PortfolioTab = "HOLDINGS" | "POSITIONS" | "ALLOCATION" | "ANALYTICS" | "LEDGER";
 
 export default function PortfolioPage() {
   const queryClient = useQueryClient();
@@ -623,6 +625,11 @@ export default function PortfolioPage() {
               label: "P&L Journal & Analytics",
               icon: Calendar,
             },
+            {
+              id: "LEDGER",
+              label: "Cash Movements Ledger",
+              icon: Receipt,
+            },
           ].map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -735,6 +742,16 @@ export default function PortfolioPage() {
             totalInvestedPaise={totalInvestedPaise}
             holdings={activeHoldings}
             positions={activePositions}
+            token={token || ""}
+          />
+        )}
+
+        {/* ===================================================================== */}
+        {/* TAB 5: CASH MOVEMENTS LEDGER & AUDIT TRAIL                            */}
+        {/* ===================================================================== */}
+        {activeTab === "LEDGER" && (
+          <WalletTransactionsTable
+            useDemoData={useDemoData}
             token={token || ""}
           />
         )}
