@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   TrendingUp,
   TrendingDown,
@@ -34,11 +35,16 @@ import {
   ShieldAlert,
   Zap,
   ArrowRight,
+  CandlestickChart,
+  AreaChart,
+  Loader2,
 } from "lucide-react";
 import { formatPaise, formatPercent } from "@/lib/format";
 import { MASTER_STOCKS_CATALOG, WatchlistItem } from "@/components/dashboard/DashboardPage";
+import { useMarketStore } from "@/stores/market-store";
 import Navbar from "@/components/layout/Navbar";
-import type { Wallet, ApiResponse } from "@/types";
+import { apiFetch, publicFetch, getAuthToken } from "@/lib/api";
+import type { Wallet, Candle, ApiResponse, Quote as QuoteType } from "@/types";
 
 interface StockDetailsProps {
   initialSymbol?: string;
@@ -370,6 +376,7 @@ export function getStockNews(symbol: string, name: string): StockNewsItem[] {
 export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetailsProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const queryClient = useQueryClient();
 
   // Resolve active symbol from URL query or prop
   const symbolParam = (searchParams.get("symbol") || initialSymbol || "ITC").toUpperCase();
@@ -392,17 +399,83 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
   const [orderQty, setOrderQty] = useState(10);
   const [orderProduct, setOrderProduct] = useState<"CNC" | "MIS">("CNC");
   const [orderType, setOrderType] = useState<"MARKET" | "LIMIT">("MARKET");
+  const [limitPrice, setLimitPrice] = useState<number>(0);
   const [orderFeedback, setOrderFeedback] = useState<string | null>(null);
+  const [orderSubmitting, setOrderSubmitting] = useState(false);
 
-  // Find stock in catalog
+  const quotes = useMarketStore((s) => s.quotes);
+  const token = useMemo(() => getAuthToken(), []);
+
+  // ---------------------------------------------------------------------------
+  // REAL DATA: Fetch wallet balance
+  // ---------------------------------------------------------------------------
+  const { data: wallet } = useQuery<Wallet>({
+    queryKey: ["wallet", token],
+    queryFn: () => apiFetch<Wallet>("/wallet"),
+    enabled: !!token,
+    refetchInterval: token ? 5000 : false,
+    placeholderData: {
+      uuid: "",
+      cash_balance_paise: 100000000,
+      available_balance_paise: 100000000,
+      blocked_paise: 0,
+    },
+  });
+
+  const availableBalancePaise = wallet?.available_balance_paise ?? 100000000;
+
+  // ---------------------------------------------------------------------------
+  // REAL DATA: Fetch candle history from backend
+  // ---------------------------------------------------------------------------
+  const candleLimit = activeTimeframe === "1D" ? 50 : activeTimeframe === "1W" ? 100 : activeTimeframe === "1M" ? 200 : 300;
+  const { data: rawCandles } = useQuery<Candle[]>({
+    queryKey: ["candle-history", symbolParam, candleLimit],
+    queryFn: () => publicFetch<Candle[]>(`/market/quotes/${encodeURIComponent(symbolParam)}/history?limit=${candleLimit}`),
+    refetchInterval: 30000,
+    staleTime: 15000,
+  });
+
+  // ---------------------------------------------------------------------------
+  // REAL DATA: Fetch API quote for full details (circuits, change, source)
+  // ---------------------------------------------------------------------------
+  interface ApiQuoteResponse {
+    symbol: string;
+    price_paise: number;
+    change_paise: number;
+    change_percent: number;
+    lower_circuit_paise: number;
+    upper_circuit_paise: number;
+    source: string;
+    updated_at: string;
+  }
+  const { data: apiQuote } = useQuery<ApiQuoteResponse>({
+    queryKey: ["api-quote", symbolParam],
+    queryFn: () => publicFetch<ApiQuoteResponse>(`/market/quotes/${encodeURIComponent(symbolParam)}`),
+    refetchInterval: 10000,
+    staleTime: 5000,
+  });
+
+  // ---------------------------------------------------------------------------
+  // REAL DATA: Watchlist from backend API
+  // ---------------------------------------------------------------------------
+  interface WatchlistApiItem {
+    id?: number;
+    user_uuid?: string;
+    symbol: string;
+  }
+  const { data: watchlistItems } = useQuery<WatchlistApiItem[]>({
+    queryKey: ["watchlist", token],
+    queryFn: () => apiFetch<WatchlistApiItem[]>("/watchlist"),
+    enabled: !!token,
+  });
+
+  // Find stock in catalog and merge with authentic live Angel One quote
   const stock = useMemo(() => {
-    const cleanSym = symbolParam.replace("-EQ", "");
+    const cleanSym = symbolParam.replace("-EQ", "").toUpperCase();
     const found = MASTER_STOCKS_CATALOG.find(
-      (s) => s.symbol.toUpperCase() === cleanSym || s.symbol.toUpperCase() === symbolParam
+      (s) => s.symbol.toUpperCase() === cleanSym || s.symbol.toUpperCase() === symbolParam.toUpperCase()
     );
-    if (found) return found;
-
-    return {
+    const base = found || {
       symbol: cleanSym,
       exchange: "NSE",
       name: `${cleanSym} Limited`,
@@ -411,12 +484,39 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
       changePercent: 0.59,
       isPositive: true,
     };
-  }, [symbolParam]);
 
-  // Fundamentals & Profile
+    // Try WebSocket live quote first, fall back to API quote
+    const q = quotes[cleanSym] || (cleanSym === "ZOMATO" ? quotes["ETERNAL"] : undefined);
+    const liveQuote = q || (apiQuote ? { price_paise: apiQuote.price_paise, change_paise: apiQuote.change_paise, change_percent: apiQuote.change_percent } : undefined);
+    if (!liveQuote || !liveQuote.price_paise) return base;
+
+    const price = liveQuote.price_paise / 100;
+    const change = liveQuote.change_paise !== undefined ? liveQuote.change_paise / 100 : +(price - base.price).toFixed(2);
+    const changePercent = liveQuote.change_percent !== undefined ? liveQuote.change_percent : +((change / (price - change || 1)) * 100).toFixed(2);
+    const isPositive = changePercent >= 0;
+
+    return {
+      ...base,
+      price,
+      change,
+      changePercent: +changePercent.toFixed(2),
+      isPositive,
+    };
+  }, [symbolParam, quotes, apiQuote]);
+
+  // Fundamentals & Profile — merge with live API quote data for circuits
   const profile: StockFundamentals = useMemo(() => {
     const base = STOCK_PROFILES[stock.symbol] || {};
     const price = stock.price;
+    const lc = apiQuote?.lower_circuit_paise ? apiQuote.lower_circuit_paise / 100 : undefined;
+    const uc = apiQuote?.upper_circuit_paise ? apiQuote.upper_circuit_paise / 100 : undefined;
+
+    // Use live quote for today's open/high/low if available
+    const wsQ = quotes[stock.symbol];
+    const liveOpen = wsQ?.open_paise ? wsQ.open_paise / 100 : undefined;
+    const liveHigh = wsQ?.high_paise ? wsQ.high_paise / 100 : undefined;
+    const liveLow = wsQ?.low_paise ? wsQ.low_paise / 100 : undefined;
+
     return {
       marketCapCr: base.marketCapCr ?? +(price * 1250).toFixed(0),
       peRatio: base.peRatio ?? 27.5,
@@ -428,16 +528,16 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
       divYield: base.divYield ?? 2.45,
       bookValue: base.bookValue ?? +(price / 6.4).toFixed(2),
       faceValue: base.faceValue ?? 1.0,
-      todayLow: base.todayLow ?? +(price * 0.992).toFixed(2),
-      todayHigh: base.todayHigh ?? +(price * 1.008).toFixed(2),
+      todayLow: liveLow ?? base.todayLow ?? +(price * 0.992).toFixed(2),
+      todayHigh: liveHigh ?? base.todayHigh ?? +(price * 1.008).toFixed(2),
       fiftyTwoWeekLow: base.fiftyTwoWeekLow ?? +(price * 0.78).toFixed(2),
       fiftyTwoWeekHigh: base.fiftyTwoWeekHigh ?? +(price * 1.15).toFixed(2),
-      openPrice: base.openPrice ?? +(price * 0.996).toFixed(2),
+      openPrice: liveOpen ?? base.openPrice ?? +(price * 0.996).toFixed(2),
       prevClose: base.prevClose ?? +(price - stock.change).toFixed(2),
       volumeShares: base.volumeShares ?? "84.2 Lakh",
       tradedValueCr: base.tradedValueCr ?? 412.0,
-      upperCircuit: base.upperCircuit ?? +(price * 1.1).toFixed(2),
-      lowerCircuit: base.lowerCircuit ?? +(price * 0.9).toFixed(2),
+      upperCircuit: uc ?? base.upperCircuit ?? +(price * 1.1).toFixed(2),
+      lowerCircuit: lc ?? base.lowerCircuit ?? +(price * 0.9).toFixed(2),
       sector: base.sector ?? "Core Equities & Industry",
       industry: base.industry ?? "Diversified Operations",
       ceo: base.ceo ?? "Executive Leadership",
@@ -447,37 +547,55 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
         base.about ??
         `${stock.name} is a leading publicly traded corporation listed on NSE and BSE, catering to millions of institutional and retail market participants.`,
     };
-  }, [stock]);
+  }, [stock, apiQuote, quotes]);
 
-  // Synthetic price points for smooth SVG Area chart
-  const chartPoints = useMemo(() => {
+  // ---------------------------------------------------------------------------
+  // CHART: Use real candle data when available, fall back to synthetic
+  // ---------------------------------------------------------------------------
+  const candles: Candle[] = useMemo(() => {
+    if (rawCandles && rawCandles.length > 0) return rawCandles;
+    // Synthetic fallback — generate fake candles from stock price
     const base = stock.price;
-    const numPoints = activeTimeframe === "1D" ? 35 : activeTimeframe === "1W" ? 45 : 55;
-    const pts: number[] = [];
+    const numPoints = candleLimit;
+    const fakeCandles: Candle[] = [];
     let cur = base - stock.change;
-
+    const now = Date.now();
     for (let i = 0; i < numPoints; i++) {
       const noise = (Math.sin(i * 0.6) + Math.cos(i * 0.3) * 0.5) * (base * 0.003);
       const trend = (i / numPoints) * stock.change;
-      cur = +(base - stock.change + trend + noise).toFixed(2);
-      pts.push(cur);
+      const close = +(base - stock.change + trend + noise).toFixed(2);
+      const open = i === 0 ? base - stock.change : fakeCandles[i - 1].close_paise;
+      const high = Math.round(Math.max(open, close * 100) + Math.abs(noise) * 40);
+      const low = Math.round(Math.min(open, close * 100) - Math.abs(noise) * 40);
+      fakeCandles.push({
+        timestamp: Math.floor((now - (numPoints - i) * 60000) / 1000),
+        open_paise: Math.round(open),
+        high_paise: high,
+        low_paise: low,
+        close_paise: Math.round(close * 100),
+        volume: Math.floor(1000 + Math.random() * 5000),
+      });
     }
-    pts[pts.length - 1] = base;
-    return pts;
-  }, [stock, activeTimeframe]);
+    return fakeCandles;
+  }, [rawCandles, stock, candleLimit]);
+
+  const chartPoints = useMemo(() => {
+    if (candles.length === 0) return [stock.price];
+    return candles.map((c) => c.close_paise / 100);
+  }, [candles, stock.price]);
 
   const minChart = Math.min(...chartPoints);
   const maxChart = Math.max(...chartPoints);
   const chartRange = maxChart - minChart || 1;
 
-  // SVG coordinates generator
+  // SVG coordinates generator for area chart
   const svgPath = useMemo(() => {
     const width = 800;
     const height = 260;
     const padding = 20;
 
     const coords = chartPoints.map((val, idx) => {
-      const x = (idx / (chartPoints.length - 1)) * (width - padding * 2) + padding;
+      const x = (idx / (chartPoints.length - 1 || 1)) * (width - padding * 2) + padding;
       const y = height - padding - ((val - minChart) / chartRange) * (height - padding * 2);
       return `${x.toFixed(1)},${y.toFixed(1)}`;
     });
@@ -490,11 +608,15 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
     return { linePath, areaPath };
   }, [chartPoints, minChart, chartRange]);
 
-  // Watchlist state & toggle
+  // ---------------------------------------------------------------------------
+  // Watchlist state — prefer backend API, fall back to localStorage
+  // ---------------------------------------------------------------------------
   const [isInWatchlist, setIsInWatchlist] = useState(false);
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
+    if (token && watchlistItems) {
+      setIsInWatchlist(watchlistItems.some((w) => w.symbol === stock.symbol));
+    } else if (typeof window !== "undefined") {
       try {
         const saved = localStorage.getItem("stock_sim_watchlists_v2");
         if (saved) {
@@ -506,10 +628,30 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
         console.error(e);
       }
     }
-  }, [stock.symbol]);
+  }, [stock.symbol, watchlistItems, token]);
 
-  const handleToggleWatchlist = () => {
-    if (typeof window !== "undefined") {
+  const handleToggleWatchlist = useCallback(async () => {
+    if (token) {
+      // Use backend API
+      try {
+        if (isInWatchlist) {
+          await apiFetch(`/watchlist/${stock.symbol}`, { method: "DELETE" });
+          setIsInWatchlist(false);
+          setToastMsg(`Removed ${stock.symbol} from Watchlist`);
+        } else {
+          await apiFetch("/watchlist", {
+            method: "POST",
+            body: JSON.stringify({ symbol: stock.symbol }),
+          });
+          setIsInWatchlist(true);
+          setToastMsg(`✓ Added ${stock.symbol} to Watchlist`);
+        }
+        queryClient.invalidateQueries({ queryKey: ["watchlist"] });
+      } catch (err) {
+        setToastMsg(`Watchlist error: ${err instanceof Error ? err.message : "Unknown error"}`);
+      }
+    } else {
+      // Fallback: localStorage
       try {
         const saved = localStorage.getItem("stock_sim_watchlists_v2");
         const parsed = saved ? JSON.parse(saved) : { 1: [] };
@@ -528,24 +670,98 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
 
         parsed[1] = updatedList;
         localStorage.setItem("stock_sim_watchlists_v2", JSON.stringify(parsed));
-        setTimeout(() => setToastMsg(null), 2500);
       } catch (e) {
         console.error(e);
       }
     }
-  };
+    setTimeout(() => setToastMsg(null), 2500);
+  }, [token, isInWatchlist, stock, queryClient]);
 
-  const handleExecuteOrder = () => {
-    setOrderFeedback(
-      `✓ Successfully executed simulated ${orderModal.action} order of ${orderQty} shares of ${stock.symbol} at ₹${stock.price.toFixed(
-        2
-      )}!`
-    );
-    setTimeout(() => {
-      setOrderModal({ isOpen: false, action: "BUY" });
-      setOrderFeedback(null);
-    }, 1500);
-  };
+  // ---------------------------------------------------------------------------
+  // REAL ORDER EXECUTION: POST /api/v1/orders + auto-execute
+  // ---------------------------------------------------------------------------
+  const handleExecuteOrder = useCallback(async () => {
+    if (!token) {
+      setOrderFeedback("⚠ Please log in to place orders");
+      setTimeout(() => setOrderFeedback(null), 2500);
+      return;
+    }
+
+    setOrderSubmitting(true);
+    setOrderFeedback(null);
+    try {
+      // Map frontend product types to backend enum
+      const productMap: Record<string, string> = { CNC: "DELIVERY", MIS: "INTRADAY" };
+      const isMarket = orderType === "MARKET";
+      const effectiveLimitPrice = limitPrice > 0 ? limitPrice : stock.price;
+      const orderPayload = {
+        symbol: stock.symbol,
+        side: orderModal.action,
+        type: orderType,
+        product: productMap[orderProduct] || "DELIVERY",
+        quantity: orderQty,
+        price_paise: isMarket ? 0 : Math.round(effectiveLimitPrice * 100),
+      };
+
+      // Step 1: Create order (backend automatically executes MARKET orders upon creation)
+      const created = await apiFetch<{
+        uuid: string;
+        status: string;
+        executed_price_paise?: number;
+      }>("/orders", {
+        method: "POST",
+        body: JSON.stringify(orderPayload),
+      });
+
+      // Step 2: Only call execute if the market order is still pending/unexecuted
+      if (isMarket && created?.uuid && created.status !== "EXECUTED") {
+        await apiFetch(`/orders/${created.uuid}/execute`, { method: "POST" });
+      }
+
+      const fillPrice = created?.executed_price_paise
+        ? (created.executed_price_paise / 100).toFixed(2)
+        : stock.price.toFixed(2);
+
+      setOrderFeedback(
+        isMarket
+          ? `✓ ${orderModal.action} ${orderQty} ${stock.symbol} executed @ ₹${fillPrice}!`
+          : `✓ ${orderModal.action} Limit order for ${orderQty} ${stock.symbol} @ ₹${effectiveLimitPrice.toFixed(2)} placed!`
+      );
+
+      // Refetch wallet + portfolio
+      queryClient.invalidateQueries({ queryKey: ["wallet"] });
+      queryClient.invalidateQueries({ queryKey: ["portfolio"] });
+      queryClient.invalidateQueries({ queryKey: ["orders"] });
+
+      setTimeout(() => {
+        setOrderModal({ isOpen: false, action: "BUY" });
+        setOrderFeedback(null);
+      }, 2000);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Order failed";
+      setOrderFeedback(`✗ ${msg}`);
+      setTimeout(() => setOrderFeedback(null), 4000);
+    } finally {
+      setOrderSubmitting(false);
+    }
+  }, [token, stock, orderModal.action, orderProduct, orderType, limitPrice, orderQty, queryClient]);
+
+  // ---------------------------------------------------------------------------
+  // Dynamic Market Depth — generated from live price with realistic spread
+  // ---------------------------------------------------------------------------
+  const marketDepthRows = useMemo(() => {
+    const p = stock.price;
+    const tick = p > 1000 ? 0.05 : p > 100 ? 0.05 : 0.01;
+    const baseQty = p > 5000 ? 200 : p > 1000 ? 800 : p > 100 ? 1500 : 5000;
+    // Use a pseudo-random seed from price to get consistent-looking variation
+    const seed = Math.floor(p * 100) % 1000;
+    return Array.from({ length: 5 }, (_, i) => ({
+      bidP: +(p - tick * (i + 1)).toFixed(2),
+      bidQ: baseQty + ((seed * (i + 1) * 7) % (baseQty * 3)),
+      askP: +(p + tick * i).toFixed(2),
+      askQ: baseQty + ((seed * (i + 2) * 11) % (baseQty * 3)),
+    }));
+  }, [stock.price]);
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans selection:bg-cyan-500 selection:text-white transition-colors duration-150">
@@ -608,11 +824,11 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
             Stocks
           </Link>
           <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
-          <span className="text-[#0f172a] font-semibold">{stock.name}</span>
+          <span className="text-slate-900 dark:text-slate-100 font-semibold">{stock.name}</span>
         </nav>
 
         {/* Hero Stock Header Card */}
-        <div className="bg-white border border-[#e2e8f0] rounded-2xl p-6 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-6">
+        <div className="bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-6">
           {/* Left: Stock Details & Badges */}
           <div className="flex items-start gap-4">
             <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-cyan-600 to-teal-500 text-white font-extrabold text-lg flex items-center justify-center shadow-md shadow-cyan-600/10 shrink-0">
@@ -620,20 +836,20 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
             </div>
             <div className="space-y-1">
               <div className="flex items-center gap-2.5 flex-wrap">
-                <h1 className="text-xl sm:text-2xl font-black text-[#0f172a] tracking-tight">
+                <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight">
                   {stock.name}
                 </h1>
-                <span className="text-[10px] font-bold text-[#ef4444] bg-[#fef2f2] border border-[#fee2e2] px-2 py-0.5 rounded uppercase">
+                <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800/50 px-2 py-0.5 rounded uppercase">
                   {stock.exchange || "NSE"}
                 </span>
-                <span className="text-[10px] font-bold text-[#2563eb] bg-[#eff6ff] border border-[#dbeafe] px-2 py-0.5 rounded uppercase">
+                <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800/50 px-2 py-0.5 rounded uppercase">
                   BSE
                 </span>
-                <span className="text-[10px] font-bold text-[#64748b] bg-[#f1f5f9] border border-[#e2e8f0] px-2 py-0.5 rounded">
+                <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-2 py-0.5 rounded">
                   F&O Active
                 </span>
               </div>
-              <p className="text-xs text-[#64748b] font-medium flex items-center gap-2">
+              <p className="text-xs text-slate-500 dark:text-slate-400 font-medium flex items-center gap-2">
                 <span>{profile.sector}</span>
                 <span>•</span>
                 <span>{profile.industry}</span>
@@ -644,7 +860,7 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
           {/* Right: Price & Main Action Buttons */}
           <div className="flex items-end md:items-center gap-6 justify-between md:justify-end">
             <div className="text-right">
-              <div className="text-2xl sm:text-3xl font-black text-[#0f172a] font-tabular tracking-tight">
+              <div className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-slate-100 font-tabular tracking-tight">
                 ₹{stock.price.toFixed(2)}
               </div>
               <div
@@ -657,7 +873,11 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
                   {stock.isPositive ? "+" : ""}
                   {stock.change.toFixed(2)} ({stock.changePercent.toFixed(2)}%)
                 </span>
-                <span className="text-[11px] text-[#64748b] font-normal ml-0.5">1D</span>
+                <span className="text-[11px] text-slate-500 dark:text-slate-400 font-normal ml-0.5">1D</span>
+                <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/40 px-1.5 py-0.5 rounded flex items-center gap-1 ml-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  Angel One
+                </span>
               </div>
             </div>
 
@@ -698,34 +918,67 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
           {/* Left 2 Columns: Chart & Performance & Fundamentals */}
           <div className="lg:col-span-2 space-y-6">
             {/* Interactive Chart Container */}
-            <div className="bg-white border border-[#e2e8f0] rounded-2xl p-6 shadow-xs space-y-4">
+            <div className="bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-xs space-y-4">
               {/* Chart Controls & Timeframe Pills */}
-              <div className="flex items-center justify-between gap-4 flex-wrap pb-3 border-b border-[#f1f5f9]">
-                <div className="flex items-center gap-1 bg-[#f8fafc] p-1 rounded-xl border border-[#e2e8f0]">
-                  {(["1D", "1W", "1M", "1Y", "5Y", "ALL"] as const).map((tf) => (
+              <div className="flex items-center justify-between gap-4 flex-wrap pb-3 border-b border-slate-100 dark:border-slate-800">
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1 bg-slate-50 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
+                    {(["1D", "1W", "1M", "1Y", "5Y", "ALL"] as const).map((tf) => (
+                      <button
+                        key={tf}
+                        onClick={() => setActiveTimeframe(tf)}
+                        className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                          activeTimeframe === tf
+                            ? "bg-white dark:bg-slate-700 text-cyan-700 dark:text-cyan-300 shadow-2xs"
+                            : "text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100"
+                        }`}
+                      >
+                        {tf}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Area / Candlestick Toggle */}
+                  <div className="flex items-center gap-0.5 bg-slate-50 dark:bg-slate-800 p-0.5 rounded-lg border border-slate-200 dark:border-slate-700">
                     <button
-                      key={tf}
-                      onClick={() => setActiveTimeframe(tf)}
-                      className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
-                        activeTimeframe === tf
-                          ? "bg-white text-cyan-700 shadow-2xs"
-                          : "text-[#64748b] hover:text-[#0f172a]"
+                      onClick={() => setChartType("area")}
+                      className={`p-1.5 rounded-md transition-all cursor-pointer ${
+                        chartType === "area"
+                          ? "bg-white dark:bg-slate-700 text-cyan-600 dark:text-cyan-400 shadow-2xs"
+                          : "text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
                       }`}
+                      title="Area Chart"
                     >
-                      {tf}
+                      <AreaChart className="w-3.5 h-3.5" />
                     </button>
-                  ))}
+                    <button
+                      onClick={() => setChartType("candle")}
+                      className={`p-1.5 rounded-md transition-all cursor-pointer ${
+                        chartType === "candle"
+                          ? "bg-white dark:bg-slate-700 text-cyan-600 dark:text-cyan-400 shadow-2xs"
+                          : "text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                      }`}
+                      title="Candlestick Chart"
+                    >
+                      <CandlestickChart className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <div className="text-[11px] font-semibold text-[#64748b] hidden sm:block">
-                    Range: <span className="font-tabular font-bold text-slate-800">₹{minChart.toFixed(2)}</span> -{" "}
-                    <span className="font-tabular font-bold text-slate-800">₹{maxChart.toFixed(2)}</span>
+                  <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 hidden sm:block">
+                    Range: <span className="font-tabular font-bold text-slate-800 dark:text-slate-200">₹{minChart.toFixed(2)}</span> -{" "}
+                    <span className="font-tabular font-bold text-slate-800 dark:text-slate-200">₹{maxChart.toFixed(2)}</span>
                   </div>
+                  {rawCandles && rawCandles.length > 0 && (
+                    <span className="text-[9px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-1.5 py-0.5 rounded border border-emerald-200 dark:border-emerald-800/50">
+                      LIVE DATA
+                    </span>
+                  )}
                 </div>
               </div>
 
-              {/* Clean SVG Area Chart */}
+              {/* Chart Rendering */}
               <div className="relative h-64 w-full">
                 <svg viewBox="0 0 800 260" className="w-full h-full overflow-visible" preserveAspectRatio="none">
                   <defs>
@@ -736,48 +989,108 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
                   </defs>
 
                   {/* Horizontal grid lines */}
-                  <line x1="20" y1="40" x2="780" y2="40" stroke="#f1f5f9" strokeDasharray="3 3" />
-                  <line x1="20" y1="120" x2="780" y2="120" stroke="#f1f5f9" strokeDasharray="3 3" />
-                  <line x1="20" y1="200" x2="780" y2="200" stroke="#f1f5f9" strokeDasharray="3 3" />
+                  <line x1="20" y1="40" x2="780" y2="40" stroke="currentColor" strokeOpacity="0.08" strokeDasharray="3 3" />
+                  <line x1="20" y1="120" x2="780" y2="120" stroke="currentColor" strokeOpacity="0.08" strokeDasharray="3 3" />
+                  <line x1="20" y1="200" x2="780" y2="200" stroke="currentColor" strokeOpacity="0.08" strokeDasharray="3 3" />
 
-                  {/* Gradient Area Fill */}
-                  <path d={svgPath.areaPath} fill="url(#stockAreaGradient)" />
+                  {chartType === "area" ? (
+                    <>
+                      {/* Gradient Area Fill */}
+                      <path d={svgPath.areaPath} fill="url(#stockAreaGradient)" />
+                      {/* Top Curve Line */}
+                      <path
+                        d={svgPath.linePath}
+                        fill="none"
+                        stroke="#0891b2"
+                        strokeWidth="2.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </>
+                  ) : (
+                    /* Candlestick Chart */
+                    <>
+                      {candles.map((c, idx) => {
+                        const width = 800;
+                        const height = 260;
+                        const padding = 20;
+                        const len = candles.length;
+                        const candleWidth = Math.max(2, ((width - padding * 2) / len) * 0.6);
+                        const gap = (width - padding * 2) / len;
+                        const x = padding + idx * gap + gap / 2;
 
-                  {/* Top Curve Line */}
-                  <path
-                    d={svgPath.linePath}
-                    fill="none"
-                    stroke="#0891b2"
-                    strokeWidth="2.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
+                        const allPrices = candles.flatMap((cc) => [cc.high_paise, cc.low_paise]);
+                        const minP = Math.min(...allPrices);
+                        const maxP = Math.max(...allPrices);
+                        const range = maxP - minP || 1;
+
+                        const yScale = (paise: number) =>
+                          height - padding - ((paise - minP) / range) * (height - padding * 2);
+
+                        const open = c.open_paise;
+                        const close = c.close_paise;
+                        const high = c.high_paise;
+                        const low = c.low_paise;
+                        const isBullish = close >= open;
+                        const color = isBullish ? "#10b981" : "#ef4444";
+
+                        const bodyTop = yScale(Math.max(open, close));
+                        const bodyBottom = yScale(Math.min(open, close));
+                        const bodyHeight = Math.max(1, bodyBottom - bodyTop);
+
+                        return (
+                          <g key={idx}>
+                            {/* Wick (high-low line) */}
+                            <line
+                              x1={x}
+                              y1={yScale(high)}
+                              x2={x}
+                              y2={yScale(low)}
+                              stroke={color}
+                              strokeWidth="1"
+                            />
+                            {/* Body */}
+                            <rect
+                              x={x - candleWidth / 2}
+                              y={bodyTop}
+                              width={candleWidth}
+                              height={bodyHeight}
+                              fill={isBullish ? color : color}
+                              stroke={color}
+                              strokeWidth="0.5"
+                              rx="0.5"
+                            />
+                          </g>
+                        );
+                      })}
+                    </>
+                  )}
                 </svg>
 
                 {/* Live Current Price Badge Overlay */}
-                <div className="absolute top-2 right-2 px-2.5 py-1 rounded-lg bg-cyan-50 border border-cyan-200 text-cyan-700 text-xs font-bold font-tabular shadow-2xs">
+                <div className="absolute top-2 right-2 px-2.5 py-1 rounded-lg bg-cyan-50 dark:bg-cyan-950/60 border border-cyan-200 dark:border-cyan-800/50 text-cyan-700 dark:text-cyan-300 text-xs font-bold font-tabular shadow-2xs">
                   CMP: ₹{stock.price.toFixed(2)}
                 </div>
               </div>
             </div>
 
             {/* Performance Sliders & Trading Metrics (Groww Style) */}
-            <div className="bg-white border border-[#e2e8f0] rounded-2xl p-6 shadow-xs space-y-6">
-              <h2 className="font-extrabold text-sm text-[#0f172a] uppercase tracking-wide">
+            <div className="bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-xs space-y-6">
+              <h2 className="font-extrabold text-sm text-slate-900 dark:text-slate-100 uppercase tracking-wide">
                 Price Performance & Ranges
               </h2>
 
               {/* Today's Low / High Range Bar */}
               <div className="space-y-1.5">
-                <div className="flex justify-between text-xs text-[#64748b]">
+                <div className="flex justify-between text-xs text-slate-500 dark:text-slate-400">
                   <span>
-                    Today&apos;s Low <strong className="text-[#0f172a] font-tabular">₹{profile.todayLow.toFixed(2)}</strong>
+                    Today&apos;s Low <strong className="text-slate-900 dark:text-slate-100 font-tabular">₹{profile.todayLow.toFixed(2)}</strong>
                   </span>
                   <span>
-                    Today&apos;s High <strong className="text-[#0f172a] font-tabular">₹{profile.todayHigh.toFixed(2)}</strong>
+                    Today&apos;s High <strong className="text-slate-900 dark:text-slate-100 font-tabular">₹{profile.todayHigh.toFixed(2)}</strong>
                   </span>
                 </div>
-                <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden relative">
+                <div className="h-2 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden relative">
                   <div
                     className="h-full bg-gradient-to-r from-amber-400 via-emerald-400 to-cyan-500 rounded-full"
                     style={{
@@ -795,15 +1108,15 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
 
               {/* 52-Week Low / High Range Bar */}
               <div className="space-y-1.5">
-                <div className="flex justify-between text-xs text-[#64748b]">
+                <div className="flex justify-between text-xs text-slate-500 dark:text-slate-400">
                   <span>
-                    52W Low <strong className="text-[#0f172a] font-tabular">₹{profile.fiftyTwoWeekLow.toFixed(2)}</strong>
+                    52W Low <strong className="text-slate-900 dark:text-slate-100 font-tabular">₹{profile.fiftyTwoWeekLow.toFixed(2)}</strong>
                   </span>
                   <span>
-                    52W High <strong className="text-[#0f172a] font-tabular">₹{profile.fiftyTwoWeekHigh.toFixed(2)}</strong>
+                    52W High <strong className="text-slate-900 dark:text-slate-100 font-tabular">₹{profile.fiftyTwoWeekHigh.toFixed(2)}</strong>
                   </span>
                 </div>
-                <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden relative">
+                <div className="h-2 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden relative">
                   <div
                     className="h-full bg-gradient-to-r from-rose-400 via-amber-400 to-emerald-500 rounded-full"
                     style={{
@@ -822,122 +1135,122 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
               </div>
 
               {/* Key Trading Statistics Grid */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-4 border-t border-[#f1f5f9] text-xs">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-4 border-t border-slate-100 dark:border-slate-800 text-xs">
                 <div>
-                  <div className="text-[#64748b] text-[11px]">Open</div>
-                  <div className="font-bold text-[#0f172a] font-tabular mt-0.5">₹{profile.openPrice.toFixed(2)}</div>
+                  <div className="text-slate-500 dark:text-slate-400 text-[11px]">Open</div>
+                  <div className="font-bold text-slate-900 dark:text-slate-100 font-tabular mt-0.5">₹{profile.openPrice.toFixed(2)}</div>
                 </div>
                 <div>
-                  <div className="text-[#64748b] text-[11px]">Prev. Close</div>
-                  <div className="font-bold text-[#0f172a] font-tabular mt-0.5">₹{profile.prevClose.toFixed(2)}</div>
+                  <div className="text-slate-500 dark:text-slate-400 text-[11px]">Prev. Close</div>
+                  <div className="font-bold text-slate-900 dark:text-slate-100 font-tabular mt-0.5">₹{profile.prevClose.toFixed(2)}</div>
                 </div>
                 <div>
-                  <div className="text-[#64748b] text-[11px]">Volume</div>
-                  <div className="font-bold text-[#0f172a] font-tabular mt-0.5">{profile.volumeShares}</div>
+                  <div className="text-slate-500 dark:text-slate-400 text-[11px]">Volume</div>
+                  <div className="font-bold text-slate-900 dark:text-slate-100 font-tabular mt-0.5">{profile.volumeShares}</div>
                 </div>
                 <div>
-                  <div className="text-[#64748b] text-[11px]">Total Traded Value</div>
-                  <div className="font-bold text-[#0f172a] font-tabular mt-0.5">₹{profile.tradedValueCr} Cr</div>
+                  <div className="text-slate-500 dark:text-slate-400 text-[11px]">Total Traded Value</div>
+                  <div className="font-bold text-slate-900 dark:text-slate-100 font-tabular mt-0.5">₹{profile.tradedValueCr} Cr</div>
                 </div>
                 <div>
-                  <div className="text-[#64748b] text-[11px]">Upper Circuit</div>
-                  <div className="font-bold text-emerald-600 font-tabular mt-0.5">₹{profile.upperCircuit.toFixed(2)}</div>
+                  <div className="text-slate-500 dark:text-slate-400 text-[11px]">Upper Circuit</div>
+                  <div className="font-bold text-emerald-600 dark:text-emerald-400 font-tabular mt-0.5">₹{profile.upperCircuit.toFixed(2)}</div>
                 </div>
                 <div>
-                  <div className="text-[#64748b] text-[11px]">Lower Circuit</div>
-                  <div className="font-bold text-rose-600 font-tabular mt-0.5">₹{profile.lowerCircuit.toFixed(2)}</div>
+                  <div className="text-slate-500 dark:text-slate-400 text-[11px]">Lower Circuit</div>
+                  <div className="font-bold text-rose-600 dark:text-rose-400 font-tabular mt-0.5">₹{profile.lowerCircuit.toFixed(2)}</div>
                 </div>
                 <div>
-                  <div className="text-[#64748b] text-[11px]">Face Value</div>
-                  <div className="font-bold text-[#0f172a] font-tabular mt-0.5">₹{profile.faceValue.toFixed(2)}</div>
+                  <div className="text-slate-500 dark:text-slate-400 text-[11px]">Face Value</div>
+                  <div className="font-bold text-slate-900 dark:text-slate-100 font-tabular mt-0.5">₹{profile.faceValue.toFixed(2)}</div>
                 </div>
                 <div>
-                  <div className="text-[#64748b] text-[11px]">Settlement</div>
-                  <div className="font-bold text-[#0f172a] mt-0.5">T+1 Rolling</div>
+                  <div className="text-slate-500 dark:text-slate-400 text-[11px]">Settlement</div>
+                  <div className="font-bold text-slate-900 dark:text-slate-100 mt-0.5">T+1 Rolling</div>
                 </div>
               </div>
             </div>
 
             {/* Fundamentals & Key Ratios (Groww Style) */}
-            <div className="bg-white border border-[#e2e8f0] rounded-2xl p-6 shadow-xs space-y-4">
-              <h2 className="font-extrabold text-sm text-[#0f172a] uppercase tracking-wide">
+            <div className="bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-xs space-y-4">
+              <h2 className="font-extrabold text-sm text-slate-900 dark:text-slate-100 uppercase tracking-wide">
                 Key Fundamentals & Ratios
               </h2>
 
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-y-4 gap-x-6 text-xs">
-                <div className="border-b border-[#f8fafc] pb-2">
-                  <div className="text-[#64748b] text-[11px]">Market Cap</div>
-                  <div className="font-extrabold text-sm text-[#0f172a] font-tabular mt-0.5">
+                <div className="border-b border-slate-100 dark:border-slate-800/80 pb-2">
+                  <div className="text-slate-500 dark:text-slate-400 text-[11px]">Market Cap</div>
+                  <div className="font-extrabold text-sm text-slate-900 dark:text-slate-100 font-tabular mt-0.5">
                     ₹{profile.marketCapCr.toLocaleString("en-IN")} Cr
                   </div>
                 </div>
 
-                <div className="border-b border-[#f8fafc] pb-2">
-                  <div className="text-[#64748b] text-[11px]">P/E Ratio (TTM)</div>
-                  <div className="font-extrabold text-sm text-[#0f172a] font-tabular mt-0.5">{profile.peRatio}</div>
+                <div className="border-b border-slate-100 dark:border-slate-800/80 pb-2">
+                  <div className="text-slate-500 dark:text-slate-400 text-[11px]">P/E Ratio (TTM)</div>
+                  <div className="font-extrabold text-sm text-slate-900 dark:text-slate-100 font-tabular mt-0.5">{profile.peRatio}</div>
                 </div>
 
-                <div className="border-b border-[#f8fafc] pb-2">
-                  <div className="text-[#64748b] text-[11px]">P/B Ratio</div>
-                  <div className="font-extrabold text-sm text-[#0f172a] font-tabular mt-0.5">{profile.pbRatio}</div>
+                <div className="border-b border-slate-100 dark:border-slate-800/80 pb-2">
+                  <div className="text-slate-500 dark:text-slate-400 text-[11px]">P/B Ratio</div>
+                  <div className="font-extrabold text-sm text-slate-900 dark:text-slate-100 font-tabular mt-0.5">{profile.pbRatio}</div>
                 </div>
 
-                <div className="border-b border-[#f8fafc] pb-2">
-                  <div className="text-[#64748b] text-[11px]">Industry P/E</div>
-                  <div className="font-extrabold text-sm text-[#0f172a] font-tabular mt-0.5">{profile.industryPe}</div>
+                <div className="border-b border-slate-100 dark:border-slate-800/80 pb-2">
+                  <div className="text-slate-500 dark:text-slate-400 text-[11px]">Industry P/E</div>
+                  <div className="font-extrabold text-sm text-slate-900 dark:text-slate-100 font-tabular mt-0.5">{profile.industryPe}</div>
                 </div>
 
-                <div className="border-b border-[#f8fafc] pb-2">
-                  <div className="text-[#64748b] text-[11px]">Debt to Equity</div>
-                  <div className="font-extrabold text-sm text-emerald-600 font-tabular mt-0.5">
+                <div className="border-b border-slate-100 dark:border-slate-800/80 pb-2">
+                  <div className="text-slate-500 dark:text-slate-400 text-[11px]">Debt to Equity</div>
+                  <div className="font-extrabold text-sm text-emerald-600 dark:text-emerald-400 font-tabular mt-0.5">
                     {profile.debtToEquity} (Virtually Debt-Free)
                   </div>
                 </div>
 
-                <div className="border-b border-[#f8fafc] pb-2">
-                  <div className="text-[#64748b] text-[11px]">ROE</div>
-                  <div className="font-extrabold text-sm text-[#0f172a] font-tabular mt-0.5">{profile.roe}%</div>
+                <div className="border-b border-slate-100 dark:border-slate-800/80 pb-2">
+                  <div className="text-slate-500 dark:text-slate-400 text-[11px]">ROE</div>
+                  <div className="font-extrabold text-sm text-slate-900 dark:text-slate-100 font-tabular mt-0.5">{profile.roe}%</div>
                 </div>
 
                 <div>
-                  <div className="text-[#64748b] text-[11px]">EPS (TTM)</div>
-                  <div className="font-extrabold text-sm text-[#0f172a] font-tabular mt-0.5">₹{profile.eps}</div>
+                  <div className="text-slate-500 dark:text-slate-400 text-[11px]">EPS (TTM)</div>
+                  <div className="font-extrabold text-sm text-slate-900 dark:text-slate-100 font-tabular mt-0.5">₹{profile.eps}</div>
                 </div>
 
                 <div>
-                  <div className="text-[#64748b] text-[11px]">Dividend Yield</div>
-                  <div className="font-extrabold text-sm text-cyan-700 font-tabular mt-0.5">{profile.divYield}%</div>
+                  <div className="text-slate-500 dark:text-slate-400 text-[11px]">Dividend Yield</div>
+                  <div className="font-extrabold text-sm text-cyan-600 dark:text-cyan-400 font-tabular mt-0.5">{profile.divYield}%</div>
                 </div>
 
                 <div>
-                  <div className="text-[#64748b] text-[11px]">Book Value</div>
-                  <div className="font-extrabold text-sm text-[#0f172a] font-tabular mt-0.5">₹{profile.bookValue}</div>
+                  <div className="text-slate-500 dark:text-slate-400 text-[11px]">Book Value</div>
+                  <div className="font-extrabold text-sm text-slate-900 dark:text-slate-100 font-tabular mt-0.5">₹{profile.bookValue}</div>
                 </div>
               </div>
             </div>
 
             {/* About the Company */}
-            <div className="bg-white border border-[#e2e8f0] rounded-2xl p-6 shadow-xs space-y-3">
-              <h2 className="font-extrabold text-sm text-[#0f172a] uppercase tracking-wide">
+            <div className="bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-xs space-y-3">
+              <h2 className="font-extrabold text-sm text-slate-900 dark:text-slate-100 uppercase tracking-wide">
                 About {stock.name}
               </h2>
-              <p className="text-xs text-[#475569] leading-relaxed">{profile.about}</p>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-3 border-t border-[#f1f5f9] text-xs">
+              <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">{profile.about}</p>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-3 border-t border-slate-100 dark:border-slate-800 text-xs">
                 <div>
-                  <span className="text-[#64748b] text-[11px] block">Managing Director & CEO</span>
-                  <span className="font-bold text-[#0f172a] mt-0.5 block">{profile.ceo}</span>
+                  <span className="text-slate-500 dark:text-slate-400 text-[11px] block">Managing Director & CEO</span>
+                  <span className="font-bold text-slate-900 dark:text-slate-100 mt-0.5 block">{profile.ceo}</span>
                 </div>
                 <div>
-                  <span className="text-[#64748b] text-[11px] block">Founded</span>
-                  <span className="font-bold text-[#0f172a] mt-0.5 block">{profile.founded}</span>
+                  <span className="text-slate-500 dark:text-slate-400 text-[11px] block">Founded</span>
+                  <span className="font-bold text-slate-900 dark:text-slate-100 mt-0.5 block">{profile.founded}</span>
                 </div>
                 <div>
-                  <span className="text-[#64748b] text-[11px] block">Headquarters</span>
-                  <span className="font-bold text-[#0f172a] mt-0.5 block">{profile.headquarters}</span>
+                  <span className="text-slate-500 dark:text-slate-400 text-[11px] block">Headquarters</span>
+                  <span className="font-bold text-slate-900 dark:text-slate-100 mt-0.5 block">{profile.headquarters}</span>
                 </div>
                 <div>
-                  <span className="text-[#64748b] text-[11px] block">Listing</span>
-                  <span className="font-bold text-[#0f172a] mt-0.5 block">NSE, BSE (ISIN Active)</span>
+                  <span className="text-slate-500 dark:text-slate-400 text-[11px] block">Listing</span>
+                  <span className="font-bold text-slate-900 dark:text-slate-100 mt-0.5 block">NSE, BSE (ISIN Active)</span>
                 </div>
               </div>
             </div>
@@ -946,20 +1259,20 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
           {/* Right Column: Market Depth (Level 2 Order Book) & Quick Order Box */}
           <div className="space-y-6">
             {/* Market Depth Level 2 Book */}
-            <div className="bg-white border border-[#e2e8f0] rounded-2xl p-6 shadow-xs space-y-4">
+            <div className="bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-xs space-y-4">
               <div className="flex items-center justify-between">
-                <h3 className="font-extrabold text-xs text-[#0f172a] uppercase tracking-wide flex items-center gap-1.5">
-                  <SlidersHorizontal className="w-3.5 h-3.5 text-cyan-600" />
+                <h3 className="font-extrabold text-xs text-slate-900 dark:text-slate-100 uppercase tracking-wide flex items-center gap-1.5">
+                  <SlidersHorizontal className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
                   <span>Market Depth (L2 Book)</span>
                 </h3>
-                <span className="text-[10px] font-semibold text-[#16a34a] bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800/50">
                   Live Feed
                 </span>
               </div>
 
               {/* Bid vs Ask 5-Row Table */}
               <div className="space-y-2 text-xs">
-                <div className="grid grid-cols-2 gap-2 text-[10px] font-bold text-[#64748b] pb-1 border-b border-[#f1f5f9]">
+                <div className="grid grid-cols-2 gap-2 text-[10px] font-bold text-slate-500 dark:text-slate-400 pb-1 border-b border-slate-100 dark:border-slate-800">
                   <div className="flex justify-between">
                     <span>BID PRICE</span>
                     <span>ORDERS</span>
@@ -970,20 +1283,14 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
                   </div>
                 </div>
 
-                {[
-                  { bidP: stock.price - 0.05, bidQ: 1420, askP: stock.price, askQ: 1840 },
-                  { bidP: stock.price - 0.1, bidQ: 2890, askP: stock.price + 0.05, askQ: 3200 },
-                  { bidP: stock.price - 0.15, bidQ: 4120, askP: stock.price + 0.1, askQ: 2950 },
-                  { bidP: stock.price - 0.2, bidQ: 5600, askP: stock.price + 0.15, askQ: 4890 },
-                  { bidP: stock.price - 0.25, bidQ: 8300, askP: stock.price + 0.2, askQ: 6420 },
-                ].map((row, idx) => (
+                {marketDepthRows.map((row, idx) => (
                   <div key={idx} className="grid grid-cols-2 gap-2 font-tabular text-[11px]">
-                    <div className="flex justify-between items-center text-emerald-700 bg-emerald-50/50 px-2 py-1 rounded">
+                    <div className="flex justify-between items-center text-emerald-700 dark:text-emerald-400 bg-emerald-50/60 dark:bg-emerald-950/40 border border-emerald-100/50 dark:border-emerald-900/30 px-2 py-1 rounded">
                       <span className="font-bold">₹{row.bidP.toFixed(2)}</span>
-                      <span className="text-slate-600 text-[10px]">{row.bidQ}</span>
+                      <span className="text-slate-500 dark:text-slate-400 text-[10px]">{row.bidQ.toLocaleString("en-IN")}</span>
                     </div>
-                    <div className="flex justify-between items-center text-rose-700 bg-rose-50/50 px-2 py-1 rounded text-right">
-                      <span className="text-slate-600 text-[10px]">{row.askQ}</span>
+                    <div className="flex justify-between items-center text-rose-700 dark:text-rose-400 bg-rose-50/60 dark:bg-rose-950/40 border border-rose-100/50 dark:border-rose-900/30 px-2 py-1 rounded text-right">
+                      <span className="text-slate-500 dark:text-slate-400 text-[10px]">{row.askQ.toLocaleString("en-IN")}</span>
                       <span className="font-bold">₹{row.askP.toFixed(2)}</span>
                     </div>
                   </div>
@@ -991,53 +1298,97 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
               </div>
             </div>
 
-            {/* Simulated Order Execution Box */}
-            <div className="bg-white border border-[#e2e8f0] rounded-2xl p-6 shadow-xs space-y-4">
-              <h3 className="font-extrabold text-xs text-[#0f172a] uppercase tracking-wide">
+            {/* Fast Order Execution Box */}
+            <div className="bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-xs space-y-4">
+              <h3 className="font-extrabold text-xs text-slate-900 dark:text-slate-100 uppercase tracking-wide">
                 Fast Order Placement
               </h3>
 
               {/* Buy / Sell Tabs */}
-              <div className="grid grid-cols-2 gap-2 bg-[#f8fafc] p-1 rounded-xl border border-[#e2e8f0]">
+              <div className="grid grid-cols-2 gap-2 bg-slate-50 dark:bg-slate-800/60 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
                 <button
                   onClick={() => setOrderModal((prev) => ({ ...prev, action: "BUY" }))}
-                  className={`py-2 rounded-lg text-xs font-bold transition-all ${
+                  className={`py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                     orderModal.action === "BUY"
                       ? "bg-cyan-600 text-white shadow-2xs"
-                      : "text-slate-600 hover:text-slate-900"
+                      : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100"
                   }`}
                 >
                   BUY
                 </button>
                 <button
                   onClick={() => setOrderModal((prev) => ({ ...prev, action: "SELL" }))}
-                  className={`py-2 rounded-lg text-xs font-bold transition-all ${
+                  className={`py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                     orderModal.action === "SELL"
                       ? "bg-rose-600 text-white shadow-2xs"
-                      : "text-slate-600 hover:text-slate-900"
+                      : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100"
                   }`}
                 >
                   SELL
                 </button>
               </div>
 
+              {/* Order Type (Market vs Limit) */}
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">ORDER TYPE</label>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <button
+                    onClick={() => setOrderType("MARKET")}
+                    className={`py-1.5 rounded-lg font-bold border transition-colors cursor-pointer ${
+                      orderType === "MARKET"
+                        ? "border-cyan-500 bg-cyan-50 dark:bg-cyan-950/50 text-cyan-700 dark:text-cyan-300"
+                        : "border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60"
+                    }`}
+                  >
+                    Market
+                  </button>
+                  <button
+                    onClick={() => {
+                      setOrderType("LIMIT");
+                      if (!limitPrice) setLimitPrice(stock.price);
+                    }}
+                    className={`py-1.5 rounded-lg font-bold border transition-colors cursor-pointer ${
+                      orderType === "LIMIT"
+                        ? "border-cyan-500 bg-cyan-50 dark:bg-cyan-950/50 text-cyan-700 dark:text-cyan-300"
+                        : "border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60"
+                    }`}
+                  >
+                    Limit
+                  </button>
+                </div>
+              </div>
+
+              {/* Limit Price Input if Limit chosen */}
+              {orderType === "LIMIT" && (
+                <div className="space-y-1.5 animate-fade-in">
+                  <label className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">LIMIT PRICE (₹)</label>
+                  <input
+                    type="number"
+                    step="0.05"
+                    value={limitPrice || stock.price}
+                    onChange={(e) => setLimitPrice(parseFloat(e.target.value) || 0)}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-bold font-tabular text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:border-cyan-500"
+                  />
+                </div>
+              )}
+
               {/* Quantity */}
               <div className="space-y-1.5">
-                <label className="text-[11px] font-semibold text-[#64748b]">QUANTITY (SHARES)</label>
+                <label className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">QUANTITY (SHARES)</label>
                 <div className="flex items-center gap-2">
                   <input
                     type="number"
                     min="1"
                     value={orderQty}
                     onChange={(e) => setOrderQty(Math.max(1, parseInt(e.target.value) || 1))}
-                    className="w-full px-3 py-2 rounded-lg border border-[#e2e8f0] font-bold font-tabular text-sm text-[#0f172a] focus:outline-none focus:border-cyan-500"
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-bold font-tabular text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:border-cyan-500"
                   />
                   <div className="flex gap-1">
                     {[10, 50, 100].map((q) => (
                       <button
                         key={q}
                         onClick={() => setOrderQty(q)}
-                        className="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-[10px] font-bold text-slate-700"
+                        className="px-2 py-1 rounded bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-[10px] font-bold text-slate-700 dark:text-slate-300 cursor-pointer transition-colors"
                       >
                         +{q}
                       </button>
@@ -1048,24 +1399,24 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
 
               {/* Product Type (CNC vs MIS) */}
               <div className="space-y-1.5">
-                <label className="text-[11px] font-semibold text-[#64748b]">PRODUCT</label>
+                <label className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">PRODUCT</label>
                 <div className="grid grid-cols-2 gap-2 text-xs">
                   <button
                     onClick={() => setOrderProduct("CNC")}
-                    className={`py-1.5 rounded-lg font-bold border transition-colors ${
+                    className={`py-1.5 rounded-lg font-bold border transition-colors cursor-pointer ${
                       orderProduct === "CNC"
-                        ? "border-cyan-500 bg-cyan-50 text-cyan-700"
-                        : "border-[#e2e8f0] text-slate-600 hover:bg-slate-50"
+                        ? "border-cyan-500 bg-cyan-50 dark:bg-cyan-950/50 text-cyan-700 dark:text-cyan-300"
+                        : "border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60"
                     }`}
                   >
                     Delivery (CNC)
                   </button>
                   <button
                     onClick={() => setOrderProduct("MIS")}
-                    className={`py-1.5 rounded-lg font-bold border transition-colors ${
+                    className={`py-1.5 rounded-lg font-bold border transition-colors cursor-pointer ${
                       orderProduct === "MIS"
-                        ? "border-cyan-500 bg-cyan-50 text-cyan-700"
-                        : "border-[#e2e8f0] text-slate-600 hover:bg-slate-50"
+                        ? "border-cyan-500 bg-cyan-50 dark:bg-cyan-950/50 text-cyan-700 dark:text-cyan-300"
+                        : "border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60"
                     }`}
                   >
                     Intraday (MIS 5x)
@@ -1074,33 +1425,42 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
               </div>
 
               {/* Margin Calculation */}
-              <div className="p-3 rounded-xl bg-slate-50 border border-[#e2e8f0] text-xs space-y-1">
-                <div className="flex justify-between text-[#64748b]">
+              <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 text-xs space-y-1">
+                <div className="flex justify-between text-slate-500 dark:text-slate-400">
                   <span>Approx. Margin</span>
-                  <span className="font-bold text-[#0f172a] font-tabular">
-                    ₹{((orderProduct === "MIS" ? stock.price * 0.2 : stock.price) * orderQty).toFixed(2)}
+                  <span className="font-bold text-slate-900 dark:text-slate-100 font-tabular">
+                    ₹{((orderProduct === "MIS" ? (orderType === "LIMIT" && limitPrice > 0 ? limitPrice : stock.price) * 0.2 : (orderType === "LIMIT" && limitPrice > 0 ? limitPrice : stock.price)) * orderQty).toFixed(2)}
                   </span>
                 </div>
-                <div className="flex justify-between text-[#64748b] text-[11px]">
+                <div className="flex justify-between text-slate-500 dark:text-slate-400 text-[11px]">
                   <span>Available Funds</span>
-                  <span className="font-bold text-emerald-600 font-tabular">₹10,00,000.00</span>
+                  <span className="font-bold text-emerald-600 dark:text-emerald-400 font-tabular">
+                    ₹{(availableBalancePaise / 100).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
                 </div>
               </div>
 
               {/* Submit Button */}
               <button
                 onClick={handleExecuteOrder}
-                className={`w-full py-3 rounded-xl text-white font-extrabold text-sm shadow-md transition-all hover:scale-[1.01] ${
+                disabled={orderSubmitting}
+                className={`w-full py-3 rounded-xl text-white font-extrabold text-sm shadow-md transition-all cursor-pointer ${
+                  orderSubmitting ? "opacity-60 cursor-not-allowed" : "hover:scale-[1.01]"
+                } ${
                   orderModal.action === "BUY"
                     ? "bg-cyan-600 hover:bg-cyan-500 shadow-cyan-600/20"
                     : "bg-rose-600 hover:bg-rose-500 shadow-rose-600/20"
                 }`}
               >
-                {orderModal.action} {orderQty} {stock.symbol}
+                {orderSubmitting ? "Executing Order..." : `${orderModal.action} ${orderQty} ${stock.symbol}`}
               </button>
 
               {orderFeedback && (
-                <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold text-center animate-fade-in">
+                <div className={`p-2.5 rounded-xl text-xs font-bold text-center animate-fade-in border ${
+                  orderFeedback.startsWith("✓")
+                    ? "bg-emerald-50 dark:bg-emerald-950/60 border-emerald-200 dark:border-emerald-800/60 text-emerald-800 dark:text-emerald-300"
+                    : "bg-rose-50 dark:bg-rose-950/60 border-rose-200 dark:border-rose-800/60 text-rose-800 dark:text-rose-300"
+                }`}>
                   {orderFeedback}
                 </div>
               )}
@@ -1296,10 +1656,10 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
       {/* Floating Order Modal (Triggered from Buy / Sell button in Header) */}
       {orderModal.isOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
-          <div className="w-full max-w-md bg-white border border-[#e2e8f0] rounded-2xl shadow-2xl p-6 space-y-5 animate-scale-up">
-            <div className="flex items-center justify-between pb-3 border-b border-[#f1f5f9]">
+          <div className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-6 space-y-5 animate-scale-up">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
               <div>
-                <h3 className="font-extrabold text-base text-[#0f172a] flex items-center gap-2">
+                <h3 className="font-extrabold text-base text-slate-900 dark:text-slate-100 flex items-center gap-2">
                   <span
                     className={`px-2 py-0.5 rounded text-xs text-white font-black ${
                       orderModal.action === "BUY" ? "bg-cyan-600" : "bg-rose-600"
@@ -1309,56 +1669,106 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
                   </span>
                   <span>{stock.name}</span>
                 </h3>
-                <span className="text-xs text-[#64748b]">NSE • ₹{stock.price.toFixed(2)}</span>
+                <span className="text-xs text-slate-500 dark:text-slate-400">NSE • ₹{stock.price.toFixed(2)}</span>
               </div>
               <button
                 onClick={() => setOrderModal((prev) => ({ ...prev, isOpen: false }))}
-                className="p-1 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700"
+                className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
             <div className="space-y-4 text-xs">
+              {/* Order Type Toggle */}
               <div className="space-y-1.5">
-                <label className="font-bold text-[#64748b]">QUANTITY</label>
+                <label className="font-bold text-slate-500 dark:text-slate-400">ORDER TYPE</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => setOrderType("MARKET")}
+                    className={`py-1.5 rounded-lg font-bold border transition-colors cursor-pointer ${
+                      orderType === "MARKET"
+                        ? "border-cyan-500 bg-cyan-50 dark:bg-cyan-950/50 text-cyan-700 dark:text-cyan-300"
+                        : "border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60"
+                    }`}
+                  >
+                    Market
+                  </button>
+                  <button
+                    onClick={() => {
+                      setOrderType("LIMIT");
+                      if (!limitPrice) setLimitPrice(stock.price);
+                    }}
+                    className={`py-1.5 rounded-lg font-bold border transition-colors cursor-pointer ${
+                      orderType === "LIMIT"
+                        ? "border-cyan-500 bg-cyan-50 dark:bg-cyan-950/50 text-cyan-700 dark:text-cyan-300"
+                        : "border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60"
+                    }`}
+                  >
+                    Limit
+                  </button>
+                </div>
+              </div>
+
+              {orderType === "LIMIT" && (
+                <div className="space-y-1.5 animate-fade-in">
+                  <label className="font-bold text-slate-500 dark:text-slate-400">LIMIT PRICE (₹)</label>
+                  <input
+                    type="number"
+                    step="0.05"
+                    value={limitPrice || stock.price}
+                    onChange={(e) => setLimitPrice(parseFloat(e.target.value) || 0)}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-bold font-tabular text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:border-cyan-500"
+                  />
+                </div>
+              )}
+
+              <div className="space-y-1.5">
+                <label className="font-bold text-slate-500 dark:text-slate-400">QUANTITY</label>
                 <input
                   type="number"
                   min="1"
                   value={orderQty}
                   onChange={(e) => setOrderQty(Math.max(1, parseInt(e.target.value) || 1))}
-                  className="w-full px-3 py-2 rounded-lg border border-[#e2e8f0] font-bold font-tabular text-sm text-[#0f172a] focus:outline-none focus:border-cyan-500"
+                  className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-bold font-tabular text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:border-cyan-500"
                 />
               </div>
 
-              <div className="p-3 rounded-xl bg-slate-50 border border-[#e2e8f0] space-y-1">
-                <div className="flex justify-between text-[#64748b]">
+              <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 space-y-1">
+                <div className="flex justify-between text-slate-500 dark:text-slate-400">
                   <span>Total Payable:</span>
-                  <span className="font-black text-sm text-[#0f172a] font-tabular">
-                    ₹{(stock.price * orderQty).toFixed(2)}
+                  <span className="font-black text-sm text-slate-900 dark:text-slate-100 font-tabular">
+                    ₹{(((orderType === "LIMIT" && limitPrice > 0 ? limitPrice : stock.price)) * orderQty).toFixed(2)}
                   </span>
                 </div>
               </div>
 
               {orderFeedback ? (
-                <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 font-bold text-center">
+                <div className={`p-3 rounded-xl font-bold text-center border ${
+                  orderFeedback.startsWith("✓")
+                    ? "bg-emerald-50 dark:bg-emerald-950/60 border-emerald-200 dark:border-emerald-800/60 text-emerald-800 dark:text-emerald-300"
+                    : "bg-rose-50 dark:bg-rose-950/60 border-rose-200 dark:border-rose-800/60 text-rose-800 dark:text-rose-300"
+                }`}>
                   {orderFeedback}
                 </div>
               ) : (
                 <div className="flex gap-2">
                   <button
                     onClick={() => setOrderModal((prev) => ({ ...prev, isOpen: false }))}
-                    className="flex-1 py-2.5 rounded-xl border border-[#e2e8f0] text-slate-600 hover:bg-slate-50 font-bold"
+                    className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 font-bold cursor-pointer transition-colors"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={handleExecuteOrder}
-                    className={`flex-1 py-2.5 rounded-xl text-white font-extrabold ${
+                    disabled={orderSubmitting}
+                    className={`flex-1 py-2.5 rounded-xl text-white font-extrabold cursor-pointer transition-all ${
+                      orderSubmitting ? "opacity-60 cursor-not-allowed" : ""
+                    } ${
                       orderModal.action === "BUY" ? "bg-cyan-600 hover:bg-cyan-500" : "bg-rose-600 hover:bg-rose-500"
                     }`}
                   >
-                    Execute {orderModal.action}
+                    {orderSubmitting ? "Executing..." : `Execute ${orderModal.action}`}
                   </button>
                 </div>
               )}

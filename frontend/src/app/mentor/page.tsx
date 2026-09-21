@@ -37,10 +37,26 @@ export default function MentorPage() {
   const { data: wallet } = useQuery<Wallet>({
     queryKey: ["wallet", token],
     queryFn: async () => {
+      if (!token) {
+        return {
+          uuid: "",
+          cash_balance_paise: 100000000,
+          available_balance_paise: 100000000,
+          blocked_paise: 0,
+        };
+      }
       try {
         const res = await fetch(`${apiUrl}/wallet`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          headers: { Authorization: `Bearer ${token}` },
         });
+        if (!res.ok) {
+          return {
+            uuid: "",
+            cash_balance_paise: 100000000,
+            available_balance_paise: 100000000,
+            blocked_paise: 0,
+          };
+        }
         const json: ApiResponse<Wallet> = await res.json();
         return (
           json.data || {
@@ -59,16 +75,33 @@ export default function MentorPage() {
         };
       }
     },
+    enabled: !!token,
     staleTime: 10_000,
   });
 
   const { data: portfolio } = useQuery<Portfolio>({
     queryKey: ["portfolio", token],
     queryFn: async () => {
+      if (!token) {
+        return {
+          invested_value_paise: 0,
+          current_value_paise: 0,
+          unrealized_pnl_paise: 0,
+          positions: [],
+        };
+      }
       try {
         const res = await fetch(`${apiUrl}/portfolio`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          headers: { Authorization: `Bearer ${token}` },
         });
+        if (!res.ok) {
+          return {
+            invested_value_paise: 0,
+            current_value_paise: 0,
+            unrealized_pnl_paise: 0,
+            positions: [],
+          };
+        }
         const json: ApiResponse<Portfolio> = await res.json();
         return (
           json.data || {
@@ -87,6 +120,7 @@ export default function MentorPage() {
         };
       }
     },
+    enabled: !!token,
     staleTime: 15_000,
   });
 

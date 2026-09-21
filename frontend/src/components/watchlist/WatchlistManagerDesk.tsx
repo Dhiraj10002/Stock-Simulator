@@ -1,11 +1,15 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTerminalStore } from "@/stores/terminal-store";
+import { useMarketStore } from "@/stores/market-store";
 import { getOrSeedQuote } from "@/lib/mockData";
 import { formatPaise, formatPercent } from "@/lib/format";
+import { apiFetch, getAuthToken } from "@/lib/api";
+import { MASTER_STOCKS_CATALOG } from "@/components/dashboard/DashboardPage";
 import {
   Search,
   Plus,
@@ -22,8 +26,9 @@ import {
   ArrowDownRight,
   Sparkles,
   Zap,
+  Cloud,
 } from "lucide-react";
-import type { Quote } from "@/types";
+import type { Quote, WatchlistDbItem } from "@/types";
 
 export interface WatchlistItem {
   symbol: string;
@@ -90,9 +95,22 @@ const STORAGE_CUSTOM_KEY = "stock-simulator-watchlist-custom-v2";
 const STORAGE_TAB_NAMES_KEY = "stock-simulator-watchlist-tab-names";
 const STORAGE_ACTIVE_TAB_KEY = "stock-simulator-active-wl-tab-v2";
 
-export default function WatchlistManagerDesk() {
+export interface WatchlistManagerDeskProps {
+  token?: string;
+}
+
+export default function WatchlistManagerDesk({ token: propToken }: WatchlistManagerDeskProps = {}) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const setSelectedSymbol = useTerminalStore((s) => s.setSelectedSymbol);
+
+  const [token] = useState<string>(() => {
+    if (propToken) return propToken;
+    if (typeof window !== "undefined") {
+      return getAuthToken() || "";
+    }
+    return "";
+  });
 
   // 1. Tab definitions state
   const [tabs, setTabs] = useState<WatchlistTab[]>(() => {
@@ -130,27 +148,123 @@ export default function WatchlistManagerDesk() {
     return DEFAULT_WATCHLIST_DATA;
   });
 
+  // TanStack Query for cloud-persisted watchlist from PostgreSQL
+  const { data: dbWatchlist } = useQuery<WatchlistDbItem[]>({
+    queryKey: ["watchlist", token],
+    queryFn: () => apiFetch<WatchlistDbItem[]>("/watchlist"),
+    enabled: !!token,
+    staleTime: 5000,
+  });
+
+  // Synchronize cloud DB items into the primary watchlist tab (wl1)
+  useEffect(() => {
+    if (token && dbWatchlist && dbWatchlist.length > 0) {
+      setWatchlists((prev) => {
+        const currentPrimary = prev["wl1"] || [];
+        const dbItems: WatchlistItem[] = dbWatchlist.map((item) => {
+          const existing = currentPrimary.find((p) => p.symbol === item.symbol);
+          if (existing) return existing;
+          const fromCatalog = MASTER_STOCKS_CATALOG.find((s) => s.symbol === item.symbol);
+          return {
+            symbol: item.symbol,
+            name: fromCatalog?.name || `${item.symbol} Ltd`,
+            exchange: "NSE",
+          };
+        });
+
+        const updated = {
+          ...prev,
+          wl1: dbItems,
+        };
+        try {
+          localStorage.setItem(STORAGE_CUSTOM_KEY, JSON.stringify(updated));
+        } catch {}
+        return updated;
+      });
+    }
+  }, [token, dbWatchlist]);
+
   // Search & New List states
   const [searchQuery, setSearchQuery] = useState("");
-  const [isSearching, setIsSearching] = useState(false);
+  const [isSearchingLive, setIsSearchingLive] = useState(false);
+  const [liveSearchResults, setLiveSearchResults] = useState<WatchlistItem[]>([]);
   const [isCreatingList, setIsCreatingList] = useState(false);
   const [newListName, setNewListName] = useState("");
   const [renamingTabId, setRenamingTabId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+
+  // Live Exchange Search via Angel One instrument master with debouncing
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (!q) {
+      setLiveSearchResults([]);
+      setIsSearchingLive(false);
+      return;
+    }
+
+    setIsSearchingLive(true);
+    const timer = setTimeout(async () => {
+      try {
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api/v1";
+        const res = await fetch(`${apiUrl}/stocks?q=${encodeURIComponent(q)}`);
+        const json = await res.json();
+        if (json.success && Array.isArray(json.data) && json.data.length > 0) {
+          const mapped: WatchlistItem[] = json.data.slice(0, 15).map((d: any) => {
+            const isZomato = d.symbol.toUpperCase().includes("ETERNAL") && q.toLowerCase().includes("zomato");
+            return {
+              symbol: d.symbol.replace("-EQ", ""),
+              name: isZomato ? "Eternal Ltd (formerly Zomato)" : d.name,
+              exchange: d.exchange_segment || "NSE",
+              isAlias: isZomato ? "ZOMATO" : undefined,
+            };
+          });
+          setLiveSearchResults(mapped);
+        } else {
+          const localFiltered = POPULAR_SEARCH_PREVIEWS.filter(
+            (item) =>
+              item.symbol.toUpperCase().includes(q.toUpperCase()) ||
+              item.name.toUpperCase().includes(q.toUpperCase())
+          );
+          setLiveSearchResults(localFiltered);
+        }
+      } catch {
+        const localFiltered = POPULAR_SEARCH_PREVIEWS.filter(
+          (item) =>
+            item.symbol.toUpperCase().includes(q.toUpperCase()) ||
+            item.name.toUpperCase().includes(q.toUpperCase())
+        );
+        setLiveSearchResults(localFiltered);
+      } finally {
+        setIsSearchingLive(false);
+      }
+    }, 200);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  const searchResults = searchQuery.trim() ? liveSearchResults : [];
 
   // Active items
   const currentItems = useMemo(() => {
     return watchlists[activeTabId] ?? [];
   }, [watchlists, activeTabId]);
 
-  // Derive quotes purely with useMemo
+  const liveWsQuotes = useMarketStore((s) => s.quotes);
+
+  // Derive quotes purely with useMemo, prioritizing authentic live Angel One quotes
   const quotes = useMemo(() => {
     const map: Record<string, Quote> = {};
     currentItems.forEach((item) => {
-      map[item.symbol] = getOrSeedQuote(item.symbol);
+      const sym = item.symbol;
+      const live = liveWsQuotes[sym] || (sym === "ZOMATO" ? liveWsQuotes["ETERNAL"] : undefined);
+      if (live && live.price_paise) {
+        map[sym] = live;
+      } else {
+        map[sym] = getOrSeedQuote(sym);
+      }
     });
     return map;
-  }, [currentItems]);
+  }, [currentItems, liveWsQuotes]);
 
   // Persist Watchlist Data
   const persistWatchlists = (updated: Record<string, WatchlistItem[]>) => {
@@ -176,19 +290,8 @@ export default function WatchlistManagerDesk() {
     } catch {}
   };
 
-  // Search filter
-  const searchResults = useMemo(() => {
-    const q = searchQuery.trim().toUpperCase();
-    if (!q) return [];
-
-    return POPULAR_SEARCH_PREVIEWS.filter(
-      (item) =>
-        item.symbol.toUpperCase().includes(q) || item.name.toUpperCase().includes(q)
-    );
-  }, [searchQuery]);
-
-  // Add symbol to active watchlist
-  const handleAddSymbol = (item: WatchlistItem) => {
+  // Add symbol to active watchlist (syncs with cloud DB if authenticated)
+  const handleAddSymbol = async (item: WatchlistItem) => {
     const existing = watchlists[activeTabId] ?? [];
     if (existing.some((i) => i.symbol === item.symbol)) {
       setSearchQuery("");
@@ -201,16 +304,39 @@ export default function WatchlistManagerDesk() {
     };
     persistWatchlists(updated);
     setSearchQuery("");
+
+    if (token) {
+      try {
+        await apiFetch("/watchlist", {
+          method: "POST",
+          body: JSON.stringify({ symbol: item.symbol }),
+        });
+        queryClient.invalidateQueries({ queryKey: ["watchlist"] });
+      } catch (err) {
+        console.error("Failed to sync watchlist addition to backend:", err);
+      }
+    }
   };
 
-  // Remove symbol from active watchlist
-  const handleRemoveSymbol = (symbol: string) => {
+  // Remove symbol from active watchlist (syncs deletion with cloud DB if authenticated)
+  const handleRemoveSymbol = async (symbol: string) => {
     const existing = watchlists[activeTabId] ?? [];
     const updated = {
       ...watchlists,
       [activeTabId]: existing.filter((i) => i.symbol !== symbol),
     };
     persistWatchlists(updated);
+
+    if (token) {
+      try {
+        await apiFetch(`/watchlist/${encodeURIComponent(symbol)}`, {
+          method: "DELETE",
+        });
+        queryClient.invalidateQueries({ queryKey: ["watchlist"] });
+      } catch (err) {
+        console.error("Failed to sync watchlist deletion to backend:", err);
+      }
+    }
   };
 
   // Create new custom watchlist tab
@@ -427,25 +553,41 @@ export default function WatchlistManagerDesk() {
         </div>
 
         {/* Live Search & Add Instrument */}
-        <div className="relative w-full md:w-80">
-          <div className="relative">
-            <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search stocks to add (e.g. RELIANCE)..."
-              className="w-full pl-9 pr-8 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500 shadow-xs transition-colors"
-            />
-            {searchQuery && (
-              <button
-                onClick={() => setSearchQuery("")}
-                className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
+        <div className="flex items-center gap-2.5 w-full md:w-auto">
+          {token && (
+            <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50/80 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-[11px] font-mono font-bold text-emerald-700 dark:text-emerald-400 shrink-0">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+              </span>
+              <Cloud className="w-3.5 h-3.5" />
+              <span>Cloud Synced</span>
+            </div>
+          )}
+
+          <div className="relative w-full md:w-80">
+            <div className="relative">
+              <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search all NSE/BSE stocks to add..."
+                className="w-full pl-9 pr-8 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500 shadow-xs transition-colors"
+              />
+              {isSearchingLive ? (
+                <div className="absolute right-2.5 top-2.5">
+                  <span className="w-3.5 h-3.5 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin inline-block" />
+                </div>
+              ) : searchQuery ? (
+                <button
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              ) : null}
+            </div>
 
           {/* Autocomplete Dropdown */}
           {searchResults.length > 0 && (
@@ -487,6 +629,7 @@ export default function WatchlistManagerDesk() {
           )}
         </div>
       </div>
+    </div>
 
       {/* ===================================================================== */}
       {/* 4 TOP INTELLIGENCE & MARKET BREADTH CARDS                             */}

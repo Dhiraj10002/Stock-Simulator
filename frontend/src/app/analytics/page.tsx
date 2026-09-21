@@ -19,42 +19,94 @@ export default function AnalyticsPage() {
 
   // 1. Fetch Wallet for Navbar available balance
   const { data: wallet } = useQuery<Wallet>({
-    queryKey: ["wallet"],
+    queryKey: ["wallet", token],
     queryFn: async () => {
-      const res = await fetch(`${apiUrl}/wallet`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      const json: ApiResponse<Wallet> = await res.json();
-      return (
-        json.data || {
+      if (!token) {
+        return {
           uuid: "",
           cash_balance_paise: 100000000,
           available_balance_paise: 100000000,
           blocked_paise: 0,
+        };
+      }
+      try {
+        const res = await fetch(`${apiUrl}/wallet`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) {
+          return {
+            uuid: "",
+            cash_balance_paise: 100000000,
+            available_balance_paise: 100000000,
+            blocked_paise: 0,
+          };
         }
-      );
+        const json: ApiResponse<Wallet> = await res.json();
+        return (
+          json.data || {
+            uuid: "",
+            cash_balance_paise: 100000000,
+            available_balance_paise: 100000000,
+            blocked_paise: 0,
+          }
+        );
+      } catch {
+        return {
+          uuid: "",
+          cash_balance_paise: 100000000,
+          available_balance_paise: 100000000,
+          blocked_paise: 0,
+        };
+      }
     },
-    refetchInterval: 5000,
+    enabled: !!token,
+    refetchInterval: token ? 5000 : false,
   });
 
   // 2. Fetch Portfolio for Navbar unrealized PnL
   const { data: portfolio } = useQuery<Portfolio>({
-    queryKey: ["portfolio"],
+    queryKey: ["portfolio", token],
     queryFn: async () => {
-      const res = await fetch(`${apiUrl}/portfolio`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      const json: ApiResponse<Portfolio> = await res.json();
-      return (
-        json.data || {
+      if (!token) {
+        return {
           invested_value_paise: 0,
           current_value_paise: 0,
           unrealized_pnl_paise: 0,
           positions: [],
+        };
+      }
+      try {
+        const res = await fetch(`${apiUrl}/portfolio`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) {
+          return {
+            invested_value_paise: 0,
+            current_value_paise: 0,
+            unrealized_pnl_paise: 0,
+            positions: [],
+          };
         }
-      );
+        const json: ApiResponse<Portfolio> = await res.json();
+        return (
+          json.data || {
+            invested_value_paise: 0,
+            current_value_paise: 0,
+            unrealized_pnl_paise: 0,
+            positions: [],
+          }
+        );
+      } catch {
+        return {
+          invested_value_paise: 0,
+          current_value_paise: 0,
+          unrealized_pnl_paise: 0,
+          positions: [],
+        };
+      }
     },
-    refetchInterval: 5000,
+    enabled: !!token,
+    refetchInterval: token ? 5000 : false,
   });
 
   return (

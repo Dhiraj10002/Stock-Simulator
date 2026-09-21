@@ -23,11 +23,14 @@ import {
   Sun,
   Moon,
   Sparkles,
+  AlertTriangle,
+  ShieldAlert,
 } from "lucide-react";
 import { formatPaise, getIndianMarketStatus } from "@/lib/format";
 import { useMarketStore } from "@/stores/market-store";
 import { useUIStore } from "@/stores/ui-store";
 import { useTheme } from "@/providers/theme-provider";
+import { useRiskOverview } from "@/hooks/useRiskOverview";
 
 interface NavbarProps {
   cashBalancePaise?: number;
@@ -41,7 +44,7 @@ interface NavbarProps {
 const NAV_LINKS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/stocks", label: "Stocks", icon: TrendingUp, highlight: true },
-  { href: "/options", label: "F&O Chain", icon: Layers },
+  { href: "/options", label: "F&O Hub", icon: Layers },
   { href: "/portfolio", label: "Portfolio", icon: PieChart },
   { href: "/orders", label: "Orders", icon: ClipboardList },
   { href: "/watchlist", label: "Watchlist", icon: Bookmark },
@@ -65,6 +68,7 @@ export default function Navbar({
   const [marketStatus, setMarketStatus] = useState(getIndianMarketStatus());
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const { overview, isBreached } = useRiskOverview();
 
   useEffect(() => {
     setMounted(true);
@@ -76,8 +80,12 @@ export default function Navbar({
 
   // Indices
   const niftyQuote = quotes["NIFTY"];
-  const niftyPrice = niftyQuote ? niftyQuote.price_paise : 2532000;
+  const niftyPrice = niftyQuote ? niftyQuote.price_paise : 2339450;
   const niftyChange = niftyQuote?.change_percent ?? 0.35;
+
+  const sensexQuote = quotes["SENSEX"];
+  const sensexPrice = sensexQuote ? sensexQuote.price_paise : 7473654;
+  const sensexChange = sensexQuote?.change_percent ?? 0.18;
 
   const isProfit = unrealizedPnlPaise >= 0;
 
@@ -88,20 +96,17 @@ export default function Navbar({
 
       {/* Top Utility Bar */}
       <div className="px-4 lg:px-6 py-2 flex items-center justify-between gap-4 border-b border-slate-200/80 dark:border-white/[0.06]">
-        {/* Brand & Market Session */}
-        <div className="flex items-center gap-3 sm:gap-4">
-          <Link href="/" className="flex items-center gap-2.5 group shrink-0">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-cyan-500 via-teal-500 to-emerald-400 flex items-center justify-center font-black text-slate-950 text-sm shadow-md shadow-cyan-500/25 group-hover:scale-105 transition-transform">
+        {/* Left: Brand + Market Status + Indices Ticker */}
+        <div className="flex items-center gap-4 lg:gap-6">
+          <Link href="/" className="flex items-center gap-2.5 group">
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-cyan-500 to-indigo-600 flex items-center justify-center font-black text-sm text-slate-950 shadow-md group-hover:scale-105 transition-transform">
               SS
             </div>
             <div>
-              <div className="font-bold text-sm tracking-tight text-slate-900 dark:text-white flex items-center gap-1 leading-none">
-                STOCK{" "}
-                <span className="text-cyan-600 dark:text-cyan-400 font-extrabold">
-                  SIMULATOR
-                </span>
-              </div>
-              <span className="text-[10px] text-slate-500 dark:text-slate-400 uppercase tracking-widest font-semibold block mt-0.5">
+              <span className="font-extrabold text-sm tracking-tight text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+                STOCK <span className="text-cyan-600 dark:text-cyan-400 font-mono">SIMULATOR</span>
+              </span>
+              <span className="text-[10px] tracking-wider text-slate-600 dark:text-slate-400 uppercase font-semibold block -mt-0.5">
                 Institutional Paper Desk
               </span>
             </div>
@@ -123,6 +128,9 @@ export default function Navbar({
               }`}
             />
             <span className="font-semibold">{marketStatus.statusText}</span>
+            <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-cyan-100 text-cyan-800 dark:bg-cyan-950/80 dark:text-cyan-300 border border-cyan-300 dark:border-cyan-800/60">
+              Angel One • Live
+            </span>
             <span className="text-slate-500 dark:text-slate-400 text-[10px] flex items-center gap-1 border-l border-slate-300 dark:border-slate-700/60 pl-2">
               <Clock className="w-3 h-3" />
               {marketStatus.istTime}
@@ -150,10 +158,17 @@ export default function Navbar({
             <div className="flex items-center gap-2 px-2.5 py-1 rounded-lg dark:bg-white/[0.03] dark:border dark:border-white/[0.05]">
               <span className="font-semibold text-slate-600 dark:text-slate-400">SENSEX</span>
               <span className="font-bold text-slate-900 dark:text-slate-200 font-tabular">
-                ₹82,450.00
+                {formatPaise(sensexPrice)}
               </span>
-              <span className="text-emerald-600 dark:text-emerald-400 text-[11px] font-semibold">
-                +0.18%
+              <span
+                className={`flex items-center text-[11px] font-semibold ${
+                  sensexChange >= 0
+                    ? "text-emerald-600 dark:text-emerald-400"
+                    : "text-rose-600 dark:text-rose-400"
+                }`}
+              >
+                {sensexChange >= 0 ? "+" : ""}
+                {sensexChange.toFixed(2)}%
               </span>
             </div>
           </div>
@@ -201,6 +216,36 @@ export default function Navbar({
 
         {/* Account Info & User Profile */}
         <div className="flex items-center gap-3 sm:gap-4 text-xs">
+          {/* Institutional RMS Risk Pill */}
+          {overview && (
+            <Link
+              href="/portfolio"
+              title={`RMS Margin Utilization: ${overview.margin_utilization_pct.toFixed(1)}% (${overview.status})`}
+              className={`hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-semibold transition-all ${
+                overview.status === "CRITICAL"
+                  ? "bg-rose-500/10 border-rose-500/40 text-rose-600 dark:text-rose-400 font-bold"
+                  : overview.status === "MARGIN_CALL"
+                  ? "bg-amber-500/10 border-amber-500/40 text-amber-600 dark:text-amber-400 font-bold"
+                  : overview.status === "WARNING"
+                  ? "bg-yellow-500/10 border-yellow-500/40 text-yellow-600 dark:text-yellow-400 font-bold"
+                  : "bg-slate-100 dark:bg-white/[0.04] border-slate-200 dark:border-white/[0.08] text-slate-600 dark:text-slate-400 hover:border-cyan-500/50"
+              }`}
+            >
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  overview.status === "HEALTHY"
+                    ? "bg-emerald-500"
+                    : overview.status === "WARNING"
+                    ? "bg-yellow-500 animate-pulse"
+                    : "bg-rose-500 animate-ping"
+                }`}
+              />
+              <span className="font-mono text-[11px]">
+                RMS: <span className="font-bold">{overview.margin_utilization_pct.toFixed(0)}%</span>
+              </span>
+            </Link>
+          )}
+
           {/* Available Cash */}
           <div className="hidden sm:flex flex-col text-right">
             <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium flex items-center justify-end gap-1">
@@ -328,6 +373,38 @@ export default function Navbar({
           </div>
         </div>
       </div>
+
+      {/* Real-time RMS Risk Warning Banner (Triggered when WARNING, MARGIN_CALL, or CRITICAL) */}
+      {isBreached && overview && (
+        <div
+          className={`px-4 lg:px-6 py-2 text-xs font-semibold flex items-center justify-between gap-3 border-b transition-colors shadow-inner ${
+            overview.status === "CRITICAL"
+              ? "bg-rose-600/15 border-rose-500/40 text-rose-800 dark:text-rose-200"
+              : overview.status === "MARGIN_CALL"
+              ? "bg-amber-600/15 border-amber-500/40 text-amber-800 dark:text-amber-200"
+              : "bg-yellow-600/15 border-yellow-500/40 text-yellow-800 dark:text-yellow-200"
+          }`}
+        >
+          <div className="flex items-center gap-2.5 min-w-0">
+            <AlertTriangle className="w-4 h-4 shrink-0 text-current animate-bounce" />
+            <span className="font-extrabold uppercase tracking-wide px-2 py-0.5 rounded text-[10px] bg-black/10 dark:bg-white/10 font-mono">
+              {overview.status.replace("_", " ")} ({overview.margin_utilization_pct.toFixed(1)}% Utilized)
+            </span>
+            <span className="truncate">{overview.message}</span>
+            {overview.intraday_positions_count > 0 && (
+              <span className="hidden md:inline-block font-mono font-bold text-[11px] opacity-90 pl-1 border-l border-current/30">
+                {overview.intraday_positions_count} Intraday MIS at liquidation risk
+              </span>
+            )}
+          </div>
+          <Link
+            href="/portfolio"
+            className="shrink-0 px-3 py-1 rounded-lg bg-black/10 dark:bg-white/10 hover:bg-black/20 dark:hover:bg-white/20 text-xs font-bold transition-colors"
+          >
+            Review Risk Desk &rarr;
+          </Link>
+        </div>
+      )}
 
       {/* Primary Route Navigation Tabs (Row 2): Modern MotionSites Floating Pill Tabs */}
       <nav className="px-4 lg:px-6 py-1.5 flex items-center gap-1.5 overflow-x-auto no-scrollbar">

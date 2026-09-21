@@ -78,6 +78,15 @@ if [ -f "$ROOT_DIR/backend/.env" ]; then
   set +a
 fi
 
+# 2.5 Ensure Neon DB hostname resolves (handles cases where local router DNS returns REFUSED)
+if ! host ep-gentle-cloud-ayae8gyh-pooler.c-5.us-east-2.aws.neon.tech >/dev/null 2>&1; then
+  echo "[-] Neon DB DNS lookup failed with local router. Setting public DNS fallback (8.8.8.8, 1.1.1.1)..."
+  ACTIVE_IFACE=$(ip route show default 2>/dev/null | awk '/default/ {print $5}' | head -n1)
+  if [ -n "$ACTIVE_IFACE" ]; then
+    resolvectl dns "$ACTIVE_IFACE" 8.8.8.8 1.1.1.1 2>/dev/null || true
+  fi
+fi
+
 export REDIS_URL="${REDIS_URL:-redis://localhost:6379/0}"
 
 # 3. Redis Setup (only in full mode)

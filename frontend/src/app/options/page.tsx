@@ -5,23 +5,19 @@ import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import Navbar from "@/components/layout/Navbar";
 import FnoExplorePage from "@/components/trading/FnoExplorePage";
-import OptionChainDesk from "@/components/trading/OptionChainDesk";
 import {
   Layers,
   TrendingUp,
   ArrowRight,
   Compass,
-  TableProperties,
   PieChart,
-  Zap,
 } from "lucide-react";
 import { formatPaise } from "@/lib/format";
 import type { Portfolio, Wallet, ApiResponse } from "@/types";
 
 export default function OptionsPage() {
-  // Navigation tabs: Explore (Groww style hub) vs Option Chain (Greek ladder) vs Positions
-  const [activeFnoTab, setActiveFnoTab] = useState<"explore" | "chain" | "positions">("explore");
-  const [chainUnderlying, setChainUnderlying] = useState<string>("NIFTY");
+  // Navigation tabs: Explore (Derivatives Hub) vs Positions
+  const [activeFnoTab, setActiveFnoTab] = useState<"explore" | "positions">("explore");
 
   const [token] = useState<string>(() => {
     if (typeof window !== "undefined") {
@@ -34,52 +30,99 @@ export default function OptionsPage() {
 
   // 1. Fetch Wallet for Navbar available balance
   const { data: wallet } = useQuery<Wallet>({
-    queryKey: ["wallet"],
+    queryKey: ["wallet", token],
     queryFn: async () => {
-      const res = await fetch(`${apiUrl}/wallet`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      const json: ApiResponse<Wallet> = await res.json();
-      return (
-        json.data || {
+      if (!token) {
+        return {
           uuid: "",
           cash_balance_paise: 100000000,
           available_balance_paise: 100000000,
           blocked_paise: 0,
+        };
+      }
+      try {
+        const res = await fetch(`${apiUrl}/wallet`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) {
+          return {
+            uuid: "",
+            cash_balance_paise: 100000000,
+            available_balance_paise: 100000000,
+            blocked_paise: 0,
+          };
         }
-      );
+        const json: ApiResponse<Wallet> = await res.json();
+        return (
+          json.data || {
+            uuid: "",
+            cash_balance_paise: 100000000,
+            available_balance_paise: 100000000,
+            blocked_paise: 0,
+          }
+        );
+      } catch {
+        return {
+          uuid: "",
+          cash_balance_paise: 100000000,
+          available_balance_paise: 100000000,
+          blocked_paise: 0,
+        };
+      }
     },
-    refetchInterval: 5000,
+    enabled: !!token,
+    refetchInterval: token ? 5000 : false,
   });
 
   // 2. Fetch Portfolio for Navbar unrealized PnL & Positions
   const { data: portfolio } = useQuery<Portfolio>({
-    queryKey: ["portfolio"],
+    queryKey: ["portfolio", token],
     queryFn: async () => {
-      const res = await fetch(`${apiUrl}/portfolio`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      const json: ApiResponse<Portfolio> = await res.json();
-      return (
-        json.data || {
+      if (!token) {
+        return {
           invested_value_paise: 0,
           current_value_paise: 0,
           unrealized_pnl_paise: 0,
           positions: [],
+        };
+      }
+      try {
+        const res = await fetch(`${apiUrl}/portfolio`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) {
+          return {
+            invested_value_paise: 0,
+            current_value_paise: 0,
+            unrealized_pnl_paise: 0,
+            positions: [],
+          };
         }
-      );
+        const json: ApiResponse<Portfolio> = await res.json();
+        return (
+          json.data || {
+            invested_value_paise: 0,
+            current_value_paise: 0,
+            unrealized_pnl_paise: 0,
+            positions: [],
+          }
+        );
+      } catch {
+        return {
+          invested_value_paise: 0,
+          current_value_paise: 0,
+          unrealized_pnl_paise: 0,
+          positions: [],
+        };
+      }
     },
-    refetchInterval: 5000,
+    enabled: !!token,
+    refetchInterval: token ? 5000 : false,
   });
 
   const fnoPositions = (portfolio?.positions ?? []).filter(
     (p) => p.product === "FNO" || p.product === "INTRADAY"
   );
-
-  const handleSelectOptionChain = (symbol: string) => {
-    setChainUnderlying(symbol);
-    setActiveFnoTab("chain");
-  };
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-150">
@@ -89,7 +132,7 @@ export default function OptionsPage() {
       />
 
       <main className="flex-1 max-w-[1720px] w-full mx-auto p-3 sm:p-5 lg:p-6 space-y-6">
-        {/* Header Title & Sub-navigation bar (matching Groww Explore / Positions / Orders structure) */}
+        {/* Header Title & Sub-navigation bar */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
           <div>
             <div className="flex items-center gap-2">
@@ -106,12 +149,12 @@ export default function OptionsPage() {
               <span>F&O Derivatives Hub</span>
             </h1>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Live index & stock futures, options strike matrix, Black-Scholes Greeks, and multi-leg strategy execution.
+              Live index & stock futures, sectoral contracts, and institutional risk management.
             </p>
           </div>
 
           <div className="flex items-center gap-3">
-            {/* View Switcher Tabs: Explore | Option Chain | Positions */}
+            {/* View Switcher Tabs: Explore | Positions */}
             <div className="flex items-center gap-1 bg-slate-200/80 dark:bg-slate-800 p-1 rounded-xl text-xs font-semibold">
               <button
                 onClick={() => setActiveFnoTab("explore")}
@@ -123,18 +166,6 @@ export default function OptionsPage() {
               >
                 <Compass className="w-3.5 h-3.5" />
                 <span>Explore</span>
-              </button>
-
-              <button
-                onClick={() => setActiveFnoTab("chain")}
-                className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
-                  activeFnoTab === "chain"
-                    ? "bg-white dark:bg-slate-700 text-cyan-700 dark:text-cyan-300 shadow-xs font-bold"
-                    : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
-                }`}
-              >
-                <TableProperties className="w-3.5 h-3.5" />
-                <span>Option Chain</span>
               </button>
 
               <button
@@ -156,36 +187,17 @@ export default function OptionsPage() {
             >
               <TrendingUp className="w-3.5 h-3.5 text-cyan-500" />
               <span>Explore Stocks</span>
-              <ArrowRight className="w-3 h-3" />
+              <ArrowRight className="w-3.5 h-3.5" />
             </Link>
           </div>
         </div>
 
-        {/* 1. EXPLORE TAB (User requested full F&O Explore desk) */}
+        {/* 1. EXPLORE TAB */}
         {activeFnoTab === "explore" && (
-          <FnoExplorePage onSelectOptionChain={handleSelectOptionChain} />
+          <FnoExplorePage />
         )}
 
-        {/* 2. OPTION CHAIN TAB (Interactive strike ladder & Greek analytics) */}
-        {activeFnoTab === "chain" && (
-          <div className="space-y-4 animate-in fade-in duration-200">
-            <div className="flex items-center justify-between p-3 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-xs">
-              <span className="text-cyan-800 dark:text-cyan-300 font-semibold flex items-center gap-1.5">
-                <Zap className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
-                Viewing live Option Chain for <strong className="font-bold underline">{chainUnderlying}</strong>
-              </span>
-              <button
-                onClick={() => setActiveFnoTab("explore")}
-                className="text-cyan-700 dark:text-cyan-400 hover:underline font-bold cursor-pointer"
-              >
-                ← Back to F&O Explore
-              </button>
-            </div>
-            <OptionChainDesk initialUnderlying={chainUnderlying} />
-          </div>
-        )}
-
-        {/* 3. POSITIONS TAB (Derivative contracts quick desk) */}
+        {/* 2. POSITIONS TAB (Derivative contracts quick desk) */}
         {activeFnoTab === "positions" && (
           <div className="p-6 rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 shadow-xs space-y-4 animate-in fade-in duration-200">
             <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">

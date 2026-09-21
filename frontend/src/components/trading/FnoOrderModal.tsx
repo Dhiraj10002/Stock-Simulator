@@ -115,7 +115,7 @@ export default function FnoOrderModal({
           type: orderType,
           product: product,
           quantity: totalQuantity,
-          price_paise: Math.round(activePrice * 100),
+          price_paise: orderType === "MARKET" ? 0 : Math.round(activePrice * 100),
         }),
       });
 

@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { apiFetch, getAuthToken } from "@/lib/api";
 import {
   Search,
   TrendingUp,
@@ -205,7 +207,9 @@ export default function WatchlistSidebar({
     return () => clearTimeout(timer);
   }, [search, apiUrl]);
 
-  const handleSelectOrAdd = (item: WatchlistItem) => {
+  const queryClient = useQueryClient();
+
+  const handleSelectOrAdd = async (item: WatchlistItem) => {
     if (activeTab !== "holdings") {
       const currentList = customTabs[activeTab] ?? [];
       if (!currentList.some((w) => w.symbol === item.symbol)) {
@@ -217,9 +221,22 @@ export default function WatchlistSidebar({
     }
     onSelectSymbol(item.symbol);
     setSearch("");
+
+    const token = typeof window !== "undefined" ? getAuthToken() : "";
+    if (token) {
+      try {
+        await apiFetch("/watchlist", {
+          method: "POST",
+          body: JSON.stringify({ symbol: item.symbol }),
+        });
+        queryClient.invalidateQueries({ queryKey: ["watchlist"] });
+      } catch (err) {
+        console.error("Failed to sync watchlist addition to backend:", err);
+      }
+    }
   };
 
-  const handleRemoveFromWatchlist = (e: React.MouseEvent, symbol: string) => {
+  const handleRemoveFromWatchlist = async (e: React.MouseEvent, symbol: string) => {
     e.stopPropagation();
     if (activeTab === "holdings") return;
     const currentList = customTabs[activeTab] ?? [];
@@ -227,6 +244,18 @@ export default function WatchlistSidebar({
       ...customTabs,
       [activeTab]: currentList.filter((item) => item.symbol !== symbol),
     });
+
+    const token = typeof window !== "undefined" ? getAuthToken() : "";
+    if (token) {
+      try {
+        await apiFetch(`/watchlist/${encodeURIComponent(symbol)}`, {
+          method: "DELETE",
+        });
+        queryClient.invalidateQueries({ queryKey: ["watchlist"] });
+      } catch (err) {
+        console.error("Failed to sync watchlist removal to backend:", err);
+      }
+    }
   };
 
   const filteredLocal = activeItems.filter(

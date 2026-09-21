@@ -122,7 +122,22 @@ func (s *Service) CurrentQuote(symbol string) (*dto.QuoteResponse, error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalid stored quote")
 	}
-	return &dto.QuoteResponse{Symbol: symbol, PricePaise: price, Source: values["source"], UpdatedAt: values["updated_at"]}, nil
+	var changePaise int64
+	var changePercent float64
+	if cp, ok := values["change_paise"]; ok {
+		changePaise, _ = strconv.ParseInt(cp, 10, 64)
+	}
+	if cp, ok := values["change_percent"]; ok {
+		changePercent, _ = strconv.ParseFloat(cp, 64)
+	}
+	return &dto.QuoteResponse{
+		Symbol:        symbol,
+		PricePaise:    price,
+		ChangePaise:   changePaise,
+		ChangePercent: changePercent,
+		Source:        values["source"],
+		UpdatedAt:     values["updated_at"],
+	}, nil
 }
 
 // ExecutableQuote returns a quote that is safe to use for settlement. A

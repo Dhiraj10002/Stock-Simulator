@@ -4,6 +4,7 @@ import React, { useState, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
+import { useMarketStore } from "@/stores/market-store";
 import {
   TrendingUp,
   TrendingDown,
@@ -557,8 +558,9 @@ interface FnoExplorePageProps {
   onSelectOptionChain?: (symbol: string) => void;
 }
 
-export default function FnoExplorePage({ onSelectOptionChain }: FnoExplorePageProps) {
+export default function FnoExplorePage({}: FnoExplorePageProps = {}) {
   const router = useRouter();
+  const quotes = useMarketStore((s) => s.quotes);
 
   // Filter state for Top Traded Underlyings
   const [underlyingFilter, setUnderlyingFilter] = useState<"ALL" | "INDICES" | "EQUITY">("ALL");
@@ -603,42 +605,94 @@ export default function FnoExplorePage({ onSelectOptionChain }: FnoExplorePagePr
 
   // Fetch Wallet
   const { data: wallet } = useQuery<Wallet>({
-    queryKey: ["wallet"],
+    queryKey: ["wallet", token],
     queryFn: async () => {
-      const res = await fetch(`${apiUrl}/wallet`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      const json: ApiResponse<Wallet> = await res.json();
-      return (
-        json.data || {
+      if (!token) {
+        return {
           uuid: "",
           cash_balance_paise: 100000000,
           available_balance_paise: 100000000,
           blocked_paise: 0,
+        };
+      }
+      try {
+        const res = await fetch(`${apiUrl}/wallet`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) {
+          return {
+            uuid: "",
+            cash_balance_paise: 100000000,
+            available_balance_paise: 100000000,
+            blocked_paise: 0,
+          };
         }
-      );
+        const json: ApiResponse<Wallet> = await res.json();
+        return (
+          json.data || {
+            uuid: "",
+            cash_balance_paise: 100000000,
+            available_balance_paise: 100000000,
+            blocked_paise: 0,
+          }
+        );
+      } catch {
+        return {
+          uuid: "",
+          cash_balance_paise: 100000000,
+          available_balance_paise: 100000000,
+          blocked_paise: 0,
+        };
+      }
     },
-    refetchInterval: 5000,
+    enabled: !!token,
+    refetchInterval: token ? 5000 : false,
   });
 
   // Fetch Portfolio
   const { data: portfolio } = useQuery<Portfolio>({
-    queryKey: ["portfolio"],
+    queryKey: ["portfolio", token],
     queryFn: async () => {
-      const res = await fetch(`${apiUrl}/portfolio`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      const json: ApiResponse<Portfolio> = await res.json();
-      return (
-        json.data || {
+      if (!token) {
+        return {
           invested_value_paise: 0,
           current_value_paise: 0,
           unrealized_pnl_paise: 0,
           positions: [],
+        };
+      }
+      try {
+        const res = await fetch(`${apiUrl}/portfolio`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) {
+          return {
+            invested_value_paise: 0,
+            current_value_paise: 0,
+            unrealized_pnl_paise: 0,
+            positions: [],
+          };
         }
-      );
+        const json: ApiResponse<Portfolio> = await res.json();
+        return (
+          json.data || {
+            invested_value_paise: 0,
+            current_value_paise: 0,
+            unrealized_pnl_paise: 0,
+            positions: [],
+          }
+        );
+      } catch {
+        return {
+          invested_value_paise: 0,
+          current_value_paise: 0,
+          unrealized_pnl_paise: 0,
+          positions: [],
+        };
+      }
     },
-    refetchInterval: 5000,
+    enabled: !!token,
+    refetchInterval: token ? 5000 : false,
   });
 
   const availableBalance = wallet?.available_balance_paise ?? 100000000;
@@ -673,36 +727,43 @@ export default function FnoExplorePage({ onSelectOptionChain }: FnoExplorePagePr
       {/* ========================================================================= */}
       <section className="p-3 sm:p-4 rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 shadow-xs">
         <div className="flex items-center gap-3 overflow-x-auto no-scrollbar pb-1">
-          {FNO_INDICES_STRIP.map((idx) => (
-            <div
-              key={idx.symbol}
-              onClick={() => onSelectOptionChain?.(idx.symbol)}
-              className="flex items-center justify-between gap-4 p-2.5 px-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/70 dark:border-slate-700/60 hover:border-cyan-500/50 transition-all cursor-pointer group shrink-0 min-w-[210px]"
-            >
-              <div>
-                <div className="text-[11px] font-bold text-slate-500 dark:text-slate-400 group-hover:text-cyan-600 dark:group-hover:text-cyan-400 transition-colors">
-                  {idx.name}
-                </div>
-                <div className="text-sm font-black font-tabular text-slate-900 dark:text-slate-100 mt-0.5">
-                  ₹{idx.value}
-                </div>
-                <div
-                  className={`text-[11px] font-bold font-tabular flex items-center gap-1 ${
-                    idx.isGain
-                      ? "text-emerald-600 dark:text-emerald-400"
-                      : "text-rose-600 dark:text-rose-400"
-                  }`}
-                >
-                  <span>{idx.change}</span>
-                  <span>({idx.percent})</span>
-                </div>
-              </div>
+          {FNO_INDICES_STRIP.map((idx) => {
+            const live = quotes[idx.symbol];
+            const liveVal = live ? (live.price_paise / 100).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : idx.value;
+            const livePct = live?.change_percent !== undefined ? live.change_percent : parseFloat(idx.percent);
+            const isGain = livePct >= 0;
+            const liveChange = live ? `${isGain ? "+" : ""}${((live.price_paise * (livePct / 100)) / 100).toFixed(2)}` : idx.change;
 
-              <div className="shrink-0 pl-1">
-                <MiniSparkline points={idx.sparkline} isGain={idx.isGain} />
+            return (
+              <div
+                key={idx.symbol}
+                className="flex items-center justify-between gap-4 p-2.5 px-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/70 dark:border-slate-700/60 hover:border-cyan-500/50 transition-all shrink-0 min-w-[210px]"
+              >
+                <div>
+                  <div className="text-[11px] font-bold text-slate-500 dark:text-slate-400 group-hover:text-cyan-600 dark:group-hover:text-cyan-400 transition-colors">
+                    {idx.name}
+                  </div>
+                  <div className="text-sm font-black font-tabular text-slate-900 dark:text-slate-100 mt-0.5">
+                    ₹{liveVal}
+                  </div>
+                  <div
+                    className={`text-[11px] font-bold font-tabular flex items-center gap-1 ${
+                      isGain
+                        ? "text-emerald-600 dark:text-emerald-400"
+                        : "text-rose-600 dark:text-rose-400"
+                    }`}
+                  >
+                    <span>{liveChange}</span>
+                    <span>({isGain ? "+" : ""}{livePct.toFixed(2)}%)</span>
+                  </div>
+                </div>
+
+                <div className="shrink-0 pl-1">
+                  <MiniSparkline points={idx.sparkline} isGain={isGain} />
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </section>
 
@@ -750,7 +811,13 @@ export default function FnoExplorePage({ onSelectOptionChain }: FnoExplorePagePr
             {/* 6 Grid Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
               {filteredUnderlyings.map((u) => {
-                const isGain = u.change >= 0;
+                const symKey = u.optionsSymbol || u.symbol.replace(" 50", "").replace(" ", "");
+                const live = quotes[symKey];
+                const currentPrice = live ? live.price_paise / 100 : u.price;
+                const currentPct = live?.change_percent !== undefined ? live.change_percent : u.changePercent;
+                const isGain = currentPct >= 0;
+                const currentChange = live ? ((currentPrice * currentPct) / 100) : u.change;
+
                 return (
                   <div
                     key={u.symbol}
@@ -780,7 +847,7 @@ export default function FnoExplorePage({ onSelectOptionChain }: FnoExplorePagePr
                     <div className="pt-3 mt-3 border-t border-slate-100 dark:divide-slate-800/60 flex items-center justify-between">
                       <div>
                         <div className="text-base font-black font-tabular text-slate-900 dark:text-slate-100">
-                          ₹{u.price.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                          ₹{currentPrice.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
                         </div>
                         <div
                           className={`text-xs font-bold font-tabular flex items-center gap-1 ${
@@ -789,26 +856,19 @@ export default function FnoExplorePage({ onSelectOptionChain }: FnoExplorePagePr
                               : "text-rose-600 dark:text-rose-400"
                           }`}
                         >
-                          <span>{isGain ? "+" : ""}{u.change.toFixed(2)}</span>
-                          <span>({isGain ? "+" : ""}{u.changePercent.toFixed(2)}%)</span>
+                          <span>{isGain ? "+" : ""}{currentChange.toFixed(2)}</span>
+                          <span>({isGain ? "+" : ""}{currentPct.toFixed(2)}%)</span>
                         </div>
                       </div>
 
                       <div className="flex items-center gap-1.5">
-                        <button
-                          onClick={() => onSelectOptionChain?.(u.optionsSymbol)}
-                          className="px-2.5 py-1.5 rounded-lg bg-cyan-50 dark:bg-cyan-950/60 border border-cyan-200 dark:border-cyan-800/60 hover:bg-cyan-100 dark:hover:bg-cyan-900/60 text-cyan-700 dark:text-cyan-300 text-xs font-bold transition-colors flex items-center gap-1 cursor-pointer"
-                          title="Open Option Chain for this underlying"
-                        >
-                          <Layers className="w-3.5 h-3.5" />
-                          <span>Chain</span>
-                        </button>
                         <Link
                           href={`/stocks/${u.optionsSymbol}`}
-                          className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors"
+                          className="px-2.5 py-1.5 rounded-lg bg-cyan-50 dark:bg-cyan-950/60 border border-cyan-200 dark:border-cyan-800/60 hover:bg-cyan-100 dark:hover:bg-cyan-900/60 text-cyan-700 dark:text-cyan-300 text-xs font-bold transition-colors flex items-center gap-1 cursor-pointer"
                           title="Trade Equity"
                         >
-                          <ArrowUpRight className="w-3.5 h-3.5" />
+                          <TrendingUp className="w-3.5 h-3.5" />
+                          <span>Trade</span>
                         </Link>
                       </div>
                     </div>
@@ -920,12 +980,12 @@ export default function FnoExplorePage({ onSelectOptionChain }: FnoExplorePagePr
                       </td>
 
                       <td className="py-3 px-3 text-center">
-                        <button
-                          onClick={() => onSelectOptionChain?.(stock.symbol)}
-                          className="px-2 py-1 rounded bg-slate-100 hover:bg-cyan-50 dark:bg-slate-800 dark:hover:bg-cyan-950/60 text-slate-700 dark:text-slate-300 hover:text-cyan-600 dark:hover:text-cyan-400 font-semibold text-[11px] transition-colors cursor-pointer"
+                        <Link
+                          href={`/stocks/${stock.symbol}`}
+                          className="px-2 py-1 rounded bg-slate-100 hover:bg-cyan-50 dark:bg-slate-800 dark:hover:bg-cyan-950/60 text-slate-700 dark:text-slate-300 hover:text-cyan-600 dark:hover:text-cyan-400 font-semibold text-[11px] transition-colors inline-block"
                         >
-                          Option Chain →
-                        </button>
+                          Trade Stock →
+                        </Link>
                       </td>
                     </tr>
                   ))}
@@ -1010,13 +1070,6 @@ export default function FnoExplorePage({ onSelectOptionChain }: FnoExplorePagePr
                           className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition-all shadow-xs active:scale-95 cursor-pointer"
                         >
                           Sell
-                        </button>
-                        <button
-                          onClick={() => onSelectOptionChain?.(fut.underlying.split(" ")[0])}
-                          className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-300 transition-all cursor-pointer"
-                          title="Open Option Chain"
-                        >
-                          Chain
                         </button>
                       </div>
                     </div>
@@ -1103,13 +1156,6 @@ export default function FnoExplorePage({ onSelectOptionChain }: FnoExplorePagePr
                         >
                           Sell
                         </button>
-                        <button
-                          onClick={() => onSelectOptionChain?.(fut.underlying)}
-                          className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-300 transition-all cursor-pointer"
-                          title="Open Option Chain"
-                        >
-                          Chain
-                        </button>
                       </div>
                     </div>
                   </div>
@@ -1171,14 +1217,14 @@ export default function FnoExplorePage({ onSelectOptionChain }: FnoExplorePagePr
             </div>
 
             <div className="space-y-2 pt-1">
-              <button
-                onClick={() => onSelectOptionChain?.("NIFTY")}
-                className="w-full py-2.5 px-4 rounded-xl bg-cyan-600 hover:bg-cyan-500 dark:bg-cyan-500 dark:hover:bg-cyan-400 text-white dark:text-slate-950 font-bold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-cyan-500/20 transition-all hover:scale-[1.02] cursor-pointer"
+              <Link
+                href="/stocks"
+                className="w-full py-2.5 px-4 rounded-xl bg-cyan-600 hover:bg-cyan-500 dark:bg-cyan-500 dark:hover:bg-cyan-400 text-white dark:text-slate-950 font-bold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-cyan-500/20 transition-all hover:scale-[1.02]"
               >
-                <Layers className="w-4 h-4" />
-                <span>Launch Option Chain Desk</span>
+                <TrendingUp className="w-4 h-4" />
+                <span>Explore Live Equities</span>
                 <ArrowRight className="w-3.5 h-3.5" />
-              </button>
+              </Link>
               <Link
                 href="/portfolio"
                 className="w-full py-2 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors text-center"

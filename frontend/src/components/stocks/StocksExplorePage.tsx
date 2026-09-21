@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import Navbar from "@/components/layout/Navbar";
+import { useMarketStore } from "@/stores/market-store";
 import {
   TrendingUp,
   TrendingDown,
@@ -237,48 +238,119 @@ export default function StocksExplorePage() {
 
   // 1. Fetch Wallet for Available Margin
   const { data: wallet } = useQuery<Wallet>({
-    queryKey: ["wallet"],
+    queryKey: ["wallet", token],
     queryFn: async () => {
-      const res = await fetch(`${apiUrl}/wallet`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      const json: ApiResponse<Wallet> = await res.json();
-      return (
-        json.data || {
+      if (!token) {
+        return {
           uuid: "",
           cash_balance_paise: 100000000,
           available_balance_paise: 100000000,
           blocked_paise: 0,
+        };
+      }
+      try {
+        const res = await fetch(`${apiUrl}/wallet`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) {
+          return {
+            uuid: "",
+            cash_balance_paise: 100000000,
+            available_balance_paise: 100000000,
+            blocked_paise: 0,
+          };
         }
-      );
+        const json: ApiResponse<Wallet> = await res.json();
+        return (
+          json.data || {
+            uuid: "",
+            cash_balance_paise: 100000000,
+            available_balance_paise: 100000000,
+            blocked_paise: 0,
+          }
+        );
+      } catch {
+        return {
+          uuid: "",
+          cash_balance_paise: 100000000,
+          available_balance_paise: 100000000,
+          blocked_paise: 0,
+        };
+      }
     },
-    refetchInterval: 5000,
+    enabled: !!token,
+    refetchInterval: token ? 5000 : false,
   });
 
   // 2. Fetch Portfolio for Unrealized P&L
   const { data: portfolio } = useQuery<Portfolio>({
-    queryKey: ["portfolio"],
+    queryKey: ["portfolio", token],
     queryFn: async () => {
-      const res = await fetch(`${apiUrl}/portfolio`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      const json: ApiResponse<Portfolio> = await res.json();
-      return (
-        json.data || {
+      if (!token) {
+        return {
           invested_value_paise: 0,
           current_value_paise: 0,
           unrealized_pnl_paise: 0,
           positions: [],
+        };
+      }
+      try {
+        const res = await fetch(`${apiUrl}/portfolio`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) {
+          return {
+            invested_value_paise: 0,
+            current_value_paise: 0,
+            unrealized_pnl_paise: 0,
+            positions: [],
+          };
         }
-      );
+        const json: ApiResponse<Portfolio> = await res.json();
+        return (
+          json.data || {
+            invested_value_paise: 0,
+            current_value_paise: 0,
+            unrealized_pnl_paise: 0,
+            positions: [],
+          }
+        );
+      } catch {
+        return {
+          invested_value_paise: 0,
+          current_value_paise: 0,
+          unrealized_pnl_paise: 0,
+          positions: [],
+        };
+      }
     },
-    refetchInterval: 5000,
+    enabled: !!token,
+    refetchInterval: token ? 5000 : false,
   });
+
+  const quotes = useMarketStore((s) => s.quotes);
+
+  // Merge catalog with live Angel One quotes
+  const liveCatalog = useMemo(() => {
+    return MASTER_STOCKS_CATALOG.map((item) => {
+      const live = quotes[item.symbol] || (item.symbol === "ZOMATO" ? quotes["ETERNAL"] : undefined);
+      if (!live) return item;
+      const price = live.price_paise / 100;
+      const changePercent = live.change_percent ?? item.changePercent;
+      const change = (price * changePercent) / 100;
+      return {
+        ...item,
+        price,
+        change,
+        changePercent,
+      };
+    });
+  }, [quotes]);
 
   // Generate mover list based on tab
   const moverList = useMemo(() => {
     if (moverTab === "gainers") {
-      return [...MASTER_STOCKS_CATALOG]
+      return [...liveCatalog]
         .filter((s) => s.changePercent > 0)
         .sort((a, b) => b.changePercent - a.changePercent)
         .slice(0, 6)
@@ -296,7 +368,7 @@ export default function StocksExplorePage() {
           ],
         }));
     } else if (moverTab === "losers") {
-      return [...MASTER_STOCKS_CATALOG]
+      return [...liveCatalog]
         .filter((s) => s.changePercent < 0)
         .sort((a, b) => a.changePercent - b.changePercent)
         .slice(0, 6)
@@ -314,7 +386,7 @@ export default function StocksExplorePage() {
         }));
     } else {
       // Volume shockers
-      return [...MASTER_STOCKS_CATALOG]
+      return [...liveCatalog]
         .filter((s) => ["ZOMATO", "SUZLON", "TRENT", "BEL", "POONAWALLA", "ATGL"].includes(s.symbol))
         .map((s, idx) => ({
           ...s,
@@ -329,7 +401,7 @@ export default function StocksExplorePage() {
           ],
         }));
     }
-  }, [moverTab]);
+  }, [moverTab, liveCatalog]);
 
   const availableBalance = wallet?.available_balance_paise ?? 100000000;
   const unrealizedPnl = portfolio?.unrealized_pnl_paise ?? 0;
@@ -347,26 +419,36 @@ export default function StocksExplorePage() {
       {/* 2. HORIZONTAL INDICES STRIP (Marked by user in Green) */}
       <div className="border-b border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60 backdrop-blur-sm px-4 sm:px-6 py-2 transition-colors">
         <div className="max-w-7xl mx-auto flex items-center gap-6 sm:gap-8 overflow-x-auto no-scrollbar text-xs">
-          {MAJOR_INDICES_STRIP.map((idx) => (
-            <div key={idx.name} className="flex items-center gap-2 shrink-0">
-              <span className="font-bold text-slate-700 dark:text-slate-300">
-                {idx.name}
-              </span>
-              <span className="font-semibold text-slate-900 dark:text-slate-100 font-tabular">
-                {idx.value}
-              </span>
-              <span
-                className={`flex items-center gap-0.5 text-[11px] font-bold ${
-                  idx.isGain
-                    ? "text-emerald-600 dark:text-emerald-400"
-                    : "text-rose-600 dark:text-rose-400"
-                }`}
-              >
-                <span>{idx.change}</span>
-                <span>({idx.percent})</span>
-              </span>
-            </div>
-          ))}
+          {MAJOR_INDICES_STRIP.map((idx) => {
+            const sym = idx.name.replace(/\s+/g, "").replace("50", "").replace("BANK", "BANKNIFTY").replace("MIDCP", "MIDCPNIFTY").replace("FIN", "FINNIFTY");
+            const lookupKey = sym === "NIFTY" ? "NIFTY" : sym === "BANKNIFTY" ? "BANKNIFTY" : sym === "SENSEX" ? "SENSEX" : sym === "MIDCPNIFTY" ? "MIDCPNIFTY" : sym === "FINNIFTY" ? "FINNIFTY" : sym;
+            const live = quotes[lookupKey];
+            const livePrice = live ? (live.price_paise / 100).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : idx.value;
+            const livePct = live?.change_percent !== undefined ? live.change_percent : parseFloat(idx.percent);
+            const isGain = livePct >= 0;
+            const liveChange = live ? `${isGain ? "+" : ""}${((live.price_paise * (livePct / 100)) / 100).toFixed(2)}` : idx.change;
+
+            return (
+              <div key={idx.name} className="flex items-center gap-2 shrink-0">
+                <span className="font-bold text-slate-700 dark:text-slate-300">
+                  {idx.name}
+                </span>
+                <span className="font-semibold text-slate-900 dark:text-slate-100 font-tabular">
+                  {livePrice}
+                </span>
+                <span
+                  className={`flex items-center gap-0.5 text-[11px] font-bold ${
+                    isGain
+                      ? "text-emerald-600 dark:text-emerald-400"
+                      : "text-rose-600 dark:text-rose-400"
+                  }`}
+                >
+                  <span>{liveChange}</span>
+                  <span>({isGain ? "+" : ""}{livePct.toFixed(2)}%)</span>
+                </span>
+              </div>
+            );
+          })}
         </div>
       </div>
 
@@ -401,7 +483,11 @@ export default function StocksExplorePage() {
               {/* 3-Col Card Grid */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
                 {POPULAR_STOCKS.map((stock) => {
-                  const isGain = stock.changePercent >= 0;
+                  const live = quotes[stock.symbol];
+                  const currentPrice = live ? live.price_paise / 100 : stock.price;
+                  const currentPct = live?.change_percent !== undefined ? live.change_percent : stock.changePercent;
+                  const isGain = currentPct >= 0;
+
                   return (
                     <Link
                       key={stock.symbol}
@@ -433,7 +519,7 @@ export default function StocksExplorePage() {
                       <div className="mt-3.5 pt-2.5 border-t border-slate-100 dark:border-slate-800/80 flex items-end justify-between">
                         <div>
                           <div className="text-xs font-bold font-tabular text-slate-900 dark:text-slate-100">
-                            ₹{stock.price.toFixed(2)}
+                            ₹{currentPrice.toFixed(2)}
                           </div>
                           <div className="text-[10px] text-slate-400">
                             Cap: {stock.marketCap}
@@ -447,7 +533,7 @@ export default function StocksExplorePage() {
                               : "text-rose-600 dark:text-rose-400"
                           }`}
                         >
-                          {isGain ? "▲" : "▼"} {Math.abs(stock.changePercent)}%
+                          {isGain ? "▲" : "▼"} {Math.abs(currentPct).toFixed(2)}%
                         </div>
                       </div>
                     </Link>
@@ -480,7 +566,12 @@ export default function StocksExplorePage() {
               {/* 4-Col Card Grid */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {MOST_TRADED_STOCKS.map((stock) => {
-                  const isGain = stock.changePercent >= 0;
+                  const live = quotes[stock.symbol] || (stock.symbol === "ZOMATO" ? quotes["ETERNAL"] : undefined);
+                  const currentPrice = live ? live.price_paise / 100 : stock.price;
+                  const currentPct = live?.change_percent !== undefined ? live.change_percent : stock.changePercent;
+                  const isGain = currentPct >= 0;
+                  const currentChange = live ? ((currentPrice * currentPct) / 100) : stock.change;
+
                   return (
                     <Link
                       key={stock.symbol}
@@ -496,7 +587,7 @@ export default function StocksExplorePage() {
                       </div>
 
                       <div className="text-xs font-bold font-tabular text-slate-900 dark:text-slate-100 mt-1">
-                        ₹{stock.price.toFixed(2)}
+                        ₹{currentPrice.toFixed(2)}
                       </div>
 
                       <div
@@ -507,7 +598,7 @@ export default function StocksExplorePage() {
                         }`}
                       >
                         {isGain ? "+" : ""}
-                        {stock.change.toFixed(2)} ({stock.changePercent.toFixed(2)}%)
+                        {currentChange.toFixed(2)} ({currentPct.toFixed(2)}%)
                       </div>
 
                       <div className="text-[10px] text-slate-400 font-mono mt-1">

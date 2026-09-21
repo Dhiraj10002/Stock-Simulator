@@ -64,10 +64,12 @@ export type Transaction = {
 export type Quote = {
   symbol: string;
   price_paise: number;
+  change_paise?: number;
+  change_percent?: number;
   lower_circuit_paise?: number;
   upper_circuit_paise?: number;
   updated_at: string;
-  change_percent?: number;
+  source?: string;
   high_paise?: number;
   low_paise?: number;
   open_paise?: number;
@@ -329,5 +331,14 @@ export type LedgerStatementResponse = {
   total_entries: number;
   entries: LedgerEntry[];
 };
+
+export type WatchlistDbItem = {
+  id?: number;
+  uuid?: string;
+  user_uuid?: string;
+  symbol: string;
+  created_at?: string;
+};
+
 
 

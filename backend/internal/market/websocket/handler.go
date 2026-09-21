@@ -71,6 +71,9 @@ func (h *Handler) Serve(c *gin.Context) {
 			case "subscribe":
 				for _, symbol := range symbols {
 					subscribed[symbol] = struct{}{}
+					if q, err := h.market.CurrentQuote(symbol); err == nil && q != nil {
+						_ = conn.WriteJSON(event{Type: "quote", Quote: q})
+					}
 				}
 				_ = conn.WriteJSON(event{Type: "subscribed", Symbols: sortedSymbols(subscribed)})
 			case "unsubscribe":

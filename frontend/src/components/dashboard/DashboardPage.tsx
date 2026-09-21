@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMarketStore } from "@/stores/market-store";
 import Navbar from "@/components/layout/Navbar";
 import {
   TrendingUp,
@@ -202,6 +203,18 @@ export const DASHBOARD_TRENDING_SECTORS: SectorTrending[] = [
     topStockChange: 0.6,
   },
 ];
+
+export const SECTOR_CONSTITUENTS: Record<string, string[]> = {
+  auto: ["TATAMOTORS", "TATAPOWER", "TATATECH"],
+  banking: ["HDFCBANK", "ICICIBANK", "SBIN", "YESBANK", "POONAWALLA", "GODIGIT"],
+  energy: ["RELIANCE", "ATGL", "TATAPOWER", "SUZLON"],
+  consumer: ["TRENT"],
+  pharma: ["SUNPHARMA", "EMCURE"],
+  metals: ["TATASTEEL", "WELCORP", "BBTC", "SPLPETRO"],
+  it: ["TCS", "INFY", "KPITTECH"],
+  realty: ["DLF", "SUPREMEIND", "JYOTICNC"],
+  fmcg: ["ITC", "GILLETTE", "NIACL"],
+};
 
 // ---------------------------------------------------------------------------
 // KITE-STYLE DATA: IPOs, News, Economic Calendar, Holidays, Earnings, Actions
@@ -406,42 +419,94 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
 
   // 1. Fetch Wallet
   const { data: wallet, refetch: refetchWallet } = useQuery<Wallet>({
-    queryKey: ["wallet"],
+    queryKey: ["wallet", token],
     queryFn: async () => {
-      const res = await fetch(`${apiUrl}/wallet`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      const json: ApiResponse<Wallet> = await res.json();
-      return (
-        json.data || {
+      if (!token) {
+        return {
           uuid: "",
           cash_balance_paise: 100000000,
           available_balance_paise: 100000000,
           blocked_paise: 0,
+        };
+      }
+      try {
+        const res = await fetch(`${apiUrl}/wallet`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) {
+          return {
+            uuid: "",
+            cash_balance_paise: 100000000,
+            available_balance_paise: 100000000,
+            blocked_paise: 0,
+          };
         }
-      );
+        const json: ApiResponse<Wallet> = await res.json();
+        return (
+          json.data || {
+            uuid: "",
+            cash_balance_paise: 100000000,
+            available_balance_paise: 100000000,
+            blocked_paise: 0,
+          }
+        );
+      } catch {
+        return {
+          uuid: "",
+          cash_balance_paise: 100000000,
+          available_balance_paise: 100000000,
+          blocked_paise: 0,
+        };
+      }
     },
-    refetchInterval: 5000,
+    enabled: !!token,
+    refetchInterval: token ? 5000 : false,
   });
 
   // 2. Fetch Portfolio
   const { data: portfolio } = useQuery<Portfolio>({
-    queryKey: ["portfolio"],
+    queryKey: ["portfolio", token],
     queryFn: async () => {
-      const res = await fetch(`${apiUrl}/portfolio`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      const json: ApiResponse<Portfolio> = await res.json();
-      return (
-        json.data || {
+      if (!token) {
+        return {
           invested_value_paise: 0,
           current_value_paise: 0,
           unrealized_pnl_paise: 0,
           positions: [],
+        };
+      }
+      try {
+        const res = await fetch(`${apiUrl}/portfolio`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) {
+          return {
+            invested_value_paise: 0,
+            current_value_paise: 0,
+            unrealized_pnl_paise: 0,
+            positions: [],
+          };
         }
-      );
+        const json: ApiResponse<Portfolio> = await res.json();
+        return (
+          json.data || {
+            invested_value_paise: 0,
+            current_value_paise: 0,
+            unrealized_pnl_paise: 0,
+            positions: [],
+          }
+        );
+      } catch {
+        return {
+          invested_value_paise: 0,
+          current_value_paise: 0,
+          unrealized_pnl_paise: 0,
+          positions: [],
+        };
+      }
     },
-    refetchInterval: 5000,
+    enabled: !!token,
+    refetchInterval: token ? 5000 : false,
   });
 
   // Reset simulation handler
@@ -468,24 +533,76 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
     }
   };
 
-  // Top Gainers and Top Losers (exact Kite style)
+  const quotes = useMarketStore((s) => s.quotes);
+
+  // Live Catalog merged with authentic Angel One ticks
+  const liveCatalog: WatchlistItem[] = useMemo(() => {
+    return MASTER_STOCKS_CATALOG.map((item) => {
+      const q = quotes[item.symbol] || (item.symbol === "ZOMATO" ? quotes["ETERNAL"] : undefined);
+      if (!q || !q.price_paise) return item;
+
+      const price = q.price_paise / 100;
+      const change = q.change_paise !== undefined ? q.change_paise / 100 : +(price - item.price).toFixed(2);
+      const changePercent = q.change_percent !== undefined ? q.change_percent : +((change / (price - change)) * 100).toFixed(2);
+      const isPositive = changePercent >= 0;
+
+      return {
+        ...item,
+        price,
+        change,
+        changePercent: +changePercent.toFixed(2),
+        isPositive,
+      };
+    });
+  }, [quotes]);
+
+  // Top Gainers and Top Losers dynamically sorted by live percentage change
   const topGainers = useMemo(() => {
-    return [...MASTER_STOCKS_CATALOG]
-      .filter((s) => s.isPositive)
+    return [...liveCatalog]
+      .filter((s) => s.changePercent >= 0)
       .sort((a, b) => b.changePercent - a.changePercent)
       .slice(0, 8);
-  }, []);
+  }, [liveCatalog]);
 
   const topLosers = useMemo(() => {
-    return [...MASTER_STOCKS_CATALOG]
-      .filter((s) => !s.isPositive)
+    return [...liveCatalog]
+      .filter((s) => s.changePercent < 0)
       .sort((a, b) => a.changePercent - b.changePercent)
       .slice(0, 8);
-  }, []);
+  }, [liveCatalog]);
+
+  // Dynamic Trending Sectors calculated from live stock prices
+  const dynamicSectors = useMemo(() => {
+    return DASHBOARD_TRENDING_SECTORS.map((sec) => {
+      const symbols = SECTOR_CONSTITUENTS[sec.id] || [];
+      const constituents = liveCatalog.filter((s) => symbols.includes(s.symbol));
+      if (constituents.length === 0) return sec;
+
+      const gainers = constituents.filter((s) => s.isPositive).length;
+      const losers = constituents.filter((s) => !s.isPositive).length;
+      const avgChange = constituents.reduce((acc, s) => acc + s.changePercent, 0) / constituents.length;
+      const sorted = [...constituents].sort((a, b) => b.changePercent - a.changePercent);
+      const top = sorted[0];
+
+      const gainerRatio = constituents.length > 0 ? gainers / constituents.length : 0.5;
+      const totalTracked = sec.gainersCount + sec.losersCount;
+      const dynamicGainersCount = Math.round(totalTracked * gainerRatio);
+      const dynamicLosersCount = totalTracked - dynamicGainersCount;
+
+      return {
+        ...sec,
+        gainersCount: dynamicGainersCount,
+        losersCount: dynamicLosersCount,
+        changePercent: +avgChange.toFixed(2),
+        topStock: top.symbol,
+        topStockChange: +top.changePercent.toFixed(2),
+      };
+    });
+  }, [liveCatalog]);
 
   // Filtered Trending Sectors for Left Sidebar
   const filteredSectors = useMemo(() => {
-    return DASHBOARD_TRENDING_SECTORS.filter((s) => {
+    return dynamicSectors.filter((s) => {
       const q = sectorSearch.toLowerCase().trim();
       const matchesSearch =
         !q ||
@@ -497,15 +614,15 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
       if (sectorFilter === "losers") return s.changePercent < 0;
       return true;
     });
-  }, [sectorSearch, sectorFilter]);
+  }, [dynamicSectors, sectorSearch, sectorFilter]);
 
   const totalSectorGainers = useMemo(
-    () => DASHBOARD_TRENDING_SECTORS.reduce((acc, s) => acc + s.gainersCount, 0),
-    []
+    () => dynamicSectors.reduce((acc, s) => acc + s.gainersCount, 0),
+    [dynamicSectors]
   );
   const totalSectorLosers = useMemo(
-    () => DASHBOARD_TRENDING_SECTORS.reduce((acc, s) => acc + s.losersCount, 0),
-    []
+    () => dynamicSectors.reduce((acc, s) => acc + s.losersCount, 0),
+    [dynamicSectors]
   );
   const totalSectorStocks = totalSectorGainers + totalSectorLosers;
   const overallAdvancePercent =
@@ -515,12 +632,28 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
 
   // Market Overview Chart Coordinates & Values Generator
   const chartData = useMemo(() => {
-    const basePrice =
+    const indexKey =
       selectedIndex === "NIFTY 50"
-        ? 25320
+        ? "NIFTY"
         : selectedIndex === "SENSEX"
-        ? 82450
-        : 52140;
+        ? "SENSEX"
+        : "BANKNIFTY";
+    const liveIdxQuote = quotes[indexKey];
+    const basePrice = liveIdxQuote?.price_paise
+      ? liveIdxQuote.price_paise / 100
+      : selectedIndex === "NIFTY 50"
+      ? 23401.2
+      : selectedIndex === "SENSEX"
+      ? 74790.03
+      : 56250.0;
+    const liveChange =
+      liveIdxQuote?.change_paise !== undefined
+        ? liveIdxQuote.change_paise / 100
+        : null;
+    const liveChangePercent =
+      liveIdxQuote?.change_percent !== undefined
+        ? liveIdxQuote.change_percent
+        : null;
 
     const pointsCount = selectedTimeframe === "1D" ? 32 : selectedTimeframe === "1W" ? 40 : 50;
     const pts: { price: number; time: string }[] = [];
@@ -561,6 +694,15 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
       .map((c) => `${c.x.toFixed(1)},${c.y.toFixed(1)}`)
       .join(" L ")} L ${coords[coords.length - 1].x.toFixed(1)},${height} Z`;
 
+    const finalCurrentPrice = liveIdxQuote?.price_paise
+      ? liveIdxQuote.price_paise / 100
+      : pts[pts.length - 1].price;
+    const finalChange = liveChange ?? +(pts[pts.length - 1].price - pts[0].price).toFixed(2);
+    const finalChangePercent = liveChangePercent ?? +(
+      ((pts[pts.length - 1].price - pts[0].price) / pts[0].price) *
+      100
+    ).toFixed(2);
+
     return {
       pts,
       min,
@@ -568,15 +710,12 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
       coords,
       linePath,
       areaPath,
-      currentPrice: pts[pts.length - 1].price,
-      firstPrice: pts[0].price,
-      change: +(pts[pts.length - 1].price - pts[0].price).toFixed(2),
-      changePercent: +(
-        ((pts[pts.length - 1].price - pts[0].price) / pts[0].price) *
-        100
-      ).toFixed(2),
+      currentPrice: finalCurrentPrice,
+      firstPrice: +(finalCurrentPrice - finalChange).toFixed(2),
+      change: finalChange,
+      changePercent: finalChangePercent,
     };
-  }, [selectedIndex, selectedTimeframe]);
+  }, [selectedIndex, selectedTimeframe, quotes]);
 
   const availableBalance = wallet?.available_balance_paise ?? 100000000;
   const cashBalance = wallet?.cash_balance_paise ?? 100000000;
@@ -806,6 +945,10 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
               <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-cyan-100 text-cyan-800 dark:bg-cyan-950/80 dark:text-cyan-400 border border-cyan-300 dark:border-cyan-800">
                 PRO PAPER TRADING DESK
               </span>
+              <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800 flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                Angel One • Live Feed
+              </span>
               <span className="text-xs text-slate-500 dark:text-slate-400 font-mono">
                 NSE / BSE Live Simulator
               </span>
@@ -915,17 +1058,17 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
                 <Layers className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
-                F&O Chain Desk
+                F&O Derivatives Hub
               </span>
               <ArrowUpRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-cyan-600 dark:group-hover:text-cyan-400 transition-colors" />
             </div>
             <div className="text-2xl font-black text-slate-900 dark:text-slate-100">
-              Live Option Matrix
+              Index & Futures Desk
             </div>
             <div className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center justify-between">
               <span>NIFTY & BANK NIFTY:</span>
               <span className="font-semibold text-cyan-600 dark:text-cyan-400 group-hover:underline">
-                Open Strategy Desk →
+                Open Derivatives Hub →
               </span>
             </div>
           </Link>

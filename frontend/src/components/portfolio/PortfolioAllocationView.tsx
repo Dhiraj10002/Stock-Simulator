@@ -4,6 +4,7 @@ import React, { useState, useMemo } from "react";
 import {
   PieChart,
   ShieldCheck,
+  ShieldAlert,
   Zap,
   Briefcase,
   Flame,
@@ -12,8 +13,11 @@ import {
   TrendingUp,
   AlertTriangle,
   Wallet,
+  Gauge,
+  Activity,
 } from "lucide-react";
 import { formatPaise } from "@/lib/format";
+import { useRiskOverview } from "@/hooks/useRiskOverview";
 import type { HoldingItem } from "./PortfolioTypes";
 import type { Position } from "@/types";
 
@@ -21,14 +25,19 @@ interface PortfolioAllocationViewProps {
   holdings: HoldingItem[];
   positions: Position[];
   availableMarginPaise: number;
+  useDemoData?: boolean;
+  token?: string;
 }
 
 export default function PortfolioAllocationView({
   holdings = [],
   positions = [],
   availableMarginPaise = 100000000,
+  useDemoData = true,
+  token = "",
 }: PortfolioAllocationViewProps) {
   const [hoveredSegment, setHoveredSegment] = useState<string | null>(null);
+  const { overview } = useRiskOverview(token);
 
   // Asset Class Calculations
   const equityValuation = holdings.reduce((sum, h) => sum + h.currentValuePaise, 0);
@@ -167,6 +176,28 @@ export default function PortfolioAllocationView({
     };
   });
 
+  // Determine RMS values (Live Backend vs Showcase Demo)
+  const isLive = !useDemoData && !!overview;
+
+  const rmsStatus = isLive ? overview.status : "HEALTHY";
+  const rmsUtilization = isLive
+    ? overview.margin_utilization_pct
+    : Math.min(100, Math.round(((futuresValuation + intradayValuation) / (totalCapital || 1)) * 100 * 10) / 10);
+  const rmsEquityPaise = isLive ? overview.account_equity_paise : totalCapital;
+  const rmsCashPaise = isLive ? overview.cash_balance_paise : availableMarginPaise;
+  const rmsBlockedPaise = isLive ? overview.blocked_paise : (futuresValuation + intradayValuation);
+  const rmsAvailablePaise = isLive ? overview.available_balance_paise : availableMarginPaise;
+  const rmsMessage = isLive
+    ? overview.message
+    : "Margin health is optimal and well within regulatory maintenance requirements.";
+  const rmsIntradayCount = isLive
+    ? overview.intraday_positions_count
+    : positions.filter((p) => p.product === "INTRADAY").length;
+  const rmsDeliveryCount = isLive
+    ? overview.delivery_positions_count
+    : holdings.length;
+  const rmsActiveOrdersCount = isLive ? overview.active_orders_count : 0;
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
       {/* LEFT: DONUT & ASSET SEGMENT BREAKDOWN (7 Cols) */}
@@ -303,6 +334,156 @@ export default function PortfolioAllocationView({
 
       {/* RIGHT: RISK METRICS & INSTITUTIONAL HEALTH (5 Cols) */}
       <div className="lg:col-span-5 space-y-6">
+        {/* Institutional RMS Risk Engine & Margin Health Card */}
+        <div className="p-6 rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 shadow-sm space-y-5">
+          <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+            <div>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                <ShieldAlert className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
+                <span>Institutional RMS Risk Engine</span>
+              </h3>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                Real-time margin utilization & SEBI intraday maintenance
+              </p>
+            </div>
+
+            {/* Status Badge */}
+            <span
+              className={`inline-flex items-center gap-1.5 text-[10px] font-mono font-bold uppercase px-2.5 py-1 rounded-full border ${
+                rmsStatus === "CRITICAL"
+                  ? "bg-rose-500/10 border-rose-500/40 text-rose-600 dark:text-rose-400"
+                  : rmsStatus === "MARGIN_CALL"
+                  ? "bg-amber-500/10 border-amber-500/40 text-amber-600 dark:text-amber-400"
+                  : rmsStatus === "WARNING"
+                  ? "bg-yellow-500/10 border-yellow-500/40 text-yellow-600 dark:text-yellow-400"
+                  : "bg-emerald-500/10 border-emerald-500/40 text-emerald-600 dark:text-emerald-400"
+              }`}
+            >
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  rmsStatus === "HEALTHY"
+                    ? "bg-emerald-500"
+                    : rmsStatus === "WARNING"
+                    ? "bg-yellow-500 animate-pulse"
+                    : "bg-rose-500 animate-ping"
+                }`}
+              />
+              {rmsStatus.replace("_", " ")}
+            </span>
+          </div>
+
+          {/* Margin Utilization Meter */}
+          <div className="p-4 rounded-xl bg-slate-50/80 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-800/80 space-y-2.5">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                <Gauge className="w-3.5 h-3.5 text-slate-400" />
+                Margin Utilization
+              </span>
+              <div className="flex items-center gap-1.5">
+                <span className="font-tabular font-black text-sm text-slate-900 dark:text-slate-100">
+                  {rmsUtilization.toFixed(1)}%
+                </span>
+                <span className="text-[10px] font-mono text-slate-400">
+                  / 100%
+                </span>
+              </div>
+            </div>
+
+            {/* Visual Progress Bar with Threshold Markers */}
+            <div className="relative w-full h-3 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden shadow-inner">
+              <div
+                className={`h-full transition-all duration-500 rounded-full ${
+                  rmsUtilization >= 120
+                    ? "bg-gradient-to-r from-rose-500 to-rose-700"
+                    : rmsUtilization >= 100
+                    ? "bg-gradient-to-r from-amber-500 to-rose-600"
+                    : rmsUtilization >= 80
+                    ? "bg-gradient-to-r from-yellow-500 to-amber-500"
+                    : "bg-gradient-to-r from-cyan-500 to-emerald-500"
+                }`}
+                style={{ width: `${Math.min(100, rmsUtilization)}%` }}
+              />
+            </div>
+
+            {/* Meter Scale Markers */}
+            <div className="flex justify-between text-[10px] font-mono text-slate-400 pt-0.5">
+              <span>0% Safe</span>
+              <span className="text-yellow-600 dark:text-yellow-400 font-semibold">80% Warning</span>
+              <span className="text-rose-600 dark:text-rose-400 font-semibold">100% Margin Call</span>
+            </div>
+          </div>
+
+          {/* Key RMS Capital Breakdown Grid */}
+          <div className="grid grid-cols-2 gap-2.5 text-xs">
+            <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                Account Total Equity
+              </span>
+              <span className="text-sm font-black font-tabular text-slate-900 dark:text-slate-100 mt-1 block">
+                {formatPaise(rmsEquityPaise)}
+              </span>
+              <span className="text-[10px] text-slate-500 block mt-0.5">Cash + Unrealized MTM</span>
+            </div>
+
+            <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                Blocked Margin
+              </span>
+              <span className="text-sm font-black font-tabular text-amber-600 dark:text-amber-400 mt-1 block">
+                {formatPaise(rmsBlockedPaise)}
+              </span>
+              <span className="text-[10px] text-slate-500 block mt-0.5">Active MIS & F&O Span</span>
+            </div>
+
+            <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                Available Free Margin
+              </span>
+              <span className="text-sm font-black font-tabular text-emerald-600 dark:text-emerald-400 mt-1 block">
+                {formatPaise(rmsAvailablePaise)}
+              </span>
+              <span className="text-[10px] text-slate-500 block mt-0.5">Deployable liquidity</span>
+            </div>
+
+            <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                Intraday (MIS) at Risk
+              </span>
+              <span className="text-sm font-black font-tabular text-slate-900 dark:text-slate-100 mt-1 block flex items-center gap-1">
+                {rmsIntradayCount} <span className="text-xs font-normal text-slate-400">open</span>
+              </span>
+              <span className="text-[10px] text-slate-500 block mt-0.5">Auto-liquidation monitored</span>
+            </div>
+          </div>
+
+          {/* Official RMS Engine Advisory Message Box */}
+          <div
+            className={`p-3.5 rounded-xl border text-xs space-y-1.5 ${
+              rmsStatus === "CRITICAL"
+                ? "bg-rose-500/10 border-rose-500/30 text-rose-900 dark:text-rose-200"
+                : rmsStatus === "MARGIN_CALL"
+                ? "bg-amber-500/10 border-amber-500/30 text-amber-900 dark:text-amber-200"
+                : rmsStatus === "WARNING"
+                ? "bg-yellow-500/10 border-yellow-500/30 text-yellow-900 dark:text-yellow-200"
+                : "bg-cyan-500/5 dark:bg-cyan-500/10 border-cyan-500/20 text-slate-700 dark:text-slate-300"
+            }`}
+          >
+            <div className="flex items-center gap-2 font-bold">
+              <Activity className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
+              <span className="text-[11px] uppercase tracking-wider">
+                RMS Engine Official Advisory
+              </span>
+              {isLive && (
+                <span className="ml-auto text-[9px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 font-bold">
+                  POSTGRES LIVE
+                </span>
+              )}
+            </div>
+            <p className="text-[11px] leading-relaxed opacity-90">
+              {rmsMessage}
+            </p>
+          </div>
+        </div>
         {/* Risk & Alpha Metrics Card */}
         <div className="p-6 rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 shadow-sm space-y-5">
           <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">

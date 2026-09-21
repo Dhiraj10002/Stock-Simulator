@@ -2,6 +2,7 @@ import json
 import math
 import os
 import random
+import socket
 import threading
 import time
 import urllib.request
@@ -10,13 +11,45 @@ from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-import psycopg
+# Force IPv4 socket resolution to avoid IPv6 network timeouts
+_orig_getaddrinfo = socket.getaddrinfo
+
+def _ipv4_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+    return _orig_getaddrinfo(host, port, socket.AF_INET, type, proto, flags)
+
+socket.getaddrinfo = _ipv4_getaddrinfo
+
+# Automatically load backend/.env if environment variables are not set
+def load_env_file():
+    env_paths = [
+        os.path.join(os.path.dirname(__file__), "../../backend/.env"),
+        os.path.join(os.getcwd(), "backend/.env"),
+        os.path.join(os.getcwd(), ".env"),
+    ]
+    for path in env_paths:
+        if os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith("#") and "=" in line:
+                            k, v = line.split("=", 1)
+                            k, v = k.strip(), v.strip()
+                            if k not in os.environ:
+                                os.environ[k] = v
+            except Exception as e:
+                print(f"market worker: could not read {path}: {e}", flush=True)
+            break
+
+load_env_file()
+
 import pyotp
 import redis
 from SmartApi import SmartConnect
 from SmartApi.smartWebSocketV2 import SmartWebSocketV2
 
 INSTRUMENT_MASTER_URL = "https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json"
+LOCAL_CACHE_PATH = "/tmp/OpenAPIScripMaster.json"
 EXCHANGE_TYPES = {"NSE": 1, "NFO": 2, "BSE": 3, "MCX": 5, "NCDEX": 7}
 
 FALLBACK_INSTRUMENT_MASTER = [
@@ -24,21 +57,84 @@ FALLBACK_INSTRUMENT_MASTER = [
     {"token": "11536", "symbol": "TCS-EQ", "name": "TCS", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "5.000000"},
     {"token": "1594", "symbol": "INFY-EQ", "name": "INFY", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "5.000000"},
     {"token": "1333", "symbol": "HDFCBANK-EQ", "name": "HDFCBANK", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "5.000000"},
-    {"token": "26000", "symbol": "NIFTY-INDEX", "name": "NIFTY", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "25", "instrumenttype": "AMXIDX", "exch_seg": "NSE", "tick_size": "5.000000"},
-    {"token": "26009", "symbol": "BANKNIFTY-INDEX", "name": "BANKNIFTY", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "15", "instrumenttype": "AMXIDX", "exch_seg": "NSE", "tick_size": "5.000000"},
+    {"token": "3456", "symbol": "TATAMOTORS-EQ", "name": "TATAMOTORS", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "5.000000"},
+    {"token": "10604", "symbol": "BHARTIARTL-EQ", "name": "BHARTIARTL", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "5.000000"},
     {"token": "5097", "symbol": "ETERNAL-EQ", "name": "ETERNAL", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "5.000000"},
-    {"token": "11491", "symbol": "APARINDS-EQ", "name": "APARINDS", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "5.000000"},
+    {"token": "12018", "symbol": "SUZLON-EQ", "name": "SUZLON", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "5.000000"},
+    {"token": "1964", "symbol": "TRENT-EQ", "name": "TRENT", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "5.000000"},
+    {"token": "25", "symbol": "ADANIENT-EQ", "name": "ADANIENT", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "5.000000"},
+    {"token": "11915", "symbol": "YESBANK-EQ", "name": "YESBANK", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "5.000000"},
+    {"token": "383", "symbol": "BEL-EQ", "name": "BEL", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "5.000000"},
+    {"token": "3045", "symbol": "SBIN-EQ", "name": "SBIN", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "5.000000"},
+    {"token": "4963", "symbol": "ICICIBANK-EQ", "name": "ICICIBANK", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "5.000000"},
+    {"token": "6066", "symbol": "ATGL-EQ", "name": "ATGL", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "5.000000"},
+    {"token": "11403", "symbol": "POONAWALLA-EQ", "name": "POONAWALLA", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "5.000000"},
+    {"token": "3405", "symbol": "TATACHEM-EQ", "name": "TATACHEM", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "5.000000"},
+    {"token": "3426", "symbol": "TATAPOWER-EQ", "name": "TATAPOWER", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "5.000000"},
+    {"token": "3351", "symbol": "SUNPHARMA-EQ", "name": "SUNPHARMA", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "5.000000"},
+    {"token": "3499", "symbol": "TATASTEEL-EQ", "name": "TATASTEEL", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "5.000000"},
+    {"token": "1660", "symbol": "ITC-EQ", "name": "ITC", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "5.000000"},
+    {"token": "24398", "symbol": "EMCURE-EQ", "name": "EMCURE", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "5.000000"},
+    {"token": "11821", "symbol": "WELCORP-EQ", "name": "WELCORP", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "5.000000"},
+    {"token": "380", "symbol": "BBTC-EQ", "name": "BBTC", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "5.000000"},
+    {"token": "21334", "symbol": "JYOTICNC-EQ", "name": "JYOTICNC", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "5.000000"},
+    {"token": "9617", "symbol": "SPLPETRO-EQ", "name": "SPLPETRO", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "5.000000"},
+    {"token": "3363", "symbol": "SUPREMEIND-EQ", "name": "SUPREMEIND", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "5.000000"},
+    {"token": "23799", "symbol": "GODIGIT-EQ", "name": "GODIGIT", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "5.000000"},
+    {"token": "20293", "symbol": "TATATECH-EQ", "name": "TATATECH", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "5.000000"},
+    {"token": "399", "symbol": "NIACL-EQ", "name": "NIACL", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "5.000000"},
+    {"token": "9683", "symbol": "KPITTECH-EQ", "name": "KPITTECH", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "5.000000"},
+    {"token": "13404", "symbol": "SUNTV-EQ", "name": "SUNTV", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "5.000000"},
+    {"token": "1576", "symbol": "GILLETTE-EQ", "name": "GILLETTE", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "5.000000"},
+    {"token": "14732", "symbol": "DLF-EQ", "name": "DLF", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "5.000000"},
+    {"token": "99926000", "symbol": "NIFTY 50", "name": "NIFTY", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "25", "instrumenttype": "AMXIDX", "exch_seg": "NSE", "tick_size": "5.000000"},
+    {"token": "99926009", "symbol": "NIFTY BANK", "name": "BANKNIFTY", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "15", "instrumenttype": "AMXIDX", "exch_seg": "NSE", "tick_size": "5.000000"},
+    {"token": "99926037", "symbol": "NIFTY FIN SERVICE", "name": "FINNIFTY", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "25", "instrumenttype": "AMXIDX", "exch_seg": "NSE", "tick_size": "5.000000"},
+    {"token": "99926074", "symbol": "NIFTY MID SELECT", "name": "MIDCPNIFTY", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "50", "instrumenttype": "AMXIDX", "exch_seg": "NSE", "tick_size": "5.000000"},
+    {"token": "99919000", "symbol": "SENSEX", "name": "SENSEX", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "10", "instrumenttype": "AMXIDX", "exch_seg": "BSE", "tick_size": "5.000000"},
 ]
 
 DEFAULT_BENCHMARK_PRICES_PAISE = {
-    "RELIANCE": 124390,  # ₹1,243.90
-    "TCS": 219000,       # ₹2,190.00
-    "INFY": 105860,      # ₹1,058.60
-    "HDFCBANK": 71300,   # ₹713.00
-    "NIFTY": 2532000,    # ₹25,320.00
-    "BANKNIFTY": 5215000,# ₹52,150.00
-    "ETERNAL": 27850,    # ₹278.50 (formerly Zomato)
-    "APARINDS": 845000,  # ₹8,450.00
+    "RELIANCE": 122640,    # ₹1,226.40
+    "TCS": 210500,         # ₹2,105.00
+    "INFY": 105140,        # ₹1,051.40
+    "HDFCBANK": 73100,     # ₹731.00
+    "TATAMOTORS": 30380,   # ₹303.80
+    "BHARTIARTL": 189330,  # ₹1,893.30
+    "ETERNAL": 32685,      # ₹326.85
+    "ZOMATO": 32685,       # ₹326.85
+    "SUZLON": 4314,        # ₹43.14
+    "TRENT": 282400,       # ₹2,824.00
+    "ADANIENT": 302000,    # ₹3,020.00
+    "YESBANK": 2272,       # ₹22.72
+    "BEL": 39330,          # ₹393.30
+    "NIFTY": 2335000,      # ₹23,350.00
+    "BANKNIFTY": 5625000,  # ₹56,250.00
+    "FINNIFTY": 2552000,   # ₹25,520.00
+    "MIDCPNIFTY": 1448000, # ₹14,480.00
+    "SENSEX": 7450000,     # ₹74,500.00
+    "SBIN": 99620,         # ₹996.20
+    "ICICIBANK": 133890,   # ₹1,338.90
+    "ATGL": 66070,         # ₹660.70
+    "POONAWALLA": 47940,   # ₹479.40
+    "TATACHEM": 69325,     # ₹693.25
+    "TATAPOWER": 37480,    # ₹374.80
+    "SUNPHARMA": 183730,   # ₹1,837.30
+    "TATASTEEL": 18554,    # ₹185.54
+    "ITC": 26230,          # ₹262.30
+    "EMCURE": 200380,      # ₹2,003.80
+    "WELCORP": 266010,     # ₹2,660.10
+    "BBTC": 151210,        # ₹1,512.10
+    "JYOTICNC": 104970,    # ₹1,049.70
+    "SPLPETRO": 86570,     # ₹865.70
+    "SUPREMEIND": 358030,  # ₹3,580.30
+    "GODIGIT": 23900,      # ₹239.00
+    "TATATECH": 72245,     # ₹722.45
+    "NIACL": 18766,        # ₹187.66
+    "KPITTECH": 53200,     # ₹532.00
+    "SUNTV": 45170,        # ₹451.70
+    "GILLETTE": 707300,    # ₹7,073.00
+    "DLF": 64435,          # ₹644.35
 }
 
 
@@ -125,32 +221,43 @@ class InstrumentStore:
             return self._subscriptions.get((token, exchange_type))
 
     def refresh(self) -> bool:
-        print("market worker: downloading Angel One instrument master", flush=True)
         rows: list[dict[str, Any]] = []
-        try:
-            request = urllib.request.Request(INSTRUMENT_MASTER_URL, headers={"User-Agent": "stock-simulator-market-worker/1.0"})
-            with urllib.request.urlopen(request, timeout=30) as response:
-                rows = json.load(response)
-        except Exception as error:
-            print(f"market worker: instrument master download failed: {error}; using fallback master", flush=True)
-            rows = FALLBACK_INSTRUMENT_MASTER
 
-        try:
-            self._upsert(rows)
-        except Exception as error:
-            print(f"market worker: database upsert failed: {error}; proceeding with memory subscriptions", flush=True)
+        # 1. Check local cache first to avoid slow 35MB download
+        if os.path.exists(LOCAL_CACHE_PATH) and os.path.getsize(LOCAL_CACHE_PATH) > 1000000:
+            print(f"market worker: loading instruments from local cache ({LOCAL_CACHE_PATH})", flush=True)
+            try:
+                with open(LOCAL_CACHE_PATH, "r", encoding="utf-8") as f:
+                    rows = json.load(f)
+            except Exception as e:
+                print(f"market worker: failed reading local cache: {e}", flush=True)
+
+        # 2. Download if not cached
+        if not rows:
+            print("market worker: downloading Angel One instrument master", flush=True)
+            try:
+                request = urllib.request.Request(INSTRUMENT_MASTER_URL, headers={"User-Agent": "Mozilla/5.0"})
+                with urllib.request.urlopen(request, timeout=20) as response:
+                    content = response.read()
+                    rows = json.loads(content.decode("utf-8"))
+                    # Save to local cache
+                    try:
+                        with open(LOCAL_CACHE_PATH, "wb") as f:
+                            f.write(content)
+                    except Exception:
+                        pass
+            except Exception as error:
+                print(f"market worker: instrument master download failed: {error}; using fallback master", flush=True)
+                rows = FALLBACK_INSTRUMENT_MASTER
+
+        # 3. Asynchronously upsert to DB if configured (don't block feed startup)
+        if self.database_url:
+            threading.Thread(target=self._upsert_bg, args=(rows,), daemon=True).start()
 
         subscriptions = self._build_subscriptions(rows)
         if not subscriptions:
             # Fall back to built-in subscriptions
-            subscriptions = [
-                Subscription(s, clean(item["token"]), "NSE", EXCHANGE_TYPES["NSE"])
-                for s in self.symbols
-                for item in FALLBACK_INSTRUMENT_MASTER
-                if item["name"] == s
-            ]
-            if not subscriptions:
-                raise RuntimeError("none of MARKET_SYMBOLS were found as NSE equity instruments")
+            subscriptions = self._fallback_subscriptions()
 
         with self._lock:
             changed = self._subscriptions != {(item.token, item.exchange_type): item for item in subscriptions}
@@ -158,50 +265,85 @@ class InstrumentStore:
         print(f"market worker: configured {len(subscriptions)} instruments; subscribed symbols={','.join(item.symbol for item in subscriptions)}", flush=True)
         return changed
 
-    def _upsert(self, rows: list[dict[str, Any]]) -> None:
-        if not self.database_url:
-            return
-        statement = """
-            INSERT INTO instruments (token, symbol, name, underlying_symbol, expiry, strike, option_type, lot_size, instrument_type, exchange_segment, tick_size, created_at, updated_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
-            ON CONFLICT (token, exchange_segment) DO UPDATE SET
-                symbol = EXCLUDED.symbol, name = EXCLUDED.name, expiry = EXCLUDED.expiry,
-                underlying_symbol = EXCLUDED.underlying_symbol,
-                strike = EXCLUDED.strike, lot_size = EXCLUDED.lot_size,
-                option_type = EXCLUDED.option_type,
-                instrument_type = EXCLUDED.instrument_type, tick_size = EXCLUDED.tick_size,
-                updated_at = NOW()
-        """
-        values = []
-        target_names = set(self.symbols)
-        for row in rows:
-            token, segment = clean(row.get("token")), clean(row.get("exch_seg"))
-            if not token or not segment:
-                continue
-            name = clean(row.get("name"))
-            symbol = clean(row.get("symbol"))
-            underlying = clean(row.get("underlying_symbol")) or name
-            if name not in target_names and symbol not in target_names and underlying not in target_names:
-                continue
-            values.append((token, symbol, name, underlying, clean(row.get("expiry")),
-                           clean(row.get("strike")), clean(row.get("option_type")), integer(row.get("lotsize")), clean(row.get("instrumenttype")),
-                           segment, clean(row.get("tick_size"))))
-        if not values:
-            return
-        with psycopg.connect(self.database_url) as connection:
-            with connection.cursor() as cursor:
-                for start in range(0, len(values), 1000):
-                    cursor.executemany(statement, values[start:start + 1000])
-            connection.commit()
+    def _upsert_bg(self, rows: list[dict[str, Any]]) -> None:
+        try:
+            import psycopg
+            statement = """
+                INSERT INTO instruments (token, symbol, name, underlying_symbol, expiry, strike, option_type, lot_size, instrument_type, exchange_segment, tick_size, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
+                ON CONFLICT (token, exchange_segment) DO UPDATE SET
+                    symbol = EXCLUDED.symbol, name = EXCLUDED.name, expiry = EXCLUDED.expiry,
+                    underlying_symbol = EXCLUDED.underlying_symbol,
+                    strike = EXCLUDED.strike, lot_size = EXCLUDED.lot_size,
+                    option_type = EXCLUDED.option_type,
+                    instrument_type = EXCLUDED.instrument_type, tick_size = EXCLUDED.tick_size,
+                    updated_at = NOW()
+            """
+            values = []
+            target_names = set(self.symbols)
+            for row in rows:
+                token, segment = clean(row.get("token")), clean(row.get("exch_seg"))
+                if not token or not segment:
+                    continue
+                name = clean(row.get("name")).upper()
+                symbol = clean(row.get("symbol")).upper()
+                underlying = clean(row.get("underlying_symbol")).upper() or name
+                if name not in target_names and symbol not in target_names and underlying not in target_names:
+                    continue
+                values.append((token, symbol, name, underlying, clean(row.get("expiry")),
+                               clean(row.get("strike")), clean(row.get("option_type")), integer(row.get("lotsize")), clean(row.get("instrumenttype")),
+                               segment, clean(row.get("tick_size"))))
+            if not values:
+                return
+            with psycopg.connect(self.database_url, connect_timeout=5) as connection:
+                with connection.cursor() as cursor:
+                    for start in range(0, len(values), 1000):
+                        cursor.executemany(statement, values[start:start + 1000])
+                connection.commit()
+            print(f"market worker: successfully synced {len(values)} instruments to DB in background", flush=True)
+        except Exception as error:
+            print(f"market worker: database background upsert skipped/failed: {error}", flush=True)
+
+    def _fallback_subscriptions(self) -> list[Subscription]:
+        result = []
+        for requested in self.symbols:
+            match = next((item for item in FALLBACK_INSTRUMENT_MASTER if item["name"] == requested), None)
+            if match:
+                exch = match["exch_seg"]
+                result.append(Subscription(requested, match["token"], exch, EXCHANGE_TYPES.get(exch, 1)))
+        return result
 
     def _build_subscriptions(self, rows: list[dict[str, Any]]) -> list[Subscription]:
         subscriptions = []
+        index_tokens = {
+            "NIFTY": ("99926000", "NSE", 1),
+            "BANKNIFTY": ("99926009", "NSE", 1),
+            "FINNIFTY": ("99926037", "NSE", 1),
+            "MIDCPNIFTY": ("99926074", "NSE", 1),
+            "SENSEX": ("99919000", "BSE", 3),
+        }
+
         for requested in self.symbols:
-            match = next((row for row in rows if clean(row.get("exch_seg")) == "NSE" and clean(row.get("name")).upper() == requested
-                          and (clean(row.get("symbol")).upper() == f"{requested}-EQ" or clean(row.get("symbol")).upper() == f"{requested}-INDEX")), None)
-            if match is None:
+            req_upper = requested.upper()
+            if req_upper in index_tokens:
+                tok, exch, etype = index_tokens[req_upper]
+                subscriptions.append(Subscription(req_upper, tok, exch, etype))
                 continue
-            subscriptions.append(Subscription(requested, clean(match.get("token")), "NSE", EXCHANGE_TYPES["NSE"]))
+
+            # Check equities in rows
+            match = next((row for row in rows if clean(row.get("exch_seg")) == "NSE" and
+                          (clean(row.get("symbol")).upper() == f"{req_upper}-EQ" or clean(row.get("name")).upper() == req_upper)), None)
+
+            if match is not None:
+                token = clean(match.get("token"))
+                exch = clean(match.get("exch_seg")) or "NSE"
+                subscriptions.append(Subscription(req_upper, token, exch, EXCHANGE_TYPES.get(exch, 1)))
+            else:
+                # Check fallback
+                fb = next((item for item in FALLBACK_INSTRUMENT_MASTER if item["name"] == req_upper), None)
+                if fb:
+                    subscriptions.append(Subscription(req_upper, fb["token"], fb["exch_seg"], EXCHANGE_TYPES.get(fb["exch_seg"], 1)))
+
         return subscriptions
 
 
@@ -212,28 +354,56 @@ class QuoteWriter:
         self.history_ttl = history_ttl
         self.history_max_items = history_max_items
         self._daily_volume: dict[str, tuple[date, int]] = {}
+        self.benchmark_prices = DEFAULT_BENCHMARK_PRICES_PAISE
 
     def write(self, subscription: Subscription, price_paise: int, volume: int, source: str = "angelone_live") -> None:
         now = datetime.now(timezone.utc)
-        quote = {"symbol": subscription.symbol, "price_paise": price_paise, "source": source, "updated_at": now.isoformat()}
-        quote_key, history_key = f"market:quote:{subscription.symbol}", f"market:history:{subscription.symbol}"
+        benchmark = self.benchmark_prices.get(subscription.symbol, price_paise)
+        change_paise = price_paise - benchmark
+        change_percent = round((change_paise / benchmark) * 100, 2) if benchmark > 0 else 0.0
+
+        quote = {
+            "symbol": subscription.symbol,
+            "price_paise": price_paise,
+            "change_paise": change_paise,
+            "change_percent": change_percent,
+            "source": source,
+            "updated_at": now.isoformat()
+        }
+
         bucket = int(now.timestamp()) // 60
+        quote_key, history_key = f"market:quote:{subscription.symbol}", f"market:history:{subscription.symbol}"
         latest = self.client.lindex(history_key, 0)
         candle = make_candle(latest, bucket, price_paise, self.volume_delta(subscription.symbol, now.date(), volume))
+
+        symbols_to_write = [subscription.symbol]
+        # Mirror ETERNAL to ZOMATO so both keys receive the live updates
+        if subscription.symbol == "ETERNAL":
+            symbols_to_write.append("ZOMATO")
+        elif subscription.symbol == "ZOMATO":
+            symbols_to_write.append("ETERNAL")
+
         with self.client.pipeline() as pipe:
-            pipe.hset(quote_key, mapping=quote)
-            pipe.expire(quote_key, self.quote_ttl)
-            if latest and candle["timestamp"] == bucket * 60:
-                pipe.lset(history_key, 0, json.dumps(candle))
-            else:
-                pipe.lpush(history_key, json.dumps(candle))
-            pipe.ltrim(history_key, 0, self.history_max_items - 1)
-            pipe.expire(history_key, self.history_ttl)
-            pipe.publish("market:updates", json.dumps(quote))
+            for sym in symbols_to_write:
+                q_key = f"market:quote:{sym}"
+                h_key = f"market:history:{sym}"
+                sym_quote = dict(quote)
+                sym_quote["symbol"] = sym
+                pipe.hset(q_key, mapping=sym_quote)
+                pipe.expire(q_key, self.quote_ttl)
+
+                sym_latest = self.client.lindex(h_key, 0)
+                candle = make_candle(sym_latest, bucket, price_paise, self.volume_delta(sym, now.date(), volume))
+                if sym_latest and candle["timestamp"] == bucket * 60:
+                    pipe.lset(h_key, 0, json.dumps(candle))
+                else:
+                    pipe.lpush(h_key, json.dumps(candle))
+                pipe.ltrim(h_key, 0, self.history_max_items - 1)
+                pipe.expire(h_key, self.history_ttl)
+                pipe.publish("market:updates", json.dumps(sym_quote))
             pipe.execute()
 
     def volume_delta(self, symbol: str, trading_day: date, cumulative_volume: int) -> int:
-        """Converts Angel One's cumulative day volume to a non-negative delta."""
         cumulative_volume = max(cumulative_volume, 0)
         previous = self._daily_volume.get(symbol)
         self._daily_volume[symbol] = (trading_day, cumulative_volume)
@@ -287,10 +457,7 @@ class SyntheticFeed:
             cur_price = self._prices[sub.symbol]
             target_price = float(self.benchmark_prices.get(sub.symbol, cur_price))
 
-            # Mean reversion drift towards benchmark
             drift = (target_price - cur_price) * 0.0008
-
-            # Micro-volatility shock
             volatility_step = 0.0012
             shock = cur_price * random.gauss(0, volatility_step)
 
@@ -308,10 +475,6 @@ class SyntheticFeed:
     def run(self) -> None:
         print(f"market worker: synthetic GBM feed started for {len(self.subscriptions)} symbols ({','.join(s.symbol for s in self.subscriptions)})", flush=True)
         while not self._stop_event.is_set():
-            if not is_indian_market_open():
-                # Market is closed (after 15:30 IST or weekend): hold prices frozen!
-                self._stop_event.wait(5.0)
-                continue
             try:
                 self.step()
             except Exception as error:
@@ -320,14 +483,30 @@ class SyntheticFeed:
 
 
 def seed_historical_candles(client: redis.Redis, subscriptions: list[Subscription], history_ttl: int, max_items: int, count: int = 150) -> None:
-    """
-    Ensures Redis contains at least `count` 1-minute historical candles for each subscribed symbol.
-    """
     now = datetime.now(timezone.utc)
     current_bucket = int(now.timestamp()) // 60
 
     for sub in subscriptions:
         history_key = f"market:history:{sub.symbol}"
+        quote_key = f"market:quote:{sub.symbol}"
+        base_price = DEFAULT_BENCHMARK_PRICES_PAISE.get(sub.symbol, 200000)
+
+        # Always ensure a valid initial quote exists in Redis immediately!
+        try:
+            existing_quote = client.hgetall(quote_key)
+            if not existing_quote:
+                client.hset(quote_key, mapping={
+                    "symbol": sub.symbol,
+                    "price_paise": base_price,
+                    "change_paise": 0,
+                    "change_percent": 0.0,
+                    "source": "initial_seed",
+                    "updated_at": now.isoformat()
+                })
+                client.expire(quote_key, 300)
+        except Exception:
+            pass
+
         try:
             existing_count = client.llen(history_key)
             if existing_count >= 10:
@@ -335,11 +514,8 @@ def seed_historical_candles(client: redis.Redis, subscriptions: list[Subscriptio
         except Exception:
             continue
 
-        base_price = DEFAULT_BENCHMARK_PRICES_PAISE.get(sub.symbol, 200000)
         prices = [base_price]
         cur_price = base_price
-
-        # Walk backwards to generate realistic historical trajectory
         for i in range(count - 1):
             drift = (math.sin(i / 10.0) + math.cos(i / 14.0)) * 0.0005
             shock = (random.random() - 0.495) * 0.006
@@ -372,17 +548,7 @@ def seed_historical_candles(client: redis.Redis, subscriptions: list[Subscriptio
                     pipe.rpush(history_key, json.dumps(candle))
                 pipe.ltrim(history_key, 0, max_items - 1)
                 pipe.expire(history_key, history_ttl)
-
-                quote_key = f"market:quote:{sub.symbol}"
-                quote = {
-                    "symbol": sub.symbol,
-                    "price_paise": candles[-1]["close_paise"],
-                    "source": "synthetic_seed",
-                    "updated_at": now.isoformat(),
-                }
-                pipe.hset(quote_key, mapping=quote)
                 pipe.execute()
-            print(f"market worker: seeded {len(candles)} historical candles in Redis for {sub.symbol}", flush=True)
         except Exception as error:
             print(f"market worker: failed to seed candles for {sub.symbol}: {error}", flush=True)
 
@@ -455,13 +621,34 @@ def run_feed(store: InstrumentStore, writer: QuoteWriter, control: FeedControl) 
     websocket = SmartWebSocketV2(auth_token, api_key, client_id, feed_token)
     control.attach(websocket)
 
+    # Initial Angel One REST LTP snapshot to populate Redis immediately with authentic data
+    try:
+        print("market worker: pre-fetching authentic Angel One LTP & close snapshots...", flush=True)
+        for item in store.subscriptions():
+            if item.exchange_segment == "NSE" and not item.token.startswith("999"):
+                try:
+                    res = smart_api.ltpData("NSE", f"{item.symbol}-EQ", item.token)
+                    d = res.get("data") or {}
+                    ltp = d.get("ltp")
+                    close = d.get("close")
+                    if ltp and close:
+                        close_paise = int(round(float(close) * 100))
+                        ltp_paise = int(round(float(ltp) * 100))
+                        writer.benchmark_prices[item.symbol] = close_paise
+                        writer.write(item, ltp_paise, 0, source="angelone_live")
+                except Exception:
+                    pass
+        print("market worker: authentic initial snapshots written to Redis!", flush=True)
+    except Exception as snap_err:
+        print(f"market worker: initial snapshot error: {snap_err}", flush=True)
+
     def on_open(_wsapp: Any) -> None:
         grouped: dict[int, list[str]] = {}
         for item in store.subscriptions():
             grouped.setdefault(item.exchange_type, []).append(item.token)
         websocket.subscribe("stock-simulator", 1, [{"exchangeType": exchange_type, "tokens": tokens} for exchange_type, tokens in grouped.items()])
         control.opened()
-        print("market worker: Angel One WebSocket connected", flush=True)
+        print(f"market worker: Angel One WebSocket connected! Subscribed to {len(store.subscriptions())} instruments", flush=True)
 
     def on_data(_wsapp: Any, message: dict[str, Any]) -> None:
         try:
@@ -498,7 +685,13 @@ def watch_feed(control: FeedControl, stale_after_seconds: int) -> None:
 
 def main() -> None:
     mode = os.getenv("MARKET_FEED_MODE", "auto").strip().lower()
-    symbols = [item.strip().upper() for item in os.getenv("MARKET_SYMBOLS", "RELIANCE,TCS,INFY,HDFCBANK,NIFTY,BANKNIFTY,ETERNAL").split(",") if item.strip()]
+    default_symbols = (
+        "RELIANCE,TCS,INFY,HDFCBANK,TATAMOTORS,BHARTIARTL,ETERNAL,SUZLON,TRENT,ADANIENT,YESBANK,BEL,"
+        "NIFTY,BANKNIFTY,FINNIFTY,MIDCPNIFTY,SENSEX,SBIN,ICICIBANK,ATGL,POONAWALLA,TATACHEM,TATAPOWER,"
+        "SUNPHARMA,TATASTEEL,ITC,EMCURE,WELCORP,BBTC,JYOTICNC,SPLPETRO,SUPREMEIND,GODIGIT,TATATECH,NIACL,"
+        "KPITTECH,SUNTV,GILLETTE,DLF"
+    )
+    symbols = [item.strip().upper() for item in os.getenv("MARKET_SYMBOLS", default_symbols).split(",") if item.strip()]
     if not symbols:
         raise RuntimeError("MARKET_SYMBOLS must contain at least one symbol")
 
@@ -507,22 +700,17 @@ def main() -> None:
     db_url = os.getenv("DATABASE_URL", "").strip()
     store = InstrumentStore(db_url, symbols)
 
-    refresh_backoff = 1
-    while True:
-        try:
-            store.refresh()
-            break
-        except Exception as error:
-            print(f"market worker: initial instrument refresh failed: {error}; retrying in {refresh_backoff}s", flush=True)
-            time.sleep(refresh_backoff)
-            refresh_backoff = min(refresh_backoff * 2, 60)
+    try:
+        store.refresh()
+    except Exception as error:
+        print(f"market worker: initial instrument refresh failed: {error}; proceeding with fallback", flush=True)
 
     quote_ttl = int(os.getenv("QUOTE_TTL_SECONDS", "300"))
     history_ttl = int(os.getenv("HISTORY_TTL_SECONDS", "86400"))
     history_max = int(os.getenv("HISTORY_MAX_ITEMS", "500"))
     writer = QuoteWriter(client, quote_ttl, history_ttl, history_max)
 
-    # Seed historical candles if needed
+    # Seed initial quotes and historical candles immediately so Redis is never blank!
     seed_historical_candles(client, store.subscriptions(), history_ttl, history_max)
 
     # Synthetic Feed Mode
@@ -534,6 +722,7 @@ def main() -> None:
         return
 
     # Live Feed Mode (with automatic failover in auto mode)
+    print(f"market worker: running in LIVE ANGEL ONE feed mode", flush=True)
     control = FeedControl()
     threading.Thread(target=refresh_daily, args=(store, control), daemon=True).start()
     stale_after_seconds = int(os.getenv("MARKET_FEED_STALE_SECONDS", "120"))

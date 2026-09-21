@@ -35,7 +35,46 @@ import {
   SlidersHorizontal,
 } from "lucide-react";
 import { formatPaise, formatPercent } from "@/lib/format";
+import { useMarketStore } from "@/stores/market-store";
 import type { Portfolio, Wallet, ApiResponse, Position } from "@/types";
+
+const STOCK_INFO_MAP: Record<
+  string,
+  { name: string; sector: HoldingItem["sector"] }
+> = {
+  RELIANCE: { name: "Reliance Industries Ltd", sector: "Energy" },
+  SUZLON: { name: "Suzlon Energy Ltd", sector: "Energy" },
+  TCS: { name: "Tata Consultancy Services", sector: "IT" },
+  INFY: { name: "Infosys Ltd", sector: "IT" },
+  WIPRO: { name: "Wipro Ltd", sector: "IT" },
+  HCLTECH: { name: "HCL Technologies", sector: "IT" },
+  TECHM: { name: "Tech Mahindra", sector: "IT" },
+  HDFCBANK: { name: "HDFC Bank Ltd", sector: "Banking" },
+  ICICIBANK: { name: "ICICI Bank Ltd", sector: "Banking" },
+  SBIN: { name: "State Bank of India", sector: "Banking" },
+  KOTAKBANK: { name: "Kotak Mahindra Bank", sector: "Banking" },
+  AXISBANK: { name: "Axis Bank Ltd", sector: "Banking" },
+  BAJFINANCE: { name: "Bajaj Finance Ltd", sector: "Banking" },
+  TATAMOTORS: { name: "Tata Motors Ltd", sector: "Auto" },
+  MARUTI: { name: "Maruti Suzuki Ltd", sector: "Auto" },
+  "M&M": { name: "Mahindra & Mahindra", sector: "Auto" },
+  ITC: { name: "ITC Ltd", sector: "FMCG" },
+  HINDUNILVR: { name: "Hindustan Unilever", sector: "FMCG" },
+  SUNPHARMA: { name: "Sun Pharmaceutical", sector: "Pharma" },
+  DRREDDY: { name: "Dr. Reddy's Labs", sector: "Pharma" },
+  CIPLA: { name: "Cipla Ltd", sector: "Pharma" },
+  TATASTEEL: { name: "Tata Steel Ltd", sector: "Metals" },
+  JSWSTEEL: { name: "JSW Steel Ltd", sector: "Metals" },
+  HINDALCO: { name: "Hindalco Industries", sector: "Metals" },
+  ADANIENT: { name: "Adani Enterprises", sector: "Energy" },
+  ADANIPORTS: { name: "Adani Ports", sector: "Other" },
+  NTPC: { name: "NTPC Ltd", sector: "Energy" },
+  POWERGRID: { name: "Power Grid Corp", sector: "Energy" },
+  ONGC: { name: "Oil & Natural Gas Corp", sector: "Energy" },
+  COALINDIA: { name: "Coal India", sector: "Metals" },
+  BHARTIARTL: { name: "Bharti Airtel", sector: "Other" },
+  LT: { name: "Larsen & Toubro", sector: "Other" },
+};
 
 type PortfolioTab = "HOLDINGS" | "POSITIONS" | "ALLOCATION" | "ANALYTICS";
 
@@ -68,72 +107,168 @@ export default function PortfolioPage() {
     isLoading: loadingPortfolio,
     refetch: refetchPortfolio,
   } = useQuery<Portfolio>({
-    queryKey: ["portfolio"],
+    queryKey: ["portfolio", token],
     queryFn: async () => {
-      const res = await fetch(`${apiUrl}/portfolio`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      const json: ApiResponse<Portfolio> = await res.json();
-      return (
-        json.data || {
+      if (!token) {
+        return {
           invested_value_paise: 0,
           current_value_paise: 0,
           unrealized_pnl_paise: 0,
           positions: [],
+        };
+      }
+      try {
+        const res = await fetch(`${apiUrl}/portfolio`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) {
+          return {
+            invested_value_paise: 0,
+            current_value_paise: 0,
+            unrealized_pnl_paise: 0,
+            positions: [],
+          };
         }
-      );
+        const json: ApiResponse<Portfolio> = await res.json();
+        return (
+          json.data || {
+            invested_value_paise: 0,
+            current_value_paise: 0,
+            unrealized_pnl_paise: 0,
+            positions: [],
+          }
+        );
+      } catch {
+        return {
+          invested_value_paise: 0,
+          current_value_paise: 0,
+          unrealized_pnl_paise: 0,
+          positions: [],
+        };
+      }
     },
-    refetchInterval: 5000,
+    enabled: !!token,
+    refetchInterval: token ? 5000 : false,
   });
 
   // 2. Fetch Wallet via TanStack Query
   const { data: wallet } = useQuery<Wallet>({
-    queryKey: ["wallet"],
+    queryKey: ["wallet", token],
     queryFn: async () => {
-      const res = await fetch(`${apiUrl}/wallet`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      const json: ApiResponse<Wallet> = await res.json();
-      return (
-        json.data || {
+      if (!token) {
+        return {
           uuid: "",
           cash_balance_paise: 100000000,
           available_balance_paise: 100000000,
           blocked_paise: 0,
+        };
+      }
+      try {
+        const res = await fetch(`${apiUrl}/wallet`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) {
+          return {
+            uuid: "",
+            cash_balance_paise: 100000000,
+            available_balance_paise: 100000000,
+            blocked_paise: 0,
+          };
         }
-      );
+        const json: ApiResponse<Wallet> = await res.json();
+        return (
+          json.data || {
+            uuid: "",
+            cash_balance_paise: 100000000,
+            available_balance_paise: 100000000,
+            blocked_paise: 0,
+          }
+        );
+      } catch {
+        return {
+          uuid: "",
+          cash_balance_paise: 100000000,
+          available_balance_paise: 100000000,
+          blocked_paise: 0,
+        };
+      }
     },
-    refetchInterval: 5000,
+    enabled: !!token,
+    refetchInterval: token ? 5000 : false,
   });
+
+  const quotes = useMarketStore((state) => state.quotes);
 
   // Live vs Demo positions and holdings
   const livePositions = portfolio?.positions ?? [];
 
+  const rawLiveHoldings = livePositions.filter(
+    (p) => p.product === "DELIVERY" && p.quantity > 0
+  );
+  const totalLiveHoldingsCurrentPaise = rawLiveHoldings.reduce((sum, p) => {
+    const liveQuote = quotes[p.symbol];
+    const ltpPaise = liveQuote?.price_paise || p.current_price_paise || p.average_price_paise;
+    return sum + ltpPaise * p.quantity;
+  }, 0);
+
   const activeHoldings: HoldingItem[] = useDemoData
     ? DEMO_HOLDINGS
-    : livePositions
-        .filter((p) => p.product === "DELIVERY" && p.quantity > 0)
-        .map((p, idx) => ({
+    : rawLiveHoldings.map((p, idx) => {
+        const liveQuote = quotes[p.symbol];
+        const ltpPaise = liveQuote?.price_paise || p.current_price_paise || p.average_price_paise;
+        const prevClosePaise =
+          liveQuote && liveQuote.change_paise !== undefined
+            ? ltpPaise - liveQuote.change_paise
+            : p.average_price_paise;
+        const dayChangePaise =
+          liveQuote && liveQuote.change_paise !== undefined
+            ? Math.round(liveQuote.change_paise * p.quantity)
+            : Math.round((ltpPaise - p.average_price_paise) * p.quantity * 0.1);
+        const dayChangePercent =
+          liveQuote && liveQuote.change_percent !== undefined
+            ? liveQuote.change_percent
+            : prevClosePaise > 0
+            ? ((ltpPaise - prevClosePaise) / prevClosePaise) * 100
+            : 0;
+
+        const investedValuePaise =
+          p.invested_value_paise || p.average_price_paise * p.quantity;
+        const currentValuePaise = ltpPaise * p.quantity;
+        const unrealizedPnlPaise = currentValuePaise - investedValuePaise;
+        const pnlPercent =
+          investedValuePaise > 0
+            ? (unrealizedPnlPaise / investedValuePaise) * 100
+            : 0;
+
+        const stockInfo = STOCK_INFO_MAP[p.symbol] || {
+          name: `${p.symbol} Equity`,
+          sector: "Other" as const,
+        };
+
+        const weightPercent =
+          totalLiveHoldingsCurrentPaise > 0
+            ? (currentValuePaise / totalLiveHoldingsCurrentPaise) * 100
+            : 100 / Math.max(rawLiveHoldings.length, 1);
+
+        return {
           id: `h-live-${p.uuid || idx}`,
           symbol: p.symbol,
-          name: `${p.symbol} Equity`,
+          name: stockInfo.name,
           exchange: "NSE",
-          sector: "Other",
+          sector: stockInfo.sector,
           quantity: p.quantity,
           avgBuyPricePaise: p.average_price_paise,
-          ltpPaise: p.current_price_paise,
-          prevClosePaise: p.average_price_paise,
-          investedValuePaise: p.invested_value_paise || p.average_price_paise * p.quantity,
-          currentValuePaise: p.current_value_paise || p.current_price_paise * p.quantity,
-          unrealizedPnlPaise: p.unrealized_pnl_paise,
-          pnlPercent:
-            p.average_price_paise > 0
-              ? ((p.current_price_paise - p.average_price_paise) / p.average_price_paise) * 100
-              : 0,
-          dayChangePaise: Math.round((p.current_price_paise - p.average_price_paise) * p.quantity * 0.4),
-          dayChangePercent: 1.15,
-          weightPercent: 100 / Math.max(livePositions.length, 1),
-        }));
+          ltpPaise,
+          prevClosePaise,
+          investedValuePaise,
+          currentValuePaise,
+          unrealizedPnlPaise,
+          pnlPercent,
+          dayChangePaise,
+          dayChangePercent,
+          weightPercent,
+        };
+      });
 
   const activePositions: Position[] = useDemoData
     ? DEMO_POSITIONS
@@ -158,7 +293,16 @@ export default function PortfolioPage() {
   const isOverallProfit = totalUnrealizedPnlPaise >= 0;
 
   // Day P&L calculation
-  const dayPnlPaise = activeHoldings.reduce((sum, h) => sum + h.dayChangePaise, 0) + 125000;
+  const dayPnlPaise = useDemoData
+    ? activeHoldings.reduce((sum, h) => sum + h.dayChangePaise, 0) + 125000
+    : activeHoldings.reduce((sum, h) => sum + h.dayChangePaise, 0) +
+      activePositions.reduce((sum, p) => {
+        const q = quotes[p.symbol];
+        if (q && q.change_paise !== undefined) {
+          return sum + Math.round(q.change_paise * p.quantity);
+        }
+        return sum + Math.round((p.unrealized_pnl_paise || 0) * 0.05);
+      }, 0);
   const dayPnlPercent =
     totalInvestedPaise > 0 ? (dayPnlPaise / totalInvestedPaise) * 100 : 0;
   const isDayProfit = dayPnlPaise >= 0;
@@ -574,13 +718,26 @@ export default function PortfolioPage() {
             holdings={activeHoldings}
             positions={activePositions}
             availableMarginPaise={availableBalancePaise}
+            useDemoData={useDemoData}
+            token={token || ""}
           />
         )}
 
         {/* ===================================================================== */}
         {/* TAB 4: P&L JOURNAL & QUANT ANALYTICS                                  */}
         {/* ===================================================================== */}
-        {activeTab === "ANALYTICS" && <PortfolioPnlAnalytics />}
+        {activeTab === "ANALYTICS" && (
+          <PortfolioPnlAnalytics
+            useDemoData={useDemoData}
+            totalValuationPaise={totalValuationPaise}
+            totalUnrealizedPnlPaise={totalUnrealizedPnlPaise}
+            availableBalancePaise={availableBalancePaise}
+            totalInvestedPaise={totalInvestedPaise}
+            holdings={activeHoldings}
+            positions={activePositions}
+            token={token || ""}
+          />
+        )}
       </main>
 
       {/* Virtual Deposit / Add Funds Modal */}

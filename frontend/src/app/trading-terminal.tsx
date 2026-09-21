@@ -33,6 +33,7 @@ import TradeCopilot from "@/components/terminal/TradeCopilot";
 import OptionChainModal from "@/components/terminal/OptionChainModal";
 import PerformanceModal from "@/components/terminal/PerformanceModal";
 import { useToast } from "@/components/terminal/ToastProvider";
+import { useMarketStore } from "@/stores/market-store";
 import { getDefaultQuotes, getOrSeedQuote } from "@/lib/mockData";
 import { getIndianMarketStatus, formatPaise } from "@/lib/format";
 import type {
@@ -95,6 +96,18 @@ export default function TradingTerminal() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [quotes, setQuotes] = useState<Record<string, Quote>>(() => getDefaultQuotes());
+
+  const liveWsQuotes = useMarketStore((s) => s.quotes);
+
+  // Synchronize authentic live Angel One quotes into terminal state
+  useEffect(() => {
+    if (Object.keys(liveWsQuotes).length > 0) {
+      setQuotes((prev) => ({
+        ...prev,
+        ...liveWsQuotes,
+      }));
+    }
+  }, [liveWsQuotes]);
 
   // Bottom Tabs: positions | orders | gtt | news | mentor
   const [bottomTab, setBottomTab] = useState<"positions" | "orders" | "gtt" | "news" | "mentor">("positions");

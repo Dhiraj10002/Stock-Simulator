@@ -73,7 +73,7 @@ func Load() (*Config, error) {
 		cfg.APIVersion = "v1"
 	}
 	if cfg.CORSAllowedOrigins == "" {
-		cfg.CORSAllowedOrigins = "http://localhost:3000"
+		cfg.CORSAllowedOrigins = "*"
 	}
 	if cfg.InitialVirtualBalancePaise <= 0 {
 		cfg.InitialVirtualBalancePaise = 100000000 // ₹10,00,000
