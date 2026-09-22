@@ -141,7 +141,32 @@ export default function WatchlistManagerDesk({ token: propToken }: WatchlistMana
         const saved = localStorage.getItem(STORAGE_CUSTOM_KEY);
         if (saved) {
           const parsed = JSON.parse(saved);
-          return { ...DEFAULT_WATCHLIST_DATA, ...parsed };
+          const cleaned: Record<string, WatchlistItem[]> = {};
+          const merged = { ...DEFAULT_WATCHLIST_DATA, ...parsed };
+          for (const [key, list] of Object.entries(merged)) {
+            if (Array.isArray(list)) {
+              cleaned[key] = list
+                .map((it: any) => {
+                  if (!it) return null;
+                  if (typeof it === "string") {
+                    const s = it.trim().toUpperCase();
+                    return s ? { symbol: s, name: `${s} Ltd`, exchange: "NSE" } : null;
+                  }
+                  const sym = (it.symbol || it.ticker || "").toString().trim().toUpperCase();
+                  if (!sym) return null;
+                  return {
+                    symbol: sym,
+                    name: (it.name || `${sym} Ltd`).toString(),
+                    exchange: (it.exchange || "NSE").toString(),
+                    isAlias: it.isAlias,
+                  };
+                })
+                .filter((it): it is WatchlistItem => it !== null && !!it.symbol);
+            } else {
+              cleaned[key] = DEFAULT_WATCHLIST_DATA[key] || [];
+            }
+          }
+          return cleaned;
         }
       } catch {}
     }
@@ -158,19 +183,23 @@ export default function WatchlistManagerDesk({ token: propToken }: WatchlistMana
 
   // Synchronize cloud DB items into the primary watchlist tab (wl1)
   useEffect(() => {
-    if (token && dbWatchlist && dbWatchlist.length > 0) {
+    if (token && Array.isArray(dbWatchlist) && dbWatchlist.length > 0) {
       setWatchlists((prev) => {
-        const currentPrimary = prev["wl1"] || [];
-        const dbItems: WatchlistItem[] = dbWatchlist.map((item) => {
-          const existing = currentPrimary.find((p) => p.symbol === item.symbol);
-          if (existing) return existing;
-          const fromCatalog = MASTER_STOCKS_CATALOG.find((s) => s.symbol === item.symbol);
-          return {
-            symbol: item.symbol,
-            name: fromCatalog?.name || `${item.symbol} Ltd`,
-            exchange: "NSE",
-          };
-        });
+        const currentPrimary = Array.isArray(prev["wl1"]) ? prev["wl1"] : [];
+        const dbItems: WatchlistItem[] = dbWatchlist
+          .map((item: any) => {
+            const sym = (item?.symbol || item?.ticker || "").toString().trim().toUpperCase();
+            if (!sym) return null;
+            const existing = currentPrimary.find((p) => p?.symbol === sym);
+            if (existing) return existing;
+            const fromCatalog = MASTER_STOCKS_CATALOG.find((s) => s.symbol === sym);
+            return {
+              symbol: sym,
+              name: fromCatalog?.name || `${sym} Ltd`,
+              exchange: "NSE",
+            };
+          })
+          .filter((it): it is WatchlistItem => it !== null && !!it.symbol);
 
         const updated = {
           ...prev,
@@ -246,7 +275,25 @@ export default function WatchlistManagerDesk({ token: propToken }: WatchlistMana
 
   // Active items
   const currentItems = useMemo(() => {
-    return watchlists[activeTabId] ?? [];
+    const rawList = watchlists[activeTabId] ?? [];
+    if (!Array.isArray(rawList)) return [];
+    return rawList
+      .map((item: any) => {
+        if (!item) return null;
+        if (typeof item === "string") {
+          const s = item.trim().toUpperCase();
+          return s ? { symbol: s, name: `${s} Ltd`, exchange: "NSE" } : null;
+        }
+        const sym = (item.symbol || item.ticker || "").toString().trim().toUpperCase();
+        if (!sym) return null;
+        return {
+          symbol: sym,
+          name: (item.name || `${sym} Ltd`).toString(),
+          exchange: (item.exchange || "NSE").toString(),
+          isAlias: item.isAlias,
+        };
+      })
+      .filter((item): item is WatchlistItem => item !== null && typeof item.symbol === "string" && item.symbol.length > 0);
   }, [watchlists, activeTabId]);
 
   const liveWsQuotes = useMarketStore((s) => s.quotes);
@@ -255,7 +302,8 @@ export default function WatchlistManagerDesk({ token: propToken }: WatchlistMana
   const quotes = useMemo(() => {
     const map: Record<string, Quote> = {};
     currentItems.forEach((item) => {
-      const sym = item.symbol;
+      const sym = (item?.symbol || "").toString().trim().toUpperCase();
+      if (!sym) return;
       const live = liveWsQuotes[sym] || (sym === "ZOMATO" ? liveWsQuotes["ETERNAL"] : undefined);
       if (live && live.price_paise) {
         map[sym] = live;
@@ -394,7 +442,9 @@ export default function WatchlistManagerDesk({ token: propToken }: WatchlistMana
     let totalChangePercent = 0;
 
     currentItems.forEach((item) => {
-      const q = quotes[item.symbol] ?? getOrSeedQuote(item.symbol);
+      const sym = (item?.symbol || "").toString().trim().toUpperCase();
+      if (!sym) return;
+      const q = quotes[sym] ?? getOrSeedQuote(sym);
       const chg = q.change_percent ?? 0;
       totalChangePercent += chg;
       if (chg > 0) advances++;
@@ -792,8 +842,11 @@ export default function WatchlistManagerDesk({ token: propToken }: WatchlistMana
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/40 font-medium">
-                {currentItems.map((item) => {
-                  const quote = quotes[item.symbol] ?? getOrSeedQuote(item.symbol);
+                {currentItems.map((item, idx) => {
+                  const symbol = (item?.symbol || "").toString().trim().toUpperCase();
+                  if (!symbol) return null;
+
+                  const quote = quotes[symbol] ?? getOrSeedQuote(symbol);
                   const ltp = quote.price_paise;
                   const chgPct = quote.change_percent ?? 0;
                   const isPos = chgPct >= 0;
@@ -808,29 +861,29 @@ export default function WatchlistManagerDesk({ token: propToken }: WatchlistMana
 
                   return (
                     <tr
-                      key={item.symbol}
+                      key={`${symbol}-${idx}`}
                       className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors group"
                     >
                       {/* Instrument */}
                       <td className="py-3.5 px-5">
                         <div className="flex items-center gap-3">
                           <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-extrabold text-[11px] flex items-center justify-center shrink-0 border border-slate-200 dark:border-slate-700/60 group-hover:border-cyan-500/40">
-                            {item.symbol.slice(0, 3)}
+                            {symbol.slice(0, 3)}
                           </div>
                           <div>
                             <div className="flex items-center gap-1.5">
                               <span
-                                onClick={() => handleTrade(item.symbol)}
+                                onClick={() => handleTrade(symbol)}
                                 className="font-bold text-sm text-slate-900 dark:text-slate-100 group-hover:text-cyan-600 dark:group-hover:text-cyan-400 transition-colors cursor-pointer"
                               >
-                                {item.symbol}
+                                {symbol}
                               </span>
                               <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 uppercase font-bold">
-                                {item.exchange}
+                                {item.exchange || "NSE"}
                               </span>
                             </div>
                             <span className="text-[11px] text-slate-400 line-clamp-1 max-w-[200px]">
-                              {item.name}
+                              {item.name || `${symbol} Ltd`}
                             </span>
                           </div>
                         </div>
@@ -855,20 +908,23 @@ export default function WatchlistManagerDesk({ token: propToken }: WatchlistMana
                           )}
                           <span>
                             {isPos ? "+" : ""}
-                            {formatPaise(chgPaise)}
+                            {formatPercent(chgPct)}
                           </span>
-                          <span>({formatPercent(chgPct)})</span>
+                        </div>
+                        <div className="text-[10px] text-slate-400 font-mono">
+                          {isPos ? "+" : ""}
+                          {formatPaise(chgPaise)}
                         </div>
                       </td>
 
-                      {/* Intraday Range Bar */}
+                      {/* Intraday Range (Visual Slider) */}
                       <td className="py-3.5 px-4 hidden md:table-cell">
-                        <div className="flex flex-col gap-1 w-36">
-                          <div className="flex justify-between text-[9px] font-mono text-slate-400">
-                            <span>{formatPaise(lowPaise)}</span>
-                            <span>{formatPaise(highPaise)}</span>
+                        <div className="space-y-1 w-full max-w-[140px]">
+                          <div className="flex justify-between text-[10px] text-slate-400 font-mono font-medium">
+                            <span>L: {formatPaise(lowPaise)}</span>
+                            <span>H: {formatPaise(highPaise)}</span>
                           </div>
-                          <div className="w-full h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden relative">
+                          <div className="h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden relative">
                             <div
                               className={`h-full rounded-full transition-all duration-300 ${
                                 isPos ? "bg-emerald-500" : "bg-rose-500"
@@ -889,21 +945,21 @@ export default function WatchlistManagerDesk({ token: propToken }: WatchlistMana
                       <td className="py-3.5 px-4 text-center">
                         <div className="flex items-center justify-center gap-1.5">
                           <button
-                            onClick={() => handleTrade(item.symbol)}
+                            onClick={() => handleTrade(symbol)}
                             className="px-2.5 py-1 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold transition-all shadow-xs active:scale-95 cursor-pointer flex items-center gap-1"
                             title="Buy / Trade"
                           >
                             <span>Buy</span>
                           </button>
                           <button
-                            onClick={() => handleTrade(item.symbol)}
+                            onClick={() => handleTrade(symbol)}
                             className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition-all shadow-xs active:scale-95 cursor-pointer flex items-center gap-1"
                             title="Sell"
                           >
                             <span>Sell</span>
                           </button>
                           <button
-                            onClick={() => handleTrade(item.symbol)}
+                            onClick={() => handleTrade(symbol)}
                             className="p-1 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors cursor-pointer"
                             title="Open Stock Details"
                           >
@@ -915,7 +971,7 @@ export default function WatchlistManagerDesk({ token: propToken }: WatchlistMana
                       {/* Delete from Watchlist */}
                       <td className="py-3.5 px-3 text-center">
                         <button
-                          onClick={() => handleRemoveSymbol(item.symbol)}
+                          onClick={() => handleRemoveSymbol(symbol)}
                           className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors opacity-60 group-hover:opacity-100 cursor-pointer"
                           title="Remove from Watchlist"
                         >

@@ -98,7 +98,10 @@ export default function SearchModal() {
     } else {
       handleClose();
       // If user selected an equity stock or index, route to its stock details
-      const targetSymbol = item.underlying || item.symbol;
+      let targetSymbol = item.underlying || item.symbol;
+      if (targetSymbol.endsWith("-EQ")) {
+        targetSymbol = targetSymbol.replace(/-EQ$/, "");
+      }
       router.push(`/stocks/${encodeURIComponent(targetSymbol)}`);
     }
   };
@@ -343,7 +346,7 @@ export default function SearchModal() {
                           ) : item.optionType ? (
                             item.optionType
                           ) : (
-                            item.symbol.slice(0, 3)
+                            (item?.symbol || "---").slice(0, 3)
                           )}
                         </div>
 

@@ -214,7 +214,7 @@ export default function PortfolioHoldingsTable({
                       <td className="py-3.5 px-4">
                         <div className="flex items-center gap-3">
                           <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-extrabold text-[11px] flex items-center justify-center shrink-0 border border-slate-200 dark:border-slate-700/60 group-hover:border-cyan-500/40">
-                            {h.symbol.slice(0, 3)}
+                            {(h?.symbol || "---").slice(0, 3)}
                           </div>
                           <div>
                             <div className="flex items-center gap-1.5">

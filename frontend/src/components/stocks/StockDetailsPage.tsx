@@ -832,7 +832,7 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
           {/* Left: Stock Details & Badges */}
           <div className="flex items-start gap-4">
             <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-cyan-600 to-teal-500 text-white font-extrabold text-lg flex items-center justify-center shadow-md shadow-cyan-600/10 shrink-0">
-              {stock.symbol.slice(0, 3)}
+              {(stock?.symbol || "---").slice(0, 3)}
             </div>
             <div className="space-y-1">
               <div className="flex items-center gap-2.5 flex-wrap">

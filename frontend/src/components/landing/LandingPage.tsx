@@ -144,160 +144,7 @@ function SpatialCanvas({ mousePos }: { mousePos: { x: number; y: number } }) {
   );
 }
 
-/* -------------------------------------------------------------
-   1B. SPRING RIBBON CURSOR TRAIL (PORTFOLIO FIDELITY)
-   ------------------------------------------------------------- */
-function CursorRibbonCanvas() {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    let width = (canvas.width = window.innerWidth);
-    let height = (canvas.height = window.innerHeight);
-    const mouse = { x: width / 2, y: height / 2 };
-    let hasMoved = false;
-
-    const onMouseMove = (e: MouseEvent) => {
-      mouse.x = e.clientX;
-      mouse.y = e.clientY;
-      if (!hasMoved) {
-        hasMoved = true;
-        nodes.forEach((n) => {
-          n.x = mouse.x;
-          n.y = mouse.y;
-        });
-      }
-    };
-
-    const onTouchMove = (e: TouchEvent) => {
-      if (e.touches.length > 0) {
-        mouse.x = e.touches[0].clientX;
-        mouse.y = e.touches[0].clientY;
-        if (!hasMoved) {
-          hasMoved = true;
-          nodes.forEach((n) => {
-            n.x = mouse.x;
-            n.y = mouse.y;
-          });
-        }
-      }
-    };
-
-    const onResize = () => {
-      if (!canvas) return;
-      width = canvas.width = window.innerWidth;
-      height = canvas.height = window.innerHeight;
-    };
-
-    window.addEventListener("mousemove", onMouseMove);
-    window.addEventListener("touchmove", onTouchMove, { passive: true });
-    window.addEventListener("resize", onResize);
-
-    class SpringNode {
-      x: number;
-      y: number;
-      vx: number;
-      vy: number;
-      constructor(x: number, y: number) {
-        this.x = x;
-        this.y = y;
-        this.vx = 0;
-        this.vy = 0;
-      }
-    }
-
-    const nodes = Array.from({ length: 30 }, () => new SpringNode(mouse.x, mouse.y));
-    const history: Array<Array<{ x: number; y: number }>> = [];
-    let animId: number;
-
-    let lastRibbonTime = 0;
-    const render = (time: number) => {
-      if (document.hidden) {
-        animId = requestAnimationFrame(render);
-        return;
-      }
-      if (time - lastRibbonTime < 25) {
-        animId = requestAnimationFrame(render);
-        return;
-      }
-      lastRibbonTime = time;
-
-      ctx.clearRect(0, 0, width, height);
-
-      if (!hasMoved) {
-        animId = requestAnimationFrame(render);
-        return;
-      }
-
-      nodes[0].x = mouse.x;
-      nodes[0].y = mouse.y;
-
-      for (let n = 1; n < 30; n++) {
-        const curr = nodes[n];
-        const prev = nodes[n - 1];
-        const dx = prev.x - curr.x;
-        const dy = prev.y - curr.y;
-        curr.vx += 0.15 * dx;
-        curr.vy += 0.15 * dy;
-        curr.vx *= 0.6;
-        curr.vy *= 0.6;
-        curr.x += curr.vx;
-        curr.y += curr.vy;
-      }
-
-      history.push(nodes.map((t) => ({ x: t.x, y: t.y })));
-      if (history.length > 45) history.shift();
-
-      history.forEach((trail, e) => {
-        ctx.beginPath();
-        ctx.moveTo(trail[0].x, trail[0].y);
-        for (let n = 1; n < 29; n++) {
-          const midX = (trail[n].x + trail[n + 1].x) / 2;
-          const midY = (trail[n].y + trail[n + 1].y) / 2;
-          ctx.quadraticCurveTo(trail[n].x, trail[n].y, midX, midY);
-        }
-        const ratio = e / history.length;
-        const alpha = 0.2 + 0.75 * Math.pow(ratio, 1.3);
-        // Bright luminous light purple (lavender / lilac)
-        ctx.strokeStyle = `rgba(233, 213, 255, ${alpha})`;
-        ctx.lineWidth = 1.1 + 1.3 * ratio;
-        ctx.lineCap = "round";
-        ctx.lineJoin = "round";
-        ctx.stroke();
-      });
-
-      animId = requestAnimationFrame(render);
-    };
-
-    render(0);
-
-    return () => {
-      window.removeEventListener("mousemove", onMouseMove);
-      window.removeEventListener("touchmove", onTouchMove);
-      window.removeEventListener("resize", onResize);
-      cancelAnimationFrame(animId);
-    };
-  }, []);
-
-  return (
-    <canvas
-      ref={canvasRef}
-      className="fixed inset-0 pointer-events-none z-30"
-      style={{
-        position: "fixed",
-        top: 0,
-        left: 0,
-        width: "100vw",
-        height: "100vh",
-        pointerEvents: "none",
-      }}
-    />
-  );
-}
 
 /* -------------------------------------------------------------
    1C. INTERACTIVE RUBBERBAND LETTER HOVER (PORTFOLIO FIDELITY)
@@ -784,12 +631,10 @@ export default function LandingPage({ onOpenAuth }: LandingPageProps = {}) {
   }, []);
 
   return (
-    <div className="relative min-h-screen bg-[#04060b] text-slate-100 font-sans overflow-x-hidden selection:bg-blue-600/30 selection:text-white">
+    <div className="dark relative min-h-screen text-slate-100 font-sans overflow-x-hidden selection:bg-blue-600/30 selection:text-white" data-landing style={{ backgroundColor: '#04060b' }}>
       {/* 3D Global Perspective Particle Canvas (Colorful dots, constant calm speed) */}
       <SpatialCanvas mousePos={mousePos} />
 
-      {/* Trailing Spring Ribbon Cursor (Portfolio Fidelity) */}
-      <CursorRibbonCanvas />
 
       {/* Floating Aurora Plasma Spheres (Multi-color ambient glow) */}
       <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
@@ -815,66 +660,95 @@ export default function LandingPage({ onOpenAuth }: LandingPageProps = {}) {
         />
       </div>
 
-      {/* ================= HUD HEADER ================= */}
-      <header className="fixed top-0 left-0 right-0 z-50 px-6 py-3.5 flex items-center justify-between bg-[#04060b]/80 backdrop-blur-xl border-b border-white/[0.06]">
-        <div className="flex items-center gap-3">
-          <Link href="/" className="flex items-center gap-2.5 group">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-cyan-400 via-teal-300 to-emerald-400 p-[1px] shadow-lg shadow-cyan-500/25 group-hover:scale-105 transition-transform">
-              <div className="w-full h-full bg-slate-950 rounded-[11px] flex items-center justify-center font-black text-xs text-white">
-                SS
+      {/* ================= PREMIUM FULL-WIDTH GLASSMORPHIC NAVBAR ================= */}
+      <header
+        data-landing
+        className="fixed top-0 left-0 right-0 z-50 w-full h-[58px] border-b border-white/[0.08] shadow-[0_4px_30px_rgba(0,0,0,0.35)]"
+        style={{
+          background: 'rgba(6, 9, 18, 0.72)',
+          backdropFilter: 'blur(24px) saturate(1.8)',
+          WebkitBackdropFilter: 'blur(24px) saturate(1.8)',
+        }}
+      >
+        {/* Top specular highlight — simulates real glass light refraction */}
+        <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-cyan-400/25 via-white/25 to-transparent pointer-events-none" />
+
+        <div className="w-full h-full px-5 sm:px-6 lg:px-8 flex items-center justify-between relative">
+          {/* ── Brand ── */}
+          <Link href="/" className="flex items-center gap-2.5 shrink-0 group">
+            <div className="relative w-8 h-8 rounded-lg overflow-hidden">
+              {/* Gradient border via pseudo background */}
+              <div className="absolute inset-0 bg-gradient-to-br from-cyan-400 via-blue-500 to-violet-500 rounded-lg" />
+              <div className="absolute inset-[1.5px] bg-[#0a0e1a] rounded-[6px] flex items-center justify-center">
+                <span className="font-black text-[11px] text-white tracking-wider">SS</span>
               </div>
             </div>
-            <div className="font-extrabold text-sm tracking-widest uppercase text-white">
-              STOCK SIMULATOR
-            </div>
+            <span className="hidden sm:block font-bold text-[13px] tracking-[0.15em] uppercase text-white/90 group-hover:text-white transition-colors">
+              Stock Simulator
+            </span>
           </Link>
-        </div>
 
-        {/* Center Nav Anchors (Turns LIGHT GREEN on Click / Active) */}
-        <div className="hidden lg:flex items-center gap-1.5 text-xs font-mono">
-          {NAV_ITEMS.map((item) => {
-            const isActive = activeSection === item.id;
-            return (
-              <a
-                key={item.id}
-                href={`#${item.id}`}
-                onClick={() => setActiveSection(item.id)}
-                className={`px-3 py-1.5 rounded-full transition-all duration-200 ${isActive
-                  ? "text-emerald-300 bg-emerald-500/20 border border-emerald-400/50 shadow-[0_0_15px_rgba(52,211,153,0.3)] font-bold scale-105"
-                  : "text-slate-400 hover:text-emerald-300 hover:bg-emerald-500/10"
-                  }`}
-              >
-                {item.label}
-              </a>
-            );
-          })}
-        </div>
+          {/* ── Center Navigation ── */}
+          <div className="hidden lg:flex items-center gap-1">
+            {NAV_ITEMS.map((item) => {
+              const isActive = activeSection === item.id;
+              return (
+                <a
+                  key={item.id}
+                  href={`#${item.id}`}
+                  onClick={() => setActiveSection(item.id)}
+                  className={`relative px-3.5 py-[6px] rounded-lg text-[12px] font-medium tracking-wide transition-all duration-250 ${isActive
+                    ? "text-white bg-white/[0.12] shadow-[inset_0_1px_0_rgba(255,255,255,0.15),0_1px_3px_rgba(0,0,0,0.2)]"
+                    : "text-white/50 hover:text-white/80 hover:bg-white/[0.05]"
+                    }`}
+                >
+                  {isActive && (
+                    <div className="absolute -bottom-[1px] left-3 right-3 h-[2px] rounded-full bg-gradient-to-r from-cyan-400 to-blue-400 shadow-[0_0_8px_rgba(6,182,212,0.5)]" />
+                  )}
+                  {item.label}
+                </a>
+              );
+            })}
+          </div>
 
-        {/* Right Actions: Log In & Sign Up (Refined Warm Orange & Purple Mix) */}
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => (onOpenAuth ? onOpenAuth("login") : (window.location.href = "/stocks/ITC"))}
-            className="px-4.5 py-1.5 rounded-full text-xs font-semibold text-slate-200 hover:text-white bg-white/[0.05] hover:bg-white/[0.10] border border-white/10 hover:border-orange-400/40 transition-all shadow-sm cursor-pointer"
-          >
-            Log In
-          </button>
-          <button
-            onClick={() => (onOpenAuth ? onOpenAuth("register") : (window.location.href = "/stocks/ITC"))}
-            className="px-5 py-1.5 rounded-full bg-[linear-gradient(135deg,#ff7a29_0%,#f43f5e_50%,#7c3aed_100%)] hover:bg-[linear-gradient(135deg,#ff8f4a_0%,#fb7185_50%,#8b5cf6_100%)] text-white font-semibold text-xs tracking-wide shadow-[inset_0_1px_1px_rgba(255,255,255,0.4),0_2px_12px_rgba(255,122,41,0.3),0_2px_12px_rgba(124,58,237,0.25)] hover:shadow-[inset_0_1px_1px_rgba(255,255,255,0.5),0_4px_18px_rgba(255,122,41,0.45),0_4px_18px_rgba(124,58,237,0.4)] border border-white/20 transition-all hover:scale-105 cursor-pointer"
-          >
-            Sign Up
-          </button>
+          {/* ── Right Actions ── */}
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => (onOpenAuth ? onOpenAuth("login") : (window.location.href = "/stocks/ITC"))}
+              className="px-4 py-[6px] rounded-lg text-[12px] font-medium text-white/60 hover:text-white hover:bg-white/[0.07] transition-all cursor-pointer"
+            >
+              Log In
+            </button>
+            <button
+              onClick={() => (onOpenAuth ? onOpenAuth("register") : (window.location.href = "/stocks/ITC"))}
+              className="relative px-5 py-[7px] rounded-lg text-[12px] font-semibold text-white overflow-hidden transition-all hover:scale-[1.03] active:scale-[0.98] cursor-pointer shadow-[0_0_20px_rgba(6,182,212,0.2)]"
+              style={{
+                background: 'linear-gradient(135deg, #06b6d4 0%, #3b82f6 50%, #8b5cf6 100%)',
+              }}
+            >
+              {/* Inner glass sheen */}
+              <div className="absolute inset-0 bg-gradient-to-b from-white/20 to-transparent opacity-60 pointer-events-none" />
+              <span className="relative">Sign Up</span>
+            </button>
+          </div>
         </div>
       </header>
 
       {/* ================= TICKER MARQUEE ================= */}
-      <div className="fixed top-[61px] left-0 right-0 z-40 bg-[#060912]/85 backdrop-blur-md border-b border-white/[0.05] overflow-hidden">
+      <div
+        className="fixed top-[58px] left-0 right-0 z-40 w-full border-b border-white/[0.06] overflow-hidden"
+        style={{
+          background: 'rgba(4, 7, 14, 0.65)',
+          backdropFilter: 'blur(16px)',
+          WebkitBackdropFilter: 'blur(16px)',
+        }}
+      >
         <div className="flex animate-ticker-scroll py-2">
           {[...TICKERS, ...TICKERS, ...TICKERS].map((t, idx) => (
             <div key={idx} className="flex items-center gap-2 px-6 whitespace-nowrap text-[11px] font-mono shrink-0">
-              <span className="text-slate-400 font-semibold">{t.s}</span>
-              <span className="text-white">{t.p}</span>
-              <span className={`font-bold ${t.d === "up" ? "text-emerald-400" : t.d === "down" ? "text-rose-400" : "text-slate-500"}`}>
+              <span className="text-white/40 font-semibold">{t.s}</span>
+              <span className="text-white/80 font-medium">{t.p}</span>
+              <span className={`font-bold ${t.d === "up" ? "text-emerald-400" : t.d === "down" ? "text-rose-400" : "text-white/30"}`}>
                 {t.c}
               </span>
             </div>
@@ -885,11 +759,11 @@ export default function LandingPage({ onOpenAuth }: LandingPageProps = {}) {
       {/* ================= 1. SECTION 1: SPATIAL 3D HERO (PERFECT 100% ZOOM FIT) ================= */}
       <section
         id="hero"
-        className="relative z-10 min-h-screen flex flex-col items-center justify-center pt-24 pb-8 sm:pt-28 sm:pb-12 px-6 text-center scroll-mt-28"
+        className="relative z-10 min-h-screen flex flex-col items-center justify-center pt-24 pb-8 sm:pt-26 sm:pb-12 px-6 text-center scroll-mt-24"
       >
-        {/* Kinetic 3D Heading with Light Orange & Light Purple Gradient */}
+        {/* Kinetic 3D Heading */}
         <div
-          className="relative max-w-4xl mx-auto space-y-3"
+          className="relative max-w-4xl mx-auto space-y-4"
           style={{
             transform: `perspective(1200px) rotateX(${mousePos.y * -6}deg) rotateY(${mousePos.x * 6}deg)`,
             transition: "transform 0.15s ease-out",
@@ -907,25 +781,30 @@ export default function LandingPage({ onOpenAuth }: LandingPageProps = {}) {
             </span>
           </h1>
 
-          <p className="text-slate-300 text-sm sm:text-base max-w-xl mx-auto leading-relaxed pt-1 font-normal">
+          <p className="text-white/50 text-sm sm:text-base max-w-xl mx-auto leading-relaxed pt-1 font-normal">
             Experience institutional-grade paper trading with ₹10,00,000 virtual capital in spatial 3D.
             Practice intraday equities, F&amp;O options strategies, and algo risk rules on real-time market data.
           </p>
         </div>
 
         {/* Interactive Action Hub */}
-        <div className="flex flex-wrap items-center justify-center gap-3.5 pt-6">
+        <div className="flex flex-wrap items-center justify-center gap-3.5 pt-7">
           <button
             onClick={() => (onOpenAuth ? onOpenAuth("login") : (window.location.href = "/stocks/ITC"))}
-            className="group inline-flex items-center gap-2 px-8 py-3.5 rounded-full bg-[linear-gradient(135deg,#ff7a29_0%,#f43f5e_50%,#7c3aed_100%)] hover:bg-[linear-gradient(135deg,#ff8f4a_0%,#fb7185_50%,#8b5cf6_100%)] text-white font-bold text-sm tracking-wide shadow-[inset_0_1px_1px_rgba(255,255,255,0.4),0_8px_25px_-4px_rgba(255,122,41,0.4),0_6px_20px_-4px_rgba(124,58,237,0.35)] hover:shadow-[inset_0_1px_1px_rgba(255,255,255,0.5),0_12px_32px_-4px_rgba(255,122,41,0.55),0_10px_28px_-4px_rgba(124,58,237,0.45)] border border-white/25 hover:scale-105 transition-all duration-200 cursor-pointer"
+            className="group relative inline-flex items-center gap-2.5 px-8 py-3.5 rounded-xl text-white font-bold text-sm tracking-wide overflow-hidden transition-all hover:scale-[1.04] active:scale-[0.98] cursor-pointer shadow-[0_4px_24px_rgba(6,182,212,0.25),0_8px_32px_rgba(139,92,246,0.15)]"
+            style={{
+              background: 'linear-gradient(135deg, #06b6d4 0%, #3b82f6 50%, #8b5cf6 100%)',
+            }}
           >
-            <span>Open Dashboard</span>
-            <ArrowRight className="w-3 h-3 transition-transform duration-200 group-hover:translate-x-1" />
+            {/* Glass sheen overlay */}
+            <div className="absolute inset-0 bg-gradient-to-b from-white/25 to-transparent pointer-events-none" />
+            <span className="relative">Open Dashboard</span>
+            <ArrowRight className="relative w-4 h-4 transition-transform duration-200 group-hover:translate-x-1" />
           </button>
 
           <a
             href="#platform"
-            className="inline-flex items-center gap-1.5 px-6 py-3.5 rounded-full bg-slate-900/80 hover:bg-slate-800 border border-white/10 hover:border-purple-400/40 text-slate-200 hover:text-white font-medium text-sm tracking-wide transition-all backdrop-blur-xl"
+            className="inline-flex items-center gap-1.5 px-6 py-3.5 rounded-xl text-white/70 hover:text-white font-medium text-sm tracking-wide transition-all border border-white/[0.1] hover:border-white/[0.2] hover:bg-white/[0.05]"
           >
             Explore Platform ↓
           </a>
@@ -1064,7 +943,7 @@ export default function LandingPage({ onOpenAuth }: LandingPageProps = {}) {
       {/* ================= 2. SECTION 2: THE PLATFORM (3D SCROLL SHOWCASE DECK - ONE FRAME FIT) ================= */}
       <section
         id="platform"
-        className="relative z-10 min-h-screen flex flex-col items-center justify-center pt-20 pb-8 sm:pt-24 sm:pb-10 px-4 sm:px-6 text-center scroll-mt-24"
+        className="relative z-10 flex flex-col items-center pt-4 pb-12 sm:pt-6 sm:pb-16 px-4 sm:px-6 text-center scroll-mt-24"
       >
         <div className="max-w-5xl w-full mx-auto space-y-4 sm:space-y-5">
           <div className="space-y-2">
@@ -1093,7 +972,7 @@ export default function LandingPage({ onOpenAuth }: LandingPageProps = {}) {
       </section>
 
       {/* ================= 3. SECTION 3: HOW IT WORKS (TRADING IN THREE STEPS) ================= */}
-      <section id="how" className="relative z-10 py-20 px-6 text-center scroll-mt-28">
+      <section id="how" className="relative z-10 pt-5 pb-16 sm:pt-7 sm:pb-20 px-6 text-center scroll-mt-24">
         <div className="max-w-6xl mx-auto space-y-10">
           <div className="space-y-2">
             <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full text-[10px] font-mono uppercase tracking-widest text-slate-300 bg-white/[0.05] border border-white/10 backdrop-blur-md shadow-sm">
@@ -1115,7 +994,7 @@ export default function LandingPage({ onOpenAuth }: LandingPageProps = {}) {
             </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-left">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-left">
             {/* Step 01: Fund Your Virtual Wallet */}
             <TiltCard glowColor="rgba(251, 191, 36, 0.2)">
               <div className="relative h-full rounded-3xl bg-[#090e1c]/80 hover:bg-[#0d1428]/90 backdrop-blur-2xl border border-white/10 hover:border-amber-400/40 p-6 sm:p-7 flex flex-col justify-between shadow-2xl transition-all duration-300 overflow-hidden group">
@@ -1253,11 +1132,126 @@ export default function LandingPage({ onOpenAuth }: LandingPageProps = {}) {
               </div>
             </TiltCard>
           </div>
+
+          {/* ========================================================================= */}
+          {/* GAP ADJUSTMENT: Change '!mt-5' or 'marginTop: 20' to your desired spacing */}
+          {/* e.g. marginTop: 12 (tighter), 20 (medium), 32 (wider)                   */}
+          {/* ========================================================================= */}
+          <div className="!mt-5" style={{ marginTop: "6px" }}>
+            <TiltCard glowColor="rgba(249, 115, 22, 0.32)">
+              <div className="relative rounded-3xl bg-[#090e1e]/90 backdrop-blur-2xl border border-white/[0.1] hover:border-orange-500/40 p-5 sm:p-7 shadow-[0_30px_90px_rgba(0,0,0,0.85),inset_0_1px_1px_rgba(255,255,255,0.15)] transition-all duration-300 overflow-hidden text-left">
+                {/* Full-width continuous RGB spectrum hairline */}
+                <div className="absolute top-0 left-0 right-0 h-[2.5px] bg-gradient-to-r from-emerald-400 via-cyan-400 via-amber-400 to-purple-400" />
+
+                {/* Console Top HUD Status Bar */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 mb-4 border-b border-white/[0.08] text-[10px] font-mono">
+                  <div className="flex items-center gap-2 text-slate-300">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
+                    <span className="font-bold tracking-widest text-white uppercase">SYSTEM TELEMETRY // CORE ENGINE BENCHMARKS</span>
+                  </div>
+                  <div className="flex items-center gap-3 text-slate-400">
+                    <span className="text-cyan-300/90 font-bold bg-cyan-950/60 border border-cyan-500/30 px-2.5 py-0.5 rounded-full">
+                      REAL-TIME BROKER EMULATION
+                    </span>
+                  </div>
+                </div>
+
+                {/* 4 Unified Telemetry Columns (Divided by Laser Hairlines, NOT detached boxes) */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-white/[0.08]">
+                  {/* Column 1: Order Engine */}
+                  <div className="p-3 sm:p-4 flex flex-col justify-between space-y-2.5 group/col hover:bg-white/[0.02] rounded-2xl transition-colors">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9px] font-mono uppercase tracking-wider text-emerald-400 bg-emerald-500/10 border border-emerald-500/25 px-2 py-0.5 rounded-md font-bold">
+                        ● QUEUE MATCHING
+                      </span>
+                    </div>
+                    <div>
+                      <div className="text-3xl sm:text-4xl lg:text-5xl font-black font-mono tracking-tight text-transparent bg-clip-text bg-gradient-to-br from-emerald-300 via-teal-200 to-emerald-400 drop-shadow-[0_2px_18px_rgba(52,211,153,0.35)]">
+                        100%
+                      </div>
+                      <div className="text-xs sm:text-sm font-bold text-white uppercase tracking-wider font-mono mt-1">
+                        Server-Authoritative
+                      </div>
+                      <div className="text-[11px] text-slate-400 leading-relaxed mt-1">
+                        Zero client-side spoofing. True simulated limit &amp; market fill priority.
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Column 2: Latency Bridge */}
+                  <div className="p-3 sm:p-4 flex flex-col justify-between space-y-2.5 group/col hover:bg-white/[0.02] rounded-2xl transition-colors">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9px] font-mono uppercase tracking-wider text-cyan-300 bg-cyan-500/10 border border-cyan-500/25 px-2 py-0.5 rounded-md font-bold">
+                        ● NSE DIRECT CO-LO
+                      </span>
+                    </div>
+                    <div>
+                      <div className="text-3xl sm:text-4xl lg:text-5xl font-black font-mono tracking-tight text-transparent bg-clip-text bg-gradient-to-br from-cyan-300 via-sky-200 to-teal-300 drop-shadow-[0_2px_18px_rgba(6,182,212,0.35)]">
+                        24ms
+                      </div>
+                      <div className="text-xs sm:text-sm font-bold text-white uppercase tracking-wider font-mono mt-1">
+                        Feed Refresh Window
+                      </div>
+                      {/* Live animated frequency tick bars */}
+                      <div className="flex items-end gap-1 h-3.5 my-1.5 px-1 bg-black/30 rounded">
+                        {[6, 12, 8, 14, 10, 14, 9, 13, 7, 11].map((h, i) => (
+                          <div key={i} className="flex-1 bg-cyan-400/80 rounded-t-sm" style={{ height: `${h}px` }} />
+                        ))}
+                      </div>
+                      <div className="text-[11px] text-slate-400 leading-relaxed">
+                        Sub-50ms tick streaming mirrored live from exchange broadcasts.
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Column 3: MIS Leverage */}
+                  <div className="p-3 sm:p-4 flex flex-col justify-between space-y-2.5 group/col hover:bg-white/[0.02] rounded-2xl transition-colors">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9px] font-mono uppercase tracking-wider text-amber-300 bg-amber-500/10 border border-amber-500/25 px-2 py-0.5 rounded-md font-bold">
+                        ● SEBI COMPLIANT
+                      </span>
+                    </div>
+                    <div>
+                      <div className="text-3xl sm:text-4xl lg:text-5xl font-black font-mono tracking-tight text-transparent bg-clip-text bg-gradient-to-br from-amber-300 via-amber-200 to-orange-400 drop-shadow-[0_2px_18px_rgba(251,191,36,0.35)]">
+                        5×
+                      </div>
+                      <div className="text-xs sm:text-sm font-bold text-white uppercase tracking-wider font-mono mt-1">
+                        MIS Margin Leverage
+                      </div>
+                      <div className="text-[11px] text-slate-400 leading-relaxed mt-1">
+                        Realistic intraday margin limits, RMS circuit cutoffs, and square-off rules.
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Column 4: Virtual Seed */}
+                  <div className="p-3 sm:p-4 flex flex-col justify-between space-y-2.5 group/col hover:bg-white/[0.02] rounded-2xl transition-colors">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9px] font-mono uppercase tracking-wider text-purple-300 bg-purple-500/10 border border-purple-500/25 px-2 py-0.5 rounded-md font-bold">
+                        ● RISK-FREE ALLOCATION
+                      </span>
+                    </div>
+                    <div>
+                      <div className="text-3xl sm:text-4xl lg:text-5xl font-black font-mono tracking-tight text-transparent bg-clip-text bg-gradient-to-br from-orange-300 via-pink-300 to-purple-400 drop-shadow-[0_2px_18px_rgba(244,114,182,0.35)]">
+                        ₹10.0L
+                      </div>
+                      <div className="text-xs sm:text-sm font-bold text-white uppercase tracking-wider font-mono mt-1">
+                        Virtual Seed Capital
+                      </div>
+                      <div className="text-[11px] text-slate-400 leading-relaxed mt-1">
+                        Full institutional balance unlocked instantly on sign up. Zero real money needed.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </TiltCard>
+          </div>
         </div>
       </section>
 
       {/* ================= 4. SECTION 4: 3D PRO FEATURES BENTO (NORMAL PROPORTIONS) ================= */}
-      <section id="features" className="relative z-10 py-16 sm:py-20 px-6 scroll-mt-28">
+      <section id="features" className="relative z-10 pt-5 pb-16 sm:pt-7 sm:pb-20 px-6 scroll-mt-24">
         <div className="max-w-6xl mx-auto space-y-10">
           {/* Section Header */}
           <div className="text-center space-y-2.5 relative">
@@ -1441,122 +1435,10 @@ export default function LandingPage({ onOpenAuth }: LandingPageProps = {}) {
         </div>
       </section>
 
-      {/* ================= 5. SECTION 5: 3D PANORAMIC TELEMETRY COCKPIT ================= */}
-      <section id="stats" className="relative z-10 py-16 px-6 scroll-mt-28">
-        <div className="max-w-6xl mx-auto">
-          <TiltCard glowColor="rgba(249, 115, 22, 0.32)">
-            <div className="relative rounded-3xl bg-[#090e1e]/90 backdrop-blur-2xl border border-white/[0.1] hover:border-orange-500/40 p-6 sm:p-8 shadow-[0_30px_90px_rgba(0,0,0,0.85),inset_0_1px_1px_rgba(255,255,255,0.15)] transition-all duration-300 overflow-hidden">
-              {/* Full-width continuous RGB spectrum hairline */}
-              <div className="absolute top-0 left-0 right-0 h-[2.5px] bg-gradient-to-r from-emerald-400 via-cyan-400 via-amber-400 to-purple-400" />
 
-              {/* Console Top HUD Status Bar */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-5 mb-6 border-b border-white/[0.08] text-[10px] font-mono">
-                <div className="flex items-center gap-2 text-slate-300">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
-                  <span className="font-bold tracking-widest text-white uppercase">SYSTEM TELEMETRY // CORE ENGINE BENCHMARKS</span>
-                </div>
-                <div className="flex items-center gap-3 text-slate-400">
-                  <span className="text-cyan-300/90 font-bold bg-cyan-950/60 border border-cyan-500/30 px-2.5 py-0.5 rounded-full">
-                    REAL-TIME BROKER EMULATION
-                  </span>
-                </div>
-              </div>
-
-              {/* 4 Unified Telemetry Columns (Divided by Laser Hairlines, NOT detached boxes) */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-white/[0.08]">
-                {/* Column 1: Order Engine */}
-                <div className="p-4 sm:p-5 flex flex-col justify-between space-y-3 group/col hover:bg-white/[0.02] rounded-2xl transition-colors">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[9px] font-mono uppercase tracking-wider text-emerald-400 bg-emerald-500/10 border border-emerald-500/25 px-2 py-0.5 rounded-md font-bold">
-                      ● QUEUE MATCHING
-                    </span>
-                  </div>
-                  <div>
-                    <div className="text-4xl sm:text-5xl lg:text-6xl font-black font-mono tracking-tight text-transparent bg-clip-text bg-gradient-to-br from-emerald-300 via-teal-200 to-emerald-400 drop-shadow-[0_2px_18px_rgba(52,211,153,0.35)]">
-                      100%
-                    </div>
-                    <div className="text-xs sm:text-sm font-bold text-white uppercase tracking-wider font-mono mt-1">
-                      Server-Authoritative
-                    </div>
-                    <div className="text-[11px] text-slate-400 leading-relaxed mt-1">
-                      Zero client-side spoofing. True simulated limit &amp; market fill priority.
-                    </div>
-                  </div>
-                </div>
-
-                {/* Column 2: Latency Bridge */}
-                <div className="p-4 sm:p-5 flex flex-col justify-between space-y-3 group/col hover:bg-white/[0.02] rounded-2xl transition-colors">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[9px] font-mono uppercase tracking-wider text-cyan-300 bg-cyan-500/10 border border-cyan-500/25 px-2 py-0.5 rounded-md font-bold">
-                      ● NSE DIRECT CO-LO
-                    </span>
-                  </div>
-                  <div>
-                    <div className="text-4xl sm:text-5xl lg:text-6xl font-black font-mono tracking-tight text-transparent bg-clip-text bg-gradient-to-br from-cyan-300 via-sky-200 to-teal-300 drop-shadow-[0_2px_18px_rgba(6,182,212,0.35)]">
-                      24ms
-                    </div>
-                    <div className="text-xs sm:text-sm font-bold text-white uppercase tracking-wider font-mono mt-1">
-                      Feed Refresh Window
-                    </div>
-                    {/* Live animated frequency tick bars */}
-                    <div className="flex items-end gap-1 h-3.5 my-1.5 px-1 bg-black/30 rounded">
-                      {[6, 12, 8, 14, 10, 14, 9, 13, 7, 11].map((h, i) => (
-                        <div key={i} className="flex-1 bg-cyan-400/80 rounded-t-sm" style={{ height: `${h}px` }} />
-                      ))}
-                    </div>
-                    <div className="text-[11px] text-slate-400 leading-relaxed">
-                      Sub-50ms tick streaming mirrored live from exchange broadcasts.
-                    </div>
-                  </div>
-                </div>
-
-                {/* Column 3: MIS Leverage */}
-                <div className="p-4 sm:p-5 flex flex-col justify-between space-y-3 group/col hover:bg-white/[0.02] rounded-2xl transition-colors">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[9px] font-mono uppercase tracking-wider text-amber-300 bg-amber-500/10 border border-amber-500/25 px-2 py-0.5 rounded-md font-bold">
-                      ● SEBI COMPLIANT
-                    </span>
-                  </div>
-                  <div>
-                    <div className="text-4xl sm:text-5xl lg:text-6xl font-black font-mono tracking-tight text-transparent bg-clip-text bg-gradient-to-br from-amber-300 via-amber-200 to-orange-400 drop-shadow-[0_2px_18px_rgba(251,191,36,0.35)]">
-                      5×
-                    </div>
-                    <div className="text-xs sm:text-sm font-bold text-white uppercase tracking-wider font-mono mt-1">
-                      MIS Margin Leverage
-                    </div>
-                    <div className="text-[11px] text-slate-400 leading-relaxed mt-1">
-                      Realistic intraday margin limits, RMS circuit cutoffs, and square-off rules.
-                    </div>
-                  </div>
-                </div>
-
-                {/* Column 4: Virtual Seed */}
-                <div className="p-4 sm:p-5 flex flex-col justify-between space-y-3 group/col hover:bg-white/[0.02] rounded-2xl transition-colors">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[9px] font-mono uppercase tracking-wider text-purple-300 bg-purple-500/10 border border-purple-500/25 px-2 py-0.5 rounded-md font-bold">
-                      ● RISK-FREE ALLOCATION
-                    </span>
-                  </div>
-                  <div>
-                    <div className="text-4xl sm:text-5xl lg:text-6xl font-black font-mono tracking-tight text-transparent bg-clip-text bg-gradient-to-br from-orange-300 via-pink-300 to-purple-400 drop-shadow-[0_2px_18px_rgba(244,114,182,0.35)]">
-                      ₹10.0L
-                    </div>
-                    <div className="text-xs sm:text-sm font-bold text-white uppercase tracking-wider font-mono mt-1">
-                      Virtual Seed Capital
-                    </div>
-                    <div className="text-[11px] text-slate-400 leading-relaxed mt-1">
-                      Full institutional balance unlocked instantly on sign up. Zero real money needed.
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </TiltCard>
-        </div>
-      </section>
 
       {/* ================= 6. SECTION 6: VERIFIED SOCIAL PROOF (4-REVIEWER 2x2 GRID) ================= */}
-      <section id="testimonials" className="relative z-10 min-h-[calc(100vh-65px)] flex flex-col justify-center py-6 sm:py-8 px-6 scroll-mt-20">
+      <section id="testimonials" className="relative z-10 flex flex-col items-center pt-5 pb-14 sm:pt-7 sm:pb-16 px-6 scroll-mt-24">
         <div className="max-w-7xl mx-auto w-full space-y-5 sm:space-y-6">
           {/* Header */}
           <div className="text-center space-y-2 relative">
@@ -1585,7 +1467,7 @@ export default function LandingPage({ onOpenAuth }: LandingPageProps = {}) {
             <TiltCard glowColor="rgba(16, 185, 129, 0.25)">
               <div className="relative h-full rounded-2xl sm:rounded-3xl bg-[#09151c]/85 hover:bg-[#0c1a24]/95 backdrop-blur-2xl border border-emerald-500/25 hover:border-emerald-500/60 p-5 sm:p-6 lg:p-7 flex flex-col justify-between shadow-2xl transition-all duration-300 group overflow-hidden">
                 <div className="absolute top-0 left-0 right-0 h-[2.5px] bg-gradient-to-r from-emerald-400 via-teal-300 to-emerald-500" />
-                
+
                 <div>
                   <div className="flex items-center justify-between gap-2 mb-3">
                     <div className="flex items-center gap-1 text-amber-400">
@@ -1781,7 +1663,7 @@ export default function LandingPage({ onOpenAuth }: LandingPageProps = {}) {
       </section>
 
       {/* ================= 7. SECTION 7: CTA & FOOTER ================= */}
-      <section id="portal" className="relative z-10 py-20 sm:py-28 px-6 text-center scroll-mt-28">
+      <section id="portal" className="relative z-10 pt-5 pb-16 sm:pt-7 sm:pb-24 px-6 text-center scroll-mt-24">
         <div className="max-w-5xl mx-auto">
           <TiltCard glowColor="rgba(249, 115, 22, 0.35)">
             <div

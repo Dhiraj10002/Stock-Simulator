@@ -129,8 +129,9 @@
    ========================================================================== */
 
 /* Allow layout.tsx fixed atmospheric ambient glow to show through full-screen page wrappers */
-.dark .min-h-screen,
-html:not(.dark) .min-h-screen {
+/* Exclude [data-landing] so the cinematic landing page retains its dark background */
+.dark .min-h-screen:not([data-landing]),
+html:not(.dark) .min-h-screen:not([data-landing]) {
   background-color: transparent !important;
 }
 
@@ -189,8 +190,8 @@ html:not(.dark) table tbody tr:hover {
   background-color: rgba(241, 245, 249, 0.75) !important;
 }
 
-/* Light Mode Floating Navbar Glass */
-html:not(.dark) header {
+/* Light Mode Floating Navbar Glass (exclude landing page header) */
+html:not(.dark) header:not([data-landing]) {
   background-color: rgba(255, 255, 255, 0.8) !important;
   backdrop-filter: blur(20px) !important;
   -webkit-backdrop-filter: blur(20px) !important;
@@ -382,10 +383,8 @@ html:not(.dark) header {
 .rubberBand {
   display: inline-block !important;
   animation: rubberBand 1s ease-in-out !important;
-  color: #8b86d1 !important;
-  -webkit-text-fill-color: #8b86d1 !important;
-  text-shadow: none !important;
-  filter: none !important;
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
 }
 
 .hover-letter {

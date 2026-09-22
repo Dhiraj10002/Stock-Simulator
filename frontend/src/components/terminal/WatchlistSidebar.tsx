@@ -113,7 +113,33 @@ export default function WatchlistSidebar({
       try {
         const saved = localStorage.getItem("stock-simulator-watchlist-custom-v2");
         if (saved) {
-          return JSON.parse(saved);
+          const parsed = JSON.parse(saved);
+          const cleaned: Record<string, WatchlistItem[]> = {};
+          const merged = { ...DEFAULT_WATCHLIST_DATA, ...parsed };
+          for (const [key, list] of Object.entries(merged)) {
+            if (Array.isArray(list)) {
+              cleaned[key] = list
+                .map((it: any) => {
+                  if (!it) return null;
+                  if (typeof it === "string") {
+                    const s = it.trim().toUpperCase();
+                    return s ? { symbol: s, name: `${s} Ltd`, exchange: "NSE" } : null;
+                  }
+                  const sym = (it.symbol || it.ticker || "").toString().trim().toUpperCase();
+                  if (!sym) return null;
+                  return {
+                    symbol: sym,
+                    name: (it.name || `${sym} Ltd`).toString(),
+                    exchange: (it.exchange || "NSE").toString(),
+                    isAlias: it.isAlias,
+                  };
+                })
+                .filter((it): it is WatchlistItem => it !== null && !!it.symbol);
+            } else {
+              cleaned[key] = (DEFAULT_WATCHLIST_DATA as any)[key] || [];
+            }
+          }
+          return cleaned as Record<"wl1" | "wl2" | "fno", WatchlistItem[]>;
         }
       } catch {
         // fallback
@@ -148,10 +174,25 @@ export default function WatchlistSidebar({
 
   // Active items for the selected tab
   const activeItems = useMemo(() => {
-    if (activeTab === "holdings") {
-      return holdingsItems;
-    }
-    return customTabs[activeTab] ?? [];
+    const list = activeTab === "holdings" ? holdingsItems : (customTabs[activeTab] ?? []);
+    if (!Array.isArray(list)) return [];
+    return list
+      .map((it: any) => {
+        if (!it) return null;
+        if (typeof it === "string") {
+          const s = it.trim().toUpperCase();
+          return s ? { symbol: s, name: `${s} Ltd`, exchange: "NSE" } : null;
+        }
+        const sym = (it.symbol || it.ticker || "").toString().trim().toUpperCase();
+        if (!sym) return null;
+        return {
+          symbol: sym,
+          name: (it.name || `${sym} Ltd`).toString(),
+          exchange: (it.exchange || "NSE").toString(),
+          isAlias: it.isAlias,
+        };
+      })
+      .filter((it): it is WatchlistItem => it !== null && !!it.symbol);
   }, [activeTab, customTabs, holdingsItems]);
 
   // Propagate active symbols list for keyboard navigation

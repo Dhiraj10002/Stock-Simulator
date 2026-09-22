@@ -92,7 +92,8 @@ export default function Navbar({
   const isProfit = unrealizedPnlPaise >= 0;
 
   return (
-    <header className="border-b border-slate-200 dark:border-white/[0.08] bg-white/90 dark:bg-[#06080e]/85 backdrop-blur-xl sticky top-0 z-40 transition-colors duration-150 relative">
+    <>
+      <header className="border-b border-slate-200 dark:border-white/[0.08] bg-white/90 dark:bg-[#06080e]/85 backdrop-blur-xl sticky top-0 z-40 transition-colors duration-150 relative">
       {/* Specular gradient flare line */}
       <div className="h-[1px] w-full bg-gradient-to-r from-transparent via-cyan-500/35 dark:via-cyan-500/30 to-transparent absolute -bottom-[1px] left-0 pointer-events-none" />
 
@@ -444,12 +445,13 @@ export default function Navbar({
           );
         })}
       </nav>
-
-      {/* Institutional Simulation Reset Confirmation Modal */}
-      <ResetSimulationModal
-        isOpen={isResetModalOpen}
-        onClose={() => setIsResetModalOpen(false)}
-      />
     </header>
+
+    {/* Institutional Simulation Reset Confirmation Modal */}
+    <ResetSimulationModal
+      isOpen={isResetModalOpen}
+      onClose={() => setIsResetModalOpen(false)}
+    />
+  </>
   );
 }
