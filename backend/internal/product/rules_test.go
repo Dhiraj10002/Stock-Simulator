@@ -27,15 +27,87 @@ func TestMarginRules(t *testing.T) {
 
 func TestFNOInstrumentRequiresExplicitUnderlyingAndLot(t *testing.T) {
 	instrument := model.Instrument{LotSize: 75, InstrumentType: "OPTIDX", UnderlyingSymbol: "NIFTY"}
-	if _, err := ValidateFNOInstrument(instrument, 75); err != nil {
-		t.Fatal(err)
+	
+	// Valid multiples of lot size
+	for _, qty := range []int64{75, 150, 300} {
+		kind, err := ValidateFNOInstrument(instrument, qty)
+		if err != nil || kind != InstrumentOption {
+			t.Fatalf("ValidateFNOInstrument for qty %d: got (%q, %v), want (%q, nil)", qty, kind, err, InstrumentOption)
+		}
 	}
-	if _, err := ValidateFNOInstrument(instrument, 50); err == nil {
-		t.Fatal("invalid lot multiple was accepted")
+
+	// Invalid lot multiples
+	for _, qty := range []int64{0, -75, 50, 100, 149} {
+		if _, err := ValidateFNOInstrument(instrument, qty); err == nil {
+			t.Fatalf("invalid lot quantity %d was unexpectedly accepted", qty)
+		}
 	}
-	instrument.UnderlyingSymbol = ""
-	if _, err := ValidateFNOInstrument(instrument, 75); err == nil {
+
+	// Zero or negative lot size
+	invalidLotInst := model.Instrument{LotSize: 0, InstrumentType: "OPTIDX", UnderlyingSymbol: "NIFTY"}
+	if _, err := ValidateFNOInstrument(invalidLotInst, 75); err == nil {
+		t.Fatal("zero lot size was unexpectedly accepted")
+	}
+
+	// Underlying symbol resolution: falls back to Name if UnderlyingSymbol is empty
+	nameFallbackInst := model.Instrument{LotSize: 75, InstrumentType: "OPTIDX", UnderlyingSymbol: "", Name: "NIFTY"}
+	if _, err := ValidateFNOInstrument(nameFallbackInst, 75); err != nil {
+		t.Fatalf("underlying name fallback failed: %v", err)
+	}
+
+	// Missing both UnderlyingSymbol and Name
+	noUnderlyingInst := model.Instrument{LotSize: 75, InstrumentType: "OPTIDX", UnderlyingSymbol: "   ", Name: " "}
+	if _, err := ValidateFNOInstrument(noUnderlyingInst, 75); err == nil {
 		t.Fatal("missing explicit underlying was accepted")
+	}
+
+	// Instrument classification tests
+	futInst := model.Instrument{LotSize: 50, InstrumentType: "FUTIDX", UnderlyingSymbol: "BANKNIFTY"}
+	if kind, err := ValidateFNOInstrument(futInst, 50); err != nil || kind != InstrumentFuture {
+		t.Fatalf("FUTIDX classification: got (%q, %v), want (%q, nil)", kind, err, InstrumentFuture)
+	}
+
+	futStk := model.Instrument{LotSize: 250, InstrumentType: "FUTSTK", UnderlyingSymbol: "RELIANCE"}
+	if kind, err := ValidateFNOInstrument(futStk, 250); err != nil || kind != InstrumentFuture {
+		t.Fatalf("FUTSTK classification: got (%q, %v), want (%q, nil)", kind, err, InstrumentFuture)
+	}
+
+	optStk := model.Instrument{LotSize: 250, InstrumentType: "OPTSTK", UnderlyingSymbol: "RELIANCE"}
+	if kind, err := ValidateFNOInstrument(optStk, 250); err != nil || kind != InstrumentOption {
+		t.Fatalf("OPTSTK classification: got (%q, %v), want (%q, nil)", kind, err, InstrumentOption)
+	}
+
+	unknownInst := model.Instrument{LotSize: 25, InstrumentType: "BOND", UnderlyingSymbol: "GOI"}
+	if _, err := ValidateFNOInstrument(unknownInst, 25); err == nil {
+		t.Fatal("unsupported instrument type BOND was accepted")
+	}
+}
+
+func TestMarginRules_EdgeCases(t *testing.T) {
+	rules := Rules{MISLeverage: 5, FuturesMarginPercent: 20, OptionSellMarginPercent: 30}
+
+	// Zero or negative notional
+	if _, err := rules.Margin(model.OrderProductIntraday, "", model.OrderSideBuy, 0); err == nil {
+		t.Fatal("zero notional should return error")
+	}
+	if _, err := rules.Margin(model.OrderProductIntraday, "", model.OrderSideBuy, -100); err == nil {
+		t.Fatal("negative notional should return error")
+	}
+
+	// Unsupported product
+	if _, err := rules.Margin("COMMODITY", "", model.OrderSideBuy, 10000); err == nil {
+		t.Fatal("unsupported product should return error")
+	}
+
+	// Unsupported FNO instrument type
+	if _, err := rules.Margin(model.OrderProductFNO, "SWAP", model.OrderSideBuy, 10000); err == nil {
+		t.Fatal("unsupported FNO instrument type should return error")
+	}
+
+	// MIS leverage zero or negative
+	badRules := Rules{MISLeverage: 0, FuturesMarginPercent: 20, OptionSellMarginPercent: 30}
+	if _, err := badRules.Margin(model.OrderProductIntraday, "", model.OrderSideBuy, 10000); err == nil {
+		t.Fatal("zero MIS leverage should return error")
 	}
 }
 

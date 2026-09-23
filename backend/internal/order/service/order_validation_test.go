@@ -139,6 +139,57 @@ func TestOrderService_PreTradeValidationRules(t *testing.T) {
 			},
 			wantErr: "market orders must not include a price",
 		},
+		{
+			name: "Reject SL-M order with client-supplied price",
+			request: dto.CreateOrderRequest{
+				Symbol:            "RELIANCE",
+				Side:              model.OrderSideBuy,
+				Type:              model.OrderTypeSLM,
+				Product:           model.OrderProductDelivery,
+				Quantity:          10,
+				PricePaise:        250000,
+				TriggerPricePaise: 260000,
+			},
+			wantErr: "SL-M orders must not include a price",
+		},
+		{
+			name: "Reject SL order with zero trigger price",
+			request: dto.CreateOrderRequest{
+				Symbol:            "RELIANCE",
+				Side:              model.OrderSideBuy,
+				Type:              model.OrderTypeSL,
+				Product:           model.OrderProductDelivery,
+				Quantity:          10,
+				PricePaise:        270000,
+				TriggerPricePaise: 0,
+			},
+			wantErr: "stop-loss orders require a positive trigger price",
+		},
+		{
+			name: "Reject SL-M order with negative trigger price",
+			request: dto.CreateOrderRequest{
+				Symbol:            "RELIANCE",
+				Side:              model.OrderSideBuy,
+				Type:              model.OrderTypeSLM,
+				Product:           model.OrderProductDelivery,
+				Quantity:          10,
+				PricePaise:        0,
+				TriggerPricePaise: -500,
+			},
+			wantErr: "stop-loss orders require a positive trigger price",
+		},
+		{
+			name: "Reject FNO order without database connection",
+			request: dto.CreateOrderRequest{
+				Symbol:     "NIFTY24SEP26FUT",
+				Side:       model.OrderSideBuy,
+				Type:       model.OrderTypeLimit,
+				Product:    model.OrderProductFNO,
+				Quantity:   50,
+				PricePaise: 2400000,
+			},
+			wantErr: "F&O instrument verification requires database connection",
+		},
 	}
 
 	for _, tc := range tests {
