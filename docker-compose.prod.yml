@@ -5,6 +5,8 @@ services:
       dockerfile: backend/Dockerfile
     env_file:
       - backend/.env
+    environment:
+      - MARKET_WORKER_URL=http://market-worker:8085
     ports:
       - "8080:8080"
     restart: unless-stopped
@@ -20,6 +22,11 @@ services:
       context: ./python-services/market-worker
     env_file:
       - backend/.env
+    environment:
+      - QUOTE_SERVER_HOST=0.0.0.0
+      - QUOTE_SERVER_PORT=8085
+    expose:
+      - "8085"
     restart: unless-stopped
     depends_on:
       backend:

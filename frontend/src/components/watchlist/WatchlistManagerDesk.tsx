@@ -388,7 +388,10 @@ export default function WatchlistManagerDesk({ token: propToken }: WatchlistMana
       if (live && live.price_paise) {
         map[sym] = live;
       } else {
-        map[sym] = getQuoteSync(sym);
+        const sync = getQuoteSync(sym);
+        if (sync && sync.price_paise > 0) {
+          map[sym] = sync;
+        }
       }
     });
     return map;
@@ -533,10 +536,12 @@ export default function WatchlistManagerDesk({ token: propToken }: WatchlistMana
       const sym = (item?.symbol || "").toString().trim().toUpperCase();
       if (!sym) return;
       const q = quotes[sym] ?? getQuoteSync(sym);
-      const chg = q.change_percent ?? 0;
+      const chg = q?.change_percent ?? 0;
       totalChangePercent += chg;
-      if (chg > 0) advances++;
-      else if (chg < 0) declines++;
+      if (q && q.price_paise > 0) {
+        if (chg > 0) advances++;
+        else if (chg < 0) declines++;
+      }
     });
 
     const total = currentItems.length;
@@ -935,17 +940,17 @@ export default function WatchlistManagerDesk({ token: propToken }: WatchlistMana
                   if (!symbol) return null;
 
                   const quote = quotes[symbol] ?? getQuoteSync(symbol);
-                  const ltp = quote.price_paise;
-                  const chgPct = quote.change_percent ?? 0;
+                  const ltp = quote?.price_paise ?? 0;
+                  const chgPct = quote?.change_percent ?? 0;
                   const isPos = chgPct >= 0;
 
-                  const prevClose = Math.round(ltp / (1 + chgPct / 100));
-                  const chgPaise = ltp - prevClose;
+                  const prevClose = ltp > 0 ? Math.round(ltp / (1 + chgPct / 100)) : 0;
+                  const chgPaise = ltp > 0 ? ltp - prevClose : 0;
 
-                  const lowPaise = quote.low_paise ?? Math.round(ltp * 0.985);
-                  const highPaise = quote.high_paise ?? Math.round(ltp * 1.015);
+                  const lowPaise = quote?.low_paise ?? Math.round(ltp * 0.985);
+                  const highPaise = quote?.high_paise ?? Math.round(ltp * 1.015);
                   const range = highPaise - lowPaise || 1;
-                  const rangePct = Math.min(100, Math.max(0, ((ltp - lowPaise) / range) * 100));
+                  const rangePct = ltp > 0 ? Math.min(100, Math.max(0, ((ltp - lowPaise) / range) * 100)) : 0;
 
                   return (
                     <tr
@@ -979,30 +984,36 @@ export default function WatchlistManagerDesk({ token: propToken }: WatchlistMana
 
                       {/* LTP */}
                       <td className="py-3.5 px-3 text-right font-black text-slate-900 dark:text-slate-100 font-tabular text-sm">
-                        {formatPaise(ltp)}
+                        {ltp > 0 ? formatPaise(ltp) : "--"}
                       </td>
 
                       {/* Day Change */}
                       <td className="py-3.5 px-3 text-right font-tabular">
-                        <div
-                          className={`inline-flex items-center justify-end gap-1 font-bold text-xs ${
-                            isPos ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
-                          }`}
-                        >
-                          {isPos ? (
-                            <ArrowUpRight className="w-3.5 h-3.5" />
-                          ) : (
-                            <ArrowDownRight className="w-3.5 h-3.5" />
-                          )}
-                          <span>
-                            {isPos ? "+" : ""}
-                            {formatPercent(chgPct)}
-                          </span>
-                        </div>
-                        <div className="text-[10px] text-slate-400 font-mono">
-                          {isPos ? "+" : ""}
-                          {formatPaise(chgPaise)}
-                        </div>
+                        {ltp > 0 ? (
+                          <>
+                            <div
+                              className={`inline-flex items-center justify-end gap-1 font-bold text-xs ${
+                                isPos ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
+                              }`}
+                            >
+                              {isPos ? (
+                                <ArrowUpRight className="w-3.5 h-3.5" />
+                              ) : (
+                                <ArrowDownRight className="w-3.5 h-3.5" />
+                              )}
+                              <span>
+                                {isPos ? "+" : ""}
+                                {formatPercent(chgPct)}
+                              </span>
+                            </div>
+                            <div className="text-[10px] text-slate-400 font-mono">
+                              {isPos ? "+" : ""}
+                              {formatPaise(chgPaise)}
+                            </div>
+                          </>
+                        ) : (
+                          <span className="text-xs text-slate-400">--</span>
+                        )}
                       </td>
 
                       {/* Intraday Range (Visual Slider) */}

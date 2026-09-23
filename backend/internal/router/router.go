@@ -50,6 +50,12 @@ func Setup(ctx context.Context, cfg *config.Config) *gin.Engine {
 	if err != nil {
 		panic(err)
 	}
+	if cfg.MarketWorkerURL != "" {
+		market.Service().SetWorkerURL(cfg.MarketWorkerURL)
+	}
+	if cfg.AllowSeededQuotes {
+		market.Service().SetAllowSeededQuotes(true)
+	}
 	portfolio := portfolioHandler.New(market.Service())
 	orders := orderHandler.New(market.Service(), cfg)
 	go orders.RunMatcher(ctx)

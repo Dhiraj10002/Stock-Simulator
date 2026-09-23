@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -15,8 +17,44 @@ import (
 )
 
 type Service struct {
-	client  *redis.Client
-	timeout time.Duration
+	client            *redis.Client
+	timeout           time.Duration
+	allowSeededQuotes bool
+	workerURL         string
+	httpClient        *http.Client
+}
+
+func (s *Service) SetAllowSeededQuotes(allow bool) {
+	s.allowSeededQuotes = allow
+}
+
+func (s *Service) AllowSeededQuotes() bool {
+	if s == nil {
+		return false
+	}
+	return s.allowSeededQuotes
+}
+
+func (s *Service) SetWorkerURL(workerURL string) {
+	if s != nil {
+		s.workerURL = strings.TrimRight(strings.TrimSpace(workerURL), "/")
+	}
+}
+
+func (s *Service) SetHTTPClient(client *http.Client) {
+	if s != nil {
+		s.httpClient = client
+	}
+}
+
+func (s *Service) WorkerURL() string {
+	if s != nil && s.workerURL != "" {
+		return s.workerURL
+	}
+	if env := strings.TrimRight(strings.TrimSpace(os.Getenv("MARKET_WORKER_URL")), "/"); env != "" {
+		return env
+	}
+	return "http://127.0.0.1:8085"
 }
 
 const QuoteUpdatesChannel = "market:updates"
@@ -67,8 +105,16 @@ var workerHTTPClient = &http.Client{
 	Timeout: 3 * time.Second,
 }
 
-func fetchLiveFromWorker(symbol string) (*dto.QuoteResponse, error) {
-	resp, err := workerHTTPClient.Get(fmt.Sprintf("http://127.0.0.1:8085/quote?symbol=%s", symbol))
+func (s *Service) fetchLiveFromWorker(symbol string) (*dto.QuoteResponse, error) {
+	baseURL := s.WorkerURL()
+	if baseURL == "" || baseURL == "disabled" || baseURL == "none" {
+		return nil, fmt.Errorf("market worker integration is disabled")
+	}
+	client := workerHTTPClient
+	if s != nil && s.httpClient != nil {
+		client = s.httpClient
+	}
+	resp, err := client.Get(fmt.Sprintf("%s/quote?symbol=%s", baseURL, url.QueryEscape(symbol)))
 	if err != nil {
 		return nil, err
 	}
@@ -81,6 +127,11 @@ func fetchLiveFromWorker(symbol string) (*dto.QuoteResponse, error) {
 		return nil, err
 	}
 	return &quote, nil
+}
+
+func fetchLiveFromWorker(symbol string) (*dto.QuoteResponse, error) {
+	var s *Service
+	return s.fetchLiveFromWorker(symbol)
 }
 
 func fallbackPriceForSymbol(symbol string) int64 {
@@ -140,7 +191,7 @@ func (s *Service) CurrentQuote(symbol string) (*dto.QuoteResponse, error) {
 		return nil, fmt.Errorf("%w: %v", cache.ErrUnavailable, err)
 	}
 	if len(values) == 0 || values["source"] == "auto_seeded" {
-		if liveQuote, err := fetchLiveFromWorker(symbol); err == nil && liveQuote != nil && liveQuote.PricePaise > 0 {
+		if liveQuote, err := s.fetchLiveFromWorker(symbol); err == nil && liveQuote != nil && liveQuote.PricePaise > 0 {
 			return liveQuote, nil
 		}
 		if len(values) == 0 {
@@ -182,21 +233,42 @@ func (s *Service) CurrentQuote(symbol string) (*dto.QuoteResponse, error) {
 	}, nil
 }
 
+// IsSeededSource returns true if the quote source represents a static or fallback
+// seed placeholder that has not been produced by an active live or simulated tick feed.
+func IsSeededSource(source string) bool {
+	switch strings.ToLower(strings.TrimSpace(source)) {
+	case "auto_seeded", "initial_seed", "benchmark_fallback", "static_fallback":
+		return true
+	default:
+		return false
+	}
+}
+
 // ExecutableQuote returns a quote that is safe to use for settlement. A
-// cached quote without a valid, recent timestamp must never determine money
-// movement, even if a price field happens to be present.
+// cached quote without a valid, recent timestamp or an unpermitted seeded quote
+// must never determine money movement, even if a price field happens to be present.
 func (s *Service) ExecutableQuote(symbol string) (*dto.QuoteResponse, error) {
 	quote, err := s.CurrentQuote(symbol)
 	if err != nil {
 		return nil, err
 	}
-	if err := validateExecutableQuote(quote, time.Now()); err != nil {
+	allowSeeded := s != nil && s.allowSeededQuotes
+	if err := validateExecutableQuoteWithMode(quote, time.Now(), allowSeeded); err != nil {
 		return nil, err
 	}
 	return quote, nil
 }
 
-func validateExecutableQuote(quote *dto.QuoteResponse, now time.Time) error {
+// ValidateExecutableQuoteWithMode validates whether a quote can be safely used
+// for order execution and settlement. When allowSeeded is false, static seed placeholders
+// (auto_seeded, initial_seed, benchmark_fallback, etc.) are strictly rejected.
+func ValidateExecutableQuoteWithMode(quote *dto.QuoteResponse, now time.Time, allowSeeded bool) error {
+	if quote == nil {
+		return fmt.Errorf("market quote is nil")
+	}
+	if !allowSeeded && IsSeededSource(quote.Source) {
+		return fmt.Errorf("seeded quotes (%s) cannot be used for trade execution without explicit simulation mode", quote.Source)
+	}
 	if quote.PricePaise <= 0 {
 		return fmt.Errorf("market quote has an invalid price")
 	}
@@ -214,6 +286,18 @@ func validateExecutableQuote(quote *dto.QuoteResponse, now time.Time) error {
 		return fmt.Errorf("market quote is stale")
 	}
 	return nil
+}
+
+func ValidateExecutableQuote(quote *dto.QuoteResponse, now time.Time) error {
+	return ValidateExecutableQuoteWithMode(quote, now, false)
+}
+
+func validateExecutableQuoteWithMode(quote *dto.QuoteResponse, now time.Time, allowSeeded bool) error {
+	return ValidateExecutableQuoteWithMode(quote, now, allowSeeded)
+}
+
+func validateExecutableQuote(quote *dto.QuoteResponse, now time.Time) error {
+	return ValidateExecutableQuoteWithMode(quote, now, false)
 }
 
 func (s *Service) HistoricalQuotes(symbol string, limit int) ([]dto.CandleResponse, error) {

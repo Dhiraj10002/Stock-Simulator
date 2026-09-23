@@ -25,6 +25,12 @@ func New(redisURL string, timeout time.Duration) (*Handler, error) {
 
 func (h *Handler) Service() *service.Service { return h.service }
 
+func (h *Handler) SetWorkerURL(workerURL string) {
+	if h.service != nil {
+		h.service.SetWorkerURL(workerURL)
+	}
+}
+
 func (h *Handler) Quote(c *gin.Context) {
 	quote, err := h.service.CurrentQuote(c.Param("symbol"))
 	if err != nil {

@@ -50,9 +50,10 @@ else
 fi
 echo "========================================================="
 
-# 1. Clean up lingering processes on ports 8080 and 3000
-echo "[-] Checking and freeing ports 8080 and 3000..."
+# 1. Clean up lingering processes on ports 8080, 8085, and 3000
+echo "[-] Checking and freeing ports 8080, 8085, and 3000..."
 fuser -k 8080/tcp 2>/dev/null || true
+fuser -k 8085/tcp 2>/dev/null || true
 fuser -k 3000/tcp 2>/dev/null || true
 sleep 1
 

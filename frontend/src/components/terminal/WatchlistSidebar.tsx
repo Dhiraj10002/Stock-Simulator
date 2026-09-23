@@ -119,7 +119,7 @@ function SearchResultRow({
       </div>
       <div className="flex items-center gap-2">
         <span className="text-[11px] font-mono font-bold text-slate-200 font-tabular">
-          {formatPaise(itemQuote.price_paise)}
+          {itemQuote && itemQuote.price_paise > 0 ? formatPaise(itemQuote.price_paise) : "--"}
         </span>
         <span className="text-[10px] px-2 py-0.5 rounded bg-cyan-900/60 text-cyan-300 font-semibold group-hover:bg-cyan-600 group-hover:text-white transition-colors flex items-center gap-0.5">
           <Plus className="w-2.5 h-2.5" /> Add
@@ -149,8 +149,8 @@ function WatchlistItemRow({
   const [isHovered, setIsHovered] = useState(false);
   const liveQuote = useSymbolQuote(item.symbol);
   const quote = liveQuote ?? fallbackQuote ?? getQuoteSync(item.symbol);
-  const pricePaise = quote.price_paise ?? 0;
-  const change = quote.change_percent ?? 0;
+  const pricePaise = quote?.price_paise ?? 0;
+  const change = quote?.change_percent ?? 0;
   const isUp = change >= 0;
 
   return (
@@ -182,20 +182,22 @@ function WatchlistItemRow({
       {/* Right Quotes (Default State) */}
       <div className="text-right shrink-0">
         <div className="text-xs font-bold text-slate-100 font-mono font-tabular">
-          {formatPaise(pricePaise)}
+          {pricePaise > 0 ? formatPaise(pricePaise) : "--"}
         </div>
-        <div
-          className={`text-[10px] font-semibold flex items-center justify-end gap-0.5 font-mono ${
-            isUp ? "text-emerald-400" : "text-rose-400"
-          }`}
-        >
-          {isUp ? (
-            <TrendingUp className="w-2.5 h-2.5" />
-          ) : (
-            <TrendingDown className="w-2.5 h-2.5" />
-          )}
-          {formatPercent(change)}
-        </div>
+        {quote && pricePaise > 0 && (
+          <div
+            className={`text-[10px] font-semibold flex items-center justify-end gap-0.5 font-mono ${
+              isUp ? "text-emerald-400" : "text-rose-400"
+            }`}
+          >
+            {isUp ? (
+              <TrendingUp className="w-2.5 h-2.5" />
+            ) : (
+              <TrendingDown className="w-2.5 h-2.5" />
+            )}
+            {formatPercent(change)}
+          </div>
+        )}
       </div>
 
       {/* Kite-Style Floating Hover Action Bar */}

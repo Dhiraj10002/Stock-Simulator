@@ -338,14 +338,14 @@ def fetch_quote_for_symbol(symbol: str) -> dict[str, Any] | None:
             "price_paise": benchmark,
             "change_paise": 0,
             "change_percent": 0.0,
-            "source": "angelone_live",
+            "source": "benchmark_fallback",
             "updated_at": now_iso
         }
         if GLOBAL_WRITER:
             exch_type = EXCHANGE_TYPES.get(exch, 1)
             sub = Subscription(symbol, token or "0", exch, exch_type)
             GLOBAL_WRITER.benchmark_prices[symbol] = benchmark
-            GLOBAL_WRITER.write(sub, benchmark, 5000, source="angelone_live")
+            GLOBAL_WRITER.write(sub, benchmark, 5000, source="benchmark_fallback")
         return quote
 
     return None
@@ -385,14 +385,26 @@ class QuoteRequestHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
 
-def start_quote_server(port: int = 8085) -> None:
+GLOBAL_QUOTE_SERVER: HTTPServer | None = None
+
+
+def start_quote_server(host: str = "", port: int = 8085) -> HTTPServer | None:
+    global GLOBAL_QUOTE_SERVER
+    host = os.getenv("QUOTE_SERVER_HOST", host or "0.0.0.0")
     try:
-        server = HTTPServer(("127.0.0.1", port), QuoteRequestHandler)
+        port = int(os.getenv("QUOTE_SERVER_PORT", str(port)))
+    except ValueError:
+        port = 8085
+    try:
+        server = HTTPServer((host, port), QuoteRequestHandler)
+        GLOBAL_QUOTE_SERVER = server
         t = threading.Thread(target=server.serve_forever, daemon=True)
         t.start()
-        print(f"market worker: on-demand quote HTTP server running on http://127.0.0.1:{port}", flush=True)
+        print(f"market worker: on-demand quote HTTP server running on http://{host}:{port}", flush=True)
+        return server
     except Exception as e:
-        print(f"market worker: could not start quote server on port {port}: {e}", flush=True)
+        print(f"market worker: could not start quote server on {host}:{port}: {e}", flush=True)
+        return None
 
 
 @dataclass(frozen=True)
@@ -613,7 +625,7 @@ class QuoteWriter:
         self._daily_volume: dict[str, tuple[date, int]] = {}
         self.benchmark_prices = DEFAULT_BENCHMARK_PRICES_PAISE
 
-    def write(self, subscription: Subscription, price_paise: int, volume: int, source: str = "angelone_live") -> None:
+    def write(self, subscription: Subscription, price_paise: int, volume: int, source: str = "synthetic") -> None:
         now = datetime.now(timezone.utc)
         benchmark = self.benchmark_prices.get(subscription.symbol, price_paise)
         change_paise = price_paise - benchmark
@@ -1015,7 +1027,7 @@ def main() -> None:
     # Initialize global symbol lookup, Angel One session, and on-demand quote HTTP server
     init_global_token_map()
     init_smart_api()
-    start_quote_server(8085)
+    start_quote_server()
 
     # Seed initial quotes and historical candles immediately so Redis is never blank!
     seed_historical_candles(client, store.subscriptions(), history_ttl, history_max)

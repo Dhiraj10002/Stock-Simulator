@@ -31,8 +31,17 @@ export const useMarketStore = create<MarketStoreState>((set) => ({
   updateQuote: (quote) =>
     set((state) => {
       let nextProvider = state.feedProvider;
-      if (quote.source === "synthetic" || quote.source === "initial_seed") {
-        nextProvider = "Synthetic";
+      if (
+        quote.source === "synthetic" ||
+        quote.source === "synthetic_gbm" ||
+        quote.source === "initial_seed" ||
+        quote.source === "benchmark_fallback" ||
+        quote.source === "auto_seeded" ||
+        quote.source === "static_fallback"
+      ) {
+        if (state.feedProvider !== "Angel One") {
+          nextProvider = "Synthetic";
+        }
       } else if (quote.source === "angelone_live") {
         nextProvider = "Angel One";
       }

@@ -33,7 +33,7 @@ import TradeCopilot from "@/components/terminal/TradeCopilot";
 import OptionChainModal from "@/components/terminal/OptionChainModal";
 import PerformanceModal from "@/components/terminal/PerformanceModal";
 import { useToast } from "@/components/terminal/ToastProvider";
-import { useSymbolQuote } from "@/stores/market-store";
+import { useMarketStore, useSymbolQuote } from "@/stores/market-store";
 import { fetchQuote, fetchBatchQuotes, getQuoteSync } from "@/lib/quoteService";
 import { getIndianMarketStatus, formatPaise } from "@/lib/format";
 import type {
@@ -290,7 +290,8 @@ export default function TradingTerminal() {
               }
               const und = pos.underlying_symbol || getUnderlyingSymbol(pos.symbol);
               if (und && !next[und]) {
-                next[und] = getQuoteSync(und);
+                const uq = getQuoteSync(und);
+                if (uq) next[und] = uq;
               }
             });
             return next;
@@ -337,7 +338,7 @@ export default function TradingTerminal() {
                 change_percent:
                   body.data.change_percent !== undefined && body.data.change_percent !== 0
                     ? body.data.change_percent
-                    : prev[sym]?.change_percent ?? 0.35,
+                    : prev[sym]?.change_percent ?? 0,
               },
             }));
           }
@@ -364,56 +365,6 @@ export default function TradingTerminal() {
     };
   }, [selectedSymbol]);
 
-  // Simulated Micro-Jitter (Only active during live trading session: 09:15-15:30 IST Mon-Fri)
-  useEffect(() => {
-    const interval = setInterval(() => {
-      // Check market status: Freeze all quotes and portfolio valuations when market is closed
-      const status = getIndianMarketStatus();
-      if (!status.isOpen) {
-        return;
-      }
-
-      setQuotes((prev) => {
-        const activeSymbols = new Set<string>([selectedSymbol]);
-        if (portfolio?.positions) {
-          portfolio.positions.forEach((p) => {
-            activeSymbols.add(p.symbol);
-            const und = p.underlying_symbol || getUnderlyingSymbol(p.symbol);
-            if (und) activeSymbols.add(und);
-          });
-        }
-        ["RELIANCE", "TCS", "INFY", "HDFCBANK", "NIFTY", "BANKNIFTY"].forEach((s) =>
-          activeSymbols.add(s)
-        );
-
-        const next = { ...prev };
-        activeSymbols.forEach((sym) => {
-          const cur = next[sym] ?? getQuoteSync(sym);
-          const deltaPct = (Math.random() - 0.495) * 0.05;
-          const deltaPaise = Math.round(cur.price_paise * (deltaPct / 100));
-          const newPrice = Math.max(10, cur.price_paise + deltaPaise);
-          const changePct =
-            cur.change_percent !== undefined && cur.change_percent !== 0
-              ? Number((cur.change_percent + deltaPct).toFixed(2))
-              : Number((deltaPct * 4).toFixed(2));
-
-          next[sym] = {
-            ...cur,
-            price_paise: newPrice,
-            change_percent: changePct,
-            high_paise: Math.max(cur.high_paise ?? newPrice, newPrice),
-            low_paise: Math.min(cur.low_paise ?? newPrice, newPrice),
-            updated_at: new Date().toISOString(),
-          };
-        });
-
-        return next;
-      });
-    }, 2000);
-
-    return () => clearInterval(interval);
-  }, [selectedSymbol, portfolio]);
-
   // Dynamically augment portfolio with live quotes and option delta pricing
   const augmentedPortfolio = useMemo(() => {
     if (!portfolio) return null;
@@ -422,7 +373,8 @@ export default function TradingTerminal() {
     let totalUnrealized = 0;
 
     const augmentedPositions = portfolio.positions.map((pos) => {
-      const q = quotes[pos.symbol];
+      const liveStoreQuotes = typeof window !== "undefined" ? useMarketStore.getState().quotes : {};
+      const q = quotes[pos.symbol] ?? liveStoreQuotes[pos.symbol];
       let currentPricePaise = q?.price_paise ?? pos.current_price_paise;
 
       // Dynamic F&O Option Pricing & P&L calculation based on underlying equity movement
@@ -434,7 +386,7 @@ export default function TradingTerminal() {
 
       if (isFno) {
         const und = pos.underlying_symbol || getUnderlyingSymbol(pos.symbol);
-        const undQuote = und ? quotes[und] : null;
+        const undQuote = und ? (quotes[und] ?? liveStoreQuotes[und]) : null;
         if (undQuote && undQuote.change_percent !== undefined) {
           const isCall = pos.symbol.includes("CE");
           const isPut = pos.symbol.includes("PE");

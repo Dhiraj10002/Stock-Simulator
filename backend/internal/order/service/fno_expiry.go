@@ -9,6 +9,7 @@ import (
 
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/database"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/calendar"
+	marketService "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/service"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/product"
 	"github.com/google/uuid"
@@ -90,6 +91,10 @@ func (s *OrderService) finalQuotePrice(symbol, expiry string) (int64, error) {
 	quote, err := s.currentQuote(symbol)
 	if err != nil {
 		return 0, err
+	}
+	allowSeeded := s.market != nil && s.market.AllowSeededQuotes()
+	if !allowSeeded && marketService.IsSeededSource(quote.Source) {
+		return 0, fmt.Errorf("final settlement quote source '%s' cannot be used for settlement without explicit simulation mode", quote.Source)
 	}
 	if quote.PricePaise <= 0 {
 		return 0, fmt.Errorf("invalid settlement quote price")

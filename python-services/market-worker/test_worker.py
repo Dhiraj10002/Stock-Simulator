@@ -1,5 +1,7 @@
+import http.client
 import importlib.util
 import json
+import os
 import pathlib
 import sys
 import unittest
@@ -320,7 +322,94 @@ class SymbolAliasTest(unittest.TestCase):
         self.assertIn("TATAMOTORS", tmpv_aliases)
 
 
+class BenchmarkFallbackSourceTest(unittest.TestCase):
+    def test_benchmark_fallback_is_never_labeled_angelone_live(self):
+        old_smart_api = worker.GLOBAL_SMART_API
+        worker.GLOBAL_SMART_API = None
+        try:
+            quote = worker.fetch_quote_for_symbol("RELIANCE")
+            self.assertIsNotNone(quote)
+            self.assertNotEqual(quote.get("source"), "angelone_live")
+            self.assertEqual(quote.get("source"), "benchmark_fallback")
+        finally:
+            worker.GLOBAL_SMART_API = old_smart_api
+
+    def test_writer_default_source_is_not_angelone_live(self):
+        mock_redis = MagicMock()
+        writer = worker.QuoteWriter(mock_redis, 300, 86400, 500)
+        sub = worker.Subscription("RELIANCE", "2885", "NSE", 1)
+        writer.write(sub, 250000, 100)
+        mock_pipe = mock_redis.pipeline.return_value.__enter__.return_value
+        hset_calls = [c for c in mock_pipe.method_calls if c[0] == "hset"]
+        self.assertTrue(len(hset_calls) > 0)
+        mapping = hset_calls[0][2]["mapping"]
+        self.assertNotEqual(mapping.get("source"), "angelone_live")
+        self.assertEqual(mapping.get("source"), "synthetic")
+
+
+class QuoteServerArchitectureTest(unittest.TestCase):
+    def test_start_quote_server_defaults_to_all_interfaces(self):
+        old_host = os.environ.get("QUOTE_SERVER_HOST")
+        old_port = os.environ.get("QUOTE_SERVER_PORT")
+        try:
+            if "QUOTE_SERVER_HOST" in os.environ:
+                del os.environ["QUOTE_SERVER_HOST"]
+            os.environ["QUOTE_SERVER_PORT"] = "0"
+            server = worker.start_quote_server()
+            self.assertIsNotNone(server)
+            host, port = server.server_address
+            self.assertEqual(host, "0.0.0.0")
+            self.assertGreater(port, 0)
+            server.shutdown()
+            server.server_close()
+        finally:
+            if old_host is not None:
+                os.environ["QUOTE_SERVER_HOST"] = old_host
+            elif "QUOTE_SERVER_HOST" in os.environ:
+                del os.environ["QUOTE_SERVER_HOST"]
+            if old_port is not None:
+                os.environ["QUOTE_SERVER_PORT"] = old_port
+            elif "QUOTE_SERVER_PORT" in os.environ:
+                del os.environ["QUOTE_SERVER_PORT"]
+
+    def test_quote_server_endpoint_serves_requests(self):
+        os.environ["QUOTE_SERVER_HOST"] = "127.0.0.1"
+        os.environ["QUOTE_SERVER_PORT"] = "0"
+        try:
+            server = worker.start_quote_server()
+            self.assertIsNotNone(server)
+            _, port = server.server_address
+
+            conn = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
+            conn.request("GET", "/quote?symbol=RELIANCE")
+            resp = conn.getresponse()
+            self.assertEqual(resp.status, 200)
+            data = json.loads(resp.read().decode())
+            self.assertEqual(data.get("symbol"), "RELIANCE")
+            self.assertGreater(data.get("price_paise", 0), 0)
+            conn.close()
+
+            conn = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
+            conn.request("GET", "/quote")
+            resp = conn.getresponse()
+            self.assertEqual(resp.status, 400)
+            conn.close()
+
+            conn = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
+            conn.request("GET", "/unknown")
+            resp = conn.getresponse()
+            self.assertEqual(resp.status, 404)
+            conn.close()
+
+            server.shutdown()
+            server.server_close()
+        finally:
+            os.environ.pop("QUOTE_SERVER_HOST", None)
+            os.environ.pop("QUOTE_SERVER_PORT", None)
+
+
 if __name__ == "__main__":
     unittest.main()
+
 
 

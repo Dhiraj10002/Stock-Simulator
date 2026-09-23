@@ -1,6 +1,5 @@
 import { Quote } from "@/types";
 import { API_URL } from "@/lib/api";
-import { getOrSeedQuote } from "@/lib/mockData";
 import { useMarketStore } from "@/stores/market-store";
 
 interface CacheEntry {
@@ -34,16 +33,13 @@ export function getCachedQuote(symbol: string): Quote | undefined {
 }
 
 /**
- * Synchronous quote getter that tries marketStore -> cache -> getOrSeedQuote fallback.
+ * Synchronous quote getter that tries marketStore -> cache.
+ * Returns undefined if no authentic quote is available (never fabricates mockData).
  */
-export function getQuoteSync(symbol: string): Quote {
+export function getQuoteSync(symbol: string): Quote | undefined {
   const sym = symbol?.trim().toUpperCase();
   if (!sym) {
-    return {
-      symbol: "UNKNOWN",
-      price_paise: 0,
-      updated_at: new Date().toISOString(),
-    };
+    return undefined;
   }
 
   const storeQuote = useMarketStore.getState().quotes[sym];
@@ -56,17 +52,18 @@ export function getQuoteSync(symbol: string): Quote {
     return cached;
   }
 
-  return getOrSeedQuote(sym);
+  return undefined;
 }
 
 /**
  * Fetches the real-time quote for a single symbol from the backend API.
- * Updates market store and caches the result.
+ * Updates market store and caches the result on success.
+ * Returns null on failure without silent mock fallback.
  */
-export async function fetchQuote(symbol: string): Promise<Quote> {
+export async function fetchQuote(symbol: string): Promise<Quote | null> {
   const sym = symbol?.trim().toUpperCase();
   if (!sym) {
-    throw new Error("Invalid symbol");
+    return null;
   }
 
   const cached = getCachedQuote(sym);
@@ -93,21 +90,15 @@ export async function fetchQuote(symbol: string): Promise<Quote> {
       return q;
     }
   } catch (err) {
-    console.warn(`[quoteService] Failed to fetch live quote for ${sym}, falling back:`, err);
+    console.warn(`[quoteService] Failed to fetch live quote for ${sym}:`, err);
   }
 
-  // Fallback to seeded quote if API call failed
-  const fallback = getOrSeedQuote(sym);
-  quoteCache.set(sym, {
-    quote: fallback,
-    expiresAt: Date.now() + 5_000, // shorter TTL for fallback
-  });
-  return fallback;
+  return null;
 }
 
 /**
  * Fetches quotes for an array of symbols in parallel batches.
- * Updates market store and local cache.
+ * Updates market store and local cache for successfully resolved quotes.
  */
 export async function fetchBatchQuotes(
   symbols: string[]
@@ -141,13 +132,13 @@ export async function fetchBatchQuotes(
         const q = await fetchQuote(sym);
         return { sym, quote: q };
       } catch {
-        return { sym, quote: getOrSeedQuote(sym) };
+        return { sym, quote: null };
       }
     });
 
     const settled = await Promise.allSettled(promises);
     for (const res of settled) {
-      if (res.status === "fulfilled") {
+      if (res.status === "fulfilled" && res.value.quote) {
         results[res.value.sym] = res.value.quote;
       }
     }

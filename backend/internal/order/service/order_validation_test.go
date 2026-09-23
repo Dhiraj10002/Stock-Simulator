@@ -7,6 +7,8 @@ import (
 
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/config"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/calendar"
+	marketDTO "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/dto"
+	marketService "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/service"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/order/dto"
 	"github.com/google/uuid"
@@ -204,3 +206,114 @@ func TestOrderService_PreTradeValidationRules(t *testing.T) {
 		})
 	}
 }
+
+func TestOrderService_SeededQuoteExecutableValidation(t *testing.T) {
+	loc := calendar.Location()
+	tradingTime := time.Date(2026, 9, 16, 11, 0, 0, 0, loc)
+	userID := uuid.New().String()
+
+	tests := []struct {
+		name        string
+		source      string
+		allowSeeded bool
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name:        "Reject auto_seeded quote in default mode",
+			source:      "auto_seeded",
+			allowSeeded: false,
+			wantErr:     true,
+			errContains: "seeded quotes (auto_seeded) cannot be used for trade execution without explicit simulation mode",
+		},
+		{
+			name:        "Reject initial_seed quote in default mode",
+			source:      "initial_seed",
+			allowSeeded: false,
+			wantErr:     true,
+			errContains: "seeded quotes (initial_seed) cannot be used for trade execution without explicit simulation mode",
+		},
+		{
+			name:        "Reject benchmark_fallback quote in default mode",
+			source:      "benchmark_fallback",
+			allowSeeded: false,
+			wantErr:     true,
+			errContains: "seeded quotes (benchmark_fallback) cannot be used for trade execution without explicit simulation mode",
+		},
+		{
+			name:        "Allow auto_seeded quote when explicit simulation mode permits",
+			source:      "auto_seeded",
+			allowSeeded: true,
+			wantErr:     false,
+		},
+		{
+			name:        "Allow initial_seed quote when explicit simulation mode permits",
+			source:      "initial_seed",
+			allowSeeded: true,
+			wantErr:     false,
+		},
+		{
+			name:        "Allow live Angel One quote in default mode",
+			source:      "angelone_live",
+			allowSeeded: false,
+			wantErr:     false,
+		},
+		{
+			name:        "Allow synthetic simulated quote in default mode",
+			source:      "synthetic",
+			allowSeeded: false,
+			wantErr:     false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			orderSvc := New(nil, &config.Config{
+				MISLeverage:             5,
+				FuturesMarginPercent:    20,
+				OptionSellMarginPercent: 30,
+				AllowSeededQuotes:       tc.allowSeeded,
+			})
+			orderSvc.SetNowFunc(func() time.Time { return tradingTime })
+			orderSvc.SetExecutableQuoteFunc(func(symbol string) (*marketDTO.QuoteResponse, error) {
+				q := &marketDTO.QuoteResponse{
+					Symbol:     symbol,
+					PricePaise: 250000,
+					Source:     tc.source,
+					UpdatedAt:  tradingTime.UTC().Format(time.RFC3339),
+				}
+				if err := marketService.ValidateExecutableQuoteWithMode(q, tradingTime, tc.allowSeeded); err != nil {
+					return nil, err
+				}
+				return q, nil
+			})
+
+			if tc.wantErr {
+				req := dto.CreateOrderRequest{
+					Symbol:   "RELIANCE",
+					Side:     model.OrderSideBuy,
+					Type:     model.OrderTypeMarket,
+					Product:  model.OrderProductDelivery,
+					Quantity: 10,
+				}
+				_, err := orderSvc.Create(userID, req)
+				if err == nil {
+					t.Fatalf("expected error containing %q, got nil", tc.errContains)
+				}
+				if !strings.Contains(err.Error(), tc.errContains) {
+					t.Fatalf("expected error containing %q, got: %v", tc.errContains, err)
+				}
+			} else {
+				// Quote must be accepted as executable
+				q, err := orderSvc.executableQuote("RELIANCE")
+				if err != nil {
+					t.Fatalf("expected quote to be executable, got error: %v", err)
+				}
+				if q.PricePaise != 250000 {
+					t.Fatalf("expected quote price 250000, got %d", q.PricePaise)
+				}
+			}
+		})
+	}
+}
+
