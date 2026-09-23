@@ -11,13 +11,12 @@ import {
   Sparkles,
   Info,
   ShieldCheck,
-  CheckCircle2,
   AlertCircle,
   Zap,
   Play,
-  ArrowRight,
 } from "lucide-react";
 import { formatPaise } from "@/lib/format";
+import { useSymbolQuote } from "@/stores/market-store";
 import type { OptionChainResponse, OptionContract } from "@/types";
 
 type StrategyType = "NONE" | "BULL_CALL_SPREAD" | "BEAR_PUT_SPREAD" | "LONG_STRADDLE" | "SHORT_STRANGLE";
@@ -73,7 +72,9 @@ export default function OptionChainModal({
   initialSymbol = "NIFTY",
 }: OptionChainModalProps) {
   const [selectedSymbol, setSelectedSymbol] = useState<string>(initialSymbol);
+  const liveSpotQuote = useSymbolQuote(selectedSymbol);
   const [chain, setChain] = useState<OptionChainResponse | null>(null);
+  const spotPricePaise = liveSpotQuote?.price_paise ?? chain?.spot_price_paise;
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [viewGreeks, setViewGreeks] = useState<boolean>(true);
@@ -407,9 +408,21 @@ export default function OptionChainModal({
             <div className="flex items-center gap-4">
               <div className="flex flex-col">
                 <span className="text-[10px] text-slate-400 uppercase font-medium">Spot Price</span>
-                <span className="text-sm font-bold text-white">
-                  {formatPaise(chain.spot_price_paise)}
-                </span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-sm font-bold text-white">
+                    {formatPaise(spotPricePaise ?? chain.spot_price_paise)}
+                  </span>
+                  {liveSpotQuote?.change_percent !== undefined && (
+                    <span
+                      className={`text-[10px] font-semibold font-mono ${
+                        liveSpotQuote.change_percent >= 0 ? "text-emerald-400" : "text-rose-400"
+                      }`}
+                    >
+                      {liveSpotQuote.change_percent >= 0 ? "+" : ""}
+                      {liveSpotQuote.change_percent.toFixed(2)}%
+                    </span>
+                  )}
+                </div>
               </div>
 
               <div className="flex flex-col">

@@ -4,6 +4,7 @@ import React, { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { useTerminalStore } from "@/stores/terminal-store";
+import { useSymbolQuote } from "@/stores/market-store";
 import { formatPaise, formatNumber } from "@/lib/format";
 import {
   RefreshCw,
@@ -66,6 +67,7 @@ export default function OptionChainDesk({ initialUnderlying = "NIFTY" }: OptionC
   const setSelectedSymbol = useTerminalStore((s) => s.setSelectedSymbol);
 
   const [selectedUnderlying, setSelectedUnderlying] = useState(initialUnderlying);
+  const liveSpotQuote = useSymbolQuote(selectedUnderlying);
   const [prevInitialUnderlying, setPrevInitialUnderlying] = useState(initialUnderlying);
   if (initialUnderlying !== prevInitialUnderlying) {
     setPrevInitialUnderlying(initialUnderlying);
@@ -409,8 +411,22 @@ export default function OptionChainDesk({ initialUnderlying = "NIFTY" }: OptionC
           <div className="flex items-center gap-2">
             <span className="text-xs text-slate-400">Spot:</span>
             <span className="text-base font-extrabold font-tabular text-slate-100">
-              {chain ? formatPaise(chain.spot_price_paise) : "Loading..."}
+              {liveSpotQuote?.price_paise
+                ? formatPaise(liveSpotQuote.price_paise)
+                : chain
+                ? formatPaise(chain.spot_price_paise)
+                : "Loading..."}
             </span>
+            {liveSpotQuote?.change_percent !== undefined && (
+              <span
+                className={`text-xs font-semibold font-mono ${
+                  liveSpotQuote.change_percent >= 0 ? "text-emerald-400" : "text-rose-400"
+                }`}
+              >
+                {liveSpotQuote.change_percent >= 0 ? "+" : ""}
+                {liveSpotQuote.change_percent.toFixed(2)}%
+              </span>
+            )}
           </div>
 
           <div className="flex items-center gap-2">

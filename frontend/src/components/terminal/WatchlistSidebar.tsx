@@ -15,7 +15,7 @@ import {
   LineChart,
 } from "lucide-react";
 import { formatPaise, formatPercent } from "@/lib/format";
-import { getOrSeedQuote } from "@/lib/mockData";
+import { useSymbolQuote } from "@/stores/market-store";
 import { getQuoteSync, fetchBatchQuotes } from "@/lib/quoteService";
 import type { Quote, Position } from "@/types";
 
@@ -81,6 +81,172 @@ type WatchlistSidebarProps = {
   onActiveSymbolsChange?: (symbols: string[]) => void;
 };
 
+function SearchResultRow({
+  item,
+  fallbackQuote,
+  onSelectOrAdd,
+}: {
+  item: WatchlistItem;
+  fallbackQuote?: Quote;
+  onSelectOrAdd: (item: WatchlistItem) => void;
+}) {
+  const liveQuote = useSymbolQuote(item.symbol);
+  const itemQuote = liveQuote ?? fallbackQuote ?? getQuoteSync(item.symbol);
+
+  return (
+    <button
+      type="button"
+      onClick={() => onSelectOrAdd(item)}
+      className="w-full p-2.5 px-3 text-left flex items-center justify-between hover:bg-slate-800/90 transition-colors group"
+    >
+      <div>
+        <div className="flex items-center gap-1.5">
+          <span className="font-bold text-xs text-cyan-300 group-hover:text-cyan-200">
+            {item.symbol}
+          </span>
+          <span className="text-[9px] px-1 py-0.2 rounded bg-slate-800 text-slate-400">
+            {item.exchange}
+          </span>
+          {item.isAlias && (
+            <span className="text-[9px] px-1 py-0.2 rounded bg-amber-950 text-amber-300 font-mono">
+              {item.isAlias}
+            </span>
+          )}
+        </div>
+        <p className="text-[10px] text-slate-400 truncate max-w-[160px]">
+          {item.name}
+        </p>
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="text-[11px] font-mono font-bold text-slate-200 font-tabular">
+          {formatPaise(itemQuote.price_paise)}
+        </span>
+        <span className="text-[10px] px-2 py-0.5 rounded bg-cyan-900/60 text-cyan-300 font-semibold group-hover:bg-cyan-600 group-hover:text-white transition-colors flex items-center gap-0.5">
+          <Plus className="w-2.5 h-2.5" /> Add
+        </span>
+      </div>
+    </button>
+  );
+}
+
+function WatchlistItemRow({
+  item,
+  fallbackQuote,
+  isSelected,
+  onSelect,
+  onQuickOrder,
+  onRemove,
+  canRemove,
+}: {
+  item: WatchlistItem;
+  fallbackQuote?: Quote;
+  isSelected: boolean;
+  onSelect: () => void;
+  onQuickOrder?: (symbol: string, side: "BUY" | "SELL") => void;
+  onRemove?: (e: React.MouseEvent, symbol: string) => void;
+  canRemove: boolean;
+}) {
+  const [isHovered, setIsHovered] = useState(false);
+  const liveQuote = useSymbolQuote(item.symbol);
+  const quote = liveQuote ?? fallbackQuote ?? getQuoteSync(item.symbol);
+  const pricePaise = quote.price_paise ?? 0;
+  const change = quote.change_percent ?? 0;
+  const isUp = change >= 0;
+
+  return (
+    <div
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      onClick={onSelect}
+      className={`relative w-full p-2.5 px-3 text-left flex items-center justify-between cursor-pointer transition-all group ${
+        isSelected
+          ? "bg-cyan-950/30 border-l-2 border-cyan-400 pl-[10px]"
+          : "hover:bg-slate-900/70"
+      }`}
+    >
+      {/* Left Details */}
+      <div className="min-w-0 pr-2">
+        <div className="flex items-center gap-1.5">
+          <span className="font-bold text-xs text-slate-200 group-hover:text-white truncate">
+            {item.symbol}
+          </span>
+          <span className="text-[8px] px-1 py-0.2 rounded bg-slate-800/80 text-slate-400 font-medium font-mono">
+            {item.exchange}
+          </span>
+        </div>
+        <p className="text-[10px] text-slate-500 truncate max-w-[130px] font-sans">
+          {item.name}
+        </p>
+      </div>
+
+      {/* Right Quotes (Default State) */}
+      <div className="text-right shrink-0">
+        <div className="text-xs font-bold text-slate-100 font-mono font-tabular">
+          {formatPaise(pricePaise)}
+        </div>
+        <div
+          className={`text-[10px] font-semibold flex items-center justify-end gap-0.5 font-mono ${
+            isUp ? "text-emerald-400" : "text-rose-400"
+          }`}
+        >
+          {isUp ? (
+            <TrendingUp className="w-2.5 h-2.5" />
+          ) : (
+            <TrendingDown className="w-2.5 h-2.5" />
+          )}
+          {formatPercent(change)}
+        </div>
+      </div>
+
+      {/* Kite-Style Floating Hover Action Bar */}
+      <div
+        className={`absolute inset-y-0 right-2 flex items-center gap-1 bg-gradient-to-l from-slate-900 via-slate-900/95 to-transparent pl-4 pr-1 transition-opacity duration-150 ${
+          isHovered
+            ? "opacity-100 pointer-events-auto"
+            : "opacity-0 pointer-events-none"
+        }`}
+      >
+        <button
+          type="button"
+          title={`Quick BUY ${item.symbol} (HotKey: B)`}
+          onClick={(e) => {
+            e.stopPropagation();
+            onSelect();
+            if (onQuickOrder) onQuickOrder(item.symbol, "BUY");
+          }}
+          className="px-2 py-1 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white text-[10px] font-extrabold rounded shadow-sm transition-all flex items-center justify-center glow-emerald"
+        >
+          B
+        </button>
+
+        <button
+          type="button"
+          title={`Quick SELL ${item.symbol} (HotKey: S)`}
+          onClick={(e) => {
+            e.stopPropagation();
+            onSelect();
+            if (onQuickOrder) onQuickOrder(item.symbol, "SELL");
+          }}
+          className="px-2 py-1 bg-rose-600 hover:bg-rose-500 active:scale-95 text-white text-[10px] font-extrabold rounded shadow-sm transition-all flex items-center justify-center glow-rose"
+        >
+          S
+        </button>
+
+        {canRemove && onRemove && (
+          <button
+            type="button"
+            title="Remove from Watchlist"
+            onClick={(e) => onRemove(e, item.symbol)}
+            className="p-1 text-slate-500 hover:text-rose-400 hover:bg-slate-800 rounded transition-colors"
+          >
+            <Trash2 className="w-3 h-3" />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function WatchlistSidebar({
   selectedSymbol,
   onSelectSymbol,
@@ -106,7 +272,6 @@ export default function WatchlistSidebar({
   const [search, setSearch] = useState("");
   const [searchResults, setSearchResults] = useState<WatchlistItem[]>([]);
   const [searching, setSearching] = useState(false);
-  const [hoveredSymbol, setHoveredSymbol] = useState<string | null>(null);
 
   // Tabbed custom watchlists with localStorage persistence
   const [customTabs, setCustomTabs] = useState<Record<"wl1" | "wl2" | "fno", WatchlistItem[]>>(() => {
@@ -393,43 +558,14 @@ export default function WatchlistSidebar({
               <span>Exchange Instruments ({searchResults.length})</span>
               <span className="text-[9px] text-cyan-300/70 lowercase font-normal">click to add to {activeTab.toUpperCase()}</span>
             </div>
-            {searchResults.map((item, idx) => {
-              const itemQuote = quotes[item.symbol] ?? getQuoteSync(item.symbol);
-              return (
-                <button
-                  key={`search-${item.exchange}-${item.symbol}-${idx}`}
-                  onClick={() => handleSelectOrAdd(item)}
-                  className="w-full p-2.5 px-3 text-left flex items-center justify-between hover:bg-slate-800/90 transition-colors group"
-                >
-                  <div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-bold text-xs text-cyan-300 group-hover:text-cyan-200">
-                        {item.symbol}
-                      </span>
-                      <span className="text-[9px] px-1 py-0.2 rounded bg-slate-800 text-slate-400">
-                        {item.exchange}
-                      </span>
-                      {item.isAlias && (
-                        <span className="text-[9px] px-1 py-0.2 rounded bg-amber-950 text-amber-300 font-mono">
-                          {item.isAlias}
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-[10px] text-slate-400 truncate max-w-[160px]">
-                      {item.name}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-[11px] font-mono font-bold text-slate-200 font-tabular">
-                      {formatPaise(itemQuote.price_paise)}
-                    </span>
-                    <span className="text-[10px] px-2 py-0.5 rounded bg-cyan-900/60 text-cyan-300 font-semibold group-hover:bg-cyan-600 group-hover:text-white transition-colors flex items-center gap-0.5">
-                      <Plus className="w-2.5 h-2.5" /> Add
-                    </span>
-                  </div>
-                </button>
-              );
-            })}
+            {searchResults.map((item, idx) => (
+              <SearchResultRow
+                key={`search-${item.exchange}-${item.symbol}-${idx}`}
+                item={item}
+                fallbackQuote={quotes[item.symbol]}
+                onSelectOrAdd={handleSelectOrAdd}
+              />
+            ))}
           </div>
         )}
 
@@ -457,110 +593,18 @@ export default function WatchlistSidebar({
         )}
 
         {/* Existing Watchlist Counters with Institutional Hover Actions */}
-        {filteredLocal.map((item, idx) => {
-          const quote = quotes[item.symbol] ?? getQuoteSync(item.symbol);
-          const isSelected = selectedSymbol === item.symbol;
-          const pricePaise = quote.price_paise ?? 0;
-          const change = quote.change_percent ?? 0;
-          const isUp = change >= 0;
-
-          return (
-            <div
-              key={`watchlist-${item.exchange}-${item.symbol}-${idx}`}
-              onMouseEnter={() => setHoveredSymbol(item.symbol)}
-              onMouseLeave={() => setHoveredSymbol(null)}
-              onClick={() => onSelectSymbol(item.symbol)}
-              className={`relative w-full p-2.5 px-3 text-left flex items-center justify-between cursor-pointer transition-all group ${
-                isSelected
-                  ? "bg-cyan-950/30 border-l-2 border-cyan-400 pl-[10px]"
-                  : "hover:bg-slate-900/70"
-              }`}
-            >
-              {/* Left Details */}
-              <div className="min-w-0 pr-2">
-                <div className="flex items-center gap-1.5">
-                  <span className="font-bold text-xs text-slate-200 group-hover:text-white truncate">
-                    {item.symbol}
-                  </span>
-                  <span className="text-[8px] px-1 py-0.2 rounded bg-slate-800/80 text-slate-400 font-medium font-mono">
-                    {item.exchange}
-                  </span>
-                </div>
-                <p className="text-[10px] text-slate-500 truncate max-w-[130px] font-sans">
-                  {item.name}
-                </p>
-              </div>
-
-              {/* Right Quotes (Default State) */}
-              <div className="text-right shrink-0">
-                <div className="text-xs font-bold text-slate-100 font-mono font-tabular">
-                  {formatPaise(pricePaise)}
-                </div>
-                <div
-                  className={`text-[10px] font-semibold flex items-center justify-end gap-0.5 font-mono ${
-                    isUp ? "text-emerald-400" : "text-rose-400"
-                  }`}
-                >
-                  {isUp ? (
-                    <TrendingUp className="w-2.5 h-2.5" />
-                  ) : (
-                    <TrendingDown className="w-2.5 h-2.5" />
-                  )}
-                  {formatPercent(change)}
-                </div>
-              </div>
-
-              {/* Kite-Style Floating Hover Action Bar */}
-              <div
-                className={`absolute inset-y-0 right-2 flex items-center gap-1 bg-gradient-to-l from-slate-900 via-slate-900/95 to-transparent pl-4 pr-1 transition-opacity duration-150 ${
-                  hoveredSymbol === item.symbol
-                    ? "opacity-100 pointer-events-auto"
-                    : "opacity-0 pointer-events-none"
-                }`}
-              >
-                {/* Buy Quick Button */}
-                <button
-                  type="button"
-                  title={`Quick BUY ${item.symbol} (HotKey: B)`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onSelectSymbol(item.symbol);
-                    if (onQuickOrder) onQuickOrder(item.symbol, "BUY");
-                  }}
-                  className="px-2 py-1 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white text-[10px] font-extrabold rounded shadow-sm transition-all flex items-center justify-center glow-emerald"
-                >
-                  B
-                </button>
-
-                {/* Sell Quick Button */}
-                <button
-                  type="button"
-                  title={`Quick SELL ${item.symbol} (HotKey: S)`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onSelectSymbol(item.symbol);
-                    if (onQuickOrder) onQuickOrder(item.symbol, "SELL");
-                  }}
-                  className="px-2 py-1 bg-rose-600 hover:bg-rose-500 active:scale-95 text-white text-[10px] font-extrabold rounded shadow-sm transition-all flex items-center justify-center glow-rose"
-                >
-                  S
-                </button>
-
-                {/* Delete / Pin Remove Button (for custom tabs) */}
-                {activeTab !== "holdings" && (
-                  <button
-                    type="button"
-                    title="Remove from Watchlist"
-                    onClick={(e) => handleRemoveFromWatchlist(e, item.symbol)}
-                    className="p-1 text-slate-500 hover:text-rose-400 hover:bg-slate-800 rounded transition-colors"
-                  >
-                    <Trash2 className="w-3 h-3" />
-                  </button>
-                )}
-              </div>
-            </div>
-          );
-        })}
+        {filteredLocal.map((item, idx) => (
+          <WatchlistItemRow
+            key={`watchlist-${item.exchange}-${item.symbol}-${idx}`}
+            item={item}
+            fallbackQuote={quotes[item.symbol]}
+            isSelected={selectedSymbol === item.symbol}
+            onSelect={() => onSelectSymbol(item.symbol)}
+            onQuickOrder={onQuickOrder}
+            onRemove={handleRemoveFromWatchlist}
+            canRemove={activeTab !== "holdings"}
+          />
+        ))}
       </div>
     </aside>
   );
