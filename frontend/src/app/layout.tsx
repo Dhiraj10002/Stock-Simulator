@@ -25,27 +25,6 @@ export const metadata: Metadata = {
     "Real-time Indian market paper trading simulator with NSE/BSE execution, integer paise accounting, and automated risk management.",
 };
 
-const themeScript = `
-  (function() {
-    try {
-      var saved = localStorage.getItem('stock_sim_theme');
-      var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      var isDark = saved === 'dark' || (!saved && prefersDark);
-      if (isDark) {
-        document.documentElement.classList.add('dark');
-        document.documentElement.classList.remove('light');
-        document.documentElement.setAttribute('data-theme', 'dark');
-        document.documentElement.style.colorScheme = 'dark';
-      } else {
-        document.documentElement.classList.remove('dark');
-        document.documentElement.classList.add('light');
-        document.documentElement.setAttribute('data-theme', 'light');
-        document.documentElement.style.colorScheme = 'light';
-      }
-    } catch(e) {}
-  })();
-`;
-
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -57,9 +36,6 @@ export default function RootLayout({
       suppressHydrationWarning
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased dark`}
     >
-      <head>
-        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
-      </head>
       <body className="min-h-full flex flex-col bg-slate-50 dark:bg-[#06080e] text-slate-900 dark:text-slate-100 font-sans selection:bg-cyan-500 selection:text-slate-950 pb-16 md:pb-0 transition-colors duration-150 relative">
         {/* MotionSites AI Signature Ambient Depth & Glow Mesh (Dark Mode) */}
         <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden hidden dark:block">

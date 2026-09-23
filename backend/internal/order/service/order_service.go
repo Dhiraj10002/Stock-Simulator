@@ -407,6 +407,14 @@ func (s *OrderService) Cancel(userID, orderID string) error {
 	return s.repo.Cancel(userUUID, orderUUID)
 }
 
+func (s *OrderService) ClearHistory(userID string) (int64, error) {
+	userUUID, err := uuid.Parse(userID)
+	if err != nil {
+		return 0, fmt.Errorf("invalid user identity")
+	}
+	return s.repo.ClearHistory(userUUID)
+}
+
 func toResponse(order *model.Order) *dto.OrderResponse {
 	return &dto.OrderResponse{
 		UUID:               order.UUID.String(),
@@ -420,6 +428,8 @@ func toResponse(order *model.Order) *dto.OrderResponse {
 		ExecutedPricePaise: order.ExecutedPricePaise,
 		ReservedPaise:      order.ReservedPaise,
 		Status:             order.Status,
+		CreatedAt:          order.CreatedAt.UTC().Format("2006-01-02T15:04:05Z07:00"),
+		UpdatedAt:          order.UpdatedAt.UTC().Format("2006-01-02T15:04:05Z07:00"),
 	}
 }
 

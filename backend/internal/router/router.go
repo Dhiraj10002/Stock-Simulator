@@ -127,6 +127,8 @@ func Setup(ctx context.Context, cfg *config.Config) *gin.Engine {
 		protected.POST("/orders/squareoff-mis", orders.SquareOffMIS)
 		protected.POST("/simulation/squareoff-mis", orders.SquareOffMIS)
 		protected.GET("/orders", orders.List)
+		protected.DELETE("/orders/history", orders.ClearHistory)
+		protected.DELETE("/orders/clear", orders.ClearHistory)
 		protected.GET("/orders/:id", orders.Get)
 		protected.DELETE("/orders/:id", orders.Cancel)
 		protected.GET("/trades", trades.List)

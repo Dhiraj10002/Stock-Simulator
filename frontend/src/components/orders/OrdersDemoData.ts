@@ -1,5 +1,14 @@
 import type { Order, Trade } from "@/types";
 
+/**
+ * Returns an ISO timestamp for today during regular market session (09:15 to 15:30 IST).
+ */
+function getMarketSessionTime(hour: number, minute: number, second: number): string {
+  const d = new Date();
+  d.setHours(hour, minute, second, 0);
+  return d.toISOString();
+}
+
 export const DEMO_ORDERS: Order[] = [
   {
     uuid: "ord-demo-1",
@@ -11,7 +20,7 @@ export const DEMO_ORDERS: Order[] = [
     price_paise: 284000,
     executed_price_paise: 284000,
     status: "EXECUTED",
-    created_at: new Date(Date.now() - 1000 * 60 * 42).toISOString(),
+    created_at: getMarketSessionTime(9, 24, 18),
   },
   {
     uuid: "ord-demo-2",
@@ -23,7 +32,7 @@ export const DEMO_ORDERS: Order[] = [
     price_paise: 409500,
     executed_price_paise: 409500,
     status: "EXECUTED",
-    created_at: new Date(Date.now() - 1000 * 60 * 120).toISOString(),
+    created_at: getMarketSessionTime(10, 15, 42),
   },
   {
     uuid: "ord-demo-3",
@@ -35,7 +44,7 @@ export const DEMO_ORDERS: Order[] = [
     price_paise: 2332000,
     executed_price_paise: 2332000,
     status: "EXECUTED",
-    created_at: new Date(Date.now() - 1000 * 60 * 180).toISOString(),
+    created_at: getMarketSessionTime(11, 38, 55),
   },
   {
     uuid: "ord-demo-4",
@@ -46,7 +55,7 @@ export const DEMO_ORDERS: Order[] = [
     quantity: 50,
     price_paise: 161000,
     status: "OPEN",
-    created_at: new Date(Date.now() - 1000 * 60 * 15).toISOString(),
+    created_at: getMarketSessionTime(13, 14, 20),
   },
   {
     uuid: "ord-demo-5",
@@ -58,7 +67,7 @@ export const DEMO_ORDERS: Order[] = [
     price_paise: 189000,
     status: "TRIGGER_PENDING",
     trigger_price_paise: 188500,
-    created_at: new Date(Date.now() - 1000 * 60 * 8).toISOString(),
+    created_at: getMarketSessionTime(14, 5, 10),
   },
   {
     uuid: "ord-demo-6",
@@ -69,7 +78,7 @@ export const DEMO_ORDERS: Order[] = [
     quantity: 100,
     price_paise: 91000,
     status: "CANCELLED",
-    created_at: new Date(Date.now() - 1000 * 60 * 240).toISOString(),
+    created_at: getMarketSessionTime(14, 52, 33),
   },
 ];
 
@@ -82,7 +91,7 @@ export const DEMO_TRADES: Trade[] = [
     product: "DELIVERY",
     quantity: 60,
     executed_price_paise: 284000,
-    executed_at: new Date(Date.now() - 1000 * 60 * 42).toISOString(),
+    executed_at: getMarketSessionTime(9, 24, 18),
     realized_pnl_paise: 0,
   },
   {
@@ -93,7 +102,7 @@ export const DEMO_TRADES: Trade[] = [
     product: "DELIVERY",
     quantity: 35,
     executed_price_paise: 409500,
-    executed_at: new Date(Date.now() - 1000 * 60 * 120).toISOString(),
+    executed_at: getMarketSessionTime(10, 15, 42),
     realized_pnl_paise: 0,
   },
   {
@@ -104,18 +113,7 @@ export const DEMO_TRADES: Trade[] = [
     product: "FNO",
     quantity: 50,
     executed_price_paise: 2332000,
-    executed_at: new Date(Date.now() - 1000 * 60 * 180).toISOString(),
-    realized_pnl_paise: 425000,
-  },
-  {
-    uuid: "tr-demo-4",
-    order_uuid: "ord-demo-prev",
-    symbol: "ZOMATO",
-    side: "SELL",
-    product: "INTRADAY",
-    quantity: 200,
-    executed_price_paise: 28240,
-    executed_at: new Date(Date.now() - 1000 * 60 * 210).toISOString(),
-    realized_pnl_paise: 148000,
+    executed_at: getMarketSessionTime(11, 38, 55),
+    realized_pnl_paise: 0,
   },
 ];

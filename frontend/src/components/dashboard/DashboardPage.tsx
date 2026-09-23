@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMarketStore } from "@/stores/market-store";
+import { fetchBatchQuotes, getCachedQuote } from "@/lib/quoteService";
 import Navbar from "@/components/layout/Navbar";
 import {
   TrendingUp,
@@ -85,6 +86,11 @@ export const MASTER_STOCKS_CATALOG: WatchlistItem[] = [
   { symbol: "INFY", exchange: "NSE", name: "Infosys Ltd", price: 1785.2, change: -12.4, changePercent: -0.69, isPositive: false },
   { symbol: "BHARTIARTL", exchange: "NSE", name: "Bharti Airtel Ltd", price: 1564.0, change: 7.0, changePercent: 0.45, isPositive: true },
   { symbol: "SBIN", exchange: "NSE", name: "State Bank of India", price: 785.0, change: -2.8, changePercent: -0.35, isPositive: false },
+  { symbol: "PRAJIND", exchange: "NSE", name: "Praj Industries Ltd", price: 317.55, change: 5.4, changePercent: 1.73, isPositive: true },
+  { symbol: "BAJFINANCE", exchange: "NSE", name: "Bajaj Finance Ltd", price: 1008.8, change: -12.5, changePercent: -1.22, isPositive: false },
+  { symbol: "AXISBANK", exchange: "NSE", name: "Axis Bank Ltd", price: 1242.7, change: -7.3, changePercent: -0.58, isPositive: false },
+  { symbol: "KOTAKBANK", exchange: "NSE", name: "Kotak Mahindra Bank", price: 412.65, change: -2.15, changePercent: -0.52, isPositive: false },
+  { symbol: "APARINDS", exchange: "NSE", name: "Apar Industries Ltd", price: 18233.0, change: -712.0, changePercent: -3.76, isPositive: false },
 ];
 
 // ---------------------------------------------------------------------------
@@ -535,15 +541,21 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
 
   const quotes = useMarketStore((s) => s.quotes);
 
+  // Prefetch live real-time quotes for all catalog stocks on mount
+  useEffect(() => {
+    const catalogSymbols = MASTER_STOCKS_CATALOG.map((s) => s.symbol);
+    fetchBatchQuotes(catalogSymbols).catch(() => {});
+  }, []);
+
   // Live Catalog merged with authentic Angel One ticks
   const liveCatalog: WatchlistItem[] = useMemo(() => {
     return MASTER_STOCKS_CATALOG.map((item) => {
-      const q = quotes[item.symbol] || (item.symbol === "ZOMATO" ? quotes["ETERNAL"] : undefined);
+      const q = quotes[item.symbol] || (item.symbol === "ZOMATO" ? quotes["ETERNAL"] : undefined) || getCachedQuote(item.symbol);
       if (!q || !q.price_paise) return item;
 
       const price = q.price_paise / 100;
       const change = q.change_paise !== undefined ? q.change_paise / 100 : +(price - item.price).toFixed(2);
-      const changePercent = q.change_percent !== undefined ? q.change_percent : +((change / (price - change)) * 100).toFixed(2);
+      const changePercent = q.change_percent !== undefined ? q.change_percent : +((change / (price - change || 1)) * 100).toFixed(2);
       const isPositive = changePercent >= 0;
 
       return {
@@ -947,7 +959,7 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
               </span>
               <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800 flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                Angel One • Live Feed
+                NSE • Live Feed
               </span>
               <span className="text-xs text-slate-500 dark:text-slate-400 font-mono">
                 NSE / BSE Live Simulator
@@ -979,11 +991,11 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
 
             <Link
               href="/stocks/ITC"
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-500 via-teal-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-black text-xs shadow-lg shadow-cyan-500/30 transition-all hover:scale-105 border border-cyan-400/30"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 active:bg-cyan-700 text-white font-bold text-xs shadow-md shadow-cyan-600/20 transition-all hover:scale-105 active:scale-95"
             >
-              <Zap className="w-3.5 h-3.5 fill-current" />
+              <Zap className="w-3.5 h-3.5 fill-current text-white" />
               <span>Trade Equities</span>
-              <ArrowRight className="w-3.5 h-3.5" />
+              <ArrowRight className="w-3.5 h-3.5 text-white" />
             </Link>
           </div>
         </div>

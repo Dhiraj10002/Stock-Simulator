@@ -43,7 +43,7 @@ import { formatPaise, formatPercent } from "@/lib/format";
 import { MASTER_STOCKS_CATALOG, WatchlistItem } from "@/components/dashboard/DashboardPage";
 import { useMarketStore } from "@/stores/market-store";
 import Navbar from "@/components/layout/Navbar";
-import { apiFetch, publicFetch, getAuthToken } from "@/lib/api";
+import { apiFetch, publicFetch, getAuthToken, ApiError } from "@/lib/api";
 import type { Wallet, Candle, ApiResponse, Quote as QuoteType } from "@/types";
 
 interface StockDetailsProps {
@@ -613,67 +613,109 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
   // ---------------------------------------------------------------------------
   const [isInWatchlist, setIsInWatchlist] = useState(false);
 
+  const STORAGE_CUSTOM_KEY = "stock-simulator-watchlist-custom-v2";
+  const STORAGE_ACTIVE_TAB_KEY = "stock-simulator-active-wl-tab-v2";
+
   useEffect(() => {
-    if (token && watchlistItems) {
-      setIsInWatchlist(watchlistItems.some((w) => w.symbol === stock.symbol));
-    } else if (typeof window !== "undefined") {
-      try {
-        const saved = localStorage.getItem("stock_sim_watchlists_v2");
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          const list = parsed[1] || [];
-          setIsInWatchlist(list.some((s: WatchlistItem) => s.symbol === stock.symbol));
-        }
-      } catch (e) {
-        console.error(e);
+    if (token && watchlistItems && watchlistItems.length > 0) {
+      if (watchlistItems.some((w) => w.symbol === stock.symbol)) {
+        setIsInWatchlist(true);
+        return;
       }
     }
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem(STORAGE_CUSTOM_KEY);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          const allSymbols = Object.values(parsed).flatMap((list: any) =>
+            Array.isArray(list) ? list.map((it) => (typeof it === "string" ? it : it?.symbol)) : []
+          );
+          if (allSymbols.includes(stock.symbol)) {
+            setIsInWatchlist(true);
+            return;
+          }
+        }
+        // Also check legacy storage for backwards compatibility
+        const legacy = localStorage.getItem("stock_sim_watchlists_v2");
+        if (legacy) {
+          const legacyParsed = JSON.parse(legacy);
+          const legacyList = legacyParsed[1] || [];
+          if (legacyList.some((s: any) => (typeof s === "string" ? s : s?.symbol) === stock.symbol)) {
+            setIsInWatchlist(true);
+            return;
+          }
+        }
+      } catch {}
+    }
+    setIsInWatchlist(false);
   }, [stock.symbol, watchlistItems, token]);
 
   const handleToggleWatchlist = useCallback(async () => {
+    const nextState = !isInWatchlist;
+    setIsInWatchlist(nextState);
+
+    // 1. Always update local storage first with proper schema
+    try {
+      const activeTab = localStorage.getItem(STORAGE_ACTIVE_TAB_KEY) || "wl1";
+      const saved = localStorage.getItem(STORAGE_CUSTOM_KEY);
+      const parsed = saved ? JSON.parse(saved) : {};
+      const currentList: any[] = Array.isArray(parsed[activeTab]) ? parsed[activeTab] : [];
+
+      if (!nextState) {
+        // Remove from all tabs
+        for (const k of Object.keys(parsed)) {
+          if (Array.isArray(parsed[k])) {
+            parsed[k] = parsed[k].filter(
+              (s: any) => (typeof s === "string" ? s : s?.symbol) !== stock.symbol
+            );
+          }
+        }
+        setToastMsg(`Removed ${stock.symbol} from Watchlist`);
+      } else {
+        // Add to active tab
+        const newItem = {
+          symbol: stock.symbol,
+          name: stock.name,
+          exchange: stock.exchange || "NSE",
+        };
+        const exists = currentList.some(
+          (s: any) => (typeof s === "string" ? s : s?.symbol) === stock.symbol
+        );
+        if (!exists) {
+          parsed[activeTab] = [newItem, ...currentList];
+        }
+        setToastMsg(`✓ Added ${stock.symbol} to Watchlist`);
+      }
+
+      localStorage.setItem(STORAGE_CUSTOM_KEY, JSON.stringify(parsed));
+      window.dispatchEvent(new Event("watchlist-changed"));
+      window.dispatchEvent(new Event("storage"));
+    } catch (e) {
+      console.warn("Local watchlist update error:", e);
+    }
+
+    // 2. Also sync with backend API if authenticated
     if (token) {
-      // Use backend API
       try {
-        if (isInWatchlist) {
+        if (!nextState) {
           await apiFetch(`/watchlist/${stock.symbol}`, { method: "DELETE" });
-          setIsInWatchlist(false);
-          setToastMsg(`Removed ${stock.symbol} from Watchlist`);
         } else {
           await apiFetch("/watchlist", {
             method: "POST",
             body: JSON.stringify({ symbol: stock.symbol }),
           });
-          setIsInWatchlist(true);
-          setToastMsg(`✓ Added ${stock.symbol} to Watchlist`);
         }
         queryClient.invalidateQueries({ queryKey: ["watchlist"] });
       } catch (err) {
-        setToastMsg(`Watchlist error: ${err instanceof Error ? err.message : "Unknown error"}`);
-      }
-    } else {
-      // Fallback: localStorage
-      try {
-        const saved = localStorage.getItem("stock_sim_watchlists_v2");
-        const parsed = saved ? JSON.parse(saved) : { 1: [] };
-        const list: WatchlistItem[] = parsed[1] || [];
-
-        let updatedList: WatchlistItem[];
-        if (isInWatchlist) {
-          updatedList = list.filter((s) => s.symbol !== stock.symbol);
-          setIsInWatchlist(false);
-          setToastMsg(`Removed ${stock.symbol} from Watchlist`);
-        } else {
-          updatedList = [stock, ...list];
-          setIsInWatchlist(true);
-          setToastMsg(`✓ Added ${stock.symbol} to Watchlist 1`);
+        if (err instanceof ApiError && err.status === 401) {
+          // Token expired or unauthenticated; suppress error
+          return;
         }
-
-        parsed[1] = updatedList;
-        localStorage.setItem("stock_sim_watchlists_v2", JSON.stringify(parsed));
-      } catch (e) {
-        console.error(e);
+        console.warn("Backend watchlist sync error:", err);
       }
     }
+
     setTimeout(() => setToastMsg(null), 2500);
   }, [token, isInWatchlist, stock, queryClient]);
 

@@ -21,6 +21,7 @@ import { useTerminalStore } from "@/stores/terminal-store";
 import { useUIStore } from "@/stores/ui-store";
 import { useMarketStore } from "@/stores/market-store";
 import { apiFetch } from "@/lib/api";
+import { fetchBatchQuotes } from "@/lib/quoteService";
 import type { StockSearchResult } from "@/types";
 import FnoOrderModal from "@/components/trading/FnoOrderModal";
 
@@ -67,6 +68,14 @@ export default function SearchModal() {
     enabled: isSearchPaletteOpen && debouncedQuery.length > 0,
     staleTime: 30_000,
   });
+
+  // Prefetch live quotes for search results
+  useEffect(() => {
+    if (apiResults && apiResults.length > 0) {
+      const syms = apiResults.map((r) => r.symbol);
+      fetchBatchQuotes(syms).catch(() => {});
+    }
+  }, [apiResults]);
 
   // F&O Direct Buy/Sell order placement modal state
   const [fnoModalInstrument, setFnoModalInstrument] = useState<InstrumentMetadata | null>(null);

@@ -34,7 +34,8 @@ import OptionChainModal from "@/components/terminal/OptionChainModal";
 import PerformanceModal from "@/components/terminal/PerformanceModal";
 import { useToast } from "@/components/terminal/ToastProvider";
 import { useMarketStore } from "@/stores/market-store";
-import { getDefaultQuotes, getOrSeedQuote } from "@/lib/mockData";
+import { getOrSeedQuote } from "@/lib/mockData";
+import { fetchQuote, fetchBatchQuotes, getQuoteSync } from "@/lib/quoteService";
 import { getIndianMarketStatus, formatPaise } from "@/lib/format";
 import type {
   User,
@@ -95,7 +96,7 @@ export default function TradingTerminal() {
   const [portfolio, setPortfolio] = useState<Portfolio | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [quotes, setQuotes] = useState<Record<string, Quote>>(() => getDefaultQuotes());
+  const [quotes, setQuotes] = useState<Record<string, Quote>>({});
 
   const liveWsQuotes = useMarketStore((s) => s.quotes);
 
@@ -138,6 +139,39 @@ export default function TradingTerminal() {
   } | null>(null);
   const [resetting, setResetting] = useState(false);
   const [activeWatchlistSymbols, setActiveWatchlistSymbols] = useState<string[]>([]);
+
+  // Fetch real backend quotes on initial mount and when active watchlist symbols change
+  useEffect(() => {
+    const symbolsToFetch = [
+      selectedSymbol,
+      ...activeWatchlistSymbols,
+      "RELIANCE",
+      "TCS",
+      "INFY",
+      "HDFCBANK",
+      "TATAMOTORS",
+      "BHARTIARTL",
+      "NIFTY",
+      "BANKNIFTY",
+      "SBIN",
+      "ICICIBANK",
+    ];
+    let isCancelled = false;
+    fetchBatchQuotes(symbolsToFetch)
+      .then((batch) => {
+        if (!isCancelled && Object.keys(batch).length > 0) {
+          setQuotes((prev) => ({
+            ...prev,
+            ...batch,
+          }));
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [activeWatchlistSymbols, selectedSymbol]);
 
   // Token refresh helper
   const tryRefreshToken = useCallback(async (): Promise<string | null> => {
@@ -269,7 +303,7 @@ export default function TradingTerminal() {
               }
               const und = pos.underlying_symbol || getUnderlyingSymbol(pos.symbol);
               if (und && !next[und]) {
-                next[und] = getOrSeedQuote(und);
+                next[und] = getQuoteSync(und);
               }
             });
             return next;
@@ -389,16 +423,12 @@ export default function TradingTerminal() {
   // Fetch quote from backend whenever selectedSymbol changes
   useEffect(() => {
     let isCancelled = false;
-    fetch(`${API_URL}/market/quotes/${selectedSymbol}`)
-      .then((res) => res.json())
-      .then((body) => {
-        if (!isCancelled && body.success && body.data) {
+    fetchQuote(selectedSymbol)
+      .then((q) => {
+        if (!isCancelled && q) {
           setQuotes((prev) => ({
             ...prev,
-            [selectedSymbol]: {
-              ...(prev[selectedSymbol] || getOrSeedQuote(selectedSymbol)),
-              ...body.data,
-            },
+            [selectedSymbol]: q,
           }));
         }
       })
@@ -432,7 +462,7 @@ export default function TradingTerminal() {
 
         const next = { ...prev };
         activeSymbols.forEach((sym) => {
-          const cur = next[sym] ?? getOrSeedQuote(sym);
+          const cur = next[sym] ?? getQuoteSync(sym);
           const deltaPct = (Math.random() - 0.495) * 0.05;
           const deltaPaise = Math.round(cur.price_paise * (deltaPct / 100));
           const newPrice = Math.max(10, cur.price_paise + deltaPaise);
@@ -947,7 +977,7 @@ export default function TradingTerminal() {
     );
   }
 
-  const activeQuote = quotes[selectedSymbol] ?? getOrSeedQuote(selectedSymbol);
+  const activeQuote = quotes[selectedSymbol] ?? getQuoteSync(selectedSymbol);
 
   return (
     <div className="flex flex-col min-h-screen bg-slate-950 text-slate-100 font-sans">

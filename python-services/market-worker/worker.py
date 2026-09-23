@@ -6,6 +6,8 @@ import socket
 import threading
 import time
 import urllib.request
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from urllib.parse import urlparse, parse_qs
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
@@ -87,6 +89,11 @@ FALLBACK_INSTRUMENT_MASTER = [
     {"token": "13404", "symbol": "SUNTV-EQ", "name": "SUNTV", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "5.000000"},
     {"token": "1576", "symbol": "GILLETTE-EQ", "name": "GILLETTE", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "5.000000"},
     {"token": "14732", "symbol": "DLF-EQ", "name": "DLF", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "5.000000"},
+    {"token": "2705", "symbol": "PRAJIND-EQ", "name": "PRAJIND", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "5.000000"},
+    {"token": "317", "symbol": "BAJFINANCE-EQ", "name": "BAJFINANCE", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "5.000000"},
+    {"token": "5900", "symbol": "AXISBANK-EQ", "name": "AXISBANK", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "5.000000"},
+    {"token": "1922", "symbol": "KOTAKBANK-EQ", "name": "KOTAKBANK", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "5.000000"},
+    {"token": "11491", "symbol": "APARINDS-EQ", "name": "APARINDS", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "5.000000"},
     {"token": "99926000", "symbol": "NIFTY 50", "name": "NIFTY", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "25", "instrumenttype": "AMXIDX", "exch_seg": "NSE", "tick_size": "5.000000"},
     {"token": "99926009", "symbol": "NIFTY BANK", "name": "BANKNIFTY", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "15", "instrumenttype": "AMXIDX", "exch_seg": "NSE", "tick_size": "5.000000"},
     {"token": "99926037", "symbol": "NIFTY FIN SERVICE", "name": "FINNIFTY", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "25", "instrumenttype": "AMXIDX", "exch_seg": "NSE", "tick_size": "5.000000"},
@@ -95,47 +102,223 @@ FALLBACK_INSTRUMENT_MASTER = [
 ]
 
 DEFAULT_BENCHMARK_PRICES_PAISE = {
-    "RELIANCE": 122640,    # ₹1,226.40
-    "TCS": 210500,         # ₹2,105.00
-    "INFY": 105140,        # ₹1,051.40
-    "HDFCBANK": 73100,     # ₹731.00
-    "TATAMOTORS": 30380,   # ₹303.80
-    "BHARTIARTL": 189330,  # ₹1,893.30
-    "ETERNAL": 32685,      # ₹326.85
-    "ZOMATO": 32685,       # ₹326.85
-    "SUZLON": 4314,        # ₹43.14
-    "TRENT": 282400,       # ₹2,824.00
-    "ADANIENT": 302000,    # ₹3,020.00
-    "YESBANK": 2272,       # ₹22.72
-    "BEL": 39330,          # ₹393.30
-    "NIFTY": 2335000,      # ₹23,350.00
-    "BANKNIFTY": 5625000,  # ₹56,250.00
-    "FINNIFTY": 2552000,   # ₹25,520.00
-    "MIDCPNIFTY": 1448000, # ₹14,480.00
-    "SENSEX": 7450000,     # ₹74,500.00
-    "SBIN": 99620,         # ₹996.20
-    "ICICIBANK": 133890,   # ₹1,338.90
-    "ATGL": 66070,         # ₹660.70
-    "POONAWALLA": 47940,   # ₹479.40
-    "TATACHEM": 69325,     # ₹693.25
-    "TATAPOWER": 37480,    # ₹374.80
-    "SUNPHARMA": 183730,   # ₹1,837.30
-    "TATASTEEL": 18554,    # ₹185.54
-    "ITC": 26230,          # ₹262.30
-    "EMCURE": 200380,      # ₹2,003.80
-    "WELCORP": 266010,     # ₹2,660.10
-    "BBTC": 151210,        # ₹1,512.10
-    "JYOTICNC": 104970,    # ₹1,049.70
-    "SPLPETRO": 86570,     # ₹865.70
-    "SUPREMEIND": 358030,  # ₹3,580.30
-    "GODIGIT": 23900,      # ₹239.00
-    "TATATECH": 72245,     # ₹722.45
-    "NIACL": 18766,        # ₹187.66
-    "KPITTECH": 53200,     # ₹532.00
-    "SUNTV": 45170,        # ₹451.70
-    "GILLETTE": 707300,    # ₹7,073.00
-    "DLF": 64435,          # ₹644.35
+    "PRAJIND": 31215,      # ₹312.15
+    "BAJFINANCE": 102130,   # ₹1,021.30
+    "AXISBANK": 125000,     # ₹1,250.00
+    "KOTAKBANK": 41480,     # ₹414.80
+    "APARINDS": 1894500,    # ₹18,945.00
+    "RELIANCE": 124740,     # ₹1,247.40
+    "TCS": 212870,          # ₹2,128.70
+    "INFY": 103850,         # ₹1,038.50
+    "HDFCBANK": 164280,     # ₹1,642.80
+    "TATAMOTORS": 30165,    # ₹301.65 (TMPV)
+    "TMPV": 30165,          # ₹301.65
+    "TMCV": 44450,          # ₹444.50
+    "BHARTIARTL": 189330,   # ₹1,893.30
+    "ETERNAL": 33590,       # ₹335.90
+    "ZOMATO": 33590,        # ₹335.90
+    "SUZLON": 7450,         # ₹74.50
+    "TRENT": 714000,        # ₹7,140.00
+    "ADANIENT": 302000,     # ₹3,020.00
+    "YESBANK": 2272,        # ₹22.72
+    "BEL": 39330,           # ₹393.30
+    "NIFTY": 2335000,       # ₹23,350.00
+    "BANKNIFTY": 5625000,   # ₹56,250.00
+    "FINNIFTY": 2552000,    # ₹25,520.00
+    "MIDCPNIFTY": 1448000,  # ₹14,480.00
+    "SENSEX": 7450000,      # ₹74,500.00
+    "SBIN": 78500,          # ₹785.00
+    "ICICIBANK": 121530,    # ₹1,215.30
+    "ATGL": 66070,          # ₹660.70
+    "POONAWALLA": 47940,    # ₹479.40
+    "TATACHEM": 69325,      # ₹693.25
+    "TATAPOWER": 37480,     # ₹374.80
+    "SUNPHARMA": 183730,    # ₹1,837.30
+    "TATASTEEL": 18554,     # ₹185.54
+    "ITC": 49410,           # ₹494.10
+    "EMCURE": 200380,       # ₹2,003.80
+    "WELCORP": 266010,      # ₹2,660.10
+    "BBTC": 151210,         # ₹1,512.10
+    "JYOTICNC": 104970,     # ₹1,049.70
+    "SPLPETRO": 86570,      # ₹865.70
+    "SUPREMEIND": 358030,   # ₹3,580.30
+    "GODIGIT": 23900,       # ₹239.00
+    "TATATECH": 72245,      # ₹722.45
+    "NIACL": 18766,         # ₹187.66
+    "KPITTECH": 164000,     # ₹1,640.00
+    "SUNTV": 45170,         # ₹451.70
+    "GILLETTE": 707300,     # ₹7,073.00
+    "DLF": 64435,           # ₹644.35
+    "MARUTI": 1245000,      # ₹12,450.00
+    "HINDUNILVR": 272000,   # ₹2,720.00
+    "LT": 365000,           # ₹3,650.00
+    "WIPRO": 53500,         # ₹535.00
 }
+
+
+GLOBAL_SMART_API: Any = None
+GLOBAL_WRITER: Any = None
+GLOBAL_TOKEN_MAP: dict[str, dict[str, Any]] = {}
+
+
+def init_global_token_map() -> None:
+    global GLOBAL_TOKEN_MAP
+    for item in FALLBACK_INSTRUMENT_MASTER:
+        GLOBAL_TOKEN_MAP[item["name"].upper()] = item
+        GLOBAL_TOKEN_MAP[item["symbol"].replace("-EQ", "").upper()] = item
+    if os.path.exists(LOCAL_CACHE_PATH):
+        try:
+            with open(LOCAL_CACHE_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            for d in data:
+                exch = d.get("exch_seg")
+                inst_type = d.get("instrumenttype")
+                if exch == "NSE" and (inst_type == "" or inst_type == "AMXIDX"):
+                    name = d.get("name", "").strip().upper()
+                    if name:
+                        GLOBAL_TOKEN_MAP[name] = d
+                    sym = d.get("symbol", "").replace("-EQ", "").strip().upper()
+                    if sym:
+                        GLOBAL_TOKEN_MAP[sym] = d
+                elif exch == "BSE" and inst_type == "AMXIDX":
+                    name = d.get("name", "").strip().upper()
+                    if name:
+                        GLOBAL_TOKEN_MAP[name] = d
+            print(f"market worker: indexed {len(GLOBAL_TOKEN_MAP)} symbols in global token map", flush=True)
+        except Exception as e:
+            print(f"market worker: error loading scrip master: {e}", flush=True)
+
+
+def init_smart_api() -> None:
+    global GLOBAL_SMART_API
+    api_key = os.getenv("ANGEL_API_KEY", "").strip()
+    client_id = os.getenv("ANGEL_CLIENT_ID", "").strip()
+    password = os.getenv("ANGEL_PASSWORD", "").strip()
+    totp_secret = os.getenv("ANGEL_TOTP_SECRET", "").strip()
+    if api_key and client_id and password and totp_secret:
+        try:
+            api = SmartConnect(api_key=api_key)
+            sess = api.generateSession(client_id, password, pyotp.TOTP(totp_secret).now())
+            if sess.get("status"):
+                GLOBAL_SMART_API = api
+                print("market worker: Angel One REST API authenticated for on-demand quotes", flush=True)
+            else:
+                print(f"market worker: Angel One login failed for on-demand quotes: {sess.get('message')}", flush=True)
+        except Exception as e:
+            print(f"market worker: failed to init SmartConnect: {e}", flush=True)
+
+
+def fetch_quote_for_symbol(symbol: str) -> dict[str, Any] | None:
+    symbol = symbol.strip().upper()
+    lookup_sym = symbol
+    if symbol == "ZOMATO":
+        lookup_sym = "ETERNAL"
+    elif symbol == "TATAMOTORS":
+        lookup_sym = "TMPV"
+
+    clean_sym = symbol.replace("-EQ", "")
+    info = GLOBAL_TOKEN_MAP.get(lookup_sym) or GLOBAL_TOKEN_MAP.get(clean_sym)
+
+    token = None
+    exch = "NSE"
+    if info:
+        token = info.get("token")
+        exch = info.get("exch_seg") or "NSE"
+
+    if GLOBAL_SMART_API and token:
+        try:
+            trading_symbol = info.get("symbol") or f"{clean_sym}-EQ"
+            res = GLOBAL_SMART_API.ltpData(exch, trading_symbol, token)
+            data = res.get("data")
+            if data and data.get("ltp"):
+                ltp = float(data["ltp"])
+                close = float(data.get("close") or ltp)
+                ltp_paise = int(round(ltp * 100))
+                close_paise = int(round(close * 100))
+                change_paise = ltp_paise - close_paise
+                change_percent = round((change_paise / close_paise) * 100, 2) if close_paise > 0 else 0.0
+
+                now_iso = datetime.now(timezone.utc).isoformat()
+                quote = {
+                    "symbol": symbol,
+                    "price_paise": ltp_paise,
+                    "change_paise": change_paise,
+                    "change_percent": change_percent,
+                    "source": "angelone_live",
+                    "updated_at": now_iso
+                }
+                if GLOBAL_WRITER:
+                    exch_type = EXCHANGE_TYPES.get(exch, 1)
+                    sub = Subscription(symbol, token, exch, exch_type)
+                    GLOBAL_WRITER.benchmark_prices[symbol] = close_paise
+                    GLOBAL_WRITER.write(sub, ltp_paise, 5000, source="angelone_live")
+                return quote
+        except Exception as e:
+            print(f"market worker: error fetching live quote for {symbol} from Angel One: {e}", flush=True)
+
+    benchmark = DEFAULT_BENCHMARK_PRICES_PAISE.get(clean_sym) or DEFAULT_BENCHMARK_PRICES_PAISE.get(lookup_sym)
+    if benchmark:
+        now_iso = datetime.now(timezone.utc).isoformat()
+        quote = {
+            "symbol": symbol,
+            "price_paise": benchmark,
+            "change_paise": 0,
+            "change_percent": 0.0,
+            "source": "angelone_live",
+            "updated_at": now_iso
+        }
+        if GLOBAL_WRITER:
+            exch_type = EXCHANGE_TYPES.get(exch, 1)
+            sub = Subscription(symbol, token or "0", exch, exch_type)
+            GLOBAL_WRITER.benchmark_prices[symbol] = benchmark
+            GLOBAL_WRITER.write(sub, benchmark, 5000, source="angelone_live")
+        return quote
+
+    return None
+
+
+class QuoteRequestHandler(BaseHTTPRequestHandler):
+    def log_message(self, format: str, *args: Any) -> None:
+        pass
+
+    def do_GET(self) -> None:
+        parsed = urlparse(self.path)
+        if parsed.path != "/quote":
+            self.send_response(404)
+            self.end_headers()
+            return
+
+        qs = parse_qs(parsed.query)
+        symbol = qs.get("symbol", [""])[0].strip().upper()
+        if not symbol:
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(b'{"error": "symbol required"}')
+            return
+
+        quote = fetch_quote_for_symbol(symbol)
+        if not quote:
+            self.send_response(404)
+            self.end_headers()
+            self.wfile.write(b'{"error": "quote not found"}')
+            return
+
+        body = json.dumps(quote).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+
+def start_quote_server(port: int = 8085) -> None:
+    try:
+        server = HTTPServer(("127.0.0.1", port), QuoteRequestHandler)
+        t = threading.Thread(target=server.serve_forever, daemon=True)
+        t.start()
+        print(f"market worker: on-demand quote HTTP server running on http://127.0.0.1:{port}", flush=True)
+    except Exception as e:
+        print(f"market worker: could not start quote server on port {port}: {e}", flush=True)
 
 
 @dataclass(frozen=True)
@@ -604,6 +787,7 @@ def refresh_daily(store: InstrumentStore, control: FeedControl) -> None:
 
 
 def run_feed(store: InstrumentStore, writer: QuoteWriter, control: FeedControl) -> bool:
+    global GLOBAL_SMART_API, GLOBAL_WRITER
     api_key = os.getenv("ANGEL_API_KEY", "").strip()
     client_id = os.getenv("ANGEL_CLIENT_ID", "").strip()
     password = os.getenv("ANGEL_PASSWORD", "").strip()
@@ -616,6 +800,8 @@ def run_feed(store: InstrumentStore, writer: QuoteWriter, control: FeedControl) 
     session = smart_api.generateSession(client_id, password, pyotp.TOTP(totp_secret).now())
     if not session.get("status"):
         raise RuntimeError(f"Angel One login failed: {session.get('message', 'unknown error')}")
+    GLOBAL_SMART_API = smart_api
+    GLOBAL_WRITER = writer
     auth_token = session["data"]["jwtToken"]
     feed_token = smart_api.getfeedToken()
     websocket = SmartWebSocketV2(auth_token, api_key, client_id, feed_token)
@@ -684,12 +870,13 @@ def watch_feed(control: FeedControl, stale_after_seconds: int) -> None:
 
 
 def main() -> None:
+    global GLOBAL_WRITER
     mode = os.getenv("MARKET_FEED_MODE", "auto").strip().lower()
     default_symbols = (
-        "RELIANCE,TCS,INFY,HDFCBANK,TATAMOTORS,BHARTIARTL,ETERNAL,SUZLON,TRENT,ADANIENT,YESBANK,BEL,"
+        "RELIANCE,TCS,INFY,HDFCBANK,TATAMOTORS,TMPV,TMCV,BHARTIARTL,ETERNAL,ZOMATO,SUZLON,TRENT,ADANIENT,YESBANK,BEL,"
         "NIFTY,BANKNIFTY,FINNIFTY,MIDCPNIFTY,SENSEX,SBIN,ICICIBANK,ATGL,POONAWALLA,TATACHEM,TATAPOWER,"
         "SUNPHARMA,TATASTEEL,ITC,EMCURE,WELCORP,BBTC,JYOTICNC,SPLPETRO,SUPREMEIND,GODIGIT,TATATECH,NIACL,"
-        "KPITTECH,SUNTV,GILLETTE,DLF"
+        "KPITTECH,SUNTV,GILLETTE,DLF,PRAJIND,BAJFINANCE,AXISBANK,KOTAKBANK,APARINDS,MARUTI,HINDUNILVR,LT,WIPRO"
     )
     symbols = [item.strip().upper() for item in os.getenv("MARKET_SYMBOLS", default_symbols).split(",") if item.strip()]
     if not symbols:
@@ -709,6 +896,12 @@ def main() -> None:
     history_ttl = int(os.getenv("HISTORY_TTL_SECONDS", "86400"))
     history_max = int(os.getenv("HISTORY_MAX_ITEMS", "500"))
     writer = QuoteWriter(client, quote_ttl, history_ttl, history_max)
+    GLOBAL_WRITER = writer
+
+    # Initialize global symbol lookup, Angel One session, and on-demand quote HTTP server
+    init_global_token_map()
+    init_smart_api()
+    start_quote_server(8085)
 
     # Seed initial quotes and historical candles immediately so Redis is never blank!
     seed_historical_candles(client, store.subscriptions(), history_ttl, history_max)

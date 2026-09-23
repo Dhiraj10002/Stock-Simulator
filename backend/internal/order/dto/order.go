@@ -22,4 +22,6 @@ type OrderResponse struct {
 	ExecutedPricePaise int64  `json:"executed_price_paise"`
 	ReservedPaise      int64  `json:"reserved_paise"`
 	Status             string `json:"status"`
+	CreatedAt          string `json:"created_at"`
+	UpdatedAt          string `json:"updated_at"`
 }

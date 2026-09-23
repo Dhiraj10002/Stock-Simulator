@@ -7,8 +7,9 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTerminalStore } from "@/stores/terminal-store";
 import { useMarketStore } from "@/stores/market-store";
 import { getOrSeedQuote } from "@/lib/mockData";
+import { getQuoteSync, fetchBatchQuotes } from "@/lib/quoteService";
 import { formatPaise, formatPercent } from "@/lib/format";
-import { apiFetch, getAuthToken } from "@/lib/api";
+import { apiFetch, getAuthToken, ApiError } from "@/lib/api";
 import { MASTER_STOCKS_CATALOG } from "@/components/dashboard/DashboardPage";
 import {
   Search,
@@ -104,13 +105,26 @@ export default function WatchlistManagerDesk({ token: propToken }: WatchlistMana
   const queryClient = useQueryClient();
   const setSelectedSymbol = useTerminalStore((s) => s.setSelectedSymbol);
 
-  const [token] = useState<string>(() => {
+  const [token, setToken] = useState<string>(() => {
     if (propToken) return propToken;
     if (typeof window !== "undefined") {
       return getAuthToken() || "";
     }
     return "";
   });
+
+  // Listen for auth state changes (e.g. token expired, login, logout)
+  useEffect(() => {
+    const handleAuthChange = () => {
+      setToken(getAuthToken());
+    };
+    window.addEventListener("auth-changed", handleAuthChange);
+    window.addEventListener("storage", handleAuthChange);
+    return () => {
+      window.removeEventListener("auth-changed", handleAuthChange);
+      window.removeEventListener("storage", handleAuthChange);
+    };
+  }, []);
 
   // 1. Tab definitions state
   const [tabs, setTabs] = useState<WatchlistTab[]>(() => {
@@ -163,15 +177,57 @@ export default function WatchlistManagerDesk({ token: propToken }: WatchlistMana
                 })
                 .filter((it): it is WatchlistItem => it !== null && !!it.symbol);
             } else {
-              cleaned[key] = DEFAULT_WATCHLIST_DATA[key] || [];
+            cleaned[key] = DEFAULT_WATCHLIST_DATA[key] || [];
             }
           }
+
+          // Automatically migrate any items saved via stock details legacy key
+          try {
+            const legacy = localStorage.getItem("stock_sim_watchlists_v2");
+            if (legacy) {
+              const legacyParsed = JSON.parse(legacy);
+              const legacyList = legacyParsed[1] || [];
+              if (Array.isArray(legacyList) && legacyList.length > 0) {
+                const targetList = cleaned["wl1"] || [];
+                legacyList.forEach((leg: any) => {
+                  const sym = (leg?.symbol || "").toString().trim().toUpperCase();
+                  if (sym && !targetList.some((t) => t.symbol === sym)) {
+                    targetList.unshift({
+                      symbol: sym,
+                      name: leg.name || `${sym} Limited`,
+                      exchange: leg.exchange || "NSE",
+                    });
+                  }
+                });
+                cleaned["wl1"] = targetList;
+                localStorage.setItem(STORAGE_CUSTOM_KEY, JSON.stringify(cleaned));
+              }
+            }
+          } catch {}
+
           return cleaned;
         }
       } catch {}
     }
     return DEFAULT_WATCHLIST_DATA;
   });
+
+  // Listen for watchlist additions from other components (e.g. StockDetailsPage)
+  useEffect(() => {
+    const handleWatchlistChange = () => {
+      try {
+        const saved = localStorage.getItem(STORAGE_CUSTOM_KEY);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          setWatchlists((prev) => ({ ...prev, ...parsed }));
+        }
+      } catch {}
+    };
+    window.addEventListener("watchlist-changed", handleWatchlistChange);
+    return () => {
+      window.removeEventListener("watchlist-changed", handleWatchlistChange);
+    };
+  }, []);
 
   // TanStack Query for cloud-persisted watchlist from PostgreSQL
   const { data: dbWatchlist } = useQuery<WatchlistDbItem[]>({
@@ -181,29 +237,37 @@ export default function WatchlistManagerDesk({ token: propToken }: WatchlistMana
     staleTime: 5000,
   });
 
-  // Synchronize cloud DB items into the primary watchlist tab (wl1)
+  // Synchronize cloud DB items into the primary watchlist tab (wl1) safely without losing local items
   useEffect(() => {
     if (token && Array.isArray(dbWatchlist) && dbWatchlist.length > 0) {
       setWatchlists((prev) => {
         const currentPrimary = Array.isArray(prev["wl1"]) ? prev["wl1"] : [];
-        const dbItems: WatchlistItem[] = dbWatchlist
-          .map((item: any) => {
-            const sym = (item?.symbol || item?.ticker || "").toString().trim().toUpperCase();
-            if (!sym) return null;
-            const existing = currentPrimary.find((p) => p?.symbol === sym);
-            if (existing) return existing;
+        const mergedMap = new Map<string, WatchlistItem>();
+
+        // 1. Retain all current items in wl1
+        currentPrimary.forEach((it) => {
+          if (it?.symbol) {
+            mergedMap.set(it.symbol.toUpperCase(), it);
+          }
+        });
+
+        // 2. Add any items from cloud DB
+        dbWatchlist.forEach((item: any) => {
+          const sym = (item?.symbol || item?.ticker || "").toString().trim().toUpperCase();
+          if (!sym) return;
+          if (!mergedMap.has(sym)) {
             const fromCatalog = MASTER_STOCKS_CATALOG.find((s) => s.symbol === sym);
-            return {
+            mergedMap.set(sym, {
               symbol: sym,
               name: fromCatalog?.name || `${sym} Ltd`,
               exchange: "NSE",
-            };
-          })
-          .filter((it): it is WatchlistItem => it !== null && !!it.symbol);
+            });
+          }
+        });
 
         const updated = {
           ...prev,
-          wl1: dbItems,
+          wl1: Array.from(mergedMap.values()),
         };
         try {
           localStorage.setItem(STORAGE_CUSTOM_KEY, JSON.stringify(updated));
@@ -298,6 +362,14 @@ export default function WatchlistManagerDesk({ token: propToken }: WatchlistMana
 
   const liveWsQuotes = useMarketStore((s) => s.quotes);
 
+  // Prefetch real quotes from backend API for current watchlist items
+  useEffect(() => {
+    if (currentItems.length > 0) {
+      const symbols = currentItems.map((i) => i.symbol);
+      fetchBatchQuotes(symbols).catch(() => {});
+    }
+  }, [currentItems]);
+
   // Derive quotes purely with useMemo, prioritizing authentic live Angel One quotes
   const quotes = useMemo(() => {
     const map: Record<string, Quote> = {};
@@ -308,7 +380,7 @@ export default function WatchlistManagerDesk({ token: propToken }: WatchlistMana
       if (live && live.price_paise) {
         map[sym] = live;
       } else {
-        map[sym] = getOrSeedQuote(sym);
+        map[sym] = getQuoteSync(sym);
       }
     });
     return map;
@@ -361,7 +433,11 @@ export default function WatchlistManagerDesk({ token: propToken }: WatchlistMana
         });
         queryClient.invalidateQueries({ queryKey: ["watchlist"] });
       } catch (err) {
-        console.error("Failed to sync watchlist addition to backend:", err);
+        if (err instanceof ApiError && err.status === 401) {
+          setToken("");
+          return;
+        }
+        console.warn("Watchlist cloud add sync non-fatal error:", err);
       }
     }
   };
@@ -382,7 +458,11 @@ export default function WatchlistManagerDesk({ token: propToken }: WatchlistMana
         });
         queryClient.invalidateQueries({ queryKey: ["watchlist"] });
       } catch (err) {
-        console.error("Failed to sync watchlist deletion to backend:", err);
+        if (err instanceof ApiError && err.status === 401) {
+          setToken("");
+          return;
+        }
+        console.warn("Watchlist cloud delete sync non-fatal error:", err);
       }
     }
   };
@@ -444,7 +524,7 @@ export default function WatchlistManagerDesk({ token: propToken }: WatchlistMana
     currentItems.forEach((item) => {
       const sym = (item?.symbol || "").toString().trim().toUpperCase();
       if (!sym) return;
-      const q = quotes[sym] ?? getOrSeedQuote(sym);
+      const q = quotes[sym] ?? getQuoteSync(sym);
       const chg = q.change_percent ?? 0;
       totalChangePercent += chg;
       if (chg > 0) advances++;
@@ -846,7 +926,7 @@ export default function WatchlistManagerDesk({ token: propToken }: WatchlistMana
                   const symbol = (item?.symbol || "").toString().trim().toUpperCase();
                   if (!symbol) return null;
 
-                  const quote = quotes[symbol] ?? getOrSeedQuote(symbol);
+                  const quote = quotes[symbol] ?? getQuoteSync(symbol);
                   const ltp = quote.price_paise;
                   const chgPct = quote.change_percent ?? 0;
                   const isPos = chgPct >= 0;

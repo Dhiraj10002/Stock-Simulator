@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { apiFetch, getAuthToken } from "@/lib/api";
+import { apiFetch, getAuthToken, ApiError } from "@/lib/api";
 import {
   Search,
   TrendingUp,
@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { formatPaise, formatPercent } from "@/lib/format";
 import { getOrSeedQuote } from "@/lib/mockData";
+import { getQuoteSync, fetchBatchQuotes } from "@/lib/quoteService";
 import type { Quote, Position } from "@/types";
 
 export interface WatchlistItem {
@@ -148,6 +149,24 @@ export default function WatchlistSidebar({
     return DEFAULT_WATCHLIST_DATA;
   });
 
+  useEffect(() => {
+    const handleSync = () => {
+      try {
+        const saved = localStorage.getItem("stock-simulator-watchlist-custom-v2");
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          setCustomTabs((prev) => ({ ...prev, ...parsed }));
+        }
+      } catch {}
+    };
+    window.addEventListener("watchlist-changed", handleSync);
+    window.addEventListener("storage", handleSync);
+    return () => {
+      window.removeEventListener("watchlist-changed", handleSync);
+      window.removeEventListener("storage", handleSync);
+    };
+  }, []);
+
   const handleTabChange = (tabId: WatchlistTabId) => {
     setActiveTab(tabId);
     try {
@@ -237,6 +256,9 @@ export default function WatchlistSidebar({
             };
           });
           setSearchResults(items);
+          if (items.length > 0) {
+            fetchBatchQuotes(items.map((i) => i.symbol)).catch(() => {});
+          }
         }
       } catch (err) {
         console.error("Failed to search instruments:", err);
@@ -272,7 +294,8 @@ export default function WatchlistSidebar({
         });
         queryClient.invalidateQueries({ queryKey: ["watchlist"] });
       } catch (err) {
-        console.error("Failed to sync watchlist addition to backend:", err);
+        if (err instanceof ApiError && err.status === 401) return;
+        console.warn("Watchlist cloud addition non-fatal error:", err);
       }
     }
   };
@@ -294,7 +317,8 @@ export default function WatchlistSidebar({
         });
         queryClient.invalidateQueries({ queryKey: ["watchlist"] });
       } catch (err) {
-        console.error("Failed to sync watchlist removal to backend:", err);
+        if (err instanceof ApiError && err.status === 401) return;
+        console.warn("Watchlist cloud removal non-fatal error:", err);
       }
     }
   };
@@ -368,7 +392,7 @@ export default function WatchlistSidebar({
               <span className="text-[9px] text-cyan-300/70 lowercase font-normal">click to add to {activeTab.toUpperCase()}</span>
             </div>
             {searchResults.map((item, idx) => {
-              const itemQuote = quotes[item.symbol] ?? getOrSeedQuote(item.symbol);
+              const itemQuote = quotes[item.symbol] ?? getQuoteSync(item.symbol);
               return (
                 <button
                   key={`search-${item.exchange}-${item.symbol}-${idx}`}
@@ -432,7 +456,7 @@ export default function WatchlistSidebar({
 
         {/* Existing Watchlist Counters with Institutional Hover Actions */}
         {filteredLocal.map((item, idx) => {
-          const quote = quotes[item.symbol] ?? getOrSeedQuote(item.symbol);
+          const quote = quotes[item.symbol] ?? getQuoteSync(item.symbol);
           const isSelected = selectedSymbol === item.symbol;
           const pricePaise = quote.price_paise ?? 0;
           const change = quote.change_percent ?? 0;

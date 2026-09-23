@@ -93,9 +93,14 @@ export default function PortfolioPage() {
   const [isAiInsightsOpen, setIsAiInsightsOpen] = useState(false);
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
 
-  // Demo Showcase vs Live Ledger toggle state
-  // Defaults to true if user doesn't have live positions yet, giving them an instant rich experience!
-  const [useDemoData, setUseDemoData] = useState(true);
+  // Demo Showcase vs Live Ledger toggle state (defaults to Live when authenticated)
+  const [useDemoData, setUseDemoData] = useState(() => {
+    if (typeof window !== "undefined") {
+      const t = localStorage.getItem("auth_token") || localStorage.getItem("stock-simulator-access-token");
+      return !t;
+    }
+    return false;
+  });
 
   const [token] = useState<string>(() => {
     if (typeof window !== "undefined") {
@@ -290,30 +295,34 @@ export default function PortfolioPage() {
     0
   );
 
-  const totalInvestedPaise = holdingsInvestedVal + positionsInvestedVal;
-  const totalUnrealizedPnlPaise = holdingsPnl + positionsPnl;
-  const totalValuationPaise = totalInvestedPaise + totalUnrealizedPnlPaise;
+  // Tab-sensitive financial calculations (Holdings vs Positions)
+  const isPositionsTab = activeTab === "POSITIONS";
+  const totalInvestedPaise = isPositionsTab ? positionsInvestedVal : holdingsInvestedVal;
+  const totalUnrealizedPnlPaise = isPositionsTab ? positionsPnl : holdingsPnl;
+  const totalValuationPaise = isPositionsTab ? (positionsInvestedVal + positionsPnl) : holdingsCurrentVal;
   const totalPnlPercent =
     totalInvestedPaise > 0 ? (totalUnrealizedPnlPaise / totalInvestedPaise) * 100 : 0;
   const isOverallProfit = totalUnrealizedPnlPaise >= 0;
 
   // Day P&L calculation
-  const dayPnlPaise = useDemoData
-    ? activeHoldings.reduce((sum, h) => sum + h.dayChangePaise, 0) + 125000
-    : activeHoldings.reduce((sum, h) => sum + h.dayChangePaise, 0) +
-      activePositions.reduce((sum, p) => {
-        const q = quotes[p.symbol];
-        if (q && q.change_paise !== undefined) {
-          return sum + Math.round(q.change_paise * p.quantity);
-        }
-        return sum + Math.round((p.unrealized_pnl_paise || 0) * 0.05);
-      }, 0);
+  const holdingsDayPnlPaise = activeHoldings.reduce((sum, h) => sum + h.dayChangePaise, 0);
+  const positionsDayPnlPaise = activePositions.reduce((sum, p) => {
+    const q = quotes[p.symbol];
+    if (q && q.change_paise !== undefined) {
+      return sum + Math.round(q.change_paise * p.quantity);
+    }
+    return sum + Math.round((p.unrealized_pnl_paise || 0) * 0.05);
+  }, 0);
+
+  const dayPnlPaise = isPositionsTab ? positionsDayPnlPaise : holdingsDayPnlPaise;
   const dayPnlPercent =
-    totalInvestedPaise > 0 ? (dayPnlPaise / totalInvestedPaise) * 100 : 0;
+    (totalValuationPaise - dayPnlPaise) > 0 ? (dayPnlPaise / (totalValuationPaise - dayPnlPaise)) * 100 : 0;
   const isDayProfit = dayPnlPaise >= 0;
 
   const availableBalancePaise = wallet?.available_balance_paise ?? 100000000;
-  const blockedMarginPaise = wallet?.blocked_paise ?? (useDemoData ? 36800000 : 0);
+  const blockedMarginPaise = isPositionsTab
+    ? (wallet?.blocked_paise ?? (useDemoData ? 36800000 : 0))
+    : (wallet?.blocked_paise ?? 0);
 
   // Square off position
   const handleSquareOff = async (pos: Position) => {
@@ -386,7 +395,7 @@ export default function PortfolioPage() {
     <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-150">
       <Navbar
         availableBalancePaise={availableBalancePaise}
-        unrealizedPnlPaise={totalUnrealizedPnlPaise}
+        unrealizedPnlPaise={0}
       />
 
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
@@ -457,9 +466,9 @@ export default function PortfolioPage() {
           <div className="flex items-center gap-2 flex-wrap">
             <button
               onClick={() => setIsAddFundsOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 dark:bg-cyan-500 dark:hover:bg-cyan-400 text-white dark:text-slate-950 font-bold text-xs shadow-md shadow-cyan-500/20 transition-all hover:scale-[1.02] cursor-pointer"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 active:bg-cyan-700 text-white font-bold text-xs shadow-md shadow-cyan-600/20 transition-all hover:scale-105 active:scale-95 cursor-pointer"
             >
-              <Plus className="w-3.5 h-3.5" />
+              <Plus className="w-3.5 h-3.5 text-white" />
               <span>Add Margin</span>
             </button>
 
@@ -554,7 +563,9 @@ export default function PortfolioPage() {
               </div>
             </div>
             <div className="text-[11px] text-slate-400">
-              Floating MTM across demat & active F&O
+              {isPositionsTab
+                ? "Floating MTM across active F&O"
+                : "Floating MTM across demat holdings"}
             </div>
           </div>
 

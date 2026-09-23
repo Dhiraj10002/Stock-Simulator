@@ -183,6 +183,7 @@ export default function ChartPanel({
   const [timeframe, setTimeframe] = useState<Timeframe>("5m");
   const [chartType, setChartType] = useState<ChartType>("candles");
   const [candles, setCandles] = useState<Candle[]>([]);
+  const [dataSource, setDataSource] = useState<"LIVE" | "SYNTHETIC">("LIVE");
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   // Indicators toggle state
@@ -415,9 +416,11 @@ export default function ChartPanel({
           const items: Candle[] = body.data ?? [];
           if (items.length > 0) {
             setCandles(items);
+            setDataSource("LIVE");
           } else {
             const fallback = generateSyntheticCandles(symbol, quote?.price_paise, 120, timeframe);
             setCandles(fallback);
+            setDataSource("SYNTHETIC");
           }
         }
       })
@@ -425,6 +428,7 @@ export default function ChartPanel({
         if (!cancelled) {
           const fallback = generateSyntheticCandles(symbol, quote?.price_paise, 120, timeframe);
           setCandles(fallback);
+          setDataSource("SYNTHETIC");
         }
       });
 
@@ -721,6 +725,25 @@ export default function ChartPanel({
                 <span className="font-bold text-sm text-white tracking-wide">{symbol}</span>
                 <span className="text-[9px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 font-mono">
                   NSE
+                </span>
+                <span
+                  className={`text-[9px] px-1.5 py-0.2 rounded font-mono font-medium flex items-center gap-1 ${
+                    dataSource === "LIVE"
+                      ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                      : "bg-amber-500/10 text-amber-400 border border-amber-500/20"
+                  }`}
+                  title={
+                    dataSource === "LIVE"
+                      ? "Streaming live market history data"
+                      : "Simulated market history ticks"
+                  }
+                >
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full ${
+                      dataSource === "LIVE" ? "bg-emerald-400 animate-pulse" : "bg-amber-400"
+                    }`}
+                  />
+                  {dataSource === "LIVE" ? "LIVE" : "SIM"}
                 </span>
               </div>
               <div className="text-[10px] text-slate-400 truncate max-w-[130px]">{meta.name}</div>

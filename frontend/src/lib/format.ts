@@ -4,8 +4,9 @@
  */
 
 export function formatPaise(paise: number = 0): string {
-  const rupees = paise / 100;
-  return `₹${rupees.toLocaleString("en-IN", {
+  const sign = paise < 0 ? "-" : "";
+  const absRupees = Math.abs(paise) / 100;
+  return `${sign}₹${absRupees.toLocaleString("en-IN", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;

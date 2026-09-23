@@ -87,10 +87,10 @@ export interface PortfolioPnlAnalyticsProps {
 
 export default function PortfolioPnlAnalytics({
   useDemoData = true,
-  totalValuationPaise = 269914050,
-  totalUnrealizedPnlPaise = 4843550,
-  availableBalancePaise = 60202555,
-  totalInvestedPaise = 265070500,
+  totalValuationPaise = 70640800,
+  totalUnrealizedPnlPaise = 3495300,
+  availableBalancePaise = 100000000,
+  totalInvestedPaise = 67145500,
   holdings = [],
   positions = [],
   token = "",

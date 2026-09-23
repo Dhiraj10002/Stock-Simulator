@@ -203,11 +203,13 @@ export default function OrdersTable({ orders = [], onCancelOrder }: OrdersTableP
                   >
                     {/* Time */}
                     <td className="py-3 px-4 text-slate-500 dark:text-slate-400 text-[11px] whitespace-nowrap font-mono">
-                      {new Date(ord.created_at).toLocaleTimeString("en-IN", {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                        second: "2-digit",
-                      })}
+                      {ord.created_at && !isNaN(new Date(ord.created_at).getTime())
+                        ? new Date(ord.created_at).toLocaleTimeString("en-IN", {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                            second: "2-digit",
+                          })
+                        : (ord as any).time || "—"}
                     </td>
 
                     {/* Symbol */}

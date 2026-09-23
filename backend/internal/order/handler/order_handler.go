@@ -104,3 +104,15 @@ func (h *OrderHandler) SquareOffMIS(c *gin.Context) {
 	})
 }
 
+func (h *OrderHandler) ClearHistory(c *gin.Context) {
+	userID := c.GetString("user_id")
+	deletedCount, err := h.service.ClearHistory(userID)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error(), nil)
+		return
+	}
+	response.Success(c, http.StatusOK, fmt.Sprintf("Cleared %d order history records", deletedCount), gin.H{
+		"deleted_count": deletedCount,
+	})
+}
+

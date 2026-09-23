@@ -26,9 +26,9 @@ interface ContractNoteViewProps {
 
 // Realistic Demonstration Contract Note matching demo executed trades
 const DEMO_CONTRACT_NOTE: ContractNoteResponse = {
-  contract_note_number: "CN-20260921-DEMO8910",
-  trade_date: "2026-09-21",
-  settlement_date: "2026-09-22",
+  contract_note_number: `CN-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-DEMO8910`,
+  trade_date: new Date().toISOString().slice(0, 10),
+  settlement_date: new Date(Date.now() + 86400000).toISOString().slice(0, 10),
   exchange: "NSE / NFO",
   client_name: "Dhiraj (Trader)",
   client_email: "dhirajgupta1002@gmail.com",
@@ -67,7 +67,7 @@ const DEMO_CONTRACT_NOTE: ContractNoteResponse = {
         total_tax_charges_paise: 20270,
       },
       net_obligation_paise: 17060270,
-      executed_at: "10:18:24",
+      executed_at: "09:24:18",
     },
     {
       trade_uuid: "tr-demo-2",
@@ -88,7 +88,7 @@ const DEMO_CONTRACT_NOTE: ContractNoteResponse = {
         total_tax_charges_paise: 17049,
       },
       net_obligation_paise: 14349549,
-      executed_at: "11:42:05",
+      executed_at: "10:15:42",
     },
     {
       trade_uuid: "tr-demo-3",
@@ -109,7 +109,7 @@ const DEMO_CONTRACT_NOTE: ContractNoteResponse = {
         total_tax_charges_paise: 94581,
       },
       net_obligation_paise: 116694581,
-      executed_at: "14:05:18",
+      executed_at: "11:38:55",
     },
   ],
 };

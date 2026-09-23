@@ -182,12 +182,12 @@ export default function OptionsPage() {
             </div>
 
             <Link
-              href="/stocks"
-              className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold transition-colors"
+              href="/stocks/ITC"
+              className="hidden sm:inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 active:bg-cyan-700 text-white font-bold text-xs shadow-md shadow-cyan-600/20 transition-all hover:scale-105 active:scale-95"
             >
-              <TrendingUp className="w-3.5 h-3.5 text-cyan-500" />
+              <TrendingUp className="w-3.5 h-3.5 text-white" />
               <span>Explore Stocks</span>
-              <ArrowRight className="w-3.5 h-3.5" />
+              <ArrowRight className="w-3.5 h-3.5 text-white" />
             </Link>
           </div>
         </div>

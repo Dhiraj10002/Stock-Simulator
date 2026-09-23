@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -34,16 +35,52 @@ func New(redisURL string, timeout time.Duration) (*Service, error) {
 }
 
 var benchmarkPrices = map[string]int64{
-	"RELIANCE":   124390,
-	"TCS":        219000,
-	"INFY":       105860,
-	"HDFCBANK":   71300,
-	"NIFTY":      2532000,
-	"BANKNIFTY":  5215000,
-	"ETERNAL":    27850,
-	"APARINDS":   845000, // ₹8,450.00
-	"TATAMOTORS": 96550,  // ₹965.50
-	"SBIN":       78500,  // ₹785.00
+	"PRAJIND":    31215,   // ₹312.15
+	"BAJFINANCE": 102130,  // ₹1,021.30
+	"AXISBANK":   125000,  // ₹1,250.00
+	"KOTAKBANK":  41480,   // ₹414.80
+	"APARINDS":   1894500, // ₹18,945.00
+	"RELIANCE":   124740,  // ₹1,247.40
+	"TCS":        212870,  // ₹2,128.70
+	"INFY":       103850,  // ₹1,038.50
+	"HDFCBANK":   164280,  // ₹1,642.80
+	"TATAMOTORS": 30165,   // ₹301.65 (TMPV)
+	"TMPV":       30165,   // ₹301.65
+	"TMCV":       44450,   // ₹444.50
+	"BHARTIARTL": 189330,  // ₹1,893.30
+	"ETERNAL":    33590,   // ₹335.90
+	"ZOMATO":     33590,   // ₹335.90
+	"SUZLON":     7450,    // ₹74.50
+	"TRENT":      714000,  // ₹7,140.00
+	"ADANIENT":   302000,  // ₹3,020.00
+	"BEL":        39330,   // ₹393.30
+	"SBIN":       78500,   // ₹785.00
+	"ICICIBANK":  121530,  // ₹1,215.30
+	"NIFTY":      2335000, // ₹23,350.00
+	"BANKNIFTY":  5625000, // ₹56,250.00
+	"FINNIFTY":   2552000, // ₹25,520.00
+	"MIDCPNIFTY": 1448000, // ₹14,480.00
+	"SENSEX":     7450000, // ₹74,500.00
+}
+
+var workerHTTPClient = &http.Client{
+	Timeout: 3 * time.Second,
+}
+
+func fetchLiveFromWorker(symbol string) (*dto.QuoteResponse, error) {
+	resp, err := workerHTTPClient.Get(fmt.Sprintf("http://127.0.0.1:8085/quote?symbol=%s", symbol))
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("worker returned status %d", resp.StatusCode)
+	}
+	var quote dto.QuoteResponse
+	if err := json.NewDecoder(resp.Body).Decode(&quote); err != nil {
+		return nil, err
+	}
+	return &quote, nil
 }
 
 func fallbackPriceForSymbol(symbol string) int64 {
@@ -102,21 +139,26 @@ func (s *Service) CurrentQuote(symbol string) (*dto.QuoteResponse, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", cache.ErrUnavailable, err)
 	}
-	if len(values) == 0 {
-		price := fallbackPriceForSymbol(symbol)
-		nowStr := time.Now().Format(time.RFC3339)
-		_ = s.client.HSet(ctx, quoteKey(symbol), map[string]interface{}{
-			"price_paise": price,
-			"volume":      5000,
-			"source":      "auto_seeded",
-			"updated_at":  nowStr,
-		}).Err()
-		return &dto.QuoteResponse{
-			Symbol:     symbol,
-			PricePaise: price,
-			Source:     "auto_seeded",
-			UpdatedAt:  nowStr,
-		}, nil
+	if len(values) == 0 || values["source"] == "auto_seeded" {
+		if liveQuote, err := fetchLiveFromWorker(symbol); err == nil && liveQuote != nil && liveQuote.PricePaise > 0 {
+			return liveQuote, nil
+		}
+		if len(values) == 0 {
+			price := fallbackPriceForSymbol(symbol)
+			nowStr := time.Now().Format(time.RFC3339)
+			_ = s.client.HSet(ctx, quoteKey(symbol), map[string]interface{}{
+				"price_paise": price,
+				"volume":      5000,
+				"source":      "auto_seeded",
+				"updated_at":  nowStr,
+			}).Err()
+			return &dto.QuoteResponse{
+				Symbol:     symbol,
+				PricePaise: price,
+				Source:     "auto_seeded",
+				UpdatedAt:  nowStr,
+			}, nil
+		}
 	}
 	price, err := strconv.ParseInt(values["price_paise"], 10, 64)
 	if err != nil {

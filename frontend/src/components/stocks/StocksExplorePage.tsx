@@ -1,11 +1,12 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import Navbar from "@/components/layout/Navbar";
 import { useMarketStore } from "@/stores/market-store";
+import { fetchBatchQuotes, getCachedQuote } from "@/lib/quoteService";
 import {
   TrendingUp,
   TrendingDown,
@@ -330,10 +331,16 @@ export default function StocksExplorePage() {
 
   const quotes = useMarketStore((s) => s.quotes);
 
+  // Prefetch live quotes for all explore catalog items
+  useEffect(() => {
+    const symbols = MASTER_STOCKS_CATALOG.map((item) => item.symbol);
+    fetchBatchQuotes(symbols).catch(() => {});
+  }, []);
+
   // Merge catalog with live Angel One quotes
   const liveCatalog = useMemo(() => {
     return MASTER_STOCKS_CATALOG.map((item) => {
-      const live = quotes[item.symbol] || (item.symbol === "ZOMATO" ? quotes["ETERNAL"] : undefined);
+      const live = quotes[item.symbol] || (item.symbol === "ZOMATO" ? quotes["ETERNAL"] : undefined) || getCachedQuote(item.symbol);
       if (!live) return item;
       const price = live.price_paise / 100;
       const changePercent = live.change_percent ?? item.changePercent;

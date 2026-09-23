@@ -55,6 +55,9 @@ export default function MarketDepth({ symbol, quote, onSelectPrice }: MarketDept
             <span className="font-bold text-slate-200 uppercase tracking-wider text-[11px]">
               Market Depth (L2)
             </span>
+            <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/10 border border-amber-500/20 text-amber-300 font-mono font-medium">
+              SIMULATED
+            </span>
             <span className="text-[9px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 font-mono">
               NSE
             </span>

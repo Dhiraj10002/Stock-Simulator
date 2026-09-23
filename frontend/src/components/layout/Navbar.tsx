@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -18,7 +18,6 @@ import {
   LayoutDashboard,
   BrainCircuit,
   Layers,
-  Keyboard,
   LogOut,
   Sun,
   Moon,
@@ -70,15 +69,49 @@ export default function Navbar({
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [userName, setUserName] = useState("Dhiraj");
+  const profileMenuRef = useRef<HTMLDivElement>(null);
   const { overview, isBreached } = useRiskOverview();
 
   useEffect(() => {
     setMounted(true);
+    const storedName = localStorage.getItem("user_name");
+    if (storedName) setUserName(storedName);
     const timer = setInterval(() => {
       setMarketStatus(getIndianMarketStatus());
     }, 10000);
     return () => clearInterval(timer);
   }, []);
+
+  // Close profile dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (profileMenuRef.current && !profileMenuRef.current.contains(e.target as Node)) {
+        setShowProfileMenu(false);
+      }
+    };
+    if (showProfileMenu) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [showProfileMenu]);
+
+  // Universal Logout Handler across all sections
+  const handleLogout = () => {
+    setShowProfileMenu(false);
+    if (onSignOut) {
+      onSignOut();
+      return;
+    }
+    localStorage.removeItem("auth_token");
+    localStorage.removeItem("stock-simulator-access-token");
+    localStorage.removeItem("stock-simulator-refresh-token");
+    localStorage.removeItem("user_name");
+    localStorage.removeItem("user_email");
+    window.location.href = "/login";
+  };
 
   // Indices
   const niftyQuote = quotes["NIFTY"];
@@ -131,9 +164,6 @@ export default function Navbar({
               }`}
             />
             <span className="font-semibold">{marketStatus.statusText}</span>
-            <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-cyan-100 text-cyan-800 dark:bg-cyan-950/80 dark:text-cyan-300 border border-cyan-300 dark:border-cyan-800/60">
-              Angel One • Live
-            </span>
             <span className="text-slate-500 dark:text-slate-400 text-[10px] flex items-center gap-1 border-l border-slate-300 dark:border-slate-700/60 pl-2">
               <Clock className="w-3 h-3" />
               {marketStatus.istTime}
@@ -189,66 +219,10 @@ export default function Navbar({
               Ctrl+K
             </kbd>
           </button>
-
-          <button
-            type="button"
-            onClick={() => setShortcutsGuideOpen(true)}
-            title="Keyboard Shortcuts Guide (?)"
-            className="hidden sm:flex items-center justify-center w-8 h-8 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-white/[0.04] dark:hover:bg-white/[0.08] border border-slate-200 dark:border-white/[0.08] text-slate-600 hover:text-cyan-600 dark:text-slate-400 dark:hover:text-cyan-400 transition-colors cursor-pointer"
-          >
-            <Keyboard className="w-3.5 h-3.5" />
-          </button>
-
-          {/* Theme Toggle Button */}
-          {mounted && (
-            <button
-              type="button"
-              onClick={toggleTheme}
-              title={`Switch to ${theme === "dark" ? "Light" : "Dark"} mode`}
-              aria-label={`Switch to ${theme === "dark" ? "Light" : "Dark"} mode`}
-              className="flex items-center justify-center w-8 h-8 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-white/[0.04] dark:hover:bg-white/[0.08] border border-slate-200 dark:border-white/[0.08] text-slate-700 dark:text-slate-300 hover:text-cyan-600 dark:hover:text-cyan-400 transition-all cursor-pointer shadow-xs active:scale-95"
-            >
-              {theme === "dark" ? (
-                <Sun className="w-3.5 h-3.5 text-amber-400 transition-transform rotate-0 hover:rotate-45" />
-              ) : (
-                <Moon className="w-3.5 h-3.5 text-cyan-600 transition-transform -rotate-12 hover:rotate-0" />
-              )}
-            </button>
-          )}
         </div>
 
         {/* Account Info & User Profile */}
         <div className="flex items-center gap-3 sm:gap-4 text-xs">
-          {/* Institutional RMS Risk Pill */}
-          {overview && (
-            <Link
-              href="/portfolio"
-              title={`RMS Margin Utilization: ${overview.margin_utilization_pct.toFixed(1)}% (${overview.status})`}
-              className={`hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-semibold transition-all ${
-                overview.status === "CRITICAL"
-                  ? "bg-rose-500/10 border-rose-500/40 text-rose-600 dark:text-rose-400 font-bold"
-                  : overview.status === "MARGIN_CALL"
-                  ? "bg-amber-500/10 border-amber-500/40 text-amber-600 dark:text-amber-400 font-bold"
-                  : overview.status === "WARNING"
-                  ? "bg-yellow-500/10 border-yellow-500/40 text-yellow-600 dark:text-yellow-400 font-bold"
-                  : "bg-slate-100 dark:bg-white/[0.04] border-slate-200 dark:border-white/[0.08] text-slate-600 dark:text-slate-400 hover:border-cyan-500/50"
-              }`}
-            >
-              <span
-                className={`w-2 h-2 rounded-full ${
-                  overview.status === "HEALTHY"
-                    ? "bg-emerald-500"
-                    : overview.status === "WARNING"
-                    ? "bg-yellow-500 animate-pulse"
-                    : "bg-rose-500 animate-ping"
-                }`}
-              />
-              <span className="font-mono text-[11px]">
-                RMS: <span className="font-bold">{overview.margin_utilization_pct.toFixed(0)}%</span>
-              </span>
-            </Link>
-          )}
-
           {/* Available Cash */}
           <div className="hidden sm:flex flex-col text-right">
             <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium flex items-center justify-end gap-1">
@@ -266,14 +240,18 @@ export default function Navbar({
               Unrealized P&L
             </span>
             <div className="flex items-center justify-end gap-1">
-              {isProfit ? (
+              {unrealizedPnlPaise === 0 ? (
+                <span className="w-1.5 h-1.5 rounded-full bg-slate-400 dark:bg-slate-500 mr-0.5" />
+              ) : isProfit ? (
                 <TrendingUp className="w-3 h-3 text-emerald-600 dark:text-emerald-400 shrink-0" />
               ) : (
                 <TrendingDown className="w-3 h-3 text-rose-600 dark:text-rose-400 shrink-0" />
               )}
               <strong
                 className={`text-xs font-bold font-tabular ${
-                  isProfit
+                  unrealizedPnlPaise === 0
+                    ? "text-slate-600 dark:text-slate-300"
+                    : isProfit
                     ? "text-emerald-600 dark:text-emerald-400"
                     : "text-rose-600 dark:text-rose-400"
                 }`}
@@ -284,37 +262,79 @@ export default function Navbar({
           </div>
 
           {/* Profile Dropdown */}
-          <div className="relative">
+          <div className="relative" ref={profileMenuRef}>
             <button
               onClick={() => setShowProfileMenu(!showProfileMenu)}
-              className="w-8 h-8 rounded-full bg-slate-100 dark:bg-white/[0.05] border border-slate-300 dark:border-white/[0.1] flex items-center justify-center text-slate-700 dark:text-slate-200 hover:border-cyan-500/60 dark:hover:border-cyan-500/60 transition-colors cursor-pointer shadow-xs"
+              title="Trader Profile & Account Settings"
+              className={`w-8 h-8 rounded-full border flex items-center justify-center transition-all cursor-pointer shadow-xs ${
+                showProfileMenu
+                  ? "bg-cyan-500/15 border-cyan-500 text-cyan-600 dark:text-cyan-400 ring-2 ring-cyan-500/20"
+                  : "bg-slate-100 dark:bg-white/[0.05] border-slate-300 dark:border-white/[0.1] text-slate-700 dark:text-slate-200 hover:border-cyan-500/60"
+              }`}
             >
               <UserIcon className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
             </button>
 
             {showProfileMenu && (
-              <div className="absolute right-0 mt-2 w-60 bg-white dark:bg-[#0b0f19] border border-slate-200 dark:border-white/[0.08] rounded-2xl shadow-2xl py-2 z-50 animate-fade-in text-slate-800 dark:text-slate-200 backdrop-blur-xl">
-                <div className="px-3.5 py-2.5 border-b border-slate-200 dark:border-white/[0.06]">
-                  <div className="font-semibold text-xs text-slate-900 dark:text-slate-100">
-                    Dhiraj (Trader)
+              <div className="absolute right-0 mt-2.5 w-72 sm:w-80 bg-white/95 dark:bg-[#0b101d]/95 border border-slate-200/90 dark:border-white/[0.12] rounded-2xl shadow-2xl shadow-slate-900/15 dark:shadow-black/70 p-3.5 z-50 animate-in fade-in zoom-in-95 duration-150 text-slate-800 dark:text-slate-200 backdrop-blur-2xl">
+                {/* User Identity Header */}
+                <div className="flex items-center gap-3 pb-3 border-b border-slate-200/80 dark:border-white/[0.08]">
+                  <div className="relative shrink-0">
+                    <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-600 via-blue-600 to-indigo-600 text-white font-black text-sm flex items-center justify-center shadow-md shadow-cyan-600/20 ring-2 ring-white dark:ring-slate-800">
+                      {userName.charAt(0).toUpperCase()}
+                    </div>
+                    <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-500 border-2 border-white dark:border-[#0b101d]" />
                   </div>
-                  <div className="text-[11px] text-slate-500 dark:text-slate-400 font-mono mt-0.5">
-                    Demat: SS-89104
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-bold text-xs sm:text-sm text-slate-900 dark:text-slate-100 truncate">
+                        {userName}
+                      </span>
+                      <span className="px-1.5 py-0.2 rounded-full text-[9px] font-mono font-bold bg-cyan-100 text-cyan-800 dark:bg-cyan-500/15 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-500/30">
+                        PRO
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-slate-500 dark:text-slate-400 font-mono flex items-center gap-1.5 mt-0.5">
+                      <span>Demat: SS-89104</span>
+                      <span>·</span>
+                      <span className="text-emerald-600 dark:text-emerald-400 font-semibold">Active</span>
+                    </div>
                   </div>
                 </div>
 
-                <div className="p-1.5 space-y-1">
+                {/* Quick Margin Glance */}
+                <div className="my-2.5 p-2.5 rounded-xl bg-slate-50/80 dark:bg-white/[0.03] border border-slate-200/80 dark:border-white/[0.06] flex items-center justify-between">
+                  <div>
+                    <div className="text-[10px] text-slate-500 dark:text-slate-400 font-medium flex items-center gap-1">
+                      <WalletIcon className="w-3 h-3 text-cyan-600 dark:text-cyan-400" />
+                      Available Margin
+                    </div>
+                    <div className="text-sm font-black font-tabular text-slate-900 dark:text-slate-100 mt-0.5">
+                      {formatPaise(availableBalancePaise)}
+                    </div>
+                  </div>
+                  <Link
+                    href="/portfolio"
+                    onClick={() => setShowProfileMenu(false)}
+                    className="px-2.5 py-1 rounded-lg bg-cyan-50 hover:bg-cyan-100 dark:bg-cyan-500/10 dark:hover:bg-cyan-500/20 text-cyan-700 dark:text-cyan-300 text-[11px] font-semibold transition-colors cursor-pointer border border-cyan-200/60 dark:border-cyan-500/30"
+                  >
+                    Holdings →
+                  </Link>
+                </div>
+
+                {/* Actions Menu */}
+                <div className="space-y-1">
                   {/* Theme Switcher in Dropdown */}
-                  <div className="px-3 py-1.5 flex items-center justify-between text-xs text-slate-600 dark:text-slate-400">
-                    <span className="font-medium">Theme</span>
-                    <div className="flex items-center gap-1 bg-slate-100 dark:bg-white/[0.04] p-0.5 rounded-lg border border-slate-200 dark:border-white/[0.08]">
+                  <div className="px-2 py-1.5 flex items-center justify-between text-xs">
+                    <span className="text-slate-600 dark:text-slate-400 font-medium">Theme</span>
+                    <div className="flex items-center gap-1 bg-slate-100 dark:bg-white/[0.05] p-0.5 rounded-lg border border-slate-200/80 dark:border-white/[0.08]">
                       <button
                         type="button"
                         onClick={() => setTheme("light")}
-                        className={`flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium transition-all ${
+                        className={`flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${
                           theme === "light"
-                            ? "bg-white text-slate-900 shadow-xs"
-                            : "text-slate-500 hover:text-slate-800"
+                            ? "bg-white text-slate-900 shadow-xs border border-slate-200/60"
+                            : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200"
                         }`}
                       >
                         <Sun className="w-3 h-3 text-amber-500" />
@@ -323,10 +343,10 @@ export default function Navbar({
                       <button
                         type="button"
                         onClick={() => setTheme("dark")}
-                        className={`flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium transition-all ${
+                        className={`flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${
                           theme === "dark"
                             ? "bg-cyan-500/20 text-cyan-300 shadow-xs border border-cyan-500/30"
-                            : "text-slate-400 hover:text-slate-200"
+                            : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200"
                         }`}
                       >
                         <Moon className="w-3 h-3 text-cyan-400" />
@@ -338,13 +358,17 @@ export default function Navbar({
                   <Link
                     href="/analytics"
                     onClick={() => setShowProfileMenu(false)}
-                    className="flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/[0.05] rounded-xl transition-colors"
+                    className="flex items-center justify-between px-2 py-2 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/[0.05] rounded-xl transition-colors"
                   >
-                    <BarChart2 className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
-                    Console & Statements
+                    <span className="flex items-center gap-2">
+                      <BarChart2 className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
+                      <span>Console & Statements</span>
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-mono">P&L</span>
                   </Link>
 
                   <button
+                    type="button"
                     onClick={() => {
                       setShowProfileMenu(false);
                       if (onResetSimulation) {
@@ -354,24 +378,28 @@ export default function Navbar({
                       }
                     }}
                     disabled={resetting}
-                    className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded-xl text-left transition-colors cursor-pointer"
+                    className="w-full flex items-center justify-between px-2 py-2 text-xs font-medium text-amber-700 dark:text-amber-300 hover:bg-amber-50/80 dark:hover:bg-amber-950/30 rounded-xl transition-colors cursor-pointer disabled:opacity-50"
                   >
-                    <RotateCcw className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400" />
-                    Reset Account (₹10L)
+                    <span className="flex items-center gap-2">
+                      <RotateCcw className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400" />
+                      <span>Reset Simulation</span>
+                    </span>
+                    <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 font-semibold">
+                      ₹10L
+                    </span>
                   </button>
+                </div>
 
-                  {onSignOut && (
-                    <button
-                      onClick={() => {
-                        setShowProfileMenu(false);
-                        onSignOut();
-                      }}
-                      className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl text-left border-t border-slate-200 dark:border-white/[0.06] mt-1 pt-2 transition-colors cursor-pointer"
-                    >
-                      <LogOut className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
-                      Sign Out
-                    </button>
-                  )}
+                {/* Prominent Universal Logout Button for all sections */}
+                <div className="pt-2 mt-2 border-t border-slate-200/80 dark:border-white/[0.08]">
+                  <button
+                    type="button"
+                    onClick={handleLogout}
+                    className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 text-rose-600 dark:text-rose-400 font-semibold text-xs border border-rose-200/80 dark:border-rose-800/50 transition-all hover:scale-[1.01] active:scale-[0.98] cursor-pointer shadow-xs"
+                  >
+                    <LogOut className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
+                    <span>Sign Out of Terminal</span>
+                  </button>
                 </div>
               </div>
             )}
