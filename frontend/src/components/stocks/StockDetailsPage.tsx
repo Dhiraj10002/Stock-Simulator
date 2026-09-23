@@ -41,7 +41,7 @@ import {
 } from "lucide-react";
 import { formatPaise, formatPercent } from "@/lib/format";
 import { MASTER_STOCKS_CATALOG, WatchlistItem } from "@/components/dashboard/DashboardPage";
-import { useMarketStore } from "@/stores/market-store";
+import { useMarketStore, useSymbolQuote } from "@/stores/market-store";
 import Navbar from "@/components/layout/Navbar";
 import { apiFetch, publicFetch, getAuthToken, ApiError } from "@/lib/api";
 import type { Wallet, Candle, ApiResponse, Quote as QuoteType } from "@/types";
@@ -403,7 +403,7 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
   const [orderFeedback, setOrderFeedback] = useState<string | null>(null);
   const [orderSubmitting, setOrderSubmitting] = useState(false);
 
-  const quotes = useMarketStore((s) => s.quotes);
+  const liveWsQuote = useSymbolQuote(symbolParam);
   const token = useMemo(() => getAuthToken(), []);
 
   // ---------------------------------------------------------------------------
@@ -486,7 +486,7 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
     };
 
     // Try WebSocket live quote first, fall back to API quote
-    const q = quotes[cleanSym] || (cleanSym === "ZOMATO" ? quotes["ETERNAL"] : undefined);
+    const q = liveWsQuote;
     const liveQuote = q || (apiQuote ? { price_paise: apiQuote.price_paise, change_paise: apiQuote.change_paise, change_percent: apiQuote.change_percent } : undefined);
     if (!liveQuote || !liveQuote.price_paise) return base;
 
@@ -502,7 +502,7 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
       changePercent: +changePercent.toFixed(2),
       isPositive,
     };
-  }, [symbolParam, quotes, apiQuote]);
+  }, [symbolParam, liveWsQuote, apiQuote]);
 
   // Fundamentals & Profile — merge with live API quote data for circuits
   const profile: StockFundamentals = useMemo(() => {
@@ -512,7 +512,7 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
     const uc = apiQuote?.upper_circuit_paise ? apiQuote.upper_circuit_paise / 100 : undefined;
 
     // Use live quote for today's open/high/low if available
-    const wsQ = quotes[stock.symbol];
+    const wsQ = liveWsQuote;
     const liveOpen = wsQ?.open_paise ? wsQ.open_paise / 100 : undefined;
     const liveHigh = wsQ?.high_paise ? wsQ.high_paise / 100 : undefined;
     const liveLow = wsQ?.low_paise ? wsQ.low_paise / 100 : undefined;
@@ -547,7 +547,7 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
         base.about ??
         `${stock.name} is a leading publicly traded corporation listed on NSE and BSE, catering to millions of institutional and retail market participants.`,
     };
-  }, [stock, apiQuote, quotes]);
+  }, [stock, apiQuote, liveWsQuote]);
 
   // ---------------------------------------------------------------------------
   // CHART: Use real candle data when available, fall back to synthetic

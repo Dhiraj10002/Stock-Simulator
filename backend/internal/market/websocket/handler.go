@@ -30,15 +30,44 @@ type event struct {
 	Message string                   `json:"message,omitempty"`
 }
 
-func New(market *marketService.Service) *Handler {
+func New(market *marketService.Service, allowedOrigins ...string) *Handler {
+	originsStr := ""
+	if len(allowedOrigins) > 0 {
+		originsStr = allowedOrigins[0]
+	}
+	origins := make(map[string]struct{})
+	allowAnyOrigin := false
+	if originsStr == "" || originsStr == "*" {
+		allowAnyOrigin = true
+	} else {
+		for _, origin := range strings.Split(originsStr, ",") {
+			origin = strings.TrimSpace(origin)
+			if origin == "*" {
+				allowAnyOrigin = true
+				break
+			}
+			if origin != "" {
+				origins[strings.ToLower(origin)] = struct{}{}
+			}
+		}
+	}
+
 	return &Handler{
 		market: market,
 		upgrader: ws.Upgrader{
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,
-			// This is intentionally permissive for local development. Restrict
-			// origins to the frontend host before deploying publicly.
-			CheckOrigin: func(_ *http.Request) bool { return true },
+			CheckOrigin: func(r *http.Request) bool {
+				if allowAnyOrigin {
+					return true
+				}
+				origin := r.Header.Get("Origin")
+				if origin == "" {
+					return true
+				}
+				_, ok := origins[strings.ToLower(origin)]
+				return ok
+			},
 		},
 	}
 }

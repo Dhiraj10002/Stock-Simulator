@@ -1,8 +1,11 @@
 "use client";
 
 import React, { useEffect, useRef } from "react";
+import { usePathname } from "next/navigation";
 import { useMarketStore } from "@/stores/market-store";
 import type { Quote } from "@/types";
+
+const PUBLIC_ROUTES = new Set(["/", "/login", "/signup", "/3d"]);
 
 const ALL_MARKET_SYMBOLS = [
   "RELIANCE",
@@ -29,17 +32,57 @@ const ALL_MARKET_SYMBOLS = [
   "POONAWALLA",
   "TATACHEM",
   "TATAPOWER",
+  "PRAJIND",
+  "BAJFINANCE",
+  "AXISBANK",
+  "KOTAKBANK",
+  "APARINDS",
+  "MARUTI",
 ];
 
 export function MarketProvider({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+  const isPublic = pathname ? PUBLIC_ROUTES.has(pathname) : false;
+
   const updateQuote = useMarketStore((s) => s.updateQuote);
   const setConnectionState = useMarketStore((s) => s.setConnectionState);
   const setFeedProvider = useMarketStore((s) => s.setFeedProvider);
+  const setMarketStatus = useMarketStore((s) => s.setMarketStatus);
 
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+  // 1. Fetch authoritative market calendar status on mount
   useEffect(() => {
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api/v1";
+    fetch(`${apiUrl}/market/status`)
+      .then((res) => res.json())
+      .then((body) => {
+        if (body.success && body.data?.status) {
+          setMarketStatus(body.data.status);
+        }
+      })
+      .catch(() => {
+        // Fall back gracefully
+      });
+  }, [setMarketStatus]);
+
+  // 2. Manage WebSocket connection (only for authenticated / trading app routes)
+  useEffect(() => {
+    if (isPublic) {
+      if (wsRef.current) {
+        try {
+          wsRef.current.close();
+        } catch {
+          // ignore
+        }
+        wsRef.current = null;
+      }
+      setConnectionState("disconnected");
+      setFeedProvider("Offline");
+      return;
+    }
+
     const wsUrl = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8080/ws/market";
     let isSubscribed = true;
 
@@ -54,7 +97,7 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
         ws.onopen = () => {
           if (!isSubscribed) return;
           setConnectionState("connected");
-          setFeedProvider("Angel One");
+          setFeedProvider("Connecting");
 
           // Subscribe to all relevant market symbols
           ws.send(
@@ -85,10 +128,12 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
 
         ws.onerror = () => {
           setConnectionState("disconnected");
+          setFeedProvider("Offline");
         };
 
         ws.onclose = () => {
           setConnectionState("disconnected");
+          setFeedProvider("Offline");
           if (isSubscribed) {
             // Reconnect after 2 seconds
             reconnectTimeoutRef.current = setTimeout(connect, 2000);
@@ -96,6 +141,7 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
         };
       } catch {
         setConnectionState("disconnected");
+        setFeedProvider("Offline");
         if (isSubscribed) {
           reconnectTimeoutRef.current = setTimeout(connect, 3000);
         }
@@ -115,7 +161,7 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
         }
       }
     };
-  }, [updateQuote, setConnectionState, setFeedProvider]);
+  }, [isPublic, updateQuote, setConnectionState, setFeedProvider]);
 
   return <>{children}</>;
 }

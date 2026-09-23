@@ -33,7 +33,7 @@ import TradeCopilot from "@/components/terminal/TradeCopilot";
 import OptionChainModal from "@/components/terminal/OptionChainModal";
 import PerformanceModal from "@/components/terminal/PerformanceModal";
 import { useToast } from "@/components/terminal/ToastProvider";
-import { useMarketStore } from "@/stores/market-store";
+import { useMarketStore, useSymbolQuote } from "@/stores/market-store";
 import { getOrSeedQuote } from "@/lib/mockData";
 import { fetchQuote, fetchBatchQuotes, getQuoteSync } from "@/lib/quoteService";
 import { getIndianMarketStatus, formatPaise } from "@/lib/format";
@@ -98,17 +98,7 @@ export default function TradingTerminal() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [quotes, setQuotes] = useState<Record<string, Quote>>({});
 
-  const liveWsQuotes = useMarketStore((s) => s.quotes);
 
-  // Synchronize authentic live Angel One quotes into terminal state
-  useEffect(() => {
-    if (Object.keys(liveWsQuotes).length > 0) {
-      setQuotes((prev) => ({
-        ...prev,
-        ...liveWsQuotes,
-      }));
-    }
-  }, [liveWsQuotes]);
 
   // Bottom Tabs: positions | orders | gtt | news | mentor
   const [bottomTab, setBottomTab] = useState<"positions" | "orders" | "gtt" | "news" | "mentor">("positions");
@@ -332,68 +322,7 @@ export default function TradingTerminal() {
     }
   }, [loadData]);
 
-  // WebSocket Subscription for Real-time Quotes
-  useEffect(() => {
-    let socket: WebSocket | null = null;
-    let reconnectTimeout: NodeJS.Timeout;
 
-    const connect = () => {
-      socket = new WebSocket(WS_URL);
-
-      socket.onopen = () => {
-        socket?.send(
-          JSON.stringify({
-            action: "subscribe",
-            symbols: [
-              "RELIANCE",
-              "TCS",
-              "INFY",
-              "HDFCBANK",
-              "NIFTY",
-              "BANKNIFTY",
-            ],
-          })
-        );
-      };
-
-      socket.onmessage = (event) => {
-        try {
-          const payload = JSON.parse(event.data);
-          if (payload.type === "quote" && payload.quote) {
-            const q: Quote = payload.quote;
-            setQuotes((prev) => {
-              const old = prev[q.symbol];
-              const changePercent =
-                old && old.price_paise > 0
-                  ? ((q.price_paise - old.price_paise) / old.price_paise) * 100
-                  : q.change_percent ?? 0;
-              return {
-                ...prev,
-                [q.symbol]: { ...q, change_percent: changePercent },
-              };
-            });
-          }
-        } catch {
-          // ignore parse errors
-        }
-      };
-
-      socket.onerror = () => {
-        socket?.close();
-      };
-
-      socket.onclose = () => {
-        reconnectTimeout = setTimeout(connect, 3000);
-      };
-    };
-
-    connect();
-
-    return () => {
-      clearTimeout(reconnectTimeout);
-      socket?.close();
-    };
-  }, []);
 
   // Prefetch authoritative quotes from backend on mount
   useEffect(() => {
@@ -977,7 +906,8 @@ export default function TradingTerminal() {
     );
   }
 
-  const activeQuote = quotes[selectedSymbol] ?? getQuoteSync(selectedSymbol);
+  const liveSelectedQuote = useSymbolQuote(selectedSymbol);
+  const activeQuote = liveSelectedQuote ?? quotes[selectedSymbol] ?? getQuoteSync(selectedSymbol);
 
   return (
     <div className="flex flex-col min-h-screen bg-slate-950 text-slate-100 font-sans">

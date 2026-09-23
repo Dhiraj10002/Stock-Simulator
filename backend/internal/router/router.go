@@ -57,7 +57,7 @@ func Setup(ctx context.Context, cfg *config.Config) *gin.Engine {
 		go orders.RunProductLifecycle(ctx)
 		go orders.RunExpirySettlement(ctx)
 	}
-	marketWS := marketWebsocket.New(market.Service())
+	marketWS := marketWebsocket.New(market.Service(), cfg.CORSAllowedOrigins)
 	stocks := stockHandler.New()
 	trades := tradeHandler.New()
 	watchlist := watchlistHandler.New()
@@ -83,6 +83,7 @@ func Setup(ctx context.Context, cfg *config.Config) *gin.Engine {
 	r.GET("/ws/market", marketWS.Serve)
 	{
 		api.GET("/health", healthHandler.Health)
+		api.GET("/market/status", market.Status)
 		api.GET("/market/quotes/:symbol", market.Quote)
 		api.GET("/market/quotes/:symbol/history", market.History)
 		api.GET("/fno/option-chain", fno.GetOptionChain)

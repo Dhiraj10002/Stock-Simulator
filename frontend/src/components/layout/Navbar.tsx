@@ -26,7 +26,7 @@ import {
   ShieldAlert,
 } from "lucide-react";
 import { formatPaise, getIndianMarketStatus } from "@/lib/format";
-import { useMarketStore } from "@/stores/market-store";
+import { useMarketStore, useSymbolQuote } from "@/stores/market-store";
 import { useUIStore } from "@/stores/ui-store";
 import { useTheme } from "@/providers/theme-provider";
 import { useRiskOverview } from "@/hooks/useRiskOverview";
@@ -62,7 +62,6 @@ export default function Navbar({
   const pathname = usePathname();
   const setSearchPaletteOpen = useUIStore((s) => s.setSearchPaletteOpen);
   const setShortcutsGuideOpen = useUIStore((s) => s.setShortcutsGuideOpen);
-  const quotes = useMarketStore((s) => s.quotes);
   const { theme, toggleTheme, setTheme } = useTheme();
 
   const [marketStatus, setMarketStatus] = useState(getIndianMarketStatus());
@@ -99,11 +98,24 @@ export default function Navbar({
   }, [showProfileMenu]);
 
   // Universal Logout Handler across all sections
-  const handleLogout = () => {
+  const handleLogout = async () => {
     setShowProfileMenu(false);
     if (onSignOut) {
       onSignOut();
       return;
+    }
+    const refreshToken = localStorage.getItem("stock-simulator-refresh-token");
+    if (refreshToken) {
+      try {
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api/v1";
+        await fetch(`${apiUrl}/auth/logout`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ refresh_token: refreshToken }),
+        });
+      } catch {
+        // Continue clearing credentials even if backend is offline
+      }
     }
     localStorage.removeItem("auth_token");
     localStorage.removeItem("stock-simulator-access-token");
@@ -113,12 +125,12 @@ export default function Navbar({
     window.location.href = "/login";
   };
 
-  // Indices
-  const niftyQuote = quotes["NIFTY"];
+  // Indices — targeted symbol selectors prevent full navbar rerenders on unrelated ticks
+  const niftyQuote = useSymbolQuote("NIFTY");
   const niftyPrice = niftyQuote ? niftyQuote.price_paise : 2339450;
   const niftyChange = niftyQuote?.change_percent ?? 0.35;
 
-  const sensexQuote = quotes["SENSEX"];
+  const sensexQuote = useSymbolQuote("SENSEX");
   const sensexPrice = sensexQuote ? sensexQuote.price_paise : 7473654;
   const sensexChange = sensexQuote?.change_percent ?? 0.18;
 

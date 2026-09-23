@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/config"
@@ -25,10 +26,19 @@ type OrderService struct {
 	rules               product.Rules
 	nowFunc             func() time.Time
 	executableQuoteFunc func(symbol string) (*marketDTO.QuoteResponse, error)
+	activeSymbolsMu     sync.RWMutex
+	activeSymbols       map[string]int
 }
 
 func New(market *marketService.Service, cfg *config.Config) *OrderService {
-	return &OrderService{repo: repository.New(), market: market, rules: product.FromConfig(cfg)}
+	svc := &OrderService{
+		repo:          repository.New(),
+		market:        market,
+		rules:         product.FromConfig(cfg),
+		activeSymbols: make(map[string]int),
+	}
+	_ = svc.RebuildActiveSymbolsFromDB()
+	return svc
 }
 
 func (s *OrderService) SetNowFunc(fn func() time.Time) {
@@ -242,10 +252,81 @@ func (s *OrderService) Create(userID string, request dto.CreateOrderRequest) (*d
 	}
 
 	// A limit or stop order may already be marketable/triggered at creation.
+	if order.Type != model.OrderTypeMarket {
+		s.RegisterActiveSymbol(order.Symbol)
+	}
 	if err := s.MatchSymbol(request.Symbol); err != nil {
 		return nil, err
 	}
 	return s.Get(userID, order.UUID.String())
+}
+
+func (s *OrderService) RegisterActiveSymbol(symbol string) {
+	sym := strings.ToUpper(strings.TrimSpace(symbol))
+	if sym == "" {
+		return
+	}
+	s.activeSymbolsMu.Lock()
+	defer s.activeSymbolsMu.Unlock()
+	if s.activeSymbols == nil {
+		s.activeSymbols = make(map[string]int)
+	}
+	s.activeSymbols[sym]++
+}
+
+func (s *OrderService) UnregisterActiveSymbol(symbol string) {
+	sym := strings.ToUpper(strings.TrimSpace(symbol))
+	if sym == "" {
+		return
+	}
+	s.activeSymbolsMu.Lock()
+	defer s.activeSymbolsMu.Unlock()
+	if s.activeSymbols == nil {
+		return
+	}
+	delete(s.activeSymbols, sym)
+}
+
+func (s *OrderService) HasActiveOrders(symbol string) bool {
+	sym := strings.ToUpper(strings.TrimSpace(symbol))
+	if sym == "" {
+		return false
+	}
+	s.activeSymbolsMu.RLock()
+	defer s.activeSymbolsMu.RUnlock()
+	if s.activeSymbols == nil {
+		return false
+	}
+	return s.activeSymbols[sym] > 0
+}
+
+func (s *OrderService) RebuildActiveSymbolsFromDB() error {
+	db := database.GetDB()
+	if db == nil {
+		return nil
+	}
+	var symbols []string
+	err := db.Model(&model.Order{}).
+		Where("status IN ?", []string{
+			model.OrderStatusPending,
+			model.OrderStatusOpen,
+			model.OrderStatusTriggerPending,
+		}).
+		Pluck("DISTINCT symbol", &symbols).Error
+	if err != nil {
+		return err
+	}
+
+	s.activeSymbolsMu.Lock()
+	defer s.activeSymbolsMu.Unlock()
+	s.activeSymbols = make(map[string]int)
+	for _, sym := range symbols {
+		cleaned := strings.ToUpper(strings.TrimSpace(sym))
+		if cleaned != "" {
+			s.activeSymbols[cleaned] = 1
+		}
+	}
+	return nil
 }
 
 func basePathPrice(price int64) int64 {
@@ -277,6 +358,7 @@ func calculateCircuitLimits(refPricePaise int64, product string) (lowerCircuit i
 // prices are never overwritten: Execute compares the fresh quote with the
 // stored PricePaise before settling.
 func (s *OrderService) RunMatcher(ctx context.Context) {
+	_ = s.RebuildActiveSymbolsFromDB()
 	for {
 		if ctx.Err() != nil {
 			return
@@ -321,6 +403,9 @@ func (s *OrderService) MatchSymbol(symbol string) error {
 	if symbol == "" {
 		return nil
 	}
+	if !s.HasActiveOrders(symbol) {
+		return nil
+	}
 	quote, err := s.executableQuote(symbol)
 	if err != nil {
 		return nil // a zero or stale tick must not trigger settlement
@@ -328,6 +413,10 @@ func (s *OrderService) MatchSymbol(symbol string) error {
 	orders, err := s.repo.ListActiveOrders(symbol)
 	if err != nil {
 		return err
+	}
+	if len(orders) == 0 {
+		s.UnregisterActiveSymbol(symbol)
+		return nil
 	}
 	for _, order := range orders {
 		if order.Status == model.OrderStatusTriggerPending {
