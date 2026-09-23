@@ -37,3 +37,10 @@ htmlcov/
 venv/
 ENV/
 env/
+
+# Logs and runtime telemetry
+logs/
+*.log
+**/*.log
+python-services/**/logs/
+

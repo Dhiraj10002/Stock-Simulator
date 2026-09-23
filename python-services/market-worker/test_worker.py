@@ -126,6 +126,23 @@ class MockRedis:
     def llen(self, key):
         return len(self.store.get(key, []))
 
+    def hgetall(self, key):
+        val = self.store.get(key)
+        if isinstance(val, dict):
+            return val
+        return {}
+
+    def hset(self, key, mapping=None, **kwargs):
+        if key not in self.store or not isinstance(self.store[key], dict):
+            self.store[key] = {}
+        if mapping:
+            self.store[key].update(mapping)
+        if kwargs:
+            self.store[key].update(kwargs)
+
+    def expire(self, key, ttl):
+        pass
+
 
 class SyntheticFeedTest(unittest.TestCase):
     def test_synthetic_feed_generates_bounded_ticks(self):
@@ -166,7 +183,7 @@ class HistoricalCandleSeedTest(unittest.TestCase):
         quote_key = "market:quote:INFY"
         self.assertIn(quote_key, mock_redis.store)
         self.assertEqual(mock_redis.store[quote_key]["symbol"], "INFY")
-        self.assertEqual(mock_redis.store[quote_key]["source"], "synthetic_seed")
+        self.assertEqual(mock_redis.store[quote_key]["source"], "initial_seed")
 
 
 class FallbackMasterTest(unittest.TestCase):
@@ -176,5 +193,134 @@ class FallbackMasterTest(unittest.TestCase):
             self.assertIn(expected, symbols)
 
 
+class SensitiveDataFilterTest(unittest.TestCase):
+    def setUp(self):
+        self.sanitizer = worker.SensitiveDataFilter()
+
+    def test_redacts_bearer_jwt_and_private_key(self):
+        raw_msg = (
+            "Error occurred while making POST request. Headers: {"
+            "'Content-type': 'application/json', 'X-PrivateKey': 'SECRET_KEY_123', "
+            "'Authorization': 'Bearer eyJhbGciOiJIUzUxMiJ9.my_super_secret_jwt.signature'}"
+        )
+        redacted = self.sanitizer.redact_text(raw_msg)
+        self.assertNotIn("SECRET_KEY_123", redacted)
+        self.assertNotIn("my_super_secret_jwt", redacted)
+        self.assertIn("'X-PrivateKey': '[REDACTED]'", redacted)
+        self.assertIn("'Authorization': 'Bearer [REDACTED]'", redacted)
+
+    def test_filter_method_on_log_record(self):
+        import logging
+        record = logging.LogRecord(
+            name="smartConnect",
+            level=logging.ERROR,
+            pathname=__file__,
+            lineno=42,
+            msg="Request failed with Authorization: Bearer abc123def and X-PrivateKey: 'KEY999'",
+            args=(),
+            exc_info=None,
+        )
+        self.sanitizer.filter(record)
+        self.assertNotIn("abc123def", record.msg)
+        self.assertNotIn("KEY999", record.msg)
+        self.assertIn("Authorization: Bearer [REDACTED]", record.msg)
+        self.assertIn("X-PrivateKey: '[REDACTED]'", record.msg)
+
+
+class FeedSupervisorTest(unittest.TestCase):
+    def setUp(self):
+        self.store = MagicMock()
+        self.writer = MagicMock()
+        self.control = worker.FeedControl()
+        self.supervisor = worker.FeedSupervisor(self.store, self.writer, self.control, mode="auto", max_failures=3)
+
+    def test_opened_true_resets_fail_count(self):
+        self.supervisor.fail_count = 2
+        run_fn = MagicMock(return_value=True)
+        res = self.supervisor.handle_feed_cycle(run_fn)
+        self.assertTrue(res)
+        self.assertEqual(self.supervisor.fail_count, 0)
+        self.assertFalse(self.supervisor.fallback_active)
+
+    def test_opened_false_increments_fail_count(self):
+        run_fn = MagicMock(return_value=False)
+        res = self.supervisor.handle_feed_cycle(run_fn)
+        self.assertTrue(res)
+        self.assertEqual(self.supervisor.fail_count, 1)
+
+    def test_exception_increments_fail_count(self):
+        run_fn = MagicMock(side_effect=RuntimeError("connection dropped"))
+        res = self.supervisor.handle_feed_cycle(run_fn)
+        self.assertTrue(res)
+        self.assertEqual(self.supervisor.fail_count, 1)
+
+    def test_three_consecutive_failures_triggers_fallback(self):
+        run_fn = MagicMock(return_value=False)
+        self.assertTrue(self.supervisor.handle_feed_cycle(run_fn))
+        self.assertEqual(self.supervisor.fail_count, 1)
+
+        self.assertTrue(self.supervisor.handle_feed_cycle(run_fn))
+        self.assertEqual(self.supervisor.fail_count, 2)
+
+        # 3rd failure activates synthetic fallback
+        res = self.supervisor.handle_feed_cycle(run_fn)
+        self.assertFalse(res)  # returns False to break out of live loop
+        self.assertEqual(self.supervisor.fail_count, 3)
+        self.assertTrue(self.supervisor.fallback_active)
+
+    def test_recovery_resets_counter_before_fallback_threshold(self):
+        run_fail = MagicMock(return_value=False)
+        run_success = MagicMock(return_value=True)
+
+        self.supervisor.handle_feed_cycle(run_fail)
+        self.supervisor.handle_feed_cycle(run_fail)
+        self.assertEqual(self.supervisor.fail_count, 2)
+
+        # Successful connection resets
+        self.supervisor.handle_feed_cycle(run_success)
+        self.assertEqual(self.supervisor.fail_count, 0)
+
+        # One more failure starts from 1 again, not triggering fallback
+        res = self.supervisor.handle_feed_cycle(run_fail)
+        self.assertTrue(res)
+        self.assertEqual(self.supervisor.fail_count, 1)
+        self.assertFalse(self.supervisor.fallback_active)
+
+
+class SymbolAliasTest(unittest.TestCase):
+    def test_zomato_resolves_to_eternal(self):
+        self.assertEqual(worker.resolve_canonical_symbol("ZOMATO"), "ETERNAL")
+        self.assertEqual(worker.resolve_canonical_symbol("ZOMATO-EQ"), "ETERNAL")
+
+    def test_eternal_resolves_to_eternal(self):
+        self.assertEqual(worker.resolve_canonical_symbol("ETERNAL"), "ETERNAL")
+        self.assertEqual(worker.resolve_canonical_symbol("ETERNAL-EQ"), "ETERNAL")
+
+    def test_tatamotors_resolves_to_tmpv(self):
+        self.assertEqual(worker.resolve_canonical_symbol("TATAMOTORS"), "TMPV")
+        self.assertEqual(worker.resolve_canonical_symbol("TATAMOTORS-EQ"), "TMPV")
+
+    def test_tmpv_resolves_to_tmpv(self):
+        self.assertEqual(worker.resolve_canonical_symbol("TMPV"), "TMPV")
+        self.assertEqual(worker.resolve_canonical_symbol("TMPV-EQ"), "TMPV")
+
+    def test_prajind_resolves_to_prajind(self):
+        self.assertEqual(worker.resolve_canonical_symbol("PRAJIND"), "PRAJIND")
+        self.assertEqual(worker.resolve_canonical_symbol("PRAJIND-EQ"), "PRAJIND")
+
+    def test_unknown_symbol_resolves_cleanly(self):
+        self.assertEqual(worker.resolve_canonical_symbol("NONEXISTENT"), "NONEXISTENT")
+        self.assertEqual(worker.resolve_canonical_symbol("UNKNOWN-EQ"), "UNKNOWN")
+
+    def test_get_symbol_aliases_returns_mirrored_symbols(self):
+        aliases = worker.get_symbol_aliases("ETERNAL")
+        self.assertIn("ZOMATO", aliases)
+
+        tmpv_aliases = worker.get_symbol_aliases("TMPV")
+        self.assertIn("TATAMOTORS", tmpv_aliases)
+
+
 if __name__ == "__main__":
     unittest.main()
+
+

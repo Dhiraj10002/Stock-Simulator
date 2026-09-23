@@ -1,7 +1,9 @@
 import json
+import logging
 import math
 import os
 import random
+import re
 import socket
 import threading
 import time
@@ -12,6 +14,52 @@ from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any
+
+class SensitiveDataFilter(logging.Filter):
+    """Redacts sensitive API keys, JWT tokens, and private keys from vendor and application logs."""
+    PATTERNS = [
+        (re.compile(r"(['\"]?Authorization['\"]?:\s*['\"]?Bearer\s+)[^'\"}\s,]+(['\"]?)", re.IGNORECASE), r"\1[REDACTED]\2"),
+        (re.compile(r"(['\"]?X-PrivateKey['\"]?:\s*['\"]?)[^'\"}\s,]+(['\"]?)", re.IGNORECASE), r"\1[REDACTED]\2"),
+        (re.compile(r"(Bearer\s+ey[A-Za-z0-9._\-]+)", re.IGNORECASE), r"Bearer [REDACTED]"),
+    ]
+
+    def redact_text(self, text: str) -> str:
+        for pattern, repl in self.PATTERNS:
+            text = pattern.sub(repl, text)
+        return text
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.msg, str):
+            record.msg = self.redact_text(record.msg)
+        if record.args:
+            if isinstance(record.args, dict):
+                record.args = {
+                    k: (self.redact_text(v) if isinstance(v, str) else v)
+                    for k, v in record.args.items()
+                }
+            elif isinstance(record.args, (list, tuple)):
+                record.args = tuple(
+                    self.redact_text(v) if isinstance(v, str) else v
+                    for v in record.args
+                )
+        return True
+
+def install_log_sanitizer() -> None:
+    sanitizer = SensitiveDataFilter()
+    root_logger = logging.getLogger()
+    root_logger.addFilter(sanitizer)
+    for h in root_logger.handlers:
+        h.addFilter(sanitizer)
+
+    logging.getLogger("smartConnect").addFilter(sanitizer)
+
+    try:
+        import logzero
+        logzero.logger.addFilter(sanitizer)
+        for h in logzero.logger.handlers:
+            h.addFilter(sanitizer)
+    except Exception:
+        pass
 
 # Force IPv4 socket resolution to avoid IPv6 network timeouts
 _orig_getaddrinfo = socket.getaddrinfo
@@ -44,11 +92,14 @@ def load_env_file():
             break
 
 load_env_file()
+install_log_sanitizer()
 
 import pyotp
 import redis
 from SmartApi import SmartConnect
 from SmartApi.smartWebSocketV2 import SmartWebSocketV2
+install_log_sanitizer()
+
 
 INSTRUMENT_MASTER_URL = "https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json"
 LOCAL_CACHE_PATH = "/tmp/OpenAPIScripMaster.json"
@@ -160,6 +211,29 @@ GLOBAL_SMART_API: Any = None
 GLOBAL_WRITER: Any = None
 GLOBAL_TOKEN_MAP: dict[str, dict[str, Any]] = {}
 
+CANONICAL_SYMBOL_ALIASES: dict[str, str] = {
+    "ZOMATO": "ETERNAL",
+    "TATAMOTORS": "TMPV",
+}
+
+def resolve_canonical_symbol(symbol: str) -> str:
+    """
+    Normalizes a symbol and resolves any known corporate renames / aliases.
+    e.g. 'ZOMATO-EQ' -> 'ETERNAL', 'TATAMOTORS' -> 'TMPV', 'PRAJIND-EQ' -> 'PRAJIND'
+    """
+    sym = symbol.strip().upper()
+    sym_clean = sym.replace("-EQ", "").replace("-BE", "").replace("-SM", "")
+    return CANONICAL_SYMBOL_ALIASES.get(sym_clean, sym_clean)
+
+def get_symbol_aliases(canonical_symbol: str) -> list[str]:
+    """Returns all aliases that map to this canonical symbol or vice-versa."""
+    aliases = []
+    canonical = resolve_canonical_symbol(canonical_symbol)
+    for alias, target in CANONICAL_SYMBOL_ALIASES.items():
+        if target == canonical and alias != canonical:
+            aliases.append(alias)
+    return aliases
+
 
 def init_global_token_map() -> None:
     global GLOBAL_TOKEN_MAP
@@ -210,14 +284,14 @@ def init_smart_api() -> None:
 
 def fetch_quote_for_symbol(symbol: str) -> dict[str, Any] | None:
     symbol = symbol.strip().upper()
-    lookup_sym = symbol
-    if symbol == "ZOMATO":
-        lookup_sym = "ETERNAL"
-    elif symbol == "TATAMOTORS":
-        lookup_sym = "TMPV"
+    canonical_sym = resolve_canonical_symbol(symbol)
+    clean_sym = symbol.replace("-EQ", "").replace("-BE", "").replace("-SM", "")
 
-    clean_sym = symbol.replace("-EQ", "")
-    info = GLOBAL_TOKEN_MAP.get(lookup_sym) or GLOBAL_TOKEN_MAP.get(clean_sym)
+    info = (
+        GLOBAL_TOKEN_MAP.get(canonical_sym)
+        or GLOBAL_TOKEN_MAP.get(clean_sym)
+        or GLOBAL_TOKEN_MAP.get(symbol)
+    )
 
     token = None
     exch = "NSE"
@@ -560,11 +634,12 @@ class QuoteWriter:
         candle = make_candle(latest, bucket, price_paise, self.volume_delta(subscription.symbol, now.date(), volume))
 
         symbols_to_write = [subscription.symbol]
-        # Mirror ETERNAL to ZOMATO so both keys receive the live updates
-        if subscription.symbol == "ETERNAL":
-            symbols_to_write.append("ZOMATO")
-        elif subscription.symbol == "ZOMATO":
-            symbols_to_write.append("ETERNAL")
+        canonical = resolve_canonical_symbol(subscription.symbol)
+        for alias in get_symbol_aliases(canonical):
+            if alias not in symbols_to_write:
+                symbols_to_write.append(alias)
+        if canonical not in symbols_to_write:
+            symbols_to_write.append(canonical)
 
         with self.client.pipeline() as pipe:
             for sym in symbols_to_write:
@@ -869,6 +944,45 @@ def watch_feed(control: FeedControl, stale_after_seconds: int) -> None:
             control.reconnect(f"no market tick for {stale_after_seconds}s")
 
 
+class FeedSupervisor:
+    """
+    Manages the lifecycle and fallback loop for the live market feed.
+    Tracks consecutive failures and transitions to synthetic fallback when threshold is met.
+    """
+    def __init__(self, store: Any, writer: Any, control: FeedControl, mode: str = "auto", max_failures: int = 3, tick_interval: float = 1.0) -> None:
+        self.store = store
+        self.writer = writer
+        self.control = control
+        self.mode = mode
+        self.max_failures = max_failures
+        self.tick_interval = tick_interval
+        self.fail_count = 0
+        self.fallback_active = False
+
+    def handle_feed_cycle(self, run_feed_fn) -> bool:
+        """
+        Runs one iteration of the feed.
+        Returns True to continue the live loop, or False when synthetic fallback should activate.
+        """
+        try:
+            opened = run_feed_fn(self.store, self.writer, self.control)
+            if opened:
+                self.fail_count = 0
+            else:
+                self.fail_count += 1
+                print(f"market worker: live feed disconnected or failed to open (failure count {self.fail_count}/{self.max_failures})", flush=True)
+        except Exception as error:
+            self.fail_count += 1
+            print(f"market worker: live feed error: {error} (failure count {self.fail_count}/{self.max_failures})", flush=True)
+
+        if self.mode == "auto" and self.fail_count >= self.max_failures:
+            print(f"market worker: live feed failed {self.fail_count} times in auto mode; switching to synthetic feed fallback", flush=True)
+            self.fallback_active = True
+            return False
+
+        return True
+
+
 def main() -> None:
     global GLOBAL_WRITER
     mode = os.getenv("MARKET_FEED_MODE", "auto").strip().lower()
@@ -915,34 +1029,26 @@ def main() -> None:
         return
 
     # Live Feed Mode (with automatic failover in auto mode)
-    print(f"market worker: running in LIVE ANGEL ONE feed mode", flush=True)
+    print("market worker: running in LIVE ANGEL ONE feed mode", flush=True)
     control = FeedControl()
     threading.Thread(target=refresh_daily, args=(store, control), daemon=True).start()
     stale_after_seconds = int(os.getenv("MARKET_FEED_STALE_SECONDS", "120"))
     threading.Thread(target=watch_feed, args=(control, stale_after_seconds), daemon=True).start()
 
-    backoff = 1
-    fail_count = 0
-    while True:
-        try:
-            opened = run_feed(store, writer, control)
-            fail_count = 0
-        except Exception as error:
-            print(f"market worker: live feed error: {error}", flush=True)
-            opened = False
-            fail_count += 1
+    tick_interval = float(os.getenv("SYNTHETIC_TICK_INTERVAL_SECONDS", "1.0"))
+    supervisor = FeedSupervisor(store, writer, control, mode=mode, max_failures=3, tick_interval=tick_interval)
 
-        if mode == "auto" and fail_count >= 3:
-            print("market worker: live feed failed 3 times in auto mode; switching to synthetic feed fallback", flush=True)
-            tick_interval = float(os.getenv("SYNTHETIC_TICK_INTERVAL_SECONDS", "1.0"))
-            synthetic_feed = SyntheticFeed(store.subscriptions(), writer, tick_interval_seconds=tick_interval)
+    backoff = 1
+    while True:
+        continue_live = supervisor.handle_feed_cycle(run_feed)
+        if not continue_live:
+            synthetic_feed = SyntheticFeed(store.subscriptions(), writer, tick_interval_seconds=supervisor.tick_interval)
             synthetic_feed.run()
             return
 
-        if opened:
-            backoff = 1
         time.sleep(backoff)
         backoff = min(backoff * 2, 60)
+
 
 
 if __name__ == "__main__":
