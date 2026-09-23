@@ -64,13 +64,15 @@ export default function FnoOrderModal({
   // When instrument or initialSide changes, reset defaults
   React.useEffect(() => {
     if (instrument) {
-      setFeedback(null);
-      setLots(1);
-      if (initialSide) {
-        setSide(initialSide);
-      }
-      const ltp = (instrument.basePricePaise / 100).toFixed(2);
-      setLimitPrice(ltp);
+      queueMicrotask(() => {
+        setFeedback(null);
+        setLots(1);
+        if (initialSide) {
+          setSide(initialSide);
+        }
+        const ltp = (instrument.basePricePaise / 100).toFixed(2);
+        setLimitPrice(ltp);
+      });
     }
   }, [instrument, initialSide]);
 
@@ -137,7 +139,7 @@ export default function FnoOrderModal({
       setTimeout(() => {
         onClose();
       }, 1400);
-    } catch (err: any) {
+    } catch {
       // Fallback graceful success simulation for paper trading desk
       void queryClient.invalidateQueries({ queryKey: ["wallet"] });
       void queryClient.invalidateQueries({ queryKey: ["portfolio"] });

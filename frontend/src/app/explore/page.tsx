@@ -9,10 +9,12 @@ export default function ExploreRoutePage() {
   const [authModalOpen, setAuthModalOpen] = useState(false);
 
   useEffect(() => {
-    const token =
-      localStorage.getItem("auth_token") ||
-      localStorage.getItem("stock-simulator-access-token");
-    setIsAuthenticated(!!token);
+    queueMicrotask(() => {
+      const token =
+        localStorage.getItem("auth_token") ||
+        localStorage.getItem("stock-simulator-access-token");
+      setIsAuthenticated(!!token);
+    });
   }, []);
 
   const handleSignOut = () => {

@@ -668,7 +668,7 @@ export default function StocksExplorePage() {
                   {/* Index Scope dropdown */}
                   <select
                     value={indexScope}
-                    onChange={(e) => setIndexScope(e.target.value as any)}
+                    onChange={(e) => setIndexScope(e.target.value as "NIFTY 100" | "NIFTY 500")}
                     aria-label="Filter stocks by index scope"
                     className="text-xs font-semibold bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1 text-slate-700 dark:text-slate-300 focus:outline-none cursor-pointer"
                   >

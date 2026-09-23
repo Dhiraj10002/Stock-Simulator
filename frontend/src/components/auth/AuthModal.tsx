@@ -49,8 +49,10 @@ export default function AuthModal({
 
   // Sync mode if initialMode changes
   useEffect(() => {
-    setMode(initialMode);
-    setError(null);
+    queueMicrotask(() => {
+      setMode(initialMode);
+      setError(null);
+    });
   }, [initialMode, isOpen]);
 
   // Moving 3D balls background canvas for modal backdrop

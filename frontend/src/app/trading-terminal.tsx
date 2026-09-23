@@ -33,8 +33,7 @@ import TradeCopilot from "@/components/terminal/TradeCopilot";
 import OptionChainModal from "@/components/terminal/OptionChainModal";
 import PerformanceModal from "@/components/terminal/PerformanceModal";
 import { useToast } from "@/components/terminal/ToastProvider";
-import { useMarketStore, useSymbolQuote } from "@/stores/market-store";
-import { getOrSeedQuote } from "@/lib/mockData";
+import { useSymbolQuote } from "@/stores/market-store";
 import { fetchQuote, fetchBatchQuotes, getQuoteSync } from "@/lib/quoteService";
 import { getIndianMarketStatus, formatPaise } from "@/lib/format";
 import type {
@@ -53,8 +52,6 @@ import type {
 
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080/api/v1";
-const WS_URL =
-  process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:8080/ws/market";
 
 function getUnderlyingSymbol(sym: string): string {
   const upper = (sym || "").toUpperCase();
@@ -889,6 +886,9 @@ export default function TradingTerminal() {
     handleQuickOrder,
   ]);
 
+  const liveSelectedQuote = useSymbolQuote(selectedSymbol);
+  const activeQuote = liveSelectedQuote ?? quotes[selectedSymbol] ?? getQuoteSync(selectedSymbol);
+
   if (!token) {
     return (
       <AuthScreen
@@ -905,9 +905,6 @@ export default function TradingTerminal() {
       />
     );
   }
-
-  const liveSelectedQuote = useSymbolQuote(selectedSymbol);
-  const activeQuote = liveSelectedQuote ?? quotes[selectedSymbol] ?? getQuoteSync(selectedSymbol);
 
   return (
     <div className="flex flex-col min-h-screen bg-slate-950 text-slate-100 font-sans">

@@ -15,7 +15,6 @@ import {
   User,
   Activity,
   TrendingUp,
-  RotateCcw,
   CheckCircle2,
   X,
 } from "lucide-react";
@@ -147,17 +146,18 @@ export default function TradeCopilot({ token, apiUrl }: TradeCopilotProps) {
   const [critiquing, setCritiquing] = useState(false);
   const [showCritique, setShowCritique] = useState(true);
 
-  const [messages, setMessages] = useState<ChatMessage[]>([
+  const [messages, setMessages] = useState<ChatMessage[]>(() => [
     {
       id: "welcome-1",
       role: "copilot",
       content:
         "👋 Welcome to the **AI Trade Copilot & Institutional Risk Desk**.\n\nI monitor your position sizing, margin leverage, and execution discipline in real time. Ask me anything about risk management, portfolio hedging, MIS square-off rules, or click **Critique My Trading** above to audit your trade history.",
-      timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      timestamp: "10:00 AM",
     },
   ]);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const msgIdRef = useRef(1);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -172,7 +172,8 @@ export default function TradeCopilot({ token, apiUrl }: TradeCopilotProps) {
       void handleCritique();
     }
 
-    const userMsgId = "u-" + Date.now();
+    const currentId = ++msgIdRef.current;
+    const userMsgId = `u-${currentId}`;
     const timeStr = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
     // Append user message immediately
@@ -191,7 +192,7 @@ export default function TradeCopilot({ token, apiUrl }: TradeCopilotProps) {
         setMessages((prev) => [
           ...prev,
           {
-            id: "c-" + Date.now(),
+            id: `c-${++msgIdRef.current}`,
             role: "copilot",
             content: PREBUILT_RESPONSES[matchedPrebuilt],
             timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
@@ -223,7 +224,7 @@ export default function TradeCopilot({ token, apiUrl }: TradeCopilotProps) {
       setMessages((prev) => [
         ...prev,
         {
-          id: "c-" + Date.now(),
+          id: `c-${++msgIdRef.current}`,
           role: "copilot",
           content: reply,
           timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
@@ -241,7 +242,7 @@ Regarding "${q}":
       setMessages((prev) => [
         ...prev,
         {
-          id: "c-" + Date.now(),
+          id: `c-${++msgIdRef.current}`,
           role: "copilot",
           content: fallbackReply,
           timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),

@@ -14,6 +14,7 @@ import {
   Receipt,
 } from "lucide-react";
 import { formatPaise } from "@/lib/format";
+import type { Wallet as WalletData } from "@/types";
 import WalletTransactionsTable from "./WalletTransactionsTable";
 
 interface AddFundsModalProps {
@@ -57,7 +58,7 @@ export default function AddFundsModal({
     try {
       // If we don't have a direct backend deposit endpoint, we can call reset or update wallet
       // Also update local mock / query cache
-      queryClient.setQueryData(["wallet"], (old: any) => {
+      queryClient.setQueryData(["wallet"], (old: WalletData | undefined) => {
         if (!old) return old;
         const addPaise = activeAmount * 100;
         return {

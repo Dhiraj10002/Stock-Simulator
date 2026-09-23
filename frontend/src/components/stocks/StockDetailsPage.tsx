@@ -558,8 +558,7 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
     const base = stock.price;
     const numPoints = candleLimit;
     const fakeCandles: Candle[] = [];
-    let cur = base - stock.change;
-    const now = Date.now();
+    const baseTime = 1774000000;
     for (let i = 0; i < numPoints; i++) {
       const noise = (Math.sin(i * 0.6) + Math.cos(i * 0.3) * 0.5) * (base * 0.003);
       const trend = (i / numPoints) * stock.change;
@@ -567,17 +566,18 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
       const open = i === 0 ? base - stock.change : fakeCandles[i - 1].close_paise;
       const high = Math.round(Math.max(open, close * 100) + Math.abs(noise) * 40);
       const low = Math.round(Math.min(open, close * 100) - Math.abs(noise) * 40);
+      const deterministicVolume = Math.floor(1000 + (Math.sin(i * 1.5) * 0.5 + 0.5) * 5000);
       fakeCandles.push({
-        timestamp: Math.floor((now - (numPoints - i) * 60000) / 1000),
+        timestamp: baseTime - (numPoints - i) * 60,
         open_paise: Math.round(open),
         high_paise: high,
         low_paise: low,
         close_paise: Math.round(close * 100),
-        volume: Math.floor(1000 + Math.random() * 5000),
+        volume: deterministicVolume,
       });
     }
     return fakeCandles;
-  }, [rawCandles, stock, candleLimit]);
+  }, [rawCandles, stock.price, stock.change, candleLimit]);
 
   const chartPoints = useMemo(() => {
     if (candles.length === 0) return [stock.price];
@@ -617,38 +617,40 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
   const STORAGE_ACTIVE_TAB_KEY = "stock-simulator-active-wl-tab-v2";
 
   useEffect(() => {
-    if (token && watchlistItems && watchlistItems.length > 0) {
-      if (watchlistItems.some((w) => w.symbol === stock.symbol)) {
-        setIsInWatchlist(true);
-        return;
+    queueMicrotask(() => {
+      if (token && watchlistItems && watchlistItems.length > 0) {
+        if (watchlistItems.some((w) => w.symbol === stock.symbol)) {
+          setIsInWatchlist(true);
+          return;
+        }
       }
-    }
-    if (typeof window !== "undefined") {
-      try {
-        const saved = localStorage.getItem(STORAGE_CUSTOM_KEY);
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          const allSymbols = Object.values(parsed).flatMap((list: any) =>
-            Array.isArray(list) ? list.map((it) => (typeof it === "string" ? it : it?.symbol)) : []
-          );
-          if (allSymbols.includes(stock.symbol)) {
-            setIsInWatchlist(true);
-            return;
+      if (typeof window !== "undefined") {
+        try {
+          const saved = localStorage.getItem(STORAGE_CUSTOM_KEY);
+          if (saved) {
+            const parsed = JSON.parse(saved);
+            const allSymbols = Object.values(parsed).flatMap((list: unknown) =>
+              Array.isArray(list) ? list.map((it: unknown) => (typeof it === "string" ? it : (it as Record<string, unknown>)?.symbol)) : []
+            );
+            if (allSymbols.includes(stock.symbol)) {
+              setIsInWatchlist(true);
+              return;
+            }
           }
-        }
-        // Also check legacy storage for backwards compatibility
-        const legacy = localStorage.getItem("stock_sim_watchlists_v2");
-        if (legacy) {
-          const legacyParsed = JSON.parse(legacy);
-          const legacyList = legacyParsed[1] || [];
-          if (legacyList.some((s: any) => (typeof s === "string" ? s : s?.symbol) === stock.symbol)) {
-            setIsInWatchlist(true);
-            return;
+          // Also check legacy storage for backwards compatibility
+          const legacy = localStorage.getItem("stock_sim_watchlists_v2");
+          if (legacy) {
+            const legacyParsed = JSON.parse(legacy);
+            const legacyList = legacyParsed[1] || [];
+            if (Array.isArray(legacyList) && legacyList.some((s: unknown) => (typeof s === "string" ? s : (s as Record<string, unknown>)?.symbol) === stock.symbol)) {
+              setIsInWatchlist(true);
+              return;
+            }
           }
-        }
-      } catch {}
-    }
-    setIsInWatchlist(false);
+        } catch {}
+      }
+      setIsInWatchlist(false);
+    });
   }, [stock.symbol, watchlistItems, token]);
 
   const handleToggleWatchlist = useCallback(async () => {
@@ -660,14 +662,14 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
       const activeTab = localStorage.getItem(STORAGE_ACTIVE_TAB_KEY) || "wl1";
       const saved = localStorage.getItem(STORAGE_CUSTOM_KEY);
       const parsed = saved ? JSON.parse(saved) : {};
-      const currentList: any[] = Array.isArray(parsed[activeTab]) ? parsed[activeTab] : [];
+      const currentList: unknown[] = Array.isArray(parsed[activeTab]) ? parsed[activeTab] : [];
 
       if (!nextState) {
         // Remove from all tabs
         for (const k of Object.keys(parsed)) {
           if (Array.isArray(parsed[k])) {
             parsed[k] = parsed[k].filter(
-              (s: any) => (typeof s === "string" ? s : s?.symbol) !== stock.symbol
+              (s: unknown) => (typeof s === "string" ? s : (s as Record<string, unknown>)?.symbol) !== stock.symbol
             );
           }
         }
@@ -680,7 +682,7 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
           exchange: stock.exchange || "NSE",
         };
         const exists = currentList.some(
-          (s: any) => (typeof s === "string" ? s : s?.symbol) === stock.symbol
+          (s: unknown) => (typeof s === "string" ? s : (s as Record<string, unknown>)?.symbol) === stock.symbol
         );
         if (!exists) {
           parsed[activeTab] = [newItem, ...currentList];

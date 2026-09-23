@@ -279,7 +279,9 @@ export default function LedgerStatementView({
   }, [apiUrl, token, fromDate, toDate, isDemo]);
 
   useEffect(() => {
-    void fetchStatement();
+    queueMicrotask(() => {
+      void fetchStatement();
+    });
   }, [fetchStatement]);
 
   const handleExportCSV = () => {

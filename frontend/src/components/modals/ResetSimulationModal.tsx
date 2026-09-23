@@ -33,7 +33,9 @@ export default function ResetSimulationModal({
   const [success, setSuccess] = useState(false);
 
   useEffect(() => {
-    setMounted(true);
+    queueMicrotask(() => {
+      setMounted(true);
+    });
   }, []);
 
   if (!isOpen || !mounted) return null;

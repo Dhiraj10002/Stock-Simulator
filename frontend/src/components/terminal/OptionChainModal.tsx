@@ -105,14 +105,16 @@ export default function OptionChainModal({
 
   useEffect(() => {
     if (isOpen) {
-      const validSym = SYMBOLS.some((s) => s.symbol === initialSymbol)
-        ? initialSymbol
-        : "NIFTY";
-      setSelectedSymbol(validSym);
-      setActiveStrategy("NONE");
-      setExecutionMessage(null);
-      setExecutionError(null);
-      void fetchOptionChain(validSym);
+      queueMicrotask(() => {
+        const validSym = SYMBOLS.some((s) => s.symbol === initialSymbol)
+          ? initialSymbol
+          : "NIFTY";
+        setSelectedSymbol(validSym);
+        setActiveStrategy("NONE");
+        setExecutionMessage(null);
+        setExecutionError(null);
+        void fetchOptionChain(validSym);
+      });
     }
   }, [isOpen, initialSymbol, fetchOptionChain]);
 

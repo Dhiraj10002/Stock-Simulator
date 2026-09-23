@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTerminalStore } from "@/stores/terminal-store";
 import { useMarketStore } from "@/stores/market-store";
-import { getOrSeedQuote } from "@/lib/mockData";
 import { getQuoteSync, fetchBatchQuotes } from "@/lib/quoteService";
 import { formatPaise, formatPercent } from "@/lib/format";
 import { apiFetch, getAuthToken, ApiError } from "@/lib/api";
@@ -26,7 +25,6 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   Sparkles,
-  Zap,
   Cloud,
 } from "lucide-react";
 import type { Quote, WatchlistDbItem } from "@/types";
@@ -160,22 +158,23 @@ export default function WatchlistManagerDesk({ token: propToken }: WatchlistMana
           for (const [key, list] of Object.entries(merged)) {
             if (Array.isArray(list)) {
               cleaned[key] = list
-                .map((it: any) => {
+                .map((it: unknown): WatchlistItem | null => {
                   if (!it) return null;
                   if (typeof it === "string") {
                     const s = it.trim().toUpperCase();
                     return s ? { symbol: s, name: `${s} Ltd`, exchange: "NSE" } : null;
                   }
-                  const sym = (it.symbol || it.ticker || "").toString().trim().toUpperCase();
+                  const obj = it as Record<string, unknown>;
+                  const sym = (obj.symbol || obj.ticker || "").toString().trim().toUpperCase();
                   if (!sym) return null;
                   return {
                     symbol: sym,
-                    name: (it.name || `${sym} Ltd`).toString(),
-                    exchange: (it.exchange || "NSE").toString(),
-                    isAlias: it.isAlias,
+                    name: (obj.name || `${sym} Ltd`).toString(),
+                    exchange: (obj.exchange || "NSE").toString(),
+                    isAlias: typeof obj.isAlias === "string" ? obj.isAlias : undefined,
                   };
                 })
-                .filter((it): it is WatchlistItem => it !== null && !!it.symbol);
+                .filter((it): it is WatchlistItem => it !== null);
             } else {
             cleaned[key] = DEFAULT_WATCHLIST_DATA[key] || [];
             }
@@ -189,13 +188,13 @@ export default function WatchlistManagerDesk({ token: propToken }: WatchlistMana
               const legacyList = legacyParsed[1] || [];
               if (Array.isArray(legacyList) && legacyList.length > 0) {
                 const targetList = cleaned["wl1"] || [];
-                legacyList.forEach((leg: any) => {
+                legacyList.forEach((leg: Record<string, unknown>) => {
                   const sym = (leg?.symbol || "").toString().trim().toUpperCase();
                   if (sym && !targetList.some((t) => t.symbol === sym)) {
                     targetList.unshift({
                       symbol: sym,
-                      name: leg.name || `${sym} Limited`,
-                      exchange: leg.exchange || "NSE",
+                      name: (leg.name as string) || `${sym} Limited`,
+                      exchange: (leg.exchange as string) || "NSE",
                     });
                   }
                 });
@@ -240,39 +239,41 @@ export default function WatchlistManagerDesk({ token: propToken }: WatchlistMana
   // Synchronize cloud DB items into the primary watchlist tab (wl1) safely without losing local items
   useEffect(() => {
     if (token && Array.isArray(dbWatchlist) && dbWatchlist.length > 0) {
-      setWatchlists((prev) => {
-        const currentPrimary = Array.isArray(prev["wl1"]) ? prev["wl1"] : [];
-        const mergedMap = new Map<string, WatchlistItem>();
+      queueMicrotask(() => {
+        setWatchlists((prev) => {
+          const currentPrimary = Array.isArray(prev["wl1"]) ? prev["wl1"] : [];
+          const mergedMap = new Map<string, WatchlistItem>();
 
-        // 1. Retain all current items in wl1
-        currentPrimary.forEach((it) => {
-          if (it?.symbol) {
-            mergedMap.set(it.symbol.toUpperCase(), it);
-          }
+          // 1. Retain all current items in wl1
+          currentPrimary.forEach((it) => {
+            if (it?.symbol) {
+              mergedMap.set(it.symbol.toUpperCase(), it);
+            }
+          });
+
+          // 2. Add any items from cloud DB
+          dbWatchlist.forEach((item: WatchlistDbItem | Record<string, unknown>) => {
+            const sym = (item?.symbol || (item as Record<string, unknown>)?.ticker || "").toString().trim().toUpperCase();
+            if (!sym) return;
+            if (!mergedMap.has(sym)) {
+              const fromCatalog = MASTER_STOCKS_CATALOG.find((s) => s.symbol === sym);
+              mergedMap.set(sym, {
+                symbol: sym,
+                name: fromCatalog?.name || `${sym} Ltd`,
+                exchange: "NSE",
+              });
+            }
+          });
+
+          const updated = {
+            ...prev,
+            wl1: Array.from(mergedMap.values()),
+          };
+          try {
+            localStorage.setItem(STORAGE_CUSTOM_KEY, JSON.stringify(updated));
+          } catch {}
+          return updated;
         });
-
-        // 2. Add any items from cloud DB
-        dbWatchlist.forEach((item: any) => {
-          const sym = (item?.symbol || item?.ticker || "").toString().trim().toUpperCase();
-          if (!sym) return;
-          if (!mergedMap.has(sym)) {
-            const fromCatalog = MASTER_STOCKS_CATALOG.find((s) => s.symbol === sym);
-            mergedMap.set(sym, {
-              symbol: sym,
-              name: fromCatalog?.name || `${sym} Ltd`,
-              exchange: "NSE",
-            });
-          }
-        });
-
-        const updated = {
-          ...prev,
-          wl1: Array.from(mergedMap.values()),
-        };
-        try {
-          localStorage.setItem(STORAGE_CUSTOM_KEY, JSON.stringify(updated));
-        } catch {}
-        return updated;
       });
     }
   }, [token, dbWatchlist]);
@@ -290,24 +291,30 @@ export default function WatchlistManagerDesk({ token: propToken }: WatchlistMana
   useEffect(() => {
     const q = searchQuery.trim();
     if (!q) {
-      setLiveSearchResults([]);
-      setIsSearchingLive(false);
+      queueMicrotask(() => {
+        setLiveSearchResults([]);
+        setIsSearchingLive(false);
+      });
       return;
     }
 
-    setIsSearchingLive(true);
+    queueMicrotask(() => {
+      setIsSearchingLive(true);
+    });
     const timer = setTimeout(async () => {
       try {
         const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api/v1";
         const res = await fetch(`${apiUrl}/stocks?q=${encodeURIComponent(q)}`);
         const json = await res.json();
         if (json.success && Array.isArray(json.data) && json.data.length > 0) {
-          const mapped: WatchlistItem[] = json.data.slice(0, 15).map((d: any) => {
-            const isZomato = d.symbol.toUpperCase().includes("ETERNAL") && q.toLowerCase().includes("zomato");
+          const mapped: WatchlistItem[] = json.data.slice(0, 15).map((d: Record<string, unknown>) => {
+            const sym = String(d.symbol || "");
+            const name = String(d.name || "");
+            const isZomato = sym.toUpperCase().includes("ETERNAL") && q.toLowerCase().includes("zomato");
             return {
-              symbol: d.symbol.replace("-EQ", ""),
-              name: isZomato ? "Eternal Ltd (formerly Zomato)" : d.name,
-              exchange: d.exchange_segment || "NSE",
+              symbol: sym.replace("-EQ", ""),
+              name: isZomato ? "Eternal Ltd (formerly Zomato)" : name,
+              exchange: (d.exchange_segment as string) || "NSE",
               isAlias: isZomato ? "ZOMATO" : undefined,
             };
           });
@@ -325,7 +332,7 @@ export default function WatchlistManagerDesk({ token: propToken }: WatchlistMana
           (item) =>
             item.symbol.toUpperCase().includes(q.toUpperCase()) ||
             item.name.toUpperCase().includes(q.toUpperCase())
-        );
+          );
         setLiveSearchResults(localFiltered);
       } finally {
         setIsSearchingLive(false);
@@ -342,19 +349,20 @@ export default function WatchlistManagerDesk({ token: propToken }: WatchlistMana
     const rawList = watchlists[activeTabId] ?? [];
     if (!Array.isArray(rawList)) return [];
     return rawList
-      .map((item: any) => {
+      .map((item: unknown) => {
         if (!item) return null;
         if (typeof item === "string") {
           const s = item.trim().toUpperCase();
           return s ? { symbol: s, name: `${s} Ltd`, exchange: "NSE" } : null;
         }
-        const sym = (item.symbol || item.ticker || "").toString().trim().toUpperCase();
+        const obj = item as Record<string, unknown>;
+        const sym = (obj.symbol || obj.ticker || "").toString().trim().toUpperCase();
         if (!sym) return null;
         return {
           symbol: sym,
-          name: (item.name || `${sym} Ltd`).toString(),
-          exchange: (item.exchange || "NSE").toString(),
-          isAlias: item.isAlias,
+          name: (obj.name || `${sym} Ltd`).toString(),
+          exchange: (obj.exchange || "NSE").toString(),
+          isAlias: typeof obj.isAlias === "string" ? obj.isAlias : undefined,
         };
       })
       .filter((item): item is WatchlistItem => item !== null && typeof item.symbol === "string" && item.symbol.length > 0);

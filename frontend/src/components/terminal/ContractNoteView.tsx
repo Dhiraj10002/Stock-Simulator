@@ -174,7 +174,9 @@ export default function ContractNoteView({
   );
 
   useEffect(() => {
-    void fetchContractNote(selectedDate);
+    queueMicrotask(() => {
+      void fetchContractNote(selectedDate);
+    });
   }, [selectedDate, fetchContractNote]);
 
   const items = contractNote?.items || [];

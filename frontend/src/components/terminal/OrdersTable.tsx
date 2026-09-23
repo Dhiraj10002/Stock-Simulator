@@ -209,7 +209,7 @@ export default function OrdersTable({ orders = [], onCancelOrder }: OrdersTableP
                             minute: "2-digit",
                             second: "2-digit",
                           })
-                        : (ord as any).time || "—"}
+                        : (ord as { time?: string }).time || "—"}
                     </td>
 
                     {/* Symbol */}

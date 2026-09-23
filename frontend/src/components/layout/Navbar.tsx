@@ -73,9 +73,11 @@ export default function Navbar({
   const { overview, isBreached } = useRiskOverview();
 
   useEffect(() => {
-    setMounted(true);
-    const storedName = localStorage.getItem("user_name");
-    if (storedName) setUserName(storedName);
+    queueMicrotask(() => {
+      setMounted(true);
+      const storedName = localStorage.getItem("user_name");
+      if (storedName) setUserName(storedName);
+    });
     const timer = setInterval(() => {
       setMarketStatus(getIndianMarketStatus());
     }, 10000);

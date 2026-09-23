@@ -120,24 +120,25 @@ export default function WatchlistSidebar({
           for (const [key, list] of Object.entries(merged)) {
             if (Array.isArray(list)) {
               cleaned[key] = list
-                .map((it: any) => {
+                .map((it: unknown): WatchlistItem | null => {
                   if (!it) return null;
                   if (typeof it === "string") {
                     const s = it.trim().toUpperCase();
                     return s ? { symbol: s, name: `${s} Ltd`, exchange: "NSE" } : null;
                   }
-                  const sym = (it.symbol || it.ticker || "").toString().trim().toUpperCase();
+                  const obj = it as Record<string, unknown>;
+                  const sym = (obj.symbol || obj.ticker || "").toString().trim().toUpperCase();
                   if (!sym) return null;
                   return {
                     symbol: sym,
-                    name: (it.name || `${sym} Ltd`).toString(),
-                    exchange: (it.exchange || "NSE").toString(),
-                    isAlias: it.isAlias,
+                    name: (obj.name || `${sym} Ltd`).toString(),
+                    exchange: (obj.exchange || "NSE").toString(),
+                    isAlias: typeof obj.isAlias === "string" ? obj.isAlias : undefined,
                   };
                 })
-                .filter((it): it is WatchlistItem => it !== null && !!it.symbol);
+                .filter((it): it is WatchlistItem => it !== null);
             } else {
-              cleaned[key] = (DEFAULT_WATCHLIST_DATA as any)[key] || [];
+              cleaned[key] = (DEFAULT_WATCHLIST_DATA as Record<string, WatchlistItem[]>)[key] || [];
             }
           }
           return cleaned as Record<"wl1" | "wl2" | "fno", WatchlistItem[]>;
@@ -196,19 +197,20 @@ export default function WatchlistSidebar({
     const list = activeTab === "holdings" ? holdingsItems : (customTabs[activeTab] ?? []);
     if (!Array.isArray(list)) return [];
     return list
-      .map((it: any) => {
+      .map((it: unknown) => {
         if (!it) return null;
         if (typeof it === "string") {
           const s = it.trim().toUpperCase();
           return s ? { symbol: s, name: `${s} Ltd`, exchange: "NSE" } : null;
         }
-        const sym = (it.symbol || it.ticker || "").toString().trim().toUpperCase();
+        const obj = it as Record<string, unknown>;
+        const sym = (obj.symbol || obj.ticker || "").toString().trim().toUpperCase();
         if (!sym) return null;
         return {
           symbol: sym,
-          name: (it.name || `${sym} Ltd`).toString(),
-          exchange: (it.exchange || "NSE").toString(),
-          isAlias: it.isAlias,
+          name: (obj.name || `${sym} Ltd`).toString(),
+          exchange: (obj.exchange || "NSE").toString(),
+          isAlias: typeof obj.isAlias === "string" ? obj.isAlias : undefined,
         };
       })
       .filter((it): it is WatchlistItem => it !== null && !!it.symbol);

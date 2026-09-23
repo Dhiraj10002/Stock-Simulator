@@ -66,12 +66,11 @@ export default function OptionChainDesk({ initialUnderlying = "NIFTY" }: OptionC
   const setSelectedSymbol = useTerminalStore((s) => s.setSelectedSymbol);
 
   const [selectedUnderlying, setSelectedUnderlying] = useState(initialUnderlying);
-
-  React.useEffect(() => {
-    if (initialUnderlying) {
-      setSelectedUnderlying(initialUnderlying);
-    }
-  }, [initialUnderlying]);
+  const [prevInitialUnderlying, setPrevInitialUnderlying] = useState(initialUnderlying);
+  if (initialUnderlying !== prevInitialUnderlying) {
+    setPrevInitialUnderlying(initialUnderlying);
+    setSelectedUnderlying(initialUnderlying);
+  }
 
   // Strategy Builder State
   const [activeStrategy, setActiveStrategy] = useState<StrategyType>("NONE");
@@ -120,7 +119,7 @@ export default function OptionChainDesk({ initialUnderlying = "NIFTY" }: OptionC
   };
 
   // Route single contract to trade terminal
-  const handleSelectContract = (contract: OptionContract, side: "BUY" | "SELL") => {
+  const handleSelectContract = (contract: OptionContract, _side: "BUY" | "SELL") => {
     setSelectedSymbol(contract.symbol);
     router.push(`/stocks/${encodeURIComponent(contract.symbol)}`);
   };

@@ -93,6 +93,8 @@ export const MASTER_STOCKS_CATALOG: WatchlistItem[] = [
   { symbol: "APARINDS", exchange: "NSE", name: "Apar Industries Ltd", price: 18233.0, change: -712.0, changePercent: -3.76, isPositive: false },
 ];
 
+import type { LucideIcon } from "lucide-react";
+
 // ---------------------------------------------------------------------------
 // TRENDING SECTORS (Kite Marketwatch Panel & Groww Sectoral Breadth)
 // ---------------------------------------------------------------------------
@@ -100,7 +102,7 @@ export interface SectorTrending {
   id: string;
   name: string;
   shortName: string;
-  icon: any;
+  icon: LucideIcon;
   gainersCount: number;
   losersCount: number;
   changePercent: number;
@@ -386,7 +388,12 @@ interface DashboardPageProps {
 export default function DashboardPage({ onSignOut }: DashboardPageProps) {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const [userName, setUserName] = useState<string>("Trader");
+  const [userName] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("user_name") || "Trader";
+    }
+    return "Trader";
+  });
   const [resetting, setResetting] = useState(false);
 
   // Kite widget active tab
@@ -417,11 +424,6 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
   });
 
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api/v1";
-
-  useEffect(() => {
-    const storedName = localStorage.getItem("user_name");
-    if (storedName) setUserName(storedName);
-  }, []);
 
   // 1. Fetch Wallet
   const { data: wallet, refetch: refetchWallet } = useQuery<Wallet>({

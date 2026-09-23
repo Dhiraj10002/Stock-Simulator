@@ -34,25 +34,28 @@ export default function OrdersPage() {
   const [mounted, setMounted] = useState(false);
   const [useDemoData, setUseDemoData] = useState(false);
   const [token, setToken] = useState("");
+  const [mountTime] = useState(() => Date.now());
 
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api/v1";
 
   // Check URL query parameters and load authentication safely on mount
   React.useEffect(() => {
-    setMounted(true);
-    const t =
-      localStorage.getItem("auth_token") ||
-      localStorage.getItem("stock-simulator-access-token") ||
-      "";
-    setToken(t);
-    if (!t) {
-      setUseDemoData(true);
-    }
-    const params = new URLSearchParams(window.location.search);
-    const tabParam = params.get("tab");
-    if (tabParam === "contract-note" || tabParam === "trades" || tabParam === "orders") {
-      setActiveTab(tabParam as OrdersTab);
-    }
+    queueMicrotask(() => {
+      setMounted(true);
+      const t =
+        localStorage.getItem("auth_token") ||
+        localStorage.getItem("stock-simulator-access-token") ||
+        "";
+      setToken(t);
+      if (!t) {
+        setUseDemoData(true);
+      }
+      const params = new URLSearchParams(window.location.search);
+      const tabParam = params.get("tab");
+      if (tabParam === "contract-note" || tabParam === "trades" || tabParam === "orders") {
+        setActiveTab(tabParam as OrdersTab);
+      }
+    });
   }, []);
 
   // 1. Fetch Orders via TanStack Query
@@ -216,7 +219,6 @@ export default function OrdersPage() {
   const filtered24hOrders = useMemo(() => {
     if (clearedOrderHistory) return [];
     const raw = useDemoData ? DEMO_ORDERS : liveOrders;
-    const now = Date.now();
     const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
 
     return raw.filter((ord) => {
@@ -224,24 +226,23 @@ export default function OrdersPage() {
       const t = new Date(ord.created_at).getTime();
       if (isNaN(t)) return true;
       const isOpen = ord.status === "OPEN" || ord.status === "PENDING" || ord.status === "TRIGGER_PENDING";
-      return isOpen || (now - t <= TWENTY_FOUR_HOURS_MS);
+      return isOpen || (mountTime - t <= TWENTY_FOUR_HOURS_MS);
     });
-  }, [useDemoData, liveOrders, clearedOrderHistory]);
+  }, [useDemoData, liveOrders, clearedOrderHistory, mountTime]);
 
   const filtered24hTrades = useMemo(() => {
     if (clearedOrderHistory) return [];
     const raw = useDemoData ? DEMO_TRADES : liveTrades;
-    const now = Date.now();
     const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
 
-    return raw.filter((trade: any) => {
-      const ts = trade.executed_at || trade.time;
+    return raw.filter((trade: Partial<Trade> & Record<string, unknown>) => {
+      const ts = (trade.executed_at as string | undefined) || (trade.time as string | undefined);
       if (!ts) return true;
       const t = new Date(ts).getTime();
       if (isNaN(t)) return true;
-      return now - t <= TWENTY_FOUR_HOURS_MS;
+      return mountTime - t <= TWENTY_FOUR_HOURS_MS;
     });
-  }, [useDemoData, liveTrades, clearedOrderHistory]);
+  }, [useDemoData, liveTrades, clearedOrderHistory, mountTime]);
 
   const displayOrders = filtered24hOrders;
   const displayTrades = filtered24hTrades;
@@ -266,11 +267,11 @@ export default function OrdersPage() {
   const tradeMetrics = useMemo(() => {
     let turnoverPaise = 0;
     let realizedPnlPaise = 0;
-    displayTrades.forEach((t: any) => {
-      const price = t.price_paise ?? t.executed_price_paise ?? 0;
-      const total = t.total_paise ?? (t.quantity * price);
+    displayTrades.forEach((t: Partial<Trade> & Record<string, unknown>) => {
+      const price = Number(t.price_paise ?? t.executed_price_paise ?? 0);
+      const total = Number(t.total_paise ?? (Number(t.quantity ?? 0) * price));
       turnoverPaise += (isNaN(total) ? 0 : total);
-      realizedPnlPaise += (t.realized_pnl_paise && !isNaN(t.realized_pnl_paise) ? t.realized_pnl_paise : 0);
+      realizedPnlPaise += (t.realized_pnl_paise && !isNaN(Number(t.realized_pnl_paise)) ? Number(t.realized_pnl_paise) : 0);
     });
     return {
       count: displayTrades.length,

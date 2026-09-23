@@ -11,10 +11,12 @@ export default function HomePage() {
   const [authMode, setAuthMode] = useState<"login" | "register">("login");
 
   useEffect(() => {
-    const token =
-      localStorage.getItem("auth_token") ||
-      localStorage.getItem("stock-simulator-access-token");
-    setIsAuthenticated(!!token);
+    queueMicrotask(() => {
+      const token =
+        localStorage.getItem("auth_token") ||
+        localStorage.getItem("stock-simulator-access-token");
+      setIsAuthenticated(!!token);
+    });
   }, []);
 
   const handleOpenAuth = (mode: "login" | "register" = "login") => {
