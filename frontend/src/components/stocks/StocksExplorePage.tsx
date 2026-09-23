@@ -5,8 +5,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import Navbar from "@/components/layout/Navbar";
-import { useMarketStore } from "@/stores/market-store";
+import { useMultiSymbolQuotes } from "@/stores/market-store";
 import { fetchBatchQuotes, getCachedQuote } from "@/lib/quoteService";
+import { getApiUrl } from "@/lib/config";
 import {
   TrendingUp,
   TrendingDown,
@@ -235,7 +236,7 @@ export default function StocksExplorePage() {
     return "";
   });
 
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api/v1";
+  const apiUrl = getApiUrl();
 
   // 1. Fetch Wallet for Available Margin
   const { data: wallet } = useQuery<Wallet>({
@@ -329,7 +330,7 @@ export default function StocksExplorePage() {
     refetchInterval: token ? 5000 : false,
   });
 
-  const quotes = useMarketStore((s) => s.quotes);
+  const quotes = useMultiSymbolQuotes(MASTER_STOCKS_CATALOG.map((s) => s.symbol));
 
   // Prefetch live quotes for all explore catalog items
   useEffect(() => {

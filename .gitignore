@@ -2,9 +2,11 @@
 .env
 .env.*
 !.env.example
+!.env*.example
 **/.env
 **/.env.*
 !**/.env.example
+!**/.env*.example
 
 # Python cache & artifacts
 __pycache__/

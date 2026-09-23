@@ -3,6 +3,7 @@
 import React, { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
+import { getApiUrl } from "@/lib/config";
 import { useTerminalStore } from "@/stores/terminal-store";
 import {
   Newspaper,
@@ -70,7 +71,7 @@ const FALLBACK_ARTICLES: Article[] = [
 
 export default function NewsFeed({
   token,
-  apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api/v1",
+  apiUrl = getApiUrl(),
   limit = 20,
 }: NewsFeedProps) {
   const router = useRouter();

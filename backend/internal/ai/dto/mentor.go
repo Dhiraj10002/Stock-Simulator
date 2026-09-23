@@ -55,4 +55,3 @@ type PreTradeCheckResponse struct {
 	Warnings               []string `json:"warnings"`
 	Advice                 string   `json:"advice"`
 }
-

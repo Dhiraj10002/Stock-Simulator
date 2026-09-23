@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import LandingPage from "@/components/landing/LandingPage";
 import DashboardPage from "@/components/dashboard/DashboardPage";
 import AuthModal from "@/components/auth/AuthModal";
+import { MarketProvider } from "@/providers/market-provider";
 
 export default function HomePage() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
@@ -49,7 +50,11 @@ export default function HomePage() {
 
   // Authenticated → Groww-style User Explore Dashboard
   if (isAuthenticated) {
-    return <DashboardPage onSignOut={handleSignOut} />;
+    return (
+      <MarketProvider>
+        <DashboardPage onSignOut={handleSignOut} />
+      </MarketProvider>
+    );
   }
 
   // Unauthenticated → 3D Spatial Landing Page with Auth Modal

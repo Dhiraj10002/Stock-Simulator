@@ -89,6 +89,6 @@ func CalculateGreeks(spot, strike, timeYears, rate, vol float64, isCall bool) Gr
 		Gamma: math.Round(gamma*100000) / 100000,
 		Theta: math.Round(theta*100) / 100,
 		Vega:  math.Round(vega*100) / 100,
-		IV:    math.Round(vol * 100.0 * 10) / 10,
+		IV:    math.Round(vol*100.0*10) / 10,
 	}
 }

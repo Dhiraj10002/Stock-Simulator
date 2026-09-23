@@ -27,7 +27,7 @@ func TestMarginRules(t *testing.T) {
 
 func TestFNOInstrumentRequiresExplicitUnderlyingAndLot(t *testing.T) {
 	instrument := model.Instrument{LotSize: 75, InstrumentType: "OPTIDX", UnderlyingSymbol: "NIFTY"}
-	
+
 	// Valid multiples of lot size
 	for _, qty := range []int64{75, 150, 300} {
 		kind, err := ValidateFNOInstrument(instrument, qty)
@@ -123,5 +123,47 @@ func TestMISCutoff(t *testing.T) {
 	// Sunday (2026-09-13) must be rejected
 	if err := ValidateMISOrder(time.Date(2026, 9, 13, 15, 0, 0, 0, ist)); err == nil {
 		t.Fatal("MIS order on Sunday was accepted")
+	}
+}
+
+func TestContractSpecs(t *testing.T) {
+	niftySpec, ok := GetContractSpec("NIFTY")
+	if !ok || niftySpec.LotSize != 25 {
+		t.Fatalf("expected NIFTY lot size 25, got %d, found=%v", niftySpec.LotSize, ok)
+	}
+	if niftySpec.StrikeStep != 50 {
+		t.Fatalf("expected NIFTY strike step 50, got %d", niftySpec.StrikeStep)
+	}
+
+	bankNiftySpec, ok := GetContractSpec("banknifty")
+	if !ok || bankNiftySpec.LotSize != 15 || bankNiftySpec.StrikeStep != 100 {
+		t.Fatalf("expected BANKNIFTY lot size 15, strike step 100, got %+v", bankNiftySpec)
+	}
+
+	_, found := GetContractSpec("UNKNOWN_INDEX_XYZ")
+	if found {
+		t.Fatal("expected unknown symbol to return false")
+	}
+}
+
+func TestResolveContractLotSize(t *testing.T) {
+	// 1. Authoritative DB instrument lot size takes priority
+	dbInst := &model.Instrument{Symbol: "NIFTY24SEP26FUT", LotSize: 50}
+	if lot := ResolveContractLotSize("NIFTY", dbInst); lot != 50 {
+		t.Fatalf("expected DB instrument lot size 50, got %d", lot)
+	}
+
+	// 2. Standard spec used when DB instrument is nil or has 0 lot size
+	if lot := ResolveContractLotSize("NIFTY", nil); lot != 25 {
+		t.Fatalf("expected standard NIFTY lot size 25, got %d", lot)
+	}
+	zeroInst := &model.Instrument{Symbol: "NIFTY", LotSize: 0}
+	if lot := ResolveContractLotSize("NIFTY", zeroInst); lot != 25 {
+		t.Fatalf("expected fallback to standard NIFTY lot size 25 when inst.LotSize is 0, got %d", lot)
+	}
+
+	// 3. Fallback to 1 for unlisted equities
+	if lot := ResolveContractLotSize("UNKNOWN_EQUITY", nil); lot != 1 {
+		t.Fatalf("expected fallback to 1 for unknown equity, got %d", lot)
 	}
 }

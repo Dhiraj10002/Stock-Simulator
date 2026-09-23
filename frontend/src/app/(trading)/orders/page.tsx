@@ -9,6 +9,7 @@ import TradesTable from "@/components/orders/TradesTable";
 import ContractNoteView from "@/components/terminal/ContractNoteView";
 import { DEMO_ORDERS, DEMO_TRADES } from "@/components/orders/OrdersDemoData";
 import { formatPaise } from "@/lib/format";
+import { API_URL } from "@/lib/api";
 import {
   ClipboardList,
   ArrowRight,
@@ -36,7 +37,7 @@ export default function OrdersPage() {
   const [token, setToken] = useState("");
   const [mountTime] = useState(() => Date.now());
 
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api/v1";
+  const apiUrl = API_URL;
 
   // Check URL query parameters and load authentication safely on mount
   React.useEffect(() => {

@@ -41,4 +41,3 @@ func (h *TradeHandler) UpdateJournal(c *gin.Context) {
 
 	response.Success(c, http.StatusOK, "Trade journal updated successfully", gin.H{"uuid": tradeID, "tag": req.Tag, "notes": req.Notes})
 }
-

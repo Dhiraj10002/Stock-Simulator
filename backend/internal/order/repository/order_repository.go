@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/database"
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/alias"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -18,6 +19,9 @@ type OrderRepository struct{}
 func New() *OrderRepository { return &OrderRepository{} }
 
 func (r *OrderRepository) Create(order *model.Order) error {
+	if database.GetDB() == nil {
+		return errors.New("database not connected")
+	}
 	return database.GetDB().Create(order).Error
 }
 
@@ -146,121 +150,38 @@ func (r *OrderRepository) FindByUUID(userUUID, orderUUID uuid.UUID) (*model.Orde
 	return &order, err
 }
 
-var knownLotSizes = map[string]int64{
-	"NIFTY":      25,
-	"BANKNIFTY":  15,
-	"RELIANCE":   250,
-	"TCS":        175,
-	"INFY":       400,
-	"HDFCBANK":   550,
-	"TATAMOTORS": 575,
-	"SBIN":       750,
-}
-
-func parseFnoInstrument(symbol string) *model.Instrument {
-	clean := strings.ToUpper(strings.TrimSpace(symbol))
-	if clean == "" {
-		return nil
-	}
-
-	var underlying string
-	for _, u := range []string{"BANKNIFTY", "NIFTY", "RELIANCE", "TATAMOTORS", "HDFCBANK", "SBIN", "TCS", "INFY"} {
-		if strings.HasPrefix(clean, u) {
-			underlying = u
-			break
-		}
-	}
-	if underlying == "" {
-		return nil
-	}
-
-	lotSize := int64(1)
-	if l, ok := knownLotSizes[underlying]; ok {
-		lotSize = l
-	}
-
-	isOption := strings.HasSuffix(clean, "CE") || strings.HasSuffix(clean, "PE")
-	isFuture := strings.HasSuffix(clean, "FUT")
-
-	if !isOption && !isFuture {
-		return nil
-	}
-
-	var optType, instType string
-	if isOption {
-		if strings.HasSuffix(clean, "CE") {
-			optType = "CE"
-		} else {
-			optType = "PE"
-		}
-		if underlying == "NIFTY" || underlying == "BANKNIFTY" {
-			instType = "OPTIDX"
-		} else {
-			instType = "OPTSTK"
-		}
-	} else {
-		if underlying == "NIFTY" || underlying == "BANKNIFTY" {
-			instType = "FUTIDX"
-		} else {
-			instType = "FUTSTK"
-		}
-	}
-
-	now := time.Now()
-	daysUntilThursday := (int(time.Thursday) - int(now.Weekday()) + 7) % 7
-	if daysUntilThursday == 0 && now.Hour() >= 15 && now.Minute() >= 30 {
-		daysUntilThursday = 7
-	}
-	nextThursday := now.AddDate(0, 0, daysUntilThursday)
-	expiryStr := nextThursday.Format("02-Jan-2006")
-
-	strike := ""
-	if isOption {
-		rest := strings.TrimPrefix(clean, underlying)
-		rest = strings.TrimSuffix(rest, optType)
-		var digits []rune
-		for i := len(rest) - 1; i >= 0; i-- {
-			r := rune(rest[i])
-			if r >= '0' && r <= '9' {
-				digits = append([]rune{r}, digits...)
-			} else {
-				break
-			}
-		}
-		if len(digits) > 0 {
-			strike = string(digits)
-		}
-	}
-
-	return &model.Instrument{
-		Token:            fmt.Sprintf("FNO_%s", clean),
-		Symbol:           clean,
-		Name:             fmt.Sprintf("%s %s %s", underlying, strike, optType),
-		UnderlyingSymbol: underlying,
-		Expiry:           expiryStr,
-		Strike:           strike,
-		OptionType:       optType,
-		LotSize:          lotSize,
-		InstrumentType:   instType,
-		ExchangeSegment:  "NFO",
-		TickSize:         "0.05",
-	}
-}
-
 func (r *OrderRepository) FindInstrument(symbol string) (*model.Instrument, error) {
 	if database.GetDB() == nil {
 		return nil, errors.New("database not connected")
 	}
 	var instrument model.Instrument
-	err := database.GetDB().Where("symbol = ?", symbol).First(&instrument).Error
+	clean := strings.ToUpper(strings.TrimSpace(symbol))
+	if clean == "" {
+		return nil, gorm.ErrRecordNotFound
+	}
+
+	// 1. Direct query: exact symbol match, with -EQ suffix, or exact name
+	err := database.GetDB().Where("UPPER(symbol) = ? OR UPPER(symbol) = ? OR UPPER(name) = ?", clean, clean+"-EQ", clean).First(&instrument).Error
 	if err == nil {
 		return &instrument, nil
 	}
 
-	// Auto-register dynamically generated F&O derivative contracts
-	if autoInst := parseFnoInstrument(symbol); autoInst != nil {
-		_ = database.GetDB().Create(autoInst).Error
-		return autoInst, nil
+	// 2. Dynamic alias resolution: check canonical symbol
+	canonical := alias.ResolveCanonicalSymbol(clean)
+	if canonical != "" && canonical != clean {
+		err = database.GetDB().Where("UPPER(symbol) = ? OR UPPER(symbol) = ? OR UPPER(name) = ?", canonical, canonical+"-EQ", canonical).First(&instrument).Error
+		if err == nil {
+			return &instrument, nil
+		}
+	}
+
+	// 3. Reverse alias resolution: check any aliases that map to this symbol
+	aliases := alias.GetAliases(clean)
+	for _, a := range aliases {
+		err = database.GetDB().Where("UPPER(symbol) = ? OR UPPER(symbol) = ? OR UPPER(name) = ?", a, a+"-EQ", a).First(&instrument).Error
+		if err == nil {
+			return &instrument, nil
+		}
 	}
 
 	return nil, err

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/cache"
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/alias"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/dto"
 	"github.com/redis/go-redis/v9"
 )
@@ -54,6 +55,9 @@ func (s *Service) WorkerURL() string {
 	if env := strings.TrimRight(strings.TrimSpace(os.Getenv("MARKET_WORKER_URL")), "/"); env != "" {
 		return env
 	}
+	if _, err := os.Stat("/.dockerenv"); err == nil {
+		return "http://market-worker:8085"
+	}
 	return "http://127.0.0.1:8085"
 }
 
@@ -69,6 +73,11 @@ func New(redisURL string, timeout time.Duration) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Dynamically load symbol aliases from Redis hash "market:symbol_aliases"
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	_ = alias.LoadFromRedis(ctx, client)
+
 	return &Service{client: client, timeout: timeout}, nil
 }
 
@@ -142,6 +151,17 @@ func fallbackPriceForSymbol(symbol string) int64 {
 	if price, ok := benchmarkPrices[clean]; ok {
 		return price
 	}
+	canonical := alias.ResolveCanonicalSymbol(clean)
+	if canonical != "" && canonical != clean {
+		if price, ok := benchmarkPrices[canonical]; ok {
+			return price
+		}
+	}
+	for _, a := range alias.GetAliases(clean) {
+		if price, ok := benchmarkPrices[a]; ok {
+			return price
+		}
+	}
 	var hash int64
 	for _, c := range clean {
 		hash = (hash*31 + int64(c)) % 1000000
@@ -190,8 +210,48 @@ func (s *Service) CurrentQuote(symbol string) (*dto.QuoteResponse, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", cache.ErrUnavailable, err)
 	}
-	if len(values) == 0 || values["source"] == "auto_seeded" {
-		if liveQuote, err := s.fetchLiveFromWorker(symbol); err == nil && liveQuote != nil && liveQuote.PricePaise > 0 {
+
+	canonical := alias.ResolveCanonicalSymbol(symbol)
+	if len(values) == 0 && canonical != "" && canonical != symbol {
+		cValues, cErr := s.client.HGetAll(ctx, quoteKey(canonical)).Result()
+		if cErr == nil && len(cValues) > 0 {
+			values = cValues
+		}
+	}
+
+	isStale := false
+	if updatedAtStr, ok := values["updated_at"]; ok {
+		if t, parseErr := time.Parse(time.RFC3339, updatedAtStr); parseErr == nil {
+			if time.Since(t) > maxExecutableQuoteAge {
+				isStale = true
+			}
+		} else {
+			isStale = true
+		}
+	}
+
+	needsWorkerRefresh := len(values) == 0 || IsSeededSource(values["source"]) || isStale
+	if needsWorkerRefresh {
+		liveQuote, err := s.fetchLiveFromWorker(symbol)
+		if (err != nil || liveQuote == nil || liveQuote.PricePaise <= 0) && canonical != "" && canonical != symbol {
+			liveQuote, err = s.fetchLiveFromWorker(canonical)
+		}
+		if err == nil && liveQuote != nil && liveQuote.PricePaise > 0 {
+			// Persist authoritative worker quote into Redis cache
+			nowStr := liveQuote.UpdatedAt
+			if nowStr == "" {
+				nowStr = time.Now().Format(time.RFC3339)
+				liveQuote.UpdatedAt = nowStr
+			}
+			_ = s.client.HSet(ctx, quoteKey(symbol), map[string]interface{}{
+				"symbol":         liveQuote.Symbol,
+				"price_paise":    liveQuote.PricePaise,
+				"change_paise":   liveQuote.ChangePaise,
+				"change_percent": liveQuote.ChangePercent,
+				"source":         liveQuote.Source,
+				"updated_at":     nowStr,
+			}).Err()
+			_ = s.client.Expire(ctx, quoteKey(symbol), 5*time.Minute).Err()
 			return liveQuote, nil
 		}
 		if len(values) == 0 {
@@ -211,6 +271,7 @@ func (s *Service) CurrentQuote(symbol string) (*dto.QuoteResponse, error) {
 			}, nil
 		}
 	}
+
 	price, err := strconv.ParseInt(values["price_paise"], 10, 64)
 	if err != nil {
 		return nil, fmt.Errorf("invalid stored quote")
@@ -237,7 +298,7 @@ func (s *Service) CurrentQuote(symbol string) (*dto.QuoteResponse, error) {
 // seed placeholder that has not been produced by an active live or simulated tick feed.
 func IsSeededSource(source string) bool {
 	switch strings.ToLower(strings.TrimSpace(source)) {
-	case "auto_seeded", "initial_seed", "benchmark_fallback", "static_fallback":
+	case "auto_seeded", "initial_seed", "benchmark_fallback", "static_fallback", "mock":
 		return true
 	default:
 		return false

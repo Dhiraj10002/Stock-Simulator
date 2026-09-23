@@ -24,4 +24,3 @@ func (r *TradeRepository) UpdateJournal(tradeUUID, userUUID uuid.UUID, tag, note
 			"notes": notes,
 		}).Error
 }
-

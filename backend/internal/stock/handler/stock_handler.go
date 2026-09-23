@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/database"
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/alias"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/stock/dto"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/pkg/response"
@@ -32,17 +33,12 @@ func (h *Handler) Search(c *gin.Context) {
 	aliasPattern := ""
 	queryClean := strings.ToUpper(strings.TrimSpace(query))
 	queryClean = strings.TrimSuffix(queryClean, "-EQ")
-	aliasMap := map[string]string{
-		"ZOMATO":     "ETERNAL",
-		"TATAMOTORS": "TMPV",
-		"LTI":        "LTIM",
-		"MINDTREE":   "LTIM",
-	}
-	if target, ok := aliasMap[queryClean]; ok {
-		aliasPattern = "%" + target + "%"
+	canonical := alias.ResolveCanonicalSymbol(queryClean)
+	if canonical != "" && canonical != queryClean {
+		aliasPattern = "%" + canonical + "%"
 	} else {
-		for alias, target := range aliasMap {
-			if strings.Contains(queryClean, alias) {
+		for a, target := range alias.GetAllAliases() {
+			if strings.Contains(queryClean, a) {
 				aliasPattern = "%" + target + "%"
 				break
 			}
@@ -50,6 +46,10 @@ func (h *Handler) Search(c *gin.Context) {
 	}
 
 	db := database.GetDB()
+	if db == nil {
+		response.Error(c, http.StatusServiceUnavailable, "database not connected", nil)
+		return
+	}
 	dbQuery := db.Where("symbol ILIKE ? ESCAPE '\\' OR name ILIKE ? ESCAPE '\\'", pattern, pattern)
 	if aliasPattern != "" {
 		dbQuery = db.Where("symbol ILIKE ? ESCAPE '\\' OR name ILIKE ? ESCAPE '\\' OR symbol ILIKE ? OR name ILIKE ?", pattern, pattern, aliasPattern, aliasPattern)

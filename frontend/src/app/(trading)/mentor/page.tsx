@@ -19,6 +19,7 @@ import {
 import TradeCopilot from "@/components/terminal/TradeCopilot";
 import PreTradeRiskLab from "@/components/mentor/PreTradeRiskLab";
 import { formatPaise } from "@/lib/format";
+import { API_URL } from "@/lib/api";
 import type { Wallet, Portfolio, ApiResponse } from "@/types";
 
 export default function MentorPage() {
@@ -30,7 +31,7 @@ export default function MentorPage() {
     return "";
   });
 
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api/v1";
+  const apiUrl = API_URL;
 
   // Server state via TanStack Query with graceful fallback
   const { data: wallet } = useQuery<Wallet>({

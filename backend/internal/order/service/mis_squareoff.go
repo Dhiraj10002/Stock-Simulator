@@ -178,4 +178,3 @@ func (s *OrderService) TriggerManualMISSquareOff(userUUID uuid.UUID) (int, error
 	}
 	return closedCount, nil
 }
-

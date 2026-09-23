@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { useShallow } from "zustand/shallow";
 import { Quote } from "@/types";
 
 export type MarketStatus = "PRE_OPEN" | "OPEN" | "POST_MARKET" | "CLOSED" | "HOLIDAY";
@@ -98,4 +99,24 @@ export const useSymbolQuote = (symbol: string | undefined): Quote | undefined =>
     const clean = upper.replace("-EQ", "");
     return state.quotes[clean] || state.quotes[upper];
   });
+};
+
+/**
+ * Multi-symbol selector — returns quotes only for the specified symbols.
+ * Uses shallow equality to prevent re-renders when unrelated symbols change.
+ * Use this instead of `(s) => s.quotes` in components displaying lists of stocks.
+ */
+export const useMultiSymbolQuotes = (symbols: string[]): Record<string, Quote> => {
+  return useMarketStore(
+    useShallow((state) => {
+      const result: Record<string, Quote> = {};
+      for (const sym of symbols) {
+        const upper = sym.toUpperCase();
+        const clean = upper.replace("-EQ", "");
+        const q = state.quotes[clean] || state.quotes[upper];
+        if (q) result[clean] = q;
+      }
+      return result;
+    })
+  );
 };

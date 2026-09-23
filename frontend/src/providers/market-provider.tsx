@@ -3,6 +3,7 @@
 import React, { useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 import { useMarketStore } from "@/stores/market-store";
+import { getApiUrl, getWsUrl } from "@/lib/config";
 import type { Quote } from "@/types";
 
 const PUBLIC_ROUTES = new Set(["/", "/login", "/signup", "/3d"]);
@@ -55,7 +56,8 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
 
   // 1. Fetch authoritative market calendar & feed status on mount and periodically
   useEffect(() => {
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api/v1";
+    if (isPublic) return;
+    const apiUrl = getApiUrl();
     const fetchStatus = () => {
       fetch(`${apiUrl}/market/status`)
         .then((res) => res.json())
@@ -82,7 +84,7 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
     fetchStatus();
     const interval = setInterval(fetchStatus, 30000);
     return () => clearInterval(interval);
-  }, [setMarketStatus, setFeedStatus]);
+  }, [isPublic, setMarketStatus, setFeedStatus]);
 
   // 2. Manage WebSocket connection (only for authenticated / trading app routes)
   useEffect(() => {
@@ -100,7 +102,7 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    const wsUrl = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8080/ws/market";
+    const wsUrl = getWsUrl();
     let isSubscribed = true;
 
     function connect() {

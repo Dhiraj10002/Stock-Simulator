@@ -31,6 +31,7 @@ import { getAuthoritativeFeedStatus } from "@/lib/feedStatus";
 import { useUIStore } from "@/stores/ui-store";
 import { useTheme } from "@/providers/theme-provider";
 import { useRiskOverview } from "@/hooks/useRiskOverview";
+import { API_URL } from "@/lib/api";
 import ResetSimulationModal from "@/components/modals/ResetSimulationModal";
 
 interface NavbarProps {
@@ -121,7 +122,7 @@ export default function Navbar({
     const refreshToken = localStorage.getItem("stock-simulator-refresh-token");
     if (refreshToken) {
       try {
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api/v1";
+        const apiUrl = API_URL;
         await fetch(`${apiUrl}/auth/logout`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },

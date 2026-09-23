@@ -159,3 +159,103 @@ func TestOrderRepository_DeliverySellReservation(t *testing.T) {
 		t.Fatalf("order4 (20 shares) should succeed after cancel of order1: %v", err)
 	}
 }
+
+func TestOrderRepository_FindInstrument_CanonicalAndAliases(t *testing.T) {
+	db := getTestDB(t)
+	repo := New()
+
+	// Seed canonical instruments
+	instruments := []model.Instrument{
+		{
+			Token:           "2705",
+			Symbol:          "PRAJIND-EQ",
+			Name:            "PRAJIND",
+			ExchangeSegment: "NSE",
+			LotSize:         1,
+			TickSize:        "5.000000",
+		},
+		{
+			Token:           "5097",
+			Symbol:          "ETERNAL-EQ",
+			Name:            "ETERNAL",
+			ExchangeSegment: "NSE",
+			LotSize:         1,
+			TickSize:        "5.000000",
+		},
+		{
+			Token:           "3456",
+			Symbol:          "TMPV-EQ",
+			Name:            "TMPV",
+			ExchangeSegment: "NSE",
+			LotSize:         1,
+			TickSize:        "5.000000",
+		},
+		{
+			Token:            "NFO_OPT_NIFTY_25000",
+			Symbol:           "NIFTY24OCT25000CE",
+			Name:             "NIFTY",
+			UnderlyingSymbol: "NIFTY",
+			Expiry:           "2026-10-29",
+			Strike:           "25000.000000",
+			OptionType:       "CE",
+			LotSize:          25,
+			InstrumentType:   "OPTIDX",
+			ExchangeSegment:  "NFO",
+			TickSize:         "5.000000",
+		},
+	}
+
+	for _, inst := range instruments {
+		_ = db.Where("symbol = ?", inst.Symbol).Delete(&model.Instrument{})
+		if err := db.Create(&inst).Error; err != nil {
+			t.Fatalf("seed instrument %s: %v", inst.Symbol, err)
+		}
+	}
+	defer func() {
+		for _, inst := range instruments {
+			_ = db.Where("symbol = ?", inst.Symbol).Delete(&model.Instrument{})
+		}
+	}()
+
+	// 1. PRAJIND (exact, and without -EQ suffix)
+	praj, err := repo.FindInstrument("PRAJIND")
+	if err != nil || praj == nil || praj.Token != "2705" {
+		t.Fatalf("expected token 2705 for PRAJIND, got %v (err: %v)", praj, err)
+	}
+	prajEQ, err := repo.FindInstrument("PRAJIND-EQ")
+	if err != nil || prajEQ == nil || prajEQ.Token != "2705" {
+		t.Fatalf("expected token 2705 for PRAJIND-EQ, got %v (err: %v)", prajEQ, err)
+	}
+
+	// 2. Canonical ETERNAL and Alias ZOMATO
+	eternal, err := repo.FindInstrument("ETERNAL")
+	if err != nil || eternal == nil || eternal.Token != "5097" {
+		t.Fatalf("expected token 5097 for ETERNAL, got %v (err: %v)", eternal, err)
+	}
+	zomato, err := repo.FindInstrument("ZOMATO")
+	if err != nil || zomato == nil || zomato.Token != "5097" {
+		t.Fatalf("expected token 5097 for alias ZOMATO, got %v (err: %v)", zomato, err)
+	}
+
+	// 3. Canonical TMPV and Alias TATAMOTORS
+	tmpv, err := repo.FindInstrument("TMPV")
+	if err != nil || tmpv == nil || tmpv.Token != "3456" {
+		t.Fatalf("expected token 3456 for TMPV, got %v (err: %v)", tmpv, err)
+	}
+	tata, err := repo.FindInstrument("TATAMOTORS")
+	if err != nil || tata == nil || tata.Token != "3456" {
+		t.Fatalf("expected token 3456 for alias TATAMOTORS, got %v (err: %v)", tata, err)
+	}
+
+	// 4. F&O contract
+	fno, err := repo.FindInstrument("NIFTY24OCT25000CE")
+	if err != nil || fno == nil || fno.Token != "NFO_OPT_NIFTY_25000" {
+		t.Fatalf("expected F&O instrument, got %v (err: %v)", fno, err)
+	}
+
+	// 5. Unknown symbol must be rejected with error
+	unknown, err := repo.FindInstrument("UNKNOWN_NONEXISTENT_CO")
+	if err == nil || unknown != nil {
+		t.Fatalf("expected error for unknown symbol, got instrument: %+v", unknown)
+	}
+}

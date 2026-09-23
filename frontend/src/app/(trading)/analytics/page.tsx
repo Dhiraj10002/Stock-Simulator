@@ -4,19 +4,19 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import Navbar from "@/components/layout/Navbar";
-import WatchlistManagerDesk from "@/components/watchlist/WatchlistManagerDesk";
-import { Bookmark, TrendingUp, ArrowRight } from "lucide-react";
+import AnalyticsConsole from "@/components/analytics/AnalyticsConsole";
+import { getApiUrl } from "@/lib/config";
+import { BarChart2, SlidersHorizontal, ArrowRight } from "lucide-react";
 import type { Portfolio, Wallet, ApiResponse } from "@/types";
 
-export default function WatchlistPage() {
+export default function AnalyticsPage() {
   const [token] = useState<string>(() => {
     if (typeof window !== "undefined") {
       return localStorage.getItem("auth_token") || "";
     }
     return "";
   });
-
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api/v1";
+  const apiUrl = getApiUrl();
 
   // 1. Fetch Wallet for Navbar available balance
   const { data: wallet } = useQuery<Wallet>({
@@ -118,32 +118,39 @@ export default function WatchlistPage() {
       />
 
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
-        {/* Header Title & Actions */}
+        {/* Header Title & Navigation Actions */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
           <div>
-            <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-              <Bookmark className="w-6 h-6 text-cyan-600 dark:text-cyan-400" />
-              Watchlist Manager
+            <div className="flex items-center gap-2 mb-1">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                Virtual Trading Desk • 100% Risk Free
+              </span>
+            </div>
+            <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2.5">
+              <div className="p-1.5 rounded-xl bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/20">
+                <BarChart2 className="w-5 h-5" />
+              </div>
+              Trading Analytics & Performance Desk
             </h1>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-              Organize, search, and monitor custom market groups across NSE & BSE with two-way terminal sync.
+              Monthly P&L calendar heatmap, institutional win-rate metrics, psychological trade setups journal, and virtual capital ledger.
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <Link
-              href="/stocks/ITC"
+              href="/stocks/RELIANCE"
               className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 active:bg-cyan-700 text-white font-bold text-xs shadow-md shadow-cyan-600/20 transition-all hover:scale-105 active:scale-95"
             >
-              <TrendingUp className="w-4 h-4 text-white" />
-              <span>Explore Stocks</span>
+              <SlidersHorizontal className="w-4 h-4 text-white" />
+              <span>Explore Market</span>
               <ArrowRight className="w-3.5 h-3.5 text-white" />
             </Link>
           </div>
         </div>
 
-        {/* Watchlist Manager Workspace */}
-        <WatchlistManagerDesk token={token} />
+        {/* Full-Page Analytics Console Desk */}
+        <AnalyticsConsole apiUrl={apiUrl} token={token} />
       </main>
     </div>
   );

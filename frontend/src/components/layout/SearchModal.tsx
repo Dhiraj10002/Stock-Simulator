@@ -19,7 +19,7 @@ import { INSTRUMENT_METADATA, InstrumentMetadata } from "@/lib/mockData";
 import { formatPaise, formatPercent } from "@/lib/format";
 import { useTerminalStore } from "@/stores/terminal-store";
 import { useUIStore } from "@/stores/ui-store";
-import { useMarketStore } from "@/stores/market-store";
+import { useMultiSymbolQuotes } from "@/stores/market-store";
 import { apiFetch } from "@/lib/api";
 import { fetchBatchQuotes } from "@/lib/quoteService";
 import type { StockSearchResult } from "@/types";
@@ -31,7 +31,6 @@ export default function SearchModal() {
   const router = useRouter();
   const { isSearchPaletteOpen, setSearchPaletteOpen } = useUIStore();
   const setSelectedSymbol = useTerminalStore((s) => s.setSelectedSymbol);
-  const marketQuotes = useMarketStore((s) => s.quotes);
 
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
@@ -68,6 +67,13 @@ export default function SearchModal() {
     enabled: isSearchPaletteOpen && debouncedQuery.length > 0,
     staleTime: 30_000,
   });
+
+  // Scoped quote subscription — only re-renders when displayed search results' quotes change
+  const searchResultSymbols = useMemo(
+    () => (apiResults || []).map((r) => r.symbol),
+    [apiResults]
+  );
+  const marketQuotes = useMultiSymbolQuotes(searchResultSymbols);
 
   // Prefetch live quotes for search results
   useEffect(() => {

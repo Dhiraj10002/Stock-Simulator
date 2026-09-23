@@ -16,6 +16,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { formatPaise } from "@/lib/format";
+import { API_URL } from "@/lib/api";
 import type { InstrumentMetadata } from "@/lib/mockData";
 
 export interface FnoOrderModalProps {
@@ -59,7 +60,7 @@ export default function FnoOrderModal({
     return "";
   });
 
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api/v1";
+  const apiUrl = API_URL;
 
   // When instrument or initialSide changes, reset defaults
   React.useEffect(() => {

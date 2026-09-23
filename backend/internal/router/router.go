@@ -63,7 +63,7 @@ func Setup(ctx context.Context, cfg *config.Config) *gin.Engine {
 		go orders.RunProductLifecycle(ctx)
 		go orders.RunExpirySettlement(ctx)
 	}
-	marketWS := marketWebsocket.New(market.Service(), cfg.CORSAllowedOrigins)
+	marketWS := marketWebsocket.New(market.Service(), cfg.CORSAllowedOrigins, cfg.IsProduction())
 	stocks := stockHandler.New()
 	trades := tradeHandler.New()
 	watchlist := watchlistHandler.New()

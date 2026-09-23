@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { apiFetch, getAuthToken, ApiError } from "@/lib/api";
+import { apiFetch, getAuthToken, ApiError, API_URL } from "@/lib/api";
 import {
   Search,
   TrendingUp,
@@ -253,7 +253,7 @@ export default function WatchlistSidebar({
   selectedSymbol,
   onSelectSymbol,
   quotes,
-  apiUrl = "http://localhost:8080/api/v1",
+  apiUrl = API_URL,
   onQuickOrder,
   positions = [],
   onActiveSymbolsChange,

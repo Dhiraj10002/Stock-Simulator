@@ -14,6 +14,7 @@ import {
   Receipt,
 } from "lucide-react";
 import { formatPaise } from "@/lib/format";
+import { getApiUrl } from "@/lib/config";
 import type { Wallet as WalletData } from "@/types";
 import WalletTransactionsTable from "./WalletTransactionsTable";
 
@@ -43,7 +44,7 @@ export default function AddFundsModal({
     return "";
   });
 
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api/v1";
+  const apiUrl = getApiUrl();
 
   if (!isOpen) return null;
 

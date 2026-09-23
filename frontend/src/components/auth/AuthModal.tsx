@@ -13,6 +13,7 @@ import {
   TrendingUp,
   Zap,
 } from "lucide-react";
+import { getApiUrl } from "@/lib/config";
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -142,9 +143,7 @@ export default function AuthModal({
   }, [isOpen]);
 
   if (!isOpen) return null;
-
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api/v1";
-
+  const apiUrl = getApiUrl();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

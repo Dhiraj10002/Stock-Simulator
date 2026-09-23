@@ -179,8 +179,8 @@ func TestMentorService_PreTradeCheck(t *testing.T) {
 		Product:       "INTRADAY",
 		Type:          "LIMIT",
 		Quantity:      50,
-		PricePaise:    298550, // ₹2,985.50
-		StopLossPaise: 294500, // ₹2,945.00
+		PricePaise:    298550,  // ₹2,985.50
+		StopLossPaise: 294500,  // ₹2,945.00
 		TargetPaise:   1000000, // ₹10,000.00 (+235% intraday)
 	}
 	resCB, err := svc.PreTradeCheck(context.Background(), "31372e69-2088-45d8-a2d8-8607a58e3685", reqCircuitBreach)
@@ -210,5 +210,3 @@ func TestMentorService_PreTradeCheck(t *testing.T) {
 		t.Errorf("expected wishful thinking bias warning, got warnings: %v", resCB.Warnings)
 	}
 }
-
-

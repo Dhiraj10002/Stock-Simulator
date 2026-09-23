@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useTerminalStore } from "@/stores/terminal-store";
 import { useSymbolQuote } from "@/stores/market-store";
 import { formatPaise, formatNumber } from "@/lib/format";
+import { API_URL } from "@/lib/api";
 import {
   RefreshCw,
   Layers,
@@ -88,7 +89,7 @@ export default function OptionChainDesk({ initialUnderlying = "NIFTY" }: OptionC
     return "";
   });
 
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api/v1";
+  const apiUrl = API_URL;
 
   // Fetch Option Chain via TanStack Query
   const {
@@ -308,7 +309,7 @@ export default function OptionChainDesk({ initialUnderlying = "NIFTY" }: OptionC
 
     try {
       const orderPromises = strategyMetrics.legs.map((leg) => {
-        const qty = (chain?.lot_size ?? 50) * strategyLots;
+        const qty = (chain?.lot_size ?? 25) * strategyLots;
         return fetch(`${apiUrl}/orders`, {
           method: "POST",
           headers: {

@@ -4,7 +4,8 @@ import React, { useState, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { useMarketStore } from "@/stores/market-store";
+import { useMultiSymbolQuotes } from "@/stores/market-store";
+import { API_URL } from "@/lib/api";
 import {
   TrendingUp,
   TrendingDown,
@@ -560,7 +561,14 @@ interface FnoExplorePageProps {
 
 export default function FnoExplorePage({}: FnoExplorePageProps = {}) {
   const router = useRouter();
-  const quotes = useMarketStore((s) => s.quotes);
+  const fnoQuoteSymbols = useMemo(
+    () => [
+      ...FNO_INDICES_STRIP.map((idx) => idx.symbol),
+      ...TOP_TRADED_UNDERLYINGS.map((u) => u.optionsSymbol || u.symbol.replace(" 50", "").replace(" ", "")),
+    ],
+    []
+  );
+  const quotes = useMultiSymbolQuotes(fnoQuoteSymbols);
 
   // Filter state for Top Traded Underlyings
   const [underlyingFilter, setUnderlyingFilter] = useState<"ALL" | "INDICES" | "EQUITY">("ALL");
@@ -601,7 +609,7 @@ export default function FnoExplorePage({}: FnoExplorePageProps = {}) {
     return "";
   });
 
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api/v1";
+  const apiUrl = API_URL;
 
   // Fetch Wallet
   const { data: wallet } = useQuery<Wallet>({

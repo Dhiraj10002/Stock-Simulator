@@ -1,0 +1,30 @@
+# ==============================================================================
+# Caddy Reverse Proxy Configuration for Oracle VM
+# Domain: api.<your-oracle-domain>.com
+# Features: Automated Let's Encrypt TLS, WebSocket Upgrades, and Health Routing
+# ==============================================================================
+
+api.<your-oracle-domain>.com {
+    # Automatic HTTPS certificate provisioning and HTTP->HTTPS redirection
+
+    # Forward REST API calls to Go backend
+    handle /api/* {
+        reverse_proxy backend:8080
+    }
+
+    # Forward WebSocket market streaming connections
+    handle /ws/* {
+        reverse_proxy backend:8080
+    }
+
+    # Health check endpoint for Oracle Cloud Load Balancer / uptime monitoring
+    handle /health {
+        rewrite * /api/v1/health
+        reverse_proxy backend:8080
+    }
+
+    log {
+        output stdout
+        format console
+    }
+}

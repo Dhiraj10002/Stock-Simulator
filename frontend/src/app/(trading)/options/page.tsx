@@ -13,6 +13,7 @@ import {
   PieChart,
 } from "lucide-react";
 import { formatPaise } from "@/lib/format";
+import { API_URL } from "@/lib/api";
 import type { Portfolio, Wallet, ApiResponse } from "@/types";
 
 export default function OptionsPage() {
@@ -26,7 +27,7 @@ export default function OptionsPage() {
     return "";
   });
 
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api/v1";
+  const apiUrl = API_URL;
 
   // 1. Fetch Wallet for Navbar available balance
   const { data: wallet } = useQuery<Wallet>({

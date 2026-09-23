@@ -4,6 +4,7 @@ import React, { useState, useMemo, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useTerminalStore } from "@/stores/terminal-store";
 import { formatPaise, formatPercent } from "@/lib/format";
+import { getApiUrl } from "@/lib/config";
 import {
   ShieldAlert,
   ShieldCheck,
@@ -69,7 +70,7 @@ const EXTENDED_INSTRUMENTS: MarketInstrument[] = [
 ];
 
 export default function PreTradeRiskLab({
-  apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api/v1",
+  apiUrl = getApiUrl(),
   token,
 }: {
   apiUrl?: string;

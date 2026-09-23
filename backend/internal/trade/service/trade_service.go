@@ -57,4 +57,3 @@ func toResponse(trade model.Trade) dto.TradeResponse {
 		ExecutedAt:       trade.ExecutedAt.UTC().Format("2006-01-02T15:04:05Z07:00"),
 	}
 }
-

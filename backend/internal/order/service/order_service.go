@@ -26,6 +26,8 @@ type OrderService struct {
 	rules               product.Rules
 	nowFunc             func() time.Time
 	executableQuoteFunc func(symbol string) (*marketDTO.QuoteResponse, error)
+	instrumentFinder    func(symbol string) (*model.Instrument, error)
+	createOrderFunc     func(order *model.Order) error
 	activeSymbolsMu     sync.RWMutex
 	activeSymbols       map[string]int
 }
@@ -47,6 +49,14 @@ func (s *OrderService) SetNowFunc(fn func() time.Time) {
 
 func (s *OrderService) SetExecutableQuoteFunc(fn func(symbol string) (*marketDTO.QuoteResponse, error)) {
 	s.executableQuoteFunc = fn
+}
+
+func (s *OrderService) SetInstrumentFinder(fn func(symbol string) (*model.Instrument, error)) {
+	s.instrumentFinder = fn
+}
+
+func (s *OrderService) SetCreateOrderFunc(fn func(order *model.Order) error) {
+	s.createOrderFunc = fn
 }
 
 func (s *OrderService) executableQuote(symbol string) (*marketDTO.QuoteResponse, error) {
@@ -121,6 +131,23 @@ func (s *OrderService) Create(userID string, request dto.CreateOrderRequest) (*d
 		return nil, err
 	}
 
+	var instrument *model.Instrument
+	if s.instrumentFinder != nil {
+		found, err := s.instrumentFinder(request.Symbol)
+		if err != nil || found == nil {
+			return nil, fmt.Errorf("instrument %q not found in canonical instrument master", request.Symbol)
+		}
+		instrument = found
+	} else if database.GetDB() != nil {
+		found, err := s.repo.FindInstrument(request.Symbol)
+		if err != nil || found == nil {
+			return nil, fmt.Errorf("instrument %q not found in canonical instrument master", request.Symbol)
+		}
+		instrument = found
+	} else if request.Product == model.OrderProductFNO {
+		return nil, fmt.Errorf("F&O instrument verification requires database connection")
+	}
+
 	// Stop-Loss Directional Validation against current quote
 	if request.Type == model.OrderTypeSL || request.Type == model.OrderTypeSLM {
 		curQuote, qErr := s.currentQuote(request.Symbol)
@@ -147,18 +174,6 @@ func (s *OrderService) Create(userID string, request dto.CreateOrderRequest) (*d
 				return nil, fmt.Errorf("limit price ₹%.2f falls below daily lower circuit limit of ₹%.2f", float64(request.PricePaise)/100, float64(lc)/100)
 			}
 		}
-	}
-
-	var instrument *model.Instrument
-	if database.GetDB() != nil {
-		found, err := s.repo.FindInstrument(request.Symbol)
-		if err == nil {
-			instrument = found
-		} else if request.Product == model.OrderProductFNO {
-			return nil, fmt.Errorf("F&O instrument %q not found in instrument master", request.Symbol)
-		}
-	} else if request.Product == model.OrderProductFNO {
-		return nil, fmt.Errorf("F&O instrument verification requires database connection")
 	}
 
 	if request.Product == model.OrderProductIntraday {
@@ -227,6 +242,13 @@ func (s *OrderService) Create(userID string, request dto.CreateOrderRequest) (*d
 		if err != nil {
 			return nil, err
 		}
+	}
+
+	if s.createOrderFunc != nil {
+		if err := s.createOrderFunc(order); err != nil {
+			return nil, err
+		}
+		return toResponse(order), nil
 	}
 
 	if reservation > 0 {
@@ -521,4 +543,3 @@ func toResponse(order *model.Order) *dto.OrderResponse {
 		UpdatedAt:          order.UpdatedAt.UTC().Format("2006-01-02T15:04:05Z07:00"),
 	}
 }
-

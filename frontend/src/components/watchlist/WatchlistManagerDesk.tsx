@@ -5,10 +5,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTerminalStore } from "@/stores/terminal-store";
-import { useMarketStore } from "@/stores/market-store";
+import { useMultiSymbolQuotes } from "@/stores/market-store";
 import { getQuoteSync, fetchBatchQuotes } from "@/lib/quoteService";
 import { formatPaise, formatPercent } from "@/lib/format";
 import { apiFetch, getAuthToken, ApiError } from "@/lib/api";
+import { getApiUrl } from "@/lib/config";
 import { MASTER_STOCKS_CATALOG } from "@/components/dashboard/DashboardPage";
 import {
   Search,
@@ -303,7 +304,7 @@ export default function WatchlistManagerDesk({ token: propToken }: WatchlistMana
     });
     const timer = setTimeout(async () => {
       try {
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api/v1";
+        const apiUrl = getApiUrl();
         const res = await fetch(`${apiUrl}/stocks?q=${encodeURIComponent(q)}`);
         const json = await res.json();
         if (json.success && Array.isArray(json.data) && json.data.length > 0) {
@@ -368,7 +369,7 @@ export default function WatchlistManagerDesk({ token: propToken }: WatchlistMana
       .filter((item): item is WatchlistItem => item !== null && typeof item.symbol === "string" && item.symbol.length > 0);
   }, [watchlists, activeTabId]);
 
-  const liveWsQuotes = useMarketStore((s) => s.quotes);
+  const liveWsQuotes = useMultiSymbolQuotes(currentItems.map((i) => i.symbol));
 
   // Prefetch real quotes from backend API for current watchlist items
   useEffect(() => {

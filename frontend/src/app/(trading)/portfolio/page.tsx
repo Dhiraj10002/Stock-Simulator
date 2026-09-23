@@ -40,6 +40,7 @@ import {
 } from "lucide-react";
 import { formatPaise, formatPercent } from "@/lib/format";
 import { useMarketStore } from "@/stores/market-store";
+import { API_URL } from "@/lib/api";
 import type { Portfolio, Wallet, ApiResponse, Position } from "@/types";
 
 const STOCK_INFO_MAP: Record<
@@ -109,7 +110,7 @@ export default function PortfolioPage() {
     return "";
   });
 
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api/v1";
+  const apiUrl = API_URL;
 
   // 1. Fetch Portfolio via TanStack Query
   const {

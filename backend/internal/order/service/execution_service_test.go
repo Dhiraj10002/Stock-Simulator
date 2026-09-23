@@ -372,5 +372,3 @@ func TestCalculateCircuitLimits(t *testing.T) {
 		t.Fatalf("expected min tick 5 paise, got %d", lcZero)
 	}
 }
-
-

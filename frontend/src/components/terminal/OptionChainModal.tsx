@@ -591,7 +591,7 @@ export default function OptionChainModal({
                   <div>
                     <div className="text-[10px] text-slate-400 uppercase font-medium">Net Flow</div>
                     <div className={`text-xs font-bold font-mono ${strategyMetrics.isCredit ? "text-emerald-400" : "text-slate-200"}`}>
-                      {strategyMetrics.isCredit ? "+" : "-"}₹{((strategyMetrics.netPremiumPerUnitPaise * (chain?.lot_size || 50) * strategyLots) / 100).toFixed(2)}
+                      {strategyMetrics.isCredit ? "+" : "-"}₹{((strategyMetrics.netPremiumPerUnitPaise * (chain?.lot_size || 25) * strategyLots) / 100).toFixed(2)}
                     </div>
                   </div>
 

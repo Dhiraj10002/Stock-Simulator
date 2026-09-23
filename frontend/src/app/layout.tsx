@@ -4,7 +4,6 @@ import "./globals.css";
 import { ToastProvider } from "@/components/terminal/ToastProvider";
 import { QueryProvider } from "@/providers/query-provider";
 import { ThemeProvider } from "@/providers/theme-provider";
-import { MarketProvider } from "@/providers/market-provider";
 import SearchModal from "@/components/layout/SearchModal";
 import MobileBottomNav from "@/components/layout/MobileBottomNav";
 import ShortcutsModal from "@/components/layout/ShortcutsModal";
@@ -64,14 +63,12 @@ export default function RootLayout({
         <div className="relative z-10 flex-1 flex flex-col">
           <ThemeProvider>
             <QueryProvider>
-              <MarketProvider>
-                <ToastProvider>
-                  {children}
-                  <SearchModal />
-                  <ShortcutsModal />
-                  <MobileBottomNav />
-                </ToastProvider>
-              </MarketProvider>
+              <ToastProvider>
+                {children}
+                <SearchModal />
+                <ShortcutsModal />
+                <MobileBottomNav />
+              </ToastProvider>
             </QueryProvider>
           </ThemeProvider>
         </div>

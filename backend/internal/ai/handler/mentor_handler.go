@@ -65,4 +65,3 @@ func (h *MentorHandler) PreTradeCheck(c *gin.Context) {
 
 	response.Success(c, http.StatusOK, "Pre-trade risk analysis completed", result)
 }
-

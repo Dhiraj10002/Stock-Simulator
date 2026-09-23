@@ -2,6 +2,8 @@ package config
 
 import (
 	"fmt"
+	"log"
+	"os"
 	"strings"
 	"time"
 
@@ -76,8 +78,30 @@ func Load() (*Config, error) {
 	if cfg.APIVersion == "" {
 		cfg.APIVersion = "v1"
 	}
+	if cfg.AppEnv == "" {
+		if env := viper.GetString("ENVIRONMENT"); env != "" {
+			cfg.AppEnv = env
+		} else {
+			cfg.AppEnv = "development"
+		}
+	}
+	isProd := strings.ToLower(strings.TrimSpace(cfg.AppEnv)) == "production"
 	if cfg.CORSAllowedOrigins == "" {
-		cfg.CORSAllowedOrigins = "*"
+		if isProd {
+			log.Println("WARNING: CORS_ALLOWED_ORIGINS is not set in production — all cross-origin requests will be rejected")
+		} else {
+			cfg.CORSAllowedOrigins = "http://localhost:3000"
+		}
+	}
+	if isProd && strings.TrimSpace(cfg.CORSAllowedOrigins) == "*" {
+		return nil, fmt.Errorf("CORS_ALLOWED_ORIGINS=* is not allowed in production; set explicit origins (e.g. https://app.example.com)")
+	}
+	if cfg.MarketWorkerURL == "" {
+		if isProd || isRunningInDocker() {
+			cfg.MarketWorkerURL = "http://market-worker:8085"
+		} else {
+			cfg.MarketWorkerURL = "http://127.0.0.1:8085"
+		}
 	}
 	if cfg.InitialVirtualBalancePaise <= 0 {
 		cfg.InitialVirtualBalancePaise = 100000000 // ₹10,00,000
@@ -118,4 +142,25 @@ func Load() (*Config, error) {
 	}
 
 	return cfg, nil
+}
+
+func isRunningInDocker() bool {
+	if _, err := os.Stat("/.dockerenv"); err == nil {
+		return true
+	}
+	if _, err := os.Stat("/run/.containerenv"); err == nil {
+		return true
+	}
+	if os.Getenv("CONTAINER") != "" || os.Getenv("DOCKER_CONTAINER") != "" {
+		return true
+	}
+	return false
+}
+
+// IsProduction returns true if the application environment is configured for production.
+func (c *Config) IsProduction() bool {
+	if c == nil {
+		return false
+	}
+	return strings.ToLower(strings.TrimSpace(c.AppEnv)) == "production"
 }

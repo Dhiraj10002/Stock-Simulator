@@ -111,6 +111,7 @@ FALLBACK_INSTRUMENT_MASTER = [
     {"token": "1594", "symbol": "INFY-EQ", "name": "INFY", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "5.000000"},
     {"token": "1333", "symbol": "HDFCBANK-EQ", "name": "HDFCBANK", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "5.000000"},
     {"token": "3456", "symbol": "TATAMOTORS-EQ", "name": "TATAMOTORS", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "5.000000"},
+    {"token": "3456", "symbol": "TMPV-EQ", "name": "TMPV", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "5.000000"},
     {"token": "10604", "symbol": "BHARTIARTL-EQ", "name": "BHARTIARTL", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "5.000000"},
     {"token": "5097", "symbol": "ETERNAL-EQ", "name": "ETERNAL", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "5.000000"},
     {"token": "12018", "symbol": "SUZLON-EQ", "name": "SUZLON", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "5.000000"},
@@ -209,6 +210,7 @@ DEFAULT_BENCHMARK_PRICES_PAISE = {
 
 GLOBAL_SMART_API: Any = None
 GLOBAL_WRITER: Any = None
+GLOBAL_SUPERVISOR: Any = None
 GLOBAL_TOKEN_MAP: dict[str, dict[str, Any]] = {}
 
 DEFAULT_CANONICAL_SYMBOL_ALIASES: dict[str, str] = {
@@ -401,30 +403,37 @@ def fetch_quote_for_symbol(symbol: str) -> dict[str, Any] | None:
         try:
             trading_symbol = info.get("symbol") or f"{clean_sym}-EQ"
             res = GLOBAL_SMART_API.ltpData(exch, trading_symbol, token)
-            data = res.get("data")
-            if data and data.get("ltp"):
-                ltp = float(data["ltp"])
-                close = float(data.get("close") or ltp)
-                ltp_paise = int(round(ltp * 100))
-                close_paise = int(round(close * 100))
-                change_paise = ltp_paise - close_paise
-                change_percent = round((change_paise / close_paise) * 100, 2) if close_paise > 0 else 0.0
+            if isinstance(res, dict) and res.get("status") is True:
+                data = res.get("data") or {}
+                if data.get("ltp") is not None and float(data.get("ltp", 0)) > 0:
+                    ltp = float(data["ltp"])
+                    close = float(data.get("close") or ltp)
+                    if close <= 0:
+                        close = ltp
+                    ltp_paise = int(round(ltp * 100))
+                    close_paise = int(round(close * 100))
+                    change_paise = ltp_paise - close_paise
+                    change_percent = round((change_paise / close_paise) * 100, 2) if close_paise > 0 else 0.0
 
-                now_iso = datetime.now(timezone.utc).isoformat()
-                quote = {
-                    "symbol": symbol,
-                    "price_paise": ltp_paise,
-                    "change_paise": change_paise,
-                    "change_percent": change_percent,
-                    "source": "angelone_live",
-                    "updated_at": now_iso
-                }
-                if GLOBAL_WRITER:
-                    exch_type = EXCHANGE_TYPES.get(exch, 1)
-                    sub = Subscription(symbol, token, exch, exch_type)
-                    GLOBAL_WRITER.benchmark_prices[symbol] = close_paise
-                    GLOBAL_WRITER.write(sub, ltp_paise, 5000, source="angelone_live")
-                return quote
+                    source = "angelone_live"
+                    if GLOBAL_SUPERVISOR and getattr(GLOBAL_SUPERVISOR, "fallback_active", False):
+                        source = "benchmark_fallback"
+
+                    now_iso = datetime.now(timezone.utc).isoformat()
+                    quote = {
+                        "symbol": symbol,
+                        "price_paise": ltp_paise,
+                        "change_paise": change_paise,
+                        "change_percent": change_percent,
+                        "source": source,
+                        "updated_at": now_iso
+                    }
+                    if GLOBAL_WRITER:
+                        exch_type = EXCHANGE_TYPES.get(exch, 1)
+                        sub = Subscription(symbol, token, exch, exch_type)
+                        GLOBAL_WRITER.benchmark_prices[symbol] = close_paise
+                        GLOBAL_WRITER.write(sub, ltp_paise, 5000, source=source)
+                    return quote
         except Exception as e:
             print(f"market worker: error fetching live quote for {symbol} from Angel One: {e}", flush=True)
 
@@ -455,6 +464,15 @@ class QuoteRequestHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
+        if parsed.path == "/health":
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            body = b'{"status": "ok", "service": "market-worker"}'
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
         if parsed.path != "/quote":
             self.send_response(404)
             self.end_headers()
@@ -761,6 +779,9 @@ class QuoteWriter:
         self.benchmark_prices = DEFAULT_BENCHMARK_PRICES_PAISE
 
     def write(self, subscription: Subscription, price_paise: int, volume: int, source: str = "synthetic") -> None:
+        if source == "angelone_live" and GLOBAL_SUPERVISOR and getattr(GLOBAL_SUPERVISOR, "fallback_active", False):
+            source = "fallback_synthetic"
+
         now = datetime.now(timezone.utc)
         benchmark = self.benchmark_prices.get(subscription.symbol, price_paise)
         change_paise = price_paise - benchmark
@@ -1044,14 +1065,15 @@ def run_feed(store: InstrumentStore, writer: QuoteWriter, control: FeedControl) 
             if item.exchange_segment == "NSE" and not item.token.startswith("999"):
                 try:
                     res = smart_api.ltpData("NSE", f"{item.symbol}-EQ", item.token)
-                    d = res.get("data") or {}
-                    ltp = d.get("ltp")
-                    close = d.get("close")
-                    if ltp and close:
-                        close_paise = int(round(float(close) * 100))
-                        ltp_paise = int(round(float(ltp) * 100))
-                        writer.benchmark_prices[item.symbol] = close_paise
-                        writer.write(item, ltp_paise, 0, source="angelone_live")
+                    if isinstance(res, dict) and res.get("status") is True:
+                        d = res.get("data") or {}
+                        ltp = d.get("ltp")
+                        close = d.get("close")
+                        if ltp and close and float(ltp) > 0 and float(close) > 0:
+                            close_paise = int(round(float(close) * 100))
+                            ltp_paise = int(round(float(ltp) * 100))
+                            writer.benchmark_prices[item.symbol] = close_paise
+                            writer.write(item, ltp_paise, 0, source="angelone_live")
                 except Exception:
                     pass
         print("market worker: authentic initial snapshots written to Redis!", flush=True)
@@ -1117,6 +1139,7 @@ class FeedSupervisor:
     Tracks consecutive failures and transitions to synthetic fallback when threshold is met.
     """
     def __init__(self, store: Any, writer: Any, control: FeedControl, mode: str = "auto", max_failures: int = 3, tick_interval: float = 1.0) -> None:
+        global GLOBAL_SUPERVISOR
         self.store = store
         self.writer = writer
         self.control = control
@@ -1125,6 +1148,7 @@ class FeedSupervisor:
         self.tick_interval = tick_interval
         self.fail_count = 0
         self.fallback_active = False
+        GLOBAL_SUPERVISOR = self
 
     def handle_feed_cycle(self, run_feed_fn) -> bool:
         """

@@ -70,4 +70,3 @@ func Connect(cfg *config.Config) error {
 func GetDB() *gorm.DB {
 	return db
 }
-

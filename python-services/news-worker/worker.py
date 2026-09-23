@@ -19,14 +19,122 @@ NEGATIVE = {
     "misses", "plunge", "plunges", "slump", "investigation", "default", "selloff"
 }
 
-SYMBOL_ALIASES = {
+DEFAULT_KEYWORD_ALIASES: dict[str, list[str]] = {
     "RELIANCE": ["RELIANCE", "RIL", "MUKESH AMBANI", "JIO"],
     "TCS": ["TCS", "TATA CONSULTANCY", "TATA SONS"],
     "INFY": ["INFOSYS", "INFY", "SALIL PAREKH"],
     "HDFCBANK": ["HDFC", "HDFCBANK", "HDFC BANK"],
     "NIFTY": ["NIFTY", "NIFTY50", "NIFTY 50", "BENCHMARK INDEX"],
     "BANKNIFTY": ["BANK NIFTY", "BANKNIFTY", "BANKING INDEX"],
+    "TMPV": ["TATAMOTORS", "TATA MOTORS", "TMPV"],
+    "ETERNAL": ["ZOMATO", "ETERNAL", "BLINKIT"],
+    "PRAJIND": ["PRAJIND", "PRAJ INDUSTRIES"],
 }
+
+DEFAULT_CANONICAL_ALIASES: dict[str, str] = {
+    "ZOMATO": "ETERNAL",
+    "TATAMOTORS": "TMPV",
+}
+
+CANONICAL_ALIASES: dict[str, str] = dict(DEFAULT_CANONICAL_ALIASES)
+KEYWORD_ALIASES: dict[str, list[str]] = {k: list(v) for k, v in DEFAULT_KEYWORD_ALIASES.items()}
+
+
+def resolve_canonical_symbol(symbol: str) -> str:
+    sym = (symbol or "").strip().upper()
+    return CANONICAL_ALIASES.get(sym, sym)
+
+
+def load_symbol_aliases(client: redis.Redis | None = None, config_path: str | None = None) -> dict[str, str]:
+    """
+    Dynamically loads symbol aliases from:
+    1. Built-in defaults
+    2. External JSON file (config_path, SYMBOL_ALIASES_FILE, SYMBOL_ALIASES_PATH, symbol_aliases.json)
+    3. Environment variable (SYMBOL_ALIASES - JSON or CSV)
+    4. Redis hash 'market:symbol_aliases'
+    """
+    global CANONICAL_ALIASES, KEYWORD_ALIASES
+    aliases = dict(DEFAULT_CANONICAL_ALIASES)
+
+    # 1. External JSON file
+    candidate_paths = [
+        config_path,
+        os.getenv("SYMBOL_ALIASES_FILE"),
+        os.getenv("SYMBOL_ALIASES_PATH"),
+        "symbol_aliases.json",
+        "/app/symbol_aliases.json",
+        "../market-worker/symbol_aliases.json",
+        "../../python-services/market-worker/symbol_aliases.json",
+    ]
+    for path in candidate_paths:
+        if path and os.path.isfile(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    file_aliases = json.load(f)
+                if isinstance(file_aliases, dict):
+                    for k, v in file_aliases.items():
+                        if isinstance(k, str) and isinstance(v, str):
+                            aliases[k.strip().upper()] = v.strip().upper()
+                    print(f"news worker: loaded {len(file_aliases)} symbol aliases from {path}", flush=True)
+                    break
+            except Exception as e:
+                print(f"news worker: error loading symbol aliases from {path}: {e}", flush=True)
+
+    # 2. Environment variable
+    env_str = os.getenv("SYMBOL_ALIASES", "").strip()
+    if env_str:
+        try:
+            if env_str.startswith("{"):
+                env_aliases = json.loads(env_str)
+                if isinstance(env_aliases, dict):
+                    for k, v in env_aliases.items():
+                        if isinstance(k, str) and isinstance(v, str):
+                            aliases[k.strip().upper()] = v.strip().upper()
+            else:
+                for pair in env_str.split(","):
+                    pair = pair.strip()
+                    if ":" in pair:
+                        k, v = pair.split(":", 1)
+                        aliases[k.strip().upper()] = v.strip().upper()
+        except Exception as e:
+            print(f"news worker: error parsing SYMBOL_ALIASES env: {e}", flush=True)
+
+    # 3. Redis hash
+    if client is not None:
+        try:
+            redis_aliases = client.hgetall("market:symbol_aliases")
+            if redis_aliases and isinstance(redis_aliases, dict):
+                for k, v in redis_aliases.items():
+                    aliases[str(k).strip().upper()] = str(v).strip().upper()
+        except Exception as e:
+            print(f"news worker: error loading symbol aliases from Redis: {e}", flush=True)
+
+    CANONICAL_ALIASES = aliases
+
+    # Synchronize keyword search aliases
+    new_kw: dict[str, list[str]] = {k: list(v) for k, v in DEFAULT_KEYWORD_ALIASES.items()}
+    for alias_sym, canonical_target in CANONICAL_ALIASES.items():
+        if canonical_target not in new_kw:
+            new_kw[canonical_target] = [canonical_target, alias_sym]
+        else:
+            if alias_sym not in new_kw[canonical_target]:
+                new_kw[canonical_target].append(alias_sym)
+    KEYWORD_ALIASES = new_kw
+    return aliases
+
+
+def matching_symbols(title: str) -> list[str]:
+    uppercase = title.upper()
+    matched = []
+    for symbol, aliases in KEYWORD_ALIASES.items():
+        for alias in aliases:
+            if alias in uppercase:
+                canonical = resolve_canonical_symbol(symbol)
+                if canonical not in matched:
+                    matched.append(canonical)
+                break
+    return matched
+
 
 SECTOR_KEYWORDS = {
     "BANKING": ["BANK", "FINANCIAL", "LENDING", "CREDIT", "RBI", "REPO", "NPA", "DEPOSIT"],
@@ -57,17 +165,6 @@ def published_at(value: str | None) -> str:
         return datetime.now(timezone.utc).isoformat()
 
 
-def matching_symbols(title: str) -> list[str]:
-    uppercase = title.upper()
-    matched = []
-    for symbol, aliases in SYMBOL_ALIASES.items():
-        for alias in aliases:
-            if alias in uppercase:
-                matched.append(symbol)
-                break
-    return matched
-
-
 def matching_sectors(title: str) -> list[str]:
     uppercase = title.upper()
     sectors = []
@@ -75,6 +172,7 @@ def matching_sectors(title: str) -> list[str]:
         if any(kw in uppercase for kw in keywords):
             sectors.append(sector)
     return sectors
+
 
 
 def fetch_items(rss_url: str) -> list[dict]:
@@ -122,8 +220,10 @@ def main() -> None:
     max_items = int(os.getenv("NEWS_MAX_ITEMS", "200"))
 
     print(f"news worker: started polling {rss_url} every {interval}s", flush=True)
+    load_symbol_aliases(client)
     while True:
         try:
+            load_symbol_aliases(client)
             items = fetch_items(rss_url)
             store(client, items, items_ttl, seen_ttl, max_items)
             print(f"news worker: processed {len(items)} items", flush=True)

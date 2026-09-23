@@ -21,8 +21,8 @@ type Trade struct {
 	Reason     string    `gorm:"size:40"`
 	// RealizedPnlPaise is zero for buys and records the exact cost-basis gain
 	// or loss for sells.
-	RealizedPnlPaise int64     `gorm:"not null;default:0"`
-	Tag              string    `gorm:"size:32"`
-	Notes            string    `gorm:"type:text"`
+	RealizedPnlPaise int64  `gorm:"not null;default:0"`
+	Tag              string `gorm:"size:32"`
+	Notes            string `gorm:"type:text"`
 	ExecutedAt       time.Time
 }

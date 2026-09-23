@@ -115,4 +115,3 @@ func (h *OrderHandler) ClearHistory(c *gin.Context) {
 		"deleted_count": deletedCount,
 	})
 }
-

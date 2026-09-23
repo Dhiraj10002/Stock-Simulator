@@ -3,8 +3,9 @@
  * Handles auth tokens, JSON parsing, and consistent error handling.
  */
 
-export const API_URL =
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api/v1";
+import { getApiUrl } from "./config";
+
+export const API_URL = getApiUrl();
 
 /** Read auth token from localStorage (client-side only). */
 export function getAuthToken(): string {

@@ -129,7 +129,7 @@ func toPositionResponse(position model.Position) dto.PositionResponse {
 	return dto.PositionResponse{
 		UUID: position.UUID.String(), Symbol: position.Symbol,
 		Product: position.Product, UnderlyingSymbol: position.UnderlyingSymbol,
-		Quantity: position.Quantity,
+		Quantity:          position.Quantity,
 		AveragePricePaise: position.AveragePricePaise, CurrentPricePaise: position.CurrentPricePaise,
 		InvestedValuePaise: position.InvestedValuePaise(), CurrentValuePaise: position.CurrentValuePaise(),
 		UnrealizedPnlPaise: position.UnrealizedPnlPaise(), RealizedPnlPaise: position.RealizedPnlPaise,

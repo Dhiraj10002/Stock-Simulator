@@ -289,6 +289,17 @@ class FeedSupervisorTest(unittest.TestCase):
         self.assertEqual(self.supervisor.fail_count, 1)
         self.assertFalse(self.supervisor.fallback_active)
 
+    def test_explicit_live_mode_never_falls_back_to_synthetic(self):
+        live_supervisor = worker.FeedSupervisor(self.store, self.writer, self.control, mode="live", max_failures=3)
+        run_fail = MagicMock(return_value=False)
+
+        # 5 consecutive failures in explicit live mode must NEVER trigger synthetic fallback
+        for i in range(1, 6):
+            res = live_supervisor.handle_feed_cycle(run_fail)
+            self.assertTrue(res, f"handle_feed_cycle should return True to keep retrying in live mode on cycle {i}")
+            self.assertEqual(live_supervisor.fail_count, i)
+            self.assertFalse(live_supervisor.fallback_active)
+
 
 class SymbolAliasTest(unittest.TestCase):
     def test_zomato_resolves_to_eternal(self):
@@ -401,6 +412,26 @@ class BenchmarkFallbackSourceTest(unittest.TestCase):
         self.assertTrue(len(feed_state_calls) > 0)
         self.assertIn("last_tick", feed_state_calls[0][2]["mapping"])
 
+    def test_fallback_mode_guards_against_angelone_live(self):
+        mock_redis = MagicMock()
+        writer = worker.QuoteWriter(mock_redis, 300, 86400, 500)
+        sub = worker.Subscription("RELIANCE", "2885", "NSE", 1)
+
+        mock_supervisor = MagicMock()
+        mock_supervisor.fallback_active = True
+        old_supervisor = worker.GLOBAL_SUPERVISOR
+        try:
+            worker.GLOBAL_SUPERVISOR = mock_supervisor
+            writer.write(sub, 250000, 100, source="angelone_live")
+            mock_pipe = mock_redis.pipeline.return_value.__enter__.return_value
+            hset_calls = [c for c in mock_pipe.method_calls if c[0] == "hset"]
+            quote_calls = [c for c in hset_calls if "market:quote:" in c[1][0]]
+            mapping = quote_calls[0][2]["mapping"]
+            self.assertNotEqual(mapping.get("source"), "angelone_live")
+            self.assertEqual(mapping.get("source"), "fallback_synthetic")
+        finally:
+            worker.GLOBAL_SUPERVISOR = old_supervisor
+
 
 class QuoteServerArchitectureTest(unittest.TestCase):
     def test_start_quote_server_defaults_to_all_interfaces(self):
@@ -454,6 +485,14 @@ class QuoteServerArchitectureTest(unittest.TestCase):
             conn.request("GET", "/unknown")
             resp = conn.getresponse()
             self.assertEqual(resp.status, 404)
+            conn.close()
+
+            conn = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
+            conn.request("GET", "/health")
+            resp = conn.getresponse()
+            self.assertEqual(resp.status, 200)
+            health_data = json.loads(resp.read().decode())
+            self.assertEqual(health_data.get("status"), "ok")
             conn.close()
 
             server.shutdown()

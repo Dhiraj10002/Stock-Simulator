@@ -3,6 +3,7 @@
 import React, { useState, useMemo } from "react";
 import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { getApiUrl } from "@/lib/config";
 import {
   X,
   TrendingUp,
@@ -270,7 +271,7 @@ const DEMO_TRADES: Trade[] = [
 ];
 
 export default function AnalyticsConsole({
-  apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api/v1",
+  apiUrl = getApiUrl(),
   token: propToken,
   onClose,
   initialTab = "analytics",

@@ -128,4 +128,3 @@ func (h *Handler) Status(c *gin.Context) {
 		"last_tick":     lastTick,
 	})
 }
-

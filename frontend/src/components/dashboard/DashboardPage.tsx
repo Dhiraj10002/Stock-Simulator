@@ -4,8 +4,9 @@ import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMarketStore } from "@/stores/market-store";
+import { useMultiSymbolQuotes } from "@/stores/market-store";
 import { fetchBatchQuotes, getCachedQuote } from "@/lib/quoteService";
+import { getApiUrl } from "@/lib/config";
 import Navbar from "@/components/layout/Navbar";
 import {
   TrendingUp,
@@ -423,7 +424,7 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
     return "";
   });
 
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api/v1";
+  const apiUrl = getApiUrl();
 
   // 1. Fetch Wallet
   const { data: wallet, refetch: refetchWallet } = useQuery<Wallet>({
@@ -541,7 +542,7 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
     }
   };
 
-  const quotes = useMarketStore((s) => s.quotes);
+  const quotes = useMultiSymbolQuotes(MASTER_STOCKS_CATALOG.map((s) => s.symbol));
 
   // Prefetch live real-time quotes for all catalog stocks on mount
   useEffect(() => {

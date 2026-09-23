@@ -16,8 +16,7 @@ func CalculateCharges(symbol, side, product string, quantity, pricePaise int64) 
 	upperSymbol := strings.ToUpper(symbol)
 
 	isFno := upperProduct == "FNO" ||
-		(upperProduct != "DELIVERY" && upperProduct != "INTRADAY" && (
-			strings.HasSuffix(upperSymbol, "CE") ||
+		(upperProduct != "DELIVERY" && upperProduct != "INTRADAY" && (strings.HasSuffix(upperSymbol, "CE") ||
 			strings.HasSuffix(upperSymbol, "PE") ||
 			strings.HasSuffix(upperSymbol, "FUT") ||
 			strings.Contains(upperSymbol, "00CE") ||

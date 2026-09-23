@@ -3,6 +3,7 @@ package websocket
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
 	"sort"
 	"strings"
@@ -31,24 +32,49 @@ type event struct {
 	Message    string                        `json:"message,omitempty"`
 }
 
-func New(market *marketService.Service, allowedOrigins ...string) *Handler {
-	originsStr := ""
-	if len(allowedOrigins) > 0 {
-		originsStr = allowedOrigins[0]
+// New creates a new WebSocket Handler with origin restrictions.
+// In production (isProd=true), origins are strictly checked against allowedOrigins.
+// Empty origins or wildcard "*" in production are rejected to prevent CSWSH attacks.
+func New(market *marketService.Service, allowedOrigins string, isProd ...bool) *Handler {
+	prod := false
+	if len(isProd) > 0 {
+		prod = isProd[0]
 	}
+
 	origins := make(map[string]struct{})
 	allowAnyOrigin := false
-	if originsStr == "" || originsStr == "*" {
-		allowAnyOrigin = true
+
+	trimmed := strings.TrimSpace(allowedOrigins)
+	if trimmed == "*" {
+		if prod {
+			log.Println("WS: wildcard origin '*' requested in production; rejecting wildcard and requiring explicit origins")
+			allowAnyOrigin = false
+		} else {
+			allowAnyOrigin = true
+		}
+	} else if trimmed == "" {
+		if prod {
+			log.Println("WS: no allowed origins configured in production; cross-origin WebSocket connections will be rejected")
+			allowAnyOrigin = false
+		} else {
+			// In dev without explicit CORS, allow localhost:3000
+			origins["http://localhost:3000"] = struct{}{}
+			origins["http://127.0.0.1:3000"] = struct{}{}
+		}
 	} else {
-		for _, origin := range strings.Split(originsStr, ",") {
+		for _, origin := range strings.Split(trimmed, ",") {
 			origin = strings.TrimSpace(origin)
 			if origin == "*" {
+				if prod {
+					log.Println("WS: wildcard origin '*' ignored in production")
+					continue
+				}
 				allowAnyOrigin = true
 				break
 			}
 			if origin != "" {
-				origins[strings.ToLower(origin)] = struct{}{}
+				norm := strings.TrimRight(strings.ToLower(origin), "/")
+				origins[norm] = struct{}{}
 			}
 		}
 	}
@@ -64,13 +90,24 @@ func New(market *marketService.Service, allowedOrigins ...string) *Handler {
 				}
 				origin := r.Header.Get("Origin")
 				if origin == "" {
-					return true
+					// In browsers, WebSocket handshakes ALWAYS include an Origin header.
+					// Allow empty Origin only in non-production environments (e.g. backend unit/integration tests).
+					return !prod
 				}
-				_, ok := origins[strings.ToLower(origin)]
+				normOrigin := strings.TrimRight(strings.ToLower(strings.TrimSpace(origin)), "/")
+				_, ok := origins[normOrigin]
+				if !ok {
+					log.Printf("WS: rejected connection from unauthorized origin: %q", origin)
+				}
 				return ok
 			},
 		},
 	}
+}
+
+// Upgrader returns the configured Gorilla WebSocket Upgrader (useful for testing CheckOrigin).
+func (h *Handler) Upgrader() *ws.Upgrader {
+	return &h.upgrader
 }
 
 func (h *Handler) Serve(c *gin.Context) {

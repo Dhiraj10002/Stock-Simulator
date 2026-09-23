@@ -119,6 +119,86 @@ Stock-Simulator/
 
 ---
 
+## 🔗 Symbol Alias Resolution
+
+Corporate name changes (e.g. `ZOMATO → ETERNAL`, `TATAMOTORS → TMPV`) are handled by a dynamic alias resolution system that requires **no code changes** to update.
+
+```text
+Requested symbol (e.g. ZOMATO)
+      ↓
+Normalize (strip -EQ, -BE, -SM suffixes)
+      ↓
+Alias lookup → canonical symbol (ETERNAL)
+      ↓
+Instrument master (PostgreSQL instruments table)
+      ↓
+Token, exchange, lot size, tick size, expiry, strike
+```
+
+**Alias sources** (in priority order):
+1. **Built-in defaults**: `ZOMATO: ETERNAL`, `TATAMOTORS: TMPV`, `LTI: LTIM`, `MINDTREE: LTIM`
+2. **JSON config file**: `symbol_aliases.json` (or `SYMBOL_ALIASES_FILE` env var)
+3. **Environment variable**: `SYMBOL_ALIASES` (JSON object or CSV pairs `ALIAS:TARGET,...`)
+4. **Redis hash**: `market:symbol_aliases` — dynamic updates via `HSET` at runtime
+
+Unknown instruments are **strictly rejected** with a clear error rather than silently fabricated.
+
+---
+
+## 📡 Market Feed Architecture
+
+```text
+Angel One SmartAPI WebSocket
+        │
+        │ live ticks
+        ▼
+Python Market Worker (FeedSupervisor)
+        │
+        ├── LIVE mode: authenticated Angel One feed
+        ├── SYNTHETIC mode: simulated price movement
+        ├── AUTO mode: live → synthetic fallback after 3 failures
+        │
+        ▼
+Redis (quotes + PubSub market:feed_state)
+        │
+        ▼
+Go Backend (REST + WebSocket)
+        │
+        ▼
+Next.js Frontend (Zustand market store)
+```
+
+**Feed states** published to `market:feed_state`:
+- `LIVE` — receiving authentic Angel One ticks
+- `FALLBACK` — synthetic price generation active
+- `CONNECTING` / `RETRYING` — attempting to establish feed
+- `DISCONNECTED` / `STOPPED` — no active feed
+
+The `FeedSupervisor` tracks consecutive connection failures and transitions to synthetic fallback automatically in `auto` mode. Source labeling is guardrailed — quotes are never labeled `angelone_live` when fallback is active.
+
+---
+
+## ⚙️ Configuration Reference
+
+| Variable | Description | Default |
+|:---------|:------------|:--------|
+| `DATABASE_URL` | PostgreSQL connection string (required) | — |
+| `REDIS_URL` | Redis connection string | `redis://localhost:6379/0` |
+| `JWT_SECRET` | JWT signing secret (required) | — |
+| `CORS_ALLOWED_ORIGINS` | Comma-separated allowed origins | `http://localhost:3000` (dev) |
+| `APP_ENV` | `development` or `production` | `development` |
+| `MARKET_FEED_MODE` | `auto`, `live`, or `synthetic` | `auto` |
+| `MARKET_WORKER_URL` | Market worker HTTP endpoint | Auto-detected |
+| `SYMBOL_ALIASES_FILE` | Path to symbol aliases JSON file | `symbol_aliases.json` |
+| `SYMBOL_ALIASES` | JSON/CSV symbol alias overrides | — |
+| `ALLOW_SEEDED_QUOTES` | Allow synthetic quotes for order execution | `false` |
+| `NEXT_PUBLIC_API_URL` | Frontend API base URL (build-time) | `http://localhost:8080/api/v1` (dev) |
+| `NEXT_PUBLIC_WS_URL` | Frontend WebSocket URL (build-time) | `ws://localhost:8080/ws/market` (dev) |
+
+> **Production**: `CORS_ALLOWED_ORIGINS=*` is rejected at startup. `NEXT_PUBLIC_*` URLs must be explicitly set (no localhost defaults).
+
+---
+
 ## 🚀 Getting Started
 
 ### Prerequisites
@@ -214,6 +294,72 @@ test -z "$(gofmt -l .)" && echo "Code formatting is clean!"
 - `mis_squareoff_test.go`: 15:20 order cancellations and 15:20–15:30 retry loop auto-squareoff.
 - `fno_expiry_integration_test.go`: 15:30 IST derivatives expiry cash settlement and intrinsic value calculations.
 - `app_test.go`: Graceful `SIGINT`/`SIGTERM` server shutdown with background worker context propagation.
+
+---
+
+## 🚀 Production Deployment Architecture (Vercel + Oracle)
+
+The recommended production deployment topology separates presentation and compute across two optimal cloud providers:
+
+- **Frontend**: **Vercel** (`https://<your-vercel-app>.vercel.app`) — Edge/Serverless Next.js delivery with global CDN caching and automatic HTTPS.
+- **Backend Stack**: **Oracle Cloud Infrastructure (OCI)** — Virtual Machine or Container Instance running Docker Compose for the Go ledger, Python background workers, internal Redis, and TLS gateway.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                       VERCEL CLOUD                          │
+│   Next.js 16 Web Application                                │
+│   Domain: https://<your-vercel-app>.vercel.app              │
+└──────────────┬───────────────────────────────┬──────────────┘
+               │ HTTPS REST API                │ WSS WebSockets
+               ▼                               ▼
+┌─────────────────────────────────────────────────────────────┐
+│                 ORACLE CLOUD INFRASTRUCTURE                 │
+│   Gateway (Caddy / Nginx with Let's Encrypt TLS)            │
+│   Public Domain: api.<your-oracle-domain>.com               │
+│                                                             │
+│   ┌─── Docker Network (Private Bridge) ─────────────────┐   │
+│   │  Go Backend (:8080)   ◄───►   Redis 7 (Private)     │   │
+│   │       │ HTTP :8085                    ▲             │   │
+│   │       ▼                               │ PubSub/Data │   │
+│   │  Market Worker (:8085) ───────────────┤             │   │
+│   │  News Worker ─────────────────────────┘             │   │
+│   └─────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Environment Variables Matrix
+
+| Variable | Target Platform | Purpose | Production Value Example |
+| :--- | :--- | :--- | :--- |
+| `NEXT_PUBLIC_API_URL` | **Vercel** | Backend REST API endpoint (auto-normalizes `/api/v1`) | `https://api.<your-oracle-domain>.com/api/v1` |
+| `NEXT_PUBLIC_WS_URL` | **Vercel** | Backend WebSocket endpoint (derived automatically if unset) | `wss://api.<your-oracle-domain>.com/ws/market` |
+| `APP_ENV` | **Oracle** | Enforces strict production rules, rejects wildcard CORS | `production` |
+| `CORS_ALLOWED_ORIGINS` | **Oracle** | Authorized frontend origins for HTTP CORS & WebSockets | `https://<your-vercel-app>.vercel.app` |
+| `DATABASE_URL` | **Oracle** | PostgreSQL connection string | `postgres://user:pass@host:5432/stock_simulator?sslmode=require` |
+| `JWT_SECRET` | **Oracle** | 32-byte cryptographic secret for token signing | Random 64-char hex string |
+| `REDIS_URL` | **Oracle** | Internal Redis connection | `redis://redis:6379/0` |
+
+### Oracle Deployment Commands
+
+```bash
+# 1. Clone repository on Oracle VM
+git clone https://github.com/Dhiraj10002/Stock-Simulator.git
+cd Stock-Simulator
+
+# 2. Configure production environment
+cp .env.prod.example .env
+nano .env
+
+# 3. Start backend services with internal networking and distroless healthchecks
+docker compose -f docker-compose.prod.yml up -d --build
+
+# 4. Verify service health
+docker compose -f docker-compose.prod.yml ps
+```
+
+TLS reverse proxy templates with automatic Let's Encrypt certificates are provided in:
+- `deploy/oracle/Caddyfile`
+- `deploy/oracle/nginx.conf`
 
 ---
 
