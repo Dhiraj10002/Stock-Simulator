@@ -168,4 +168,24 @@ func TestFetchLiveFromWorkerCustomURL(t *testing.T) {
 	}
 }
 
+func TestFeedStatusGracefulFallback(t *testing.T) {
+	var nilSvc *Service
+	status, err := nilSvc.FeedStatus(nil)
+	if err != nil {
+		t.Fatalf("unexpected error for nil service: %v", err)
+	}
+	if status == nil || status.FeedState != "DISCONNECTED" || !status.IsSynthetic {
+		t.Fatalf("expected DISCONNECTED synthetic fallback for nil service, got %+v", status)
+	}
+
+	emptySvc := &Service{}
+	status, err = emptySvc.FeedStatus(nil)
+	if err != nil {
+		t.Fatalf("unexpected error for empty service: %v", err)
+	}
+	if status == nil || status.FeedState != "DISCONNECTED" || !status.IsSynthetic {
+		t.Fatalf("expected DISCONNECTED synthetic fallback for empty service, got %+v", status)
+	}
+}
+
 

@@ -4,6 +4,7 @@ import json
 import os
 import pathlib
 import sys
+import tempfile
 import unittest
 from datetime import date
 
@@ -321,6 +322,54 @@ class SymbolAliasTest(unittest.TestCase):
         tmpv_aliases = worker.get_symbol_aliases("TMPV")
         self.assertIn("TATAMOTORS", tmpv_aliases)
 
+    def test_load_aliases_from_json_file(self):
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            json.dump({"CUSTOM_MERGER": "MERGED_TARGET", "SUB_CO": "PARENT_CO"}, f)
+            temp_path = f.name
+        try:
+            aliases = worker.load_canonical_aliases(config_path=temp_path)
+            self.assertEqual(worker.resolve_canonical_symbol("CUSTOM_MERGER"), "MERGED_TARGET")
+            self.assertEqual(worker.resolve_canonical_symbol("SUB_CO-EQ"), "PARENT_CO")
+            self.assertIn("CUSTOM_MERGER", worker.get_symbol_aliases("MERGED_TARGET"))
+        finally:
+            os.remove(temp_path)
+            worker.load_canonical_aliases()
+
+    def test_load_aliases_from_env_json(self):
+        old_env = os.environ.get("SYMBOL_ALIASES")
+        try:
+            os.environ["SYMBOL_ALIASES"] = json.dumps({"ENV_ALIAS": "ENV_TARGET"})
+            worker.load_canonical_aliases()
+            self.assertEqual(worker.resolve_canonical_symbol("ENV_ALIAS"), "ENV_TARGET")
+        finally:
+            if old_env is not None:
+                os.environ["SYMBOL_ALIASES"] = old_env
+            else:
+                os.environ.pop("SYMBOL_ALIASES", None)
+            worker.load_canonical_aliases()
+
+    def test_load_aliases_from_env_csv(self):
+        old_env = os.environ.get("SYMBOL_ALIASES")
+        try:
+            os.environ["SYMBOL_ALIASES"] = "CSV_OLD1:CSV_NEW1,CSV_OLD2:CSV_NEW2"
+            worker.load_canonical_aliases()
+            self.assertEqual(worker.resolve_canonical_symbol("CSV_OLD1"), "CSV_NEW1")
+            self.assertEqual(worker.resolve_canonical_symbol("CSV_OLD2-EQ"), "CSV_NEW2")
+        finally:
+            if old_env is not None:
+                os.environ["SYMBOL_ALIASES"] = old_env
+            else:
+                os.environ.pop("SYMBOL_ALIASES", None)
+            worker.load_canonical_aliases()
+
+    def test_load_aliases_from_redis(self):
+        mock_redis = MagicMock()
+        mock_redis.hgetall.return_value = {"REDIS_RENAMED": "REDIS_CANONICAL"}
+        worker.load_canonical_aliases(client=mock_redis)
+        self.assertEqual(worker.resolve_canonical_symbol("REDIS_RENAMED"), "REDIS_CANONICAL")
+        self.assertIn("REDIS_RENAMED", worker.get_symbol_aliases("REDIS_CANONICAL"))
+        worker.load_canonical_aliases()
+
 
 class BenchmarkFallbackSourceTest(unittest.TestCase):
     def test_benchmark_fallback_is_never_labeled_angelone_live(self):
@@ -342,9 +391,15 @@ class BenchmarkFallbackSourceTest(unittest.TestCase):
         mock_pipe = mock_redis.pipeline.return_value.__enter__.return_value
         hset_calls = [c for c in mock_pipe.method_calls if c[0] == "hset"]
         self.assertTrue(len(hset_calls) > 0)
-        mapping = hset_calls[0][2]["mapping"]
+        quote_calls = [c for c in hset_calls if "market:quote:" in c[1][0]]
+        self.assertTrue(len(quote_calls) > 0)
+        mapping = quote_calls[0][2]["mapping"]
         self.assertNotEqual(mapping.get("source"), "angelone_live")
         self.assertEqual(mapping.get("source"), "synthetic")
+        # Also verify last_tick was written to market:feed_state
+        feed_state_calls = [c for c in hset_calls if c[1][0] == "market:feed_state"]
+        self.assertTrue(len(feed_state_calls) > 0)
+        self.assertIn("last_tick", feed_state_calls[0][2]["mapping"])
 
 
 class QuoteServerArchitectureTest(unittest.TestCase):
@@ -406,6 +461,53 @@ class QuoteServerArchitectureTest(unittest.TestCase):
         finally:
             os.environ.pop("QUOTE_SERVER_HOST", None)
             os.environ.pop("QUOTE_SERVER_PORT", None)
+
+
+class FeedStateTest(unittest.TestCase):
+    def test_publish_feed_state_writes_to_redis_and_pubsub(self):
+        mock_redis = MagicMock()
+        state = worker.publish_feed_state(mock_redis, "angel_one", "LIVE", is_synthetic=False, last_tick="2026-09-23T12:00:00Z")
+        self.assertEqual(state["feed_provider"], "angel_one")
+        self.assertEqual(state["feed_state"], "LIVE")
+        self.assertFalse(state["is_synthetic"])
+        self.assertEqual(state["last_tick"], "2026-09-23T12:00:00Z")
+
+        mock_redis.hset.assert_called_once()
+        call_args = mock_redis.hset.call_args
+        self.assertEqual(call_args[0][0], "market:feed_state")
+        self.assertEqual(call_args[1]["mapping"]["feed_provider"], "angel_one")
+        self.assertEqual(call_args[1]["mapping"]["feed_state"], "LIVE")
+        self.assertEqual(call_args[1]["mapping"]["is_synthetic"], "false")
+
+        mock_redis.publish.assert_called_once()
+        pub_channel, pub_payload = mock_redis.publish.call_args[0]
+        self.assertEqual(pub_channel, "market:updates")
+        parsed_pub = json.loads(pub_payload)
+        self.assertEqual(parsed_pub["type"], "feed_status")
+        self.assertEqual(parsed_pub["feed_provider"], "angel_one")
+
+    def test_feed_supervisor_publishes_fallback_state_on_threshold(self):
+        mock_redis = MagicMock()
+        mock_writer = MagicMock()
+        mock_writer.client = mock_redis
+        control = worker.FeedControl()
+        supervisor = worker.FeedSupervisor(None, mock_writer, control, mode="auto", max_failures=2)
+
+        def failing_feed(store, writer, control):
+            return False
+
+        # First failure -> RETRYING
+        supervisor.handle_feed_cycle(failing_feed)
+        self.assertEqual(supervisor.fail_count, 1)
+        retrying_calls = [c for c in mock_redis.hset.call_args_list if c[1]["mapping"].get("feed_state") == "RETRYING"]
+        self.assertTrue(len(retrying_calls) > 0)
+
+        # Second failure -> triggers fallback
+        res = supervisor.handle_feed_cycle(failing_feed)
+        self.assertFalse(res)
+        fallback_calls = [c for c in mock_redis.hset.call_args_list if c[1]["mapping"].get("feed_state") == "FALLBACK"]
+        self.assertTrue(len(fallback_calls) > 0)
+        self.assertEqual(fallback_calls[0][1]["mapping"]["feed_provider"], "synthetic")
 
 
 if __name__ == "__main__":

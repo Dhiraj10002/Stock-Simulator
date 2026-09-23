@@ -100,11 +100,32 @@ func (h *Handler) Status(c *gin.Context) {
 		status = "CLOSED"
 	}
 
+	feedStatus, _ := h.service.FeedStatus(c.Request.Context())
+	feedProvider := "unknown"
+	feedState := "DISCONNECTED"
+	isSynthetic := true
+	lastTick := ""
+
+	if feedStatus != nil {
+		if feedStatus.FeedProvider != "" {
+			feedProvider = feedStatus.FeedProvider
+		}
+		if feedStatus.FeedState != "" {
+			feedState = feedStatus.FeedState
+		}
+		isSynthetic = feedStatus.IsSynthetic
+		lastTick = feedStatus.LastTick
+	}
+
 	response.Success(c, http.StatusOK, "Market status retrieved successfully", gin.H{
-		"status":       status,
-		"is_open":      isOpen,
-		"server_time":  ist.Format(time.RFC3339),
-		"holiday_name": holidayName,
+		"status":        status,
+		"is_open":       isOpen,
+		"server_time":   ist.Format(time.RFC3339),
+		"holiday_name":  holidayName,
+		"feed_provider": feedProvider,
+		"feed_state":    feedState,
+		"is_synthetic":  isSynthetic,
+		"last_tick":     lastTick,
 	})
 }
 

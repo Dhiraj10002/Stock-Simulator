@@ -30,8 +30,23 @@ func (h *Handler) Search(c *gin.Context) {
 	pattern := "%" + escaped + "%"
 	prefixPattern := escaped + "%"
 	aliasPattern := ""
-	if strings.Contains(strings.ToLower(query), "zomato") {
-		aliasPattern = "%ETERNAL%"
+	queryClean := strings.ToUpper(strings.TrimSpace(query))
+	queryClean = strings.TrimSuffix(queryClean, "-EQ")
+	aliasMap := map[string]string{
+		"ZOMATO":     "ETERNAL",
+		"TATAMOTORS": "TMPV",
+		"LTI":        "LTIM",
+		"MINDTREE":   "LTIM",
+	}
+	if target, ok := aliasMap[queryClean]; ok {
+		aliasPattern = "%" + target + "%"
+	} else {
+		for alias, target := range aliasMap {
+			if strings.Contains(queryClean, alias) {
+				aliasPattern = "%" + target + "%"
+				break
+			}
+		}
 	}
 
 	db := database.GetDB()

@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { formatPaise, getIndianMarketStatus } from "@/lib/format";
 import { useMarketStore, useSymbolQuote } from "@/stores/market-store";
+import { getAuthoritativeFeedStatus } from "@/lib/feedStatus";
 import { useUIStore } from "@/stores/ui-store";
 import { useTheme } from "@/providers/theme-provider";
 import { useRiskOverview } from "@/hooks/useRiskOverview";
@@ -64,7 +65,18 @@ export default function Navbar({
   const setShortcutsGuideOpen = useUIStore((s) => s.setShortcutsGuideOpen);
   const { theme, toggleTheme, setTheme } = useTheme();
 
-  const [marketStatus, setMarketStatus] = useState(getIndianMarketStatus());
+  const [clientMarketStatus, setClientMarketStatus] = useState(getIndianMarketStatus());
+  const feedStatus = useMarketStore((s) => s.feedStatus);
+  const serverMarketStatus = useMarketStore((s) => s.marketStatus);
+  const connectionState = useMarketStore((s) => s.connectionState);
+
+  const authoritativeStatus = getAuthoritativeFeedStatus(
+    feedStatus,
+    serverMarketStatus,
+    connectionState,
+    clientMarketStatus.istTime
+  );
+
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -79,7 +91,7 @@ export default function Navbar({
       if (storedName) setUserName(storedName);
     });
     const timer = setInterval(() => {
-      setMarketStatus(getIndianMarketStatus());
+      setClientMarketStatus(getIndianMarketStatus());
     }, 10000);
     return () => clearInterval(timer);
   }, []);
@@ -162,25 +174,18 @@ export default function Navbar({
             </div>
           </Link>
 
-          {/* Market Session Status Pill */}
+          {/* Authoritative Market & Feed Session Status Pill */}
           <div
-            className={`hidden sm:flex items-center gap-2 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
-              marketStatus.isOpen
-                ? "bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-500/30 text-emerald-800 dark:text-emerald-300 dark:shadow-[0_0_12px_-2px_rgba(16,185,129,0.2)]"
-                : "bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-500/30 text-amber-800 dark:text-amber-300 dark:shadow-[0_0_12px_-2px_rgba(245,158,11,0.2)]"
-            }`}
+            className={`hidden sm:flex items-center gap-2 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${authoritativeStatus.pillClasses}`}
+            title={authoritativeStatus.tooltip}
           >
             <span
-              className={`w-2 h-2 rounded-full ${
-                marketStatus.isOpen
-                  ? "bg-emerald-500 dark:bg-emerald-400 animate-pulse"
-                  : "bg-amber-500 dark:bg-amber-400"
-              }`}
+              className={`w-2 h-2 rounded-full ${authoritativeStatus.dotClasses}`}
             />
-            <span className="font-semibold">{marketStatus.statusText}</span>
+            <span className="font-semibold">{authoritativeStatus.fullLabel}</span>
             <span className="text-slate-500 dark:text-slate-400 text-[10px] flex items-center gap-1 border-l border-slate-300 dark:border-slate-700/60 pl-2">
               <Clock className="w-3 h-3" />
-              {marketStatus.istTime}
+              {clientMarketStatus.istTime}
             </span>
           </div>
 

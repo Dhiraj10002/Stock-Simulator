@@ -331,5 +331,34 @@ func (s *Service) SubscribeQuotes(ctx context.Context) *redis.PubSub {
 	return s.client.Subscribe(ctx, QuoteUpdatesChannel)
 }
 
+const FeedStateKey = "market:feed_state"
+
+// FeedStatus retrieves the authoritative feed provider state from Redis.
+func (s *Service) FeedStatus(ctx context.Context) (*dto.FeedStatusResponse, error) {
+	if s == nil || s.client == nil {
+		return &dto.FeedStatusResponse{
+			FeedProvider: "unknown",
+			FeedState:    "DISCONNECTED",
+			IsSynthetic:  true,
+		}, nil
+	}
+	res, err := s.client.HGetAll(ctx, FeedStateKey).Result()
+	if err != nil || len(res) == 0 {
+		return &dto.FeedStatusResponse{
+			FeedProvider: "unknown",
+			FeedState:    "DISCONNECTED",
+			IsSynthetic:  true,
+		}, nil
+	}
+	isSynthetic := strings.ToLower(strings.TrimSpace(res["is_synthetic"])) == "true"
+	return &dto.FeedStatusResponse{
+		FeedProvider: res["feed_provider"],
+		FeedState:    res["feed_state"],
+		IsSynthetic:  isSynthetic,
+		LastTick:     res["last_tick"],
+		UpdatedAt:    res["updated_at"],
+	}, nil
+}
+
 func quoteKey(symbol string) string   { return "market:quote:" + symbol }
 func historyKey(symbol string) string { return "market:history:" + symbol }

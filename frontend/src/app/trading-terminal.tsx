@@ -34,6 +34,7 @@ import OptionChainModal from "@/components/terminal/OptionChainModal";
 import PerformanceModal from "@/components/terminal/PerformanceModal";
 import { useToast } from "@/components/terminal/ToastProvider";
 import { useMarketStore, useSymbolQuote } from "@/stores/market-store";
+import { getAuthoritativeFeedStatus } from "@/lib/feedStatus";
 import { fetchQuote, fetchBatchQuotes, getQuoteSync } from "@/lib/quoteService";
 import { getIndianMarketStatus, formatPaise } from "@/lib/format";
 import type {
@@ -77,6 +78,17 @@ function getUnderlyingSymbol(sym: string): string {
 
 export default function TradingTerminal() {
   const { addToast } = useToast();
+
+  const feedStatus = useMarketStore((s) => s.feedStatus);
+  const serverMarketStatus = useMarketStore((s) => s.marketStatus);
+  const connectionState = useMarketStore((s) => s.connectionState);
+  const clientMarket = getIndianMarketStatus();
+  const authoritativeStatus = getAuthoritativeFeedStatus(
+    feedStatus,
+    serverMarketStatus,
+    connectionState,
+    clientMarket.istTime
+  );
 
   const [token, setToken] = useState("");
   const [refreshToken, setRefreshToken] = useState("");
@@ -1202,18 +1214,9 @@ export default function TradingTerminal() {
             <span>Close</span>
           </span>
         </div>
-        <div className="hidden sm:flex items-center gap-2 text-[10px] text-slate-500 font-mono">
-          {getIndianMarketStatus().isOpen ? (
-            <>
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              <span>NSE / BSE Simulated Real-Time Feeds</span>
-            </>
-          ) : (
-            <>
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-              <span>Market Closed (Prices & Portfolio Frozen at 15:30 IST)</span>
-            </>
-          )}
+        <div className="hidden sm:flex items-center gap-2 text-[10px] text-slate-400 font-mono" title={authoritativeStatus.tooltip}>
+          <span className={`w-1.5 h-1.5 rounded-full ${authoritativeStatus.dotClasses}`} />
+          <span className="font-semibold">{authoritativeStatus.fullLabel}</span>
         </div>
       </footer>
     </div>

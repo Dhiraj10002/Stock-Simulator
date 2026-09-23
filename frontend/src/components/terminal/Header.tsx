@@ -22,6 +22,8 @@ import {
 import { formatPaise, formatPercent, getIndianMarketStatus } from "@/lib/format";
 import type { User, Wallet, Portfolio } from "@/types";
 import { useUIStore } from "@/stores/ui-store";
+import { useMarketStore } from "@/stores/market-store";
+import { getAuthoritativeFeedStatus } from "@/lib/feedStatus";
 
 type HeaderProps = {
   user: User | null;
@@ -52,7 +54,18 @@ export default function Header({
   offHoursPracticeMode = false,
   onTogglePracticeMode,
 }: HeaderProps) {
-  const [marketStatus, setMarketStatus] = useState(getIndianMarketStatus());
+  const [clientMarketStatus, setClientMarketStatus] = useState(getIndianMarketStatus());
+  const feedStatus = useMarketStore((s) => s.feedStatus);
+  const serverMarketStatus = useMarketStore((s) => s.marketStatus);
+  const connectionState = useMarketStore((s) => s.connectionState);
+
+  const authoritativeStatus = getAuthoritativeFeedStatus(
+    feedStatus,
+    serverMarketStatus,
+    connectionState,
+    clientMarketStatus.istTime
+  );
+
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
@@ -61,7 +74,7 @@ export default function Header({
   // Re-calculate market hours every 10 seconds
   useEffect(() => {
     const timer = setInterval(() => {
-      setMarketStatus(getIndianMarketStatus());
+      setClientMarketStatus(getIndianMarketStatus());
     }, 10000);
     return () => clearInterval(timer);
   }, []);
@@ -137,26 +150,18 @@ export default function Header({
           </kbd>
         </button>
 
-        {/* Minimalist Market Status */}
+        {/* Authoritative Feed & Market Status */}
         <div
-          className={`hidden sm:flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium border ${
-            marketStatus.isOpen
-              ? "bg-emerald-950/40 border-emerald-500/30 text-emerald-400"
-              : "bg-slate-900/90 border-slate-800 text-slate-400"
-          }`}
-          title={`Market Hours: 09:15 - 15:30 IST. Current: ${marketStatus.istTime}`}
+          className={`hidden sm:flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-medium border ${authoritativeStatus.pillClasses}`}
+          title={authoritativeStatus.tooltip}
         >
-          <span
-            className={`w-1.5 h-1.5 rounded-full ${
-              marketStatus.isOpen ? "bg-emerald-400 animate-pulse" : "bg-amber-400/80"
-            }`}
-          />
-          <span className="font-semibold text-slate-200">
-            {marketStatus.isOpen ? "LIVE" : "CLOSED"}
+          <span className={`w-1.5 h-1.5 rounded-full ${authoritativeStatus.dotClasses}`} />
+          <span className="font-semibold tracking-tight">
+            {authoritativeStatus.fullLabel}
           </span>
-          <span className="text-[9px] text-slate-400 flex items-center gap-0.5 border-l border-slate-800 pl-1.5">
+          <span className="text-[9px] opacity-70 flex items-center gap-0.5 border-l border-white/10 pl-1.5">
             <Clock className="w-2.5 h-2.5" />
-            {marketStatus.istTime}
+            {clientMarketStatus.istTime}
           </span>
         </div>
 

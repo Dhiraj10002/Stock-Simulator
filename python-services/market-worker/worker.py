@@ -211,10 +211,107 @@ GLOBAL_SMART_API: Any = None
 GLOBAL_WRITER: Any = None
 GLOBAL_TOKEN_MAP: dict[str, dict[str, Any]] = {}
 
-CANONICAL_SYMBOL_ALIASES: dict[str, str] = {
+DEFAULT_CANONICAL_SYMBOL_ALIASES: dict[str, str] = {
     "ZOMATO": "ETERNAL",
     "TATAMOTORS": "TMPV",
+    "LTI": "LTIM",
+    "MINDTREE": "LTIM",
 }
+
+CANONICAL_SYMBOL_ALIASES: dict[str, str] = dict(DEFAULT_CANONICAL_SYMBOL_ALIASES)
+
+
+def parse_alias_mapping(data: Any) -> dict[str, str]:
+    """Parses a mapping dict or string into a sanitized {alias: target} dict."""
+    result: dict[str, str] = {}
+    if isinstance(data, dict):
+        mapping = data.get("aliases", data) if "aliases" in data and isinstance(data.get("aliases"), dict) else data
+        for k, v in mapping.items():
+            if isinstance(k, str) and isinstance(v, str):
+                alias_clean = k.strip().upper().replace("-EQ", "").replace("-BE", "").replace("-SM", "")
+                target_clean = v.strip().upper().replace("-EQ", "").replace("-BE", "").replace("-SM", "")
+                if alias_clean and target_clean and alias_clean != target_clean:
+                    result[alias_clean] = target_clean
+    elif isinstance(data, str):
+        text = data.strip()
+        if text.startswith("{"):
+            try:
+                parsed = json.loads(text)
+                return parse_alias_mapping(parsed)
+            except Exception:
+                pass
+        for pair in text.split(","):
+            delimiter = ":" if ":" in pair else ("=" if "=" in pair else None)
+            if delimiter:
+                parts = pair.split(delimiter, 1)
+                alias_clean = parts[0].strip().upper().replace("-EQ", "").replace("-BE", "").replace("-SM", "")
+                target_clean = parts[1].strip().upper().replace("-EQ", "").replace("-BE", "").replace("-SM", "")
+                if alias_clean and target_clean and alias_clean != target_clean:
+                    result[alias_clean] = target_clean
+    return result
+
+
+def load_canonical_aliases(client: Any = None, config_path: str | None = None) -> dict[str, str]:
+    """
+    Loads symbol aliases from external sources in priority order:
+    1. Built-in defaults (DEFAULT_CANONICAL_SYMBOL_ALIASES)
+    2. External JSON file (config_path, SYMBOL_ALIASES_FILE, SYMBOL_ALIASES_PATH, or symbol_aliases.json)
+    3. Environment variable (SYMBOL_ALIASES)
+    4. Redis hash 'market:symbol_aliases' (runtime dynamic updates)
+    """
+    global CANONICAL_SYMBOL_ALIASES
+    aliases = dict(DEFAULT_CANONICAL_SYMBOL_ALIASES)
+
+    # 1. External file source
+    target_path = (
+        config_path
+        or os.getenv("SYMBOL_ALIASES_FILE")
+        or os.getenv("SYMBOL_ALIASES_PATH")
+        or os.path.join(os.path.dirname(__file__), "symbol_aliases.json")
+    )
+    if os.path.exists(target_path):
+        try:
+            with open(target_path, "r", encoding="utf-8") as f:
+                file_data = json.load(f)
+            file_aliases = parse_alias_mapping(file_data)
+            aliases.update(file_aliases)
+            print(f"market worker: loaded {len(file_aliases)} symbol aliases from {target_path}", flush=True)
+        except Exception as e:
+            print(f"market worker: error loading symbol aliases from {target_path}: {e}", flush=True)
+
+    # 2. Environment variable source
+    env_str = os.getenv("SYMBOL_ALIASES", "").strip()
+    if env_str:
+        try:
+            env_aliases = parse_alias_mapping(env_str)
+            aliases.update(env_aliases)
+            print(f"market worker: loaded {len(env_aliases)} symbol aliases from SYMBOL_ALIASES env", flush=True)
+        except Exception as e:
+            print(f"market worker: error parsing SYMBOL_ALIASES env: {e}", flush=True)
+
+    # 3. Redis dynamic source
+    if client:
+        try:
+            redis_aliases = client.hgetall("market:symbol_aliases")
+            if redis_aliases:
+                sanitized_redis = parse_alias_mapping(redis_aliases)
+                aliases.update(sanitized_redis)
+                print(f"market worker: loaded {len(sanitized_redis)} symbol aliases from Redis 'market:symbol_aliases'", flush=True)
+            else:
+                # Seed Redis with aliases so Go backend and other services can read them
+                mapping = {k: v for k, v in aliases.items()}
+                if mapping:
+                    client.hset("market:symbol_aliases", mapping=mapping)
+        except Exception as e:
+            print(f"market worker: error querying Redis for symbol aliases: {e}", flush=True)
+
+    CANONICAL_SYMBOL_ALIASES = aliases
+    return aliases
+
+
+# Load initial aliases from file/env at module load
+load_canonical_aliases()
+
 
 def resolve_canonical_symbol(symbol: str) -> str:
     """
@@ -224,6 +321,7 @@ def resolve_canonical_symbol(symbol: str) -> str:
     sym = symbol.strip().upper()
     sym_clean = sym.replace("-EQ", "").replace("-BE", "").replace("-SM", "")
     return CANONICAL_SYMBOL_ALIASES.get(sym_clean, sym_clean)
+
 
 def get_symbol_aliases(canonical_symbol: str) -> list[str]:
     """Returns all aliases that map to this canonical symbol or vice-versa."""
@@ -616,6 +714,43 @@ class InstrumentStore:
         return subscriptions
 
 
+def publish_feed_state(
+    client: Any,
+    feed_provider: str,
+    feed_state: str,
+    is_synthetic: bool = False,
+    last_tick: str | None = None
+) -> dict[str, Any]:
+    now_iso = datetime.now(timezone.utc).isoformat()
+    state_payload = {
+        "feed_provider": feed_provider,
+        "feed_state": feed_state,
+        "is_synthetic": is_synthetic,
+        "updated_at": now_iso
+    }
+    if last_tick:
+        state_payload["last_tick"] = last_tick
+    try:
+        mapping = {
+            "feed_provider": feed_provider,
+            "feed_state": feed_state,
+            "is_synthetic": "true" if is_synthetic else "false",
+            "updated_at": now_iso,
+        }
+        if last_tick:
+            mapping["last_tick"] = last_tick
+        client.hset("market:feed_state", mapping=mapping)
+        event = {
+            "type": "feed_status",
+            **state_payload
+        }
+        client.publish("market:updates", json.dumps(event))
+        print(f"market worker: authoritative feed state -> provider={feed_provider}, state={feed_state}, synthetic={is_synthetic}", flush=True)
+    except Exception as e:
+        print(f"market worker: error updating feed state in Redis: {e}", flush=True)
+    return state_payload
+
+
 class QuoteWriter:
     def __init__(self, client: redis.Redis, quote_ttl: int, history_ttl: int, history_max_items: int) -> None:
         self.client = client
@@ -654,6 +789,7 @@ class QuoteWriter:
             symbols_to_write.append(canonical)
 
         with self.client.pipeline() as pipe:
+            pipe.hset("market:feed_state", mapping={"last_tick": now.isoformat()})
             for sym in symbols_to_write:
                 q_key = f"market:quote:{sym}"
                 h_key = f"market:history:{sym}"
@@ -743,6 +879,8 @@ class SyntheticFeed:
         return results
 
     def run(self) -> None:
+        if self.writer and getattr(self.writer, "client", None):
+            publish_feed_state(self.writer.client, feed_provider="synthetic", feed_state="LIVE", is_synthetic=True)
         print(f"market worker: synthetic GBM feed started for {len(self.subscriptions)} symbols ({','.join(s.symbol for s in self.subscriptions)})", flush=True)
         while not self._stop_event.is_set():
             try:
@@ -750,6 +888,8 @@ class SyntheticFeed:
             except Exception as error:
                 print(f"market worker: synthetic tick generation error: {error}", flush=True)
             self._stop_event.wait(self.tick_interval_seconds)
+        if self.writer and getattr(self.writer, "client", None):
+            publish_feed_state(self.writer.client, feed_provider="synthetic", feed_state="STOPPED", is_synthetic=True)
 
 
 def seed_historical_candles(client: redis.Redis, subscriptions: list[Subscription], history_ttl: int, max_items: int, count: int = 150) -> None:
@@ -863,10 +1003,11 @@ def has_angel_credentials() -> bool:
     return all(bool(os.getenv(k, "").strip()) for k in required)
 
 
-def refresh_daily(store: InstrumentStore, control: FeedControl) -> None:
+def refresh_daily(store: InstrumentStore, control: FeedControl, client: Any = None) -> None:
     while True:
         time.sleep(24 * 60 * 60)
         try:
+            load_canonical_aliases(client)
             if store.refresh():
                 control.reconnect("instrument subscriptions changed")
         except Exception as error:
@@ -893,6 +1034,8 @@ def run_feed(store: InstrumentStore, writer: QuoteWriter, control: FeedControl) 
     feed_token = smart_api.getfeedToken()
     websocket = SmartWebSocketV2(auth_token, api_key, client_id, feed_token)
     control.attach(websocket)
+    if writer and getattr(writer, "client", None):
+        publish_feed_state(writer.client, feed_provider="angel_one", feed_state="CONNECTING", is_synthetic=False)
 
     # Initial Angel One REST LTP snapshot to populate Redis immediately with authentic data
     try:
@@ -916,6 +1059,8 @@ def run_feed(store: InstrumentStore, writer: QuoteWriter, control: FeedControl) 
         print(f"market worker: initial snapshot error: {snap_err}", flush=True)
 
     def on_open(_wsapp: Any) -> None:
+        if writer and getattr(writer, "client", None):
+            publish_feed_state(writer.client, feed_provider="angel_one", feed_state="LIVE", is_synthetic=False)
         grouped: dict[int, list[str]] = {}
         for item in store.subscriptions():
             grouped.setdefault(item.exchange_type, []).append(item.token)
@@ -936,10 +1081,20 @@ def run_feed(store: InstrumentStore, writer: QuoteWriter, control: FeedControl) 
         except (ValueError, redis.RedisError) as error:
             print(f"market worker: discarded Angel One tick: {error}", flush=True)
 
+    def on_error(_wsapp: Any, error: Any) -> None:
+        print(f"market worker: Angel One WebSocket error: {error}", flush=True)
+        if writer and getattr(writer, "client", None):
+            publish_feed_state(writer.client, feed_provider="angel_one", feed_state="DISCONNECTED", is_synthetic=False)
+
+    def on_close(_wsapp: Any) -> None:
+        print("market worker: Angel One WebSocket closed", flush=True)
+        if writer and getattr(writer, "client", None):
+            publish_feed_state(writer.client, feed_provider="angel_one", feed_state="DISCONNECTED", is_synthetic=False)
+
     websocket.on_open = on_open
     websocket.on_data = on_data
-    websocket.on_error = lambda _wsapp, error: print(f"market worker: Angel One WebSocket error: {error}", flush=True)
-    websocket.on_close = lambda _wsapp: print("market worker: Angel One WebSocket closed", flush=True)
+    websocket.on_error = on_error
+    websocket.on_close = on_close
     try:
         websocket.connect()
     finally:
@@ -990,7 +1145,13 @@ class FeedSupervisor:
         if self.mode == "auto" and self.fail_count >= self.max_failures:
             print(f"market worker: live feed failed {self.fail_count} times in auto mode; switching to synthetic feed fallback", flush=True)
             self.fallback_active = True
+            if self.writer and getattr(self.writer, "client", None):
+                publish_feed_state(self.writer.client, feed_provider="synthetic", feed_state="FALLBACK", is_synthetic=True)
             return False
+
+        if self.fail_count > 0:
+            if self.writer and getattr(self.writer, "client", None):
+                publish_feed_state(self.writer.client, feed_provider="angel_one", feed_state="RETRYING", is_synthetic=False)
 
         return True
 
@@ -1012,6 +1173,9 @@ def main() -> None:
                             socket_connect_timeout=5, socket_timeout=5, health_check_interval=30)
     db_url = os.getenv("DATABASE_URL", "").strip()
     store = InstrumentStore(db_url, symbols)
+
+    # Load canonical symbol aliases from file, env, and Redis
+    load_canonical_aliases(client)
 
     try:
         store.refresh()
@@ -1035,6 +1199,7 @@ def main() -> None:
     # Synthetic Feed Mode
     if mode == "synthetic" or (mode == "auto" and not has_angel_credentials()):
         print(f"market worker: running in SYNTHETIC feed mode (mode={mode})", flush=True)
+        publish_feed_state(client, feed_provider="synthetic", feed_state="LIVE", is_synthetic=True)
         tick_interval = float(os.getenv("SYNTHETIC_TICK_INTERVAL_SECONDS", "1.0"))
         synthetic_feed = SyntheticFeed(store.subscriptions(), writer, tick_interval_seconds=tick_interval)
         synthetic_feed.run()
@@ -1042,8 +1207,9 @@ def main() -> None:
 
     # Live Feed Mode (with automatic failover in auto mode)
     print("market worker: running in LIVE ANGEL ONE feed mode", flush=True)
+    publish_feed_state(client, feed_provider="angel_one", feed_state="CONNECTING", is_synthetic=False)
     control = FeedControl()
-    threading.Thread(target=refresh_daily, args=(store, control), daemon=True).start()
+    threading.Thread(target=refresh_daily, args=(store, control, client), daemon=True).start()
     stale_after_seconds = int(os.getenv("MARKET_FEED_STALE_SECONDS", "120"))
     threading.Thread(target=watch_feed, args=(control, stale_after_seconds), daemon=True).start()
 

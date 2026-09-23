@@ -24,10 +24,11 @@ type command struct {
 }
 
 type event struct {
-	Type    string                   `json:"type"`
-	Symbols []string                 `json:"symbols,omitempty"`
-	Quote   *marketDTO.QuoteResponse `json:"quote,omitempty"`
-	Message string                   `json:"message,omitempty"`
+	Type       string                        `json:"type"`
+	Symbols    []string                      `json:"symbols,omitempty"`
+	Quote      *marketDTO.QuoteResponse      `json:"quote,omitempty"`
+	FeedStatus *marketDTO.FeedStatusResponse `json:"feed_status,omitempty"`
+	Message    string                        `json:"message,omitempty"`
 }
 
 func New(market *marketService.Service, allowedOrigins ...string) *Handler {
@@ -85,6 +86,11 @@ func (h *Handler) Serve(c *gin.Context) {
 	pubsub := h.market.SubscribeQuotes(ctx)
 	defer pubsub.Close()
 
+	// Send initial authoritative feed status immediately upon connection
+	if feedStatus, err := h.market.FeedStatus(ctx); err == nil && feedStatus != nil {
+		_ = conn.WriteJSON(event{Type: "feed_status", FeedStatus: feedStatus})
+	}
+
 	commands := make(chan command)
 	done := make(chan struct{})
 	go h.readCommands(conn, commands, done)
@@ -117,8 +123,22 @@ func (h *Handler) Serve(c *gin.Context) {
 			if !ok {
 				return
 			}
+			var raw map[string]interface{}
+			if err := json.Unmarshal([]byte(message.Payload), &raw); err != nil {
+				continue
+			}
+			if msgType, ok := raw["type"].(string); ok && msgType == "feed_status" {
+				var fs marketDTO.FeedStatusResponse
+				if err := json.Unmarshal([]byte(message.Payload), &fs); err == nil {
+					if err := conn.WriteJSON(event{Type: "feed_status", FeedStatus: &fs}); err != nil {
+						return
+					}
+				}
+				continue
+			}
+
 			var quote marketDTO.QuoteResponse
-			if json.Unmarshal([]byte(message.Payload), &quote) != nil {
+			if err := json.Unmarshal([]byte(message.Payload), &quote); err != nil || quote.Symbol == "" {
 				continue
 			}
 			if _, ok := subscribed[strings.ToUpper(quote.Symbol)]; !ok {

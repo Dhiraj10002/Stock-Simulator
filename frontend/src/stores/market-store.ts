@@ -4,11 +4,20 @@ import { Quote } from "@/types";
 export type MarketStatus = "PRE_OPEN" | "OPEN" | "POST_MARKET" | "CLOSED" | "HOLIDAY";
 export type ConnectionState = "connected" | "connecting" | "disconnected";
 
+export interface FeedStatus {
+  feedProvider: "angel_one" | "synthetic" | "unknown";
+  feedState: "LIVE" | "FALLBACK" | "CONNECTING" | "DISCONNECTED" | "RETRYING" | "STOPPED";
+  isSynthetic: boolean;
+  lastTick?: string | null;
+  updatedAt?: string | null;
+}
+
 interface MarketStoreState {
   quotes: Record<string, Quote>;
   marketStatus: MarketStatus;
   connectionState: ConnectionState;
   lastTickTimestamp: number | null;
+  feedStatus: FeedStatus;
   feedProvider: "Angel One" | "Synthetic" | "Connecting" | "Offline";
 
   // Actions
@@ -17,7 +26,21 @@ interface MarketStoreState {
   setMarketStatus: (status: MarketStatus) => void;
   setConnectionState: (state: ConnectionState) => void;
   setLastTickTimestamp: (timestamp: number) => void;
+  setFeedStatus: (status: Partial<FeedStatus>) => void;
   setFeedProvider: (provider: "Angel One" | "Synthetic" | "Connecting" | "Offline") => void;
+}
+
+function deriveFeedProviderLegacy(feedStatus: FeedStatus, connectionState: ConnectionState): "Angel One" | "Synthetic" | "Connecting" | "Offline" {
+  if (connectionState === "disconnected" || feedStatus.feedState === "DISCONNECTED") {
+    return "Offline";
+  }
+  if (feedStatus.feedState === "CONNECTING") {
+    return "Connecting";
+  }
+  if (feedStatus.feedProvider === "angel_one" && !feedStatus.isSynthetic) {
+    return "Angel One";
+  }
+  return "Synthetic";
 }
 
 export const useMarketStore = create<MarketStoreState>((set) => ({
@@ -25,39 +48,42 @@ export const useMarketStore = create<MarketStoreState>((set) => ({
   marketStatus: "CLOSED",
   connectionState: "disconnected",
   lastTickTimestamp: null,
+  feedStatus: {
+    feedProvider: "unknown",
+    feedState: "DISCONNECTED",
+    isSynthetic: true,
+    lastTick: null,
+    updatedAt: null,
+  },
   feedProvider: "Offline",
 
   setQuotes: (quotes) => set({ quotes }),
   updateQuote: (quote) =>
+    set((state) => ({
+      quotes: {
+        ...state.quotes,
+        [quote.symbol]: quote,
+      },
+      lastTickTimestamp: Date.now(),
+    })),
+  setMarketStatus: (marketStatus) => set({ marketStatus }),
+  setConnectionState: (connectionState) =>
+    set((state) => ({
+      connectionState,
+      feedProvider: deriveFeedProviderLegacy(state.feedStatus, connectionState),
+    })),
+  setLastTickTimestamp: (lastTickTimestamp) => set({ lastTickTimestamp }),
+  setFeedStatus: (status) =>
     set((state) => {
-      let nextProvider = state.feedProvider;
-      if (
-        quote.source === "synthetic" ||
-        quote.source === "synthetic_gbm" ||
-        quote.source === "initial_seed" ||
-        quote.source === "benchmark_fallback" ||
-        quote.source === "auto_seeded" ||
-        quote.source === "static_fallback"
-      ) {
-        if (state.feedProvider !== "Angel One") {
-          nextProvider = "Synthetic";
-        }
-      } else if (quote.source === "angelone_live") {
-        nextProvider = "Angel One";
-      }
-
+      const nextStatus: FeedStatus = {
+        ...state.feedStatus,
+        ...status,
+      };
       return {
-        quotes: {
-          ...state.quotes,
-          [quote.symbol]: quote,
-        },
-        feedProvider: nextProvider,
-        lastTickTimestamp: Date.now(),
+        feedStatus: nextStatus,
+        feedProvider: deriveFeedProviderLegacy(nextStatus, state.connectionState),
       };
     }),
-  setMarketStatus: (marketStatus) => set({ marketStatus }),
-  setConnectionState: (connectionState) => set({ connectionState }),
-  setLastTickTimestamp: (lastTickTimestamp) => set({ lastTickTimestamp }),
   setFeedProvider: (feedProvider) => set({ feedProvider }),
 }));
 
@@ -73,4 +99,3 @@ export const useSymbolQuote = (symbol: string | undefined): Quote | undefined =>
     return state.quotes[clean] || state.quotes[upper];
   });
 };
-
