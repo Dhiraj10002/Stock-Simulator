@@ -24,6 +24,7 @@ import OrderConfirmationModal, {
   OrderConfirmationDetails,
 } from "@/components/trading/OrderConfirmationModal";
 import type { Wallet, Quote, Position, PreTradeCheckResponse, ApiResponse } from "@/types";
+import { useCanonicalInstrument } from "@/stores/market-store";
 
 type OrderEntryTicketProps = {
   symbol: string;
@@ -85,14 +86,19 @@ export default function OrderEntryTicket({
 }: OrderEntryTicketProps) {
   const defaultPriceRupees = quote?.price_paise ? quote.price_paise / 100 : 0;
 
+  const canonicalInst = useCanonicalInstrument(symbol);
+
   const isFnoSymbol =
-    symbol.endsWith("CE") ||
-    symbol.endsWith("PE") ||
-    symbol.endsWith("FUT") ||
-    symbol.includes("CE") ||
-    symbol.includes("PE") ||
-    symbol === "NIFTY" ||
-    symbol === "BANKNIFTY";
+    canonicalInst
+      ? canonicalInst.instrument_type.startsWith("FUT") ||
+        canonicalInst.instrument_type.startsWith("OPT")
+      : symbol.endsWith("CE") ||
+        symbol.endsWith("PE") ||
+        symbol.endsWith("FUT") ||
+        symbol.includes("CE") ||
+        symbol.includes("PE") ||
+        symbol === "NIFTY" ||
+        symbol === "BANKNIFTY";
 
   const [side, setSide] = useState<"BUY" | "SELL">("BUY");
   const [product, setProduct] = useState<"DELIVERY" | "INTRADAY" | "FNO">(() =>
@@ -113,12 +119,26 @@ export default function OrderEntryTicket({
     Number((defaultPriceRupees * 0.99).toFixed(2))
   );
 
-  const [lotSize, setLotSize] = useState<number>(() => inferFnoLotSize(symbol));
+  const [lotSize, setLotSize] = useState<number>(() => canonicalInst?.lot_size || inferFnoLotSize(symbol));
   const [type, setType] = useState<"MARKET" | "LIMIT" | "SL" | "SL-M">("MARKET");
   const [quantity, setQuantity] = useState<number>(() => {
-    const lot = inferFnoLotSize(symbol);
+    const lot = canonicalInst?.lot_size || inferFnoLotSize(symbol);
     return isFnoSymbol && lot > 1 ? lot : 1;
   });
+
+  // Sync canonical instrument metadata when instrument updates
+  useEffect(() => {
+    if (canonicalInst && canonicalInst.lot_size > 0) {
+      setLotSize(canonicalInst.lot_size);
+      const isFno =
+        canonicalInst.instrument_type.startsWith("FUT") ||
+        canonicalInst.instrument_type.startsWith("OPT");
+      if (isFno) {
+        setProduct("FNO");
+        setQuantity((prev) => (prev <= 1 ? canonicalInst.lot_size : prev));
+      }
+    }
+  }, [canonicalInst]);
   const [limitRupees, setLimitRupees] = useState<number>(defaultPriceRupees);
   const [triggerRupees, setTriggerRupees] = useState<number>(defaultPriceRupees);
   const [submitting, setSubmitting] = useState(false);
@@ -213,10 +233,10 @@ export default function OrderEntryTicket({
     setStopLossRupees(Number((newPrice * (isBuy ? 0.99 : 1.01)).toFixed(2)));
     if (isFnoSymbol) {
       setProduct("FNO");
-      const inferred = inferFnoLotSize(symbol);
-      if (inferred > 1) {
-        setLotSize(inferred);
-        setQuantity(inferred);
+      const lot = canonicalInst?.lot_size || inferFnoLotSize(symbol);
+      if (lot > 1) {
+        setLotSize(lot);
+        setQuantity(lot);
       }
     } else {
       setLotSize(1);

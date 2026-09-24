@@ -107,22 +107,42 @@ export type MarketDepth = {
   total_ask_qty: number;
 };
 
-export interface InstrumentMetadata {
+/**
+ * Canonical Instrument Master Identity
+ * Authoritative identity for all traded equities, indices, and derivatives.
+ */
+export interface Instrument {
+  id: number | string;
   symbol: string;
-  name: string;
-  exchange: string;
-  basePricePaise?: number;
-  lotSize?: number;
-  dayChangePercent?: number;
-  high52WPaise?: number;
-  low52WPaise?: number;
-  segment?: "EQUITY" | "INDEX" | "FUTURES" | "OPTIONS";
+  display_symbol: string;
+  exchange: "NSE" | "NFO" | "BSE" | string;
+  token: string;
+  instrument_type: "EQUITY" | "INDEX" | "FUTIDX" | "FUTSTK" | "OPTIDX" | "OPTSTK" | string;
+  underlying: string;
+  expiry: string;
+  strike: number;
+  option_type: "CE" | "PE" | "" | string;
+  lot_size: number;
+  tick_size: number;
+  active: boolean;
+
+  // Optional live quote enrichment fields
+  name?: string;
+  price_paise?: number;
+  change_percent?: number;
+
+  // Convenience camelCase accessors for transition compatibility
   displayName?: string;
-  underlying?: string;
-  expiry?: string;
+  lotSize?: number;
+  basePricePaise?: number;
+  dayChangePercent?: number;
+  segment?: "EQUITY" | "INDEX" | "FUTURES" | "OPTIONS";
   strikePrice?: number;
-  optionType?: "CE" | "PE";
+  optionType?: "CE" | "PE" | "";
 }
+
+// Deprecated alias — use Instrument directly
+export type InstrumentMetadata = Instrument;
 
 export type GTTTrigger = {
   id: string;

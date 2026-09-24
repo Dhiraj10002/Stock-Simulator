@@ -33,16 +33,34 @@ type Position struct {
 func (p Position) InvestedValuePaise() int64 {
 	// Rows created before exact cost-basis tracking have a zero value here.
 	// Preserve their historical behaviour until they next trade.
-	if p.CostBasisPaise == 0 && p.Quantity > 0 && p.AveragePricePaise > 0 {
-		return p.Quantity * p.AveragePricePaise
+	if p.CostBasisPaise == 0 && p.Quantity != 0 && p.AveragePricePaise > 0 {
+		return abs(p.Quantity) * p.AveragePricePaise
 	}
 	return p.CostBasisPaise
 }
 
 func (p Position) CurrentValuePaise() int64 {
+	if p.Quantity < 0 {
+		return abs(p.Quantity) * p.CurrentPricePaise
+	}
 	return p.Quantity * p.CurrentPricePaise
 }
 
 func (p Position) UnrealizedPnlPaise() int64 {
-	return p.CurrentValuePaise() - p.InvestedValuePaise()
+	if p.Quantity == 0 || p.CurrentPricePaise == 0 {
+		return 0
+	}
+	if p.Quantity < 0 {
+		// Short position: gains when market price falls below entry average price
+		return (p.AveragePricePaise - p.CurrentPricePaise) * abs(p.Quantity)
+	}
+	// Long position: gains when market price rises above entry average price
+	return (p.CurrentPricePaise - p.AveragePricePaise) * p.Quantity
+}
+
+func abs(v int64) int64 {
+	if v < 0 {
+		return -v
+	}
+	return v
 }

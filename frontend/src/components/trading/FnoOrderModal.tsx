@@ -17,12 +17,12 @@ import {
 } from "lucide-react";
 import { formatPaise } from "@/lib/format";
 import { API_URL } from "@/lib/api";
-import type { InstrumentMetadata } from "@/types";
+import type { Instrument } from "@/types";
 
 export interface FnoOrderModalProps {
   isOpen: boolean;
   onClose: () => void;
-  instrument: InstrumentMetadata | null;
+  instrument: Instrument | null;
   initialSide?: "BUY" | "SELL";
   availableBalancePaise?: number;
   onSuccess?: () => void;
@@ -180,7 +180,7 @@ export default function FnoOrderModal({
             </div>
 
             <h2 className="text-xl font-black text-slate-900 dark:text-slate-100 tracking-tight mt-1.5 flex items-center gap-2">
-              <span>{instrument.symbol}</span>
+              <span>{instrument.display_symbol || instrument.displayName || instrument.symbol}</span>
             </h2>
 
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">

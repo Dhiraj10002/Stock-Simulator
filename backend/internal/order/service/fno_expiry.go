@@ -9,6 +9,7 @@ import (
 
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/database"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/calendar"
+	marketDTO "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/dto"
 	marketService "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/service"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/product"
@@ -44,7 +45,14 @@ func (s *OrderService) ProcessFNOExpiry(now time.Time) {
 	}
 	for _, position := range positions {
 		instrument, err := s.repo.FindInstrument(position.Symbol)
-		if err != nil || !isExpired(instrument.Expiry, now) {
+		if err != nil || instrument == nil {
+			if s.market == nil || s.market.FeedMode() != marketDTO.FeedModeLive {
+				if synth, synthErr := product.ParseSyntheticFNOContract(position.Symbol); synthErr == nil && synth != nil {
+					instrument = synth
+				}
+			}
+		}
+		if instrument == nil || !isExpired(instrument.Expiry, now) {
 			continue
 		}
 		kind, err := product.ValidateFNOInstrument(*instrument, abs(position.Quantity))

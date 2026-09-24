@@ -138,20 +138,47 @@ func (s *OrderService) Create(userID string, request dto.CreateOrderRequest) (*d
 	}
 
 	var instrument *model.Instrument
+	isLiveMode := s.market == nil || s.market.FeedMode() == marketDTO.FeedModeLive
 	if s.instrumentFinder != nil {
 		found, err := s.instrumentFinder(request.Symbol)
-		if err != nil || found == nil {
-			return nil, fmt.Errorf("%w: instrument %q not found in canonical instrument master", ErrInstrumentNotFound, request.Symbol)
+		if err == nil && found != nil {
+			instrument = found
+		} else {
+			if isLiveMode {
+				return nil, fmt.Errorf("%w: instrument %q not found in canonical instrument master (real F&O under LIVE mode permits only canonical DB instruments)", ErrInstrumentNotFound, request.Symbol)
+			}
+			synth, synthErr := product.ParseSyntheticFNOContract(request.Symbol)
+			if synthErr == nil && synth != nil {
+				instrument = synth
+			} else {
+				return nil, fmt.Errorf("%w: instrument %q not found in canonical instrument master", ErrInstrumentNotFound, request.Symbol)
+			}
 		}
-		instrument = found
 	} else if database.GetDB() != nil {
 		found, err := s.repo.FindInstrument(request.Symbol)
-		if err != nil || found == nil {
-			return nil, fmt.Errorf("%w: instrument %q not found in canonical instrument master", ErrInstrumentNotFound, request.Symbol)
+		if err == nil && found != nil {
+			instrument = found
+		} else {
+			if isLiveMode {
+				return nil, fmt.Errorf("%w: instrument %q not found in canonical instrument master (real F&O under LIVE mode permits only canonical DB instruments)", ErrInstrumentNotFound, request.Symbol)
+			}
+			synth, synthErr := product.ParseSyntheticFNOContract(request.Symbol)
+			if synthErr == nil && synth != nil {
+				instrument = synth
+			} else {
+				return nil, fmt.Errorf("%w: instrument %q not found in canonical instrument master", ErrInstrumentNotFound, request.Symbol)
+			}
 		}
-		instrument = found
 	} else if request.Product == model.OrderProductFNO {
-		return nil, fmt.Errorf("F&O instrument verification requires database connection")
+		if isLiveMode {
+			return nil, fmt.Errorf("F&O instrument verification requires database connection")
+		}
+		synth, synthErr := product.ParseSyntheticFNOContract(request.Symbol)
+		if synthErr == nil && synth != nil {
+			instrument = synth
+		} else {
+			return nil, fmt.Errorf("F&O instrument verification requires database connection")
+		}
 	}
 
 	// Stop-Loss Directional Validation against current quote
@@ -179,6 +206,22 @@ func (s *OrderService) Create(userID string, request dto.CreateOrderRequest) (*d
 			if request.PricePaise < lc {
 				return nil, fmt.Errorf("limit price ₹%.2f falls below daily lower circuit limit of ₹%.2f", float64(request.PricePaise)/100, float64(lc)/100)
 			}
+		}
+	}
+
+	// Tick Size Validation for non-market orders
+	tickSizeStr := "0.05"
+	if instrument != nil && instrument.TickSize != "" {
+		tickSizeStr = instrument.TickSize
+	}
+	if (request.Type == model.OrderTypeLimit || request.Type == model.OrderTypeSL) && request.PricePaise > 0 {
+		if err := product.ValidateTickSize(request.PricePaise, tickSizeStr); err != nil {
+			return nil, fmt.Errorf("order price invalid: %w", err)
+		}
+	}
+	if (request.Type == model.OrderTypeSL || request.Type == model.OrderTypeSLM) && request.TriggerPricePaise > 0 {
+		if err := product.ValidateTickSize(request.TriggerPricePaise, tickSizeStr); err != nil {
+			return nil, fmt.Errorf("trigger price invalid: %w", err)
 		}
 	}
 

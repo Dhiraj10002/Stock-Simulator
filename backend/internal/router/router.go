@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/alias"
+	instrumentHandler "github.com/Dhiraj10002/Stock-Simulator/backend/internal/instrument/handler"
 	marketDTO "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/dto"
 	marketHandler "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/handler"
 	marketWebsocket "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/websocket"
@@ -100,6 +101,7 @@ func Setup(ctx context.Context, cfg *config.Config) *gin.Engine {
 		go orders.RunExpirySettlement(ctx)
 	}
 	marketWS := marketWebsocket.New(market.Service(), cfg.CORSAllowedOrigins, cfg.IsProduction())
+	instruments := instrumentHandler.New()
 	stocks := stockHandler.New(market.Service())
 	trades := tradeHandler.New()
 	watchlist := watchlistHandler.New()
@@ -129,6 +131,8 @@ func Setup(ctx context.Context, cfg *config.Config) *gin.Engine {
 		api.GET("/market/quotes/:symbol", market.Quote)
 		api.GET("/market/quotes/:symbol/history", market.History)
 		api.GET("/fno/option-chain", fno.GetOptionChain)
+		api.GET("/instruments", instruments.List)
+		api.GET("/instruments/:symbol", instruments.GetBySymbol)
 		api.GET("/stocks", stocks.Search)
 		api.GET("/news", news.List)
 

@@ -55,6 +55,8 @@ import { API_URL } from "@/lib/api";
 
 function getUnderlyingSymbol(sym: string): string {
   const upper = (sym || "").toUpperCase();
+  const canonical = useMarketStore.getState().instruments[upper];
+  if (canonical?.underlying) return canonical.underlying;
   for (const underlying of [
     "RELIANCE",
     "TCS",
@@ -81,6 +83,7 @@ export default function TradingTerminal() {
   const feedStatus = useMarketStore((s) => s.feedStatus);
   const serverMarketStatus = useMarketStore((s) => s.marketStatus);
   const connectionState = useMarketStore((s) => s.connectionState);
+  const instrumentList = useMarketStore((s) => s.instrumentList);
   const clientMarket = getIndianMarketStatus();
   const authoritativeStatus = getAuthoritativeFeedStatus(
     feedStatus,
@@ -140,20 +143,14 @@ export default function TradingTerminal() {
 
   // Fetch real backend quotes on initial mount and when active watchlist symbols change
   useEffect(() => {
-    const symbolsToFetch = [
-      selectedSymbol,
-      ...activeWatchlistSymbols,
-      "RELIANCE",
-      "TCS",
-      "INFY",
-      "HDFCBANK",
-      "TATAMOTORS",
-      "BHARTIARTL",
-      "NIFTY",
-      "BANKNIFTY",
-      "SBIN",
-      "ICICIBANK",
-    ];
+    const canonicalSymbols = instrumentList.map((i) => i.symbol);
+    const symbolsToFetch = Array.from(
+      new Set([
+        selectedSymbol,
+        ...activeWatchlistSymbols,
+        ...canonicalSymbols,
+      ])
+    ).filter(Boolean);
     let isCancelled = false;
     fetchBatchQuotes(symbolsToFetch)
       .then((batch) => {
@@ -335,7 +332,9 @@ export default function TradingTerminal() {
 
   // Prefetch authoritative quotes from backend on mount
   useEffect(() => {
-    const symbols = ["RELIANCE", "TCS", "INFY", "HDFCBANK", "NIFTY", "BANKNIFTY", "ETERNAL", "APARINDS"];
+    const symbols = instrumentList.length > 0
+      ? instrumentList.slice(0, 15).map((i) => i.symbol)
+      : [selectedSymbol];
     symbols.forEach((sym) => {
       fetch(`${API_URL}/market/quotes/${sym}`)
         .then((res) => res.json())

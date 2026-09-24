@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/database"
+	marketDTO "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/dto"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/product"
 	"github.com/google/uuid"
@@ -189,8 +190,18 @@ func (s *OrderService) executeMarginProduct(userUUID, orderUUID uuid.UUID, pendi
 	instrumentType, underlying := "", ""
 	if pending.Product == model.OrderProductFNO {
 		instrument, err := s.repo.FindInstrument(pending.Symbol)
-		if err != nil {
+		if err != nil || instrument == nil {
+			if s.market == nil || s.market.FeedMode() != marketDTO.FeedModeLive {
+				if synth, synthErr := product.ParseSyntheticFNOContract(pending.Symbol); synthErr == nil && synth != nil {
+					instrument = synth
+				}
+			}
+		}
+		if instrument == nil {
 			return fmt.Errorf("F&O instrument not found")
+		}
+		if isExpired(instrument.Expiry, s.now()) {
+			return fmt.Errorf("cannot execute expired contract %s (expiry: %s)", pending.Symbol, instrument.Expiry)
 		}
 		instrumentType, err = product.ValidateFNOInstrument(*instrument, pending.Quantity)
 		if err != nil {
@@ -252,6 +263,11 @@ func (s *OrderService) executeMarginProduct(userUUID, orderUUID uuid.UUID, pendi
 		}
 		if marginDelta > availableAfterReservation {
 			return errors.New("insufficient available wallet balance for margin")
+		}
+		if order.Product == model.OrderProductFNO && instrumentType == product.InstrumentOption && order.Side == model.OrderSideBuy {
+			if availableAfterReservation < total {
+				return errors.New("insufficient available wallet balance for option premium")
+			}
 		}
 		newBlocked, ok := subtract(wallet.BlockedPaise, order.ReservedPaise)
 		if !ok || newBlocked < 0 {

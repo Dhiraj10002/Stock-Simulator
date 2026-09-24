@@ -15,6 +15,7 @@ import (
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/cache"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/alias"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/dto"
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/product"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -216,21 +217,27 @@ func (s *Service) CurrentQuote(symbol string) (*dto.QuoteResponse, error) {
 	if symbol == "" {
 		return nil, fmt.Errorf("symbol is required")
 	}
+	mode := s.FeedMode()
+	if mode == dto.FeedModeUnavailable {
+		return nil, ErrQuoteUnavailable
+	}
+
 	if s != nil && s.instrumentFinder != nil {
 		found, err := s.instrumentFinder(symbol)
 		if err != nil {
 			return nil, err
 		}
 		if !found {
-			return nil, fmt.Errorf("%w: %s", ErrInstrumentNotFound, symbol)
+			// In LIVE feed mode: ONLY canonical DB instruments permitted.
+			// In SYNTHETIC feed mode: Synthetic F&O contracts permitted.
+			if mode == dto.FeedModeSynthetic && product.IsSyntheticContract(symbol) {
+				// Synthetic contract permitted in synthetic mode
+			} else {
+				return nil, fmt.Errorf("%w: %s (real F&O in live mode permits only canonical DB instruments)", ErrInstrumentNotFound, symbol)
+			}
 		}
 	}
 	if s == nil || s.client == nil {
-		return nil, ErrQuoteUnavailable
-	}
-
-	mode := s.FeedMode()
-	if mode == dto.FeedModeUnavailable {
 		return nil, ErrQuoteUnavailable
 	}
 

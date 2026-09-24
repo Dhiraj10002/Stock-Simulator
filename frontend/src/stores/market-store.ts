@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { useShallow } from "zustand/shallow";
-import { Quote } from "@/types";
+import { Quote, Instrument } from "@/types";
 
 export type MarketStatus = "PRE_OPEN" | "OPEN" | "POST_MARKET" | "CLOSED" | "HOLIDAY";
 export type ConnectionState = "connected" | "connecting" | "disconnected";
@@ -15,6 +15,8 @@ export interface FeedStatus {
 
 interface MarketStoreState {
   quotes: Record<string, Quote>;
+  instruments: Record<string, Instrument>;
+  instrumentList: Instrument[];
   marketStatus: MarketStatus;
   connectionState: ConnectionState;
   lastTickTimestamp: number | null;
@@ -24,6 +26,7 @@ interface MarketStoreState {
   // Actions
   setQuotes: (quotes: Record<string, Quote>) => void;
   updateQuote: (quote: Quote) => void;
+  setInstruments: (instruments: Instrument[]) => void;
   setMarketStatus: (status: MarketStatus) => void;
   setConnectionState: (state: ConnectionState) => void;
   setLastTickTimestamp: (timestamp: number) => void;
@@ -46,6 +49,8 @@ function deriveFeedProviderLegacy(feedStatus: FeedStatus, connectionState: Conne
 
 export const useMarketStore = create<MarketStoreState>((set) => ({
   quotes: {},
+  instruments: {},
+  instrumentList: [],
   marketStatus: "CLOSED",
   connectionState: "disconnected",
   lastTickTimestamp: null,
@@ -59,6 +64,16 @@ export const useMarketStore = create<MarketStoreState>((set) => ({
   feedProvider: "Offline",
 
   setQuotes: (quotes) => set({ quotes }),
+  setInstruments: (instrumentList) => {
+    const map: Record<string, Instrument> = {};
+    for (const inst of instrumentList) {
+      map[inst.symbol.toUpperCase()] = inst;
+      if (inst.display_symbol) {
+        map[inst.display_symbol.toUpperCase()] = inst;
+      }
+    }
+    set({ instruments: map, instrumentList });
+  },
   updateQuote: (quote) =>
     set((state) => ({
       quotes: {
@@ -119,4 +134,23 @@ export const useMultiSymbolQuotes = (symbols: string[]): Record<string, Quote> =
       return result;
     })
   );
+};
+
+/**
+ * Hook to retrieve all active canonical instruments.
+ */
+export const useCanonicalInstruments = (): Instrument[] => {
+  return useMarketStore((state) => state.instrumentList);
+};
+
+/**
+ * Hook to look up a canonical instrument by symbol.
+ */
+export const useCanonicalInstrument = (symbol: string | undefined): Instrument | undefined => {
+  return useMarketStore((state) => {
+    if (!symbol) return undefined;
+    const upper = symbol.toUpperCase();
+    const clean = upper.replace("-EQ", "");
+    return state.instruments[clean] || state.instruments[upper];
+  });
 };

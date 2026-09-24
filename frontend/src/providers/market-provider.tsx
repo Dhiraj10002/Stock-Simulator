@@ -4,42 +4,10 @@ import React, { useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 import { useMarketStore } from "@/stores/market-store";
 import { getApiUrl, getWsUrl } from "@/lib/config";
-import type { Quote } from "@/types";
+import { fetchInstruments } from "@/lib/instruments";
+import type { Quote, Instrument } from "@/types";
 
 const PUBLIC_ROUTES = new Set(["/login", "/signup", "/3d"]);
-
-const ALL_MARKET_SYMBOLS = [
-  "RELIANCE",
-  "TCS",
-  "INFY",
-  "HDFCBANK",
-  "TATAMOTORS",
-  "BHARTIARTL",
-  "ETERNAL",
-  "ZOMATO",
-  "SUZLON",
-  "TRENT",
-  "ADANIENT",
-  "YESBANK",
-  "BEL",
-  "NIFTY",
-  "BANKNIFTY",
-  "FINNIFTY",
-  "MIDCPNIFTY",
-  "SENSEX",
-  "SBIN",
-  "ICICIBANK",
-  "ATGL",
-  "POONAWALLA",
-  "TATACHEM",
-  "TATAPOWER",
-  "PRAJIND",
-  "BAJFINANCE",
-  "AXISBANK",
-  "KOTAKBANK",
-  "APARINDS",
-  "MARUTI",
-];
 
 export function MarketProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -50,9 +18,36 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
   const setFeedProvider = useMarketStore((s) => s.setFeedProvider);
   const setFeedStatus = useMarketStore((s) => s.setFeedStatus);
   const setMarketStatus = useMarketStore((s) => s.setMarketStatus);
+  const setInstruments = useMarketStore((s) => s.setInstruments);
 
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const instrumentsRef = useRef<Instrument[]>([]);
+
+  // 1. Fetch canonical instruments from authoritative master
+  useEffect(() => {
+    if (isPublic) return;
+    fetchInstruments()
+      .then((list) => {
+        instrumentsRef.current = list;
+        setInstruments(list);
+        if (
+          wsRef.current &&
+          wsRef.current.readyState === WebSocket.OPEN &&
+          list.length > 0
+        ) {
+          wsRef.current.send(
+            JSON.stringify({
+              action: "subscribe",
+              symbols: list.map((i) => i.symbol),
+            })
+          );
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to fetch canonical instruments:", err);
+      });
+  }, [isPublic, setInstruments]);
 
   // 1. Fetch authoritative market calendar & feed status on mount and periodically
   useEffect(() => {
@@ -117,13 +112,16 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
           if (!isSubscribed) return;
           setConnectionState("connected");
 
-          // Subscribe to all relevant market symbols
-          ws.send(
-            JSON.stringify({
-              action: "subscribe",
-              symbols: ALL_MARKET_SYMBOLS,
-            })
-          );
+          // Subscribe to canonical instruments
+          const symbols = instrumentsRef.current.map((i) => i.symbol);
+          if (symbols.length > 0) {
+            ws.send(
+              JSON.stringify({
+                action: "subscribe",
+                symbols,
+              })
+            );
+          }
         };
 
         ws.onmessage = (event) => {

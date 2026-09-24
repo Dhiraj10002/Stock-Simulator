@@ -28,7 +28,7 @@ import {
 import { formatPaise, formatNumber } from "@/lib/format";
 import type { Wallet, Portfolio, ApiResponse } from "@/types";
 import FnoOrderModal from "@/components/trading/FnoOrderModal";
-import type { InstrumentMetadata } from "@/types";
+import type { Instrument } from "@/types";
 
 // ---------------------------------------------------------------------------
 // TYPES & DATA CONTRACTS
@@ -574,21 +574,33 @@ export default function FnoExplorePage({}: FnoExplorePageProps = {}) {
   const [underlyingFilter, setUnderlyingFilter] = useState<"ALL" | "INDICES" | "EQUITY">("ALL");
 
   // F&O Direct Buy/Sell order placement modal state
-  const [fnoModalInstrument, setFnoModalInstrument] = useState<InstrumentMetadata | null>(null);
+  const [fnoModalInstrument, setFnoModalInstrument] = useState<Instrument | null>(null);
   const [fnoOrderSide, setFnoOrderSide] = useState<"BUY" | "SELL">("BUY");
   const [isFnoModalOpen, setIsFnoModalOpen] = useState(false);
 
   const handleOpenFnoOrder = (fut: FutureContract, side: "BUY" | "SELL" = "BUY") => {
-    const inst: InstrumentMetadata = {
+    const inst: Instrument = {
+      id: fut.symbol,
       symbol: fut.symbol,
+      display_symbol: fut.name || fut.symbol,
+      displayName: fut.name || fut.symbol,
       name: fut.name,
       exchange: "NFO",
+      token: fut.symbol,
+      instrument_type: "FUTSTK",
+      underlying: fut.underlying || fut.symbol,
+      expiry: fut.expiry || "",
+      strike: 0,
+      option_type: "",
+      lot_size: fut.lotSize || 1,
+      lotSize: fut.lotSize || 1,
+      tick_size: 0.05,
+      active: true,
       segment: "FUTURES",
       basePricePaise: Math.round(fut.price * 100),
+      price_paise: Math.round(fut.price * 100),
       dayChangePercent: fut.changePercent,
-      lotSize: fut.lotSize,
-      expiry: fut.expiry,
-      underlying: fut.underlying,
+      change_percent: fut.changePercent,
     };
     setFnoModalInstrument(inst);
     setFnoOrderSide(side);

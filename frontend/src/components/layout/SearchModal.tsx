@@ -13,7 +13,7 @@ import {
   Plus,
   BarChart2,
 } from "lucide-react";
-import type { InstrumentMetadata } from "@/types";
+import type { Instrument } from "@/types";
 import { formatPaise, formatPercent } from "@/lib/format";
 import { useTerminalStore } from "@/stores/terminal-store";
 import { useUIStore } from "@/stores/ui-store";
@@ -183,7 +183,7 @@ export default function SearchModal() {
   }, [apiResults]);
 
   // F&O Direct Buy/Sell order placement modal state
-  const [fnoModalInstrument, setFnoModalInstrument] = useState<InstrumentMetadata | null>(null);
+  const [fnoModalInstrument, setFnoModalInstrument] = useState<Instrument | null>(null);
   const [fnoOrderSide, setFnoOrderSide] = useState<"BUY" | "SELL">("BUY");
   const [isFnoModalOpen, setIsFnoModalOpen] = useState(false);
 
@@ -194,7 +194,7 @@ export default function SearchModal() {
     setSearchPaletteOpen(false);
   }, [setSearchPaletteOpen]);
 
-  const handleOpenFnoOrder = (item: InstrumentMetadata, side: "BUY" | "SELL" = "BUY") => {
+  const handleOpenFnoOrder = (item: Instrument, side: "BUY" | "SELL" = "BUY") => {
     setSelectedSymbol(item.symbol);
     setFnoModalInstrument(item);
     setFnoOrderSide(side);
@@ -202,7 +202,7 @@ export default function SearchModal() {
     setSearchPaletteOpen(false);
   };
 
-  const handleOpenChart = (item: InstrumentMetadata) => {
+  const handleOpenChart = (item: Instrument) => {
     handleClose();
     let targetSymbol = item.underlying || item.symbol;
     if (targetSymbol.endsWith("-EQ")) {
@@ -211,7 +211,7 @@ export default function SearchModal() {
     router.push(`/stocks/${encodeURIComponent(targetSymbol)}`);
   };
 
-  const handleSelect = (item: InstrumentMetadata) => {
+  const handleSelect = (item: Instrument) => {
     setSelectedSymbol(item.symbol);
 
     if (item.segment === "FUTURES" || item.segment === "OPTIONS") {
@@ -254,7 +254,7 @@ export default function SearchModal() {
       return [];
     }
 
-    const items: (InstrumentMetadata & { exchangeTag: string })[] = [];
+    const items: (Instrument & { exchangeTag: string })[] = [];
     const seenSymbols = new Set<string>();
 
     for (const item of apiResults) {
@@ -290,18 +290,33 @@ export default function SearchModal() {
       const live = marketQuotes[item.symbol];
       const basePrice = live?.price_paise || item.price_paise || 0;
       const changePct = live?.change_percent ?? item.change_percent ?? 0;
+      const displaySym = item.display_name || kite.displayName || item.symbol;
+      const parsedStrike = item.strike ? parseFloat(item.strike) : 0;
+      const parsedTickSize = item.tick_size ? parseFloat(item.tick_size) : 0.05;
 
       items.push({
+        id: item.token || item.symbol,
         symbol: item.symbol,
-        displayName: item.display_name || kite.displayName,
-        name: item.name || item.symbol,
+        display_symbol: displaySym,
+        displayName: displaySym,
         exchange: kite.exchangeTag,
         exchangeTag: kite.exchangeTag,
+        token: item.token || "",
+        instrument_type: item.instrument_type || seg,
+        underlying: item.name || item.symbol,
+        expiry: item.expiry || "",
+        strike: parsedStrike,
+        option_type: (item.option_type || optType || "") as "CE" | "PE" | "",
+        lot_size: item.lot_size || 1,
+        tick_size: parsedTickSize,
+        active: true,
+        name: item.name || item.symbol,
         basePricePaise: basePrice,
+        price_paise: basePrice,
         lotSize: item.lot_size || 1,
         dayChangePercent: changePct,
+        change_percent: changePct,
         segment: seg,
-        expiry: item.expiry,
         optionType: optType,
       });
     }
