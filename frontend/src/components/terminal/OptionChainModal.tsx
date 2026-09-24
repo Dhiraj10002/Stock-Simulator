@@ -56,8 +56,10 @@ type OptionChainModalProps = {
 const SYMBOLS = [
   { symbol: "NIFTY", label: "NIFTY 50", lot: 50 },
   { symbol: "BANKNIFTY", label: "BANK NIFTY", lot: 15 },
-  { symbol: "RELIANCE", label: "RELIANCE", lot: 250 },
+  { symbol: "FINNIFTY", label: "FIN NIFTY", lot: 25 },
+  { symbol: "KEI", label: "KEI IND", lot: 175 },
   { symbol: "TCS", label: "TCS", lot: 175 },
+  { symbol: "RELIANCE", label: "RELIANCE", lot: 250 },
   { symbol: "INFY", label: "INFOSYS", lot: 400 },
   { symbol: "HDFCBANK", label: "HDFC BANK", lot: 550 },
 ];
@@ -107,9 +109,7 @@ export default function OptionChainModal({
   useEffect(() => {
     if (isOpen) {
       queueMicrotask(() => {
-        const validSym = SYMBOLS.some((s) => s.symbol === initialSymbol)
-          ? initialSymbol
-          : "NIFTY";
+        const validSym = initialSymbol ? initialSymbol.toUpperCase().replace(/-EQ$/, "") : "NIFTY";
         setSelectedSymbol(validSym);
         setActiveStrategy("NONE");
         setExecutionMessage(null);

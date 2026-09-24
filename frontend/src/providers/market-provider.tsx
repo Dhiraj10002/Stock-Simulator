@@ -6,7 +6,7 @@ import { useMarketStore } from "@/stores/market-store";
 import { getApiUrl, getWsUrl } from "@/lib/config";
 import type { Quote } from "@/types";
 
-const PUBLIC_ROUTES = new Set(["/", "/login", "/signup", "/3d"]);
+const PUBLIC_ROUTES = new Set(["/login", "/signup", "/3d"]);
 
 const ALL_MARKET_SYMBOLS = [
   "RELIANCE",

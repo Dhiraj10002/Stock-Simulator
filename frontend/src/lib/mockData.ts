@@ -11,6 +11,7 @@ export interface InstrumentMetadata {
   high52WPaise?: number;
   low52WPaise?: number;
   segment?: "EQUITY" | "INDEX" | "FUTURES" | "OPTIONS";
+  displayName?: string;
   underlying?: string;
   expiry?: string;
   strikePrice?: number;

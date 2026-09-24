@@ -1,11 +1,16 @@
 package handler
 
 import (
+	"fmt"
+	"math"
 	"net/http"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/database"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/alias"
+	marketService "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/service"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/stock/dto"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/pkg/response"
@@ -13,9 +18,58 @@ import (
 	"gorm.io/gorm"
 )
 
-type Handler struct{}
+var (
+	futRegex = regexp.MustCompile(`^([A-Z&]+?)(\d{1,2})?([A-Z]{3})(\d{2})?FUT$`)
+	optRegex = regexp.MustCompile(`^([A-Z&]+?)(\d{1,2})?([A-Z]{3})(\d{2})?(\d+(?:\.\d+)?)(CE|PE)$`)
+)
 
-func New() *Handler { return &Handler{} }
+type Handler struct {
+	market *marketService.Service
+}
+
+func New(market ...*marketService.Service) *Handler {
+	var m *marketService.Service
+	if len(market) > 0 {
+		m = market[0]
+	}
+	return &Handler{market: m}
+}
+
+func formatKiteDisplayName(symbol, expiry, strike, optionType string) (displayName, optType, under string) {
+	cleanSym := strings.ToUpper(strings.TrimSpace(symbol))
+	cleanSym = strings.TrimSuffix(cleanSym, "-EQ")
+
+	// 1. Futures: e.g. KEI27OCT26FUT, TCS29SEP26FUT, KEI26SEPFUT, NIFTY26SEPFUT
+	if m := futRegex.FindStringSubmatch(cleanSym); len(m) > 0 {
+		under = m[1]
+		month := m[3]
+		return fmt.Sprintf("%s %s FUT", under, month), "", under
+	}
+
+	// 2. Options: e.g. TCS29SEP261940CE, TCS27OCT262300CE, KEI27OCT264500PE
+	if m := optRegex.FindStringSubmatch(cleanSym); len(m) > 0 {
+		under = m[1]
+		month := m[3]
+		strikeVal := m[5]
+		oType := m[6]
+		return fmt.Sprintf("%s %s %s %s", under, month, strikeVal, oType), oType, under
+	}
+
+	// 3. Spaced option e.g. "TCS 4150 CE"
+	if strings.Contains(cleanSym, " CE") || strings.Contains(cleanSym, " PE") {
+		parts := strings.Fields(cleanSym)
+		if len(parts) >= 3 {
+			month := "SEP"
+			monthRe := regexp.MustCompile(`(?i)[A-Z]{3}`)
+			if found := monthRe.FindString(expiry); len(found) == 3 {
+				month = strings.ToUpper(found)
+			}
+			return fmt.Sprintf("%s %s %s %s", parts[0], month, parts[1], parts[2]), parts[2], parts[0]
+		}
+	}
+
+	return cleanSym, optionType, cleanSym
+}
 
 // Search returns instruments imported from Angel One's instrument master.
 // The worker owns refreshes; this handler is deliberately read-only.
@@ -93,11 +147,55 @@ func (h *Handler) Search(c *gin.Context) {
 
 	items := make([]dto.StockResponse, 0, len(instruments))
 	for _, instrument := range instruments {
+		dispName, optType, under := formatKiteDisplayName(instrument.Symbol, instrument.Expiry, instrument.Strike, instrument.OptionType)
+		var pricePaise int64
+		var changePct float64
+
+		if h.market != nil {
+			if q, err := h.market.CachedQuote(instrument.Symbol); err == nil && q != nil && q.PricePaise > 0 {
+				pricePaise = q.PricePaise
+				changePct = q.ChangePercent
+			} else if under != "" && under != instrument.Symbol {
+				// Derive price from underlying if available in cache
+				if uq, uErr := h.market.CachedQuote(under); uErr == nil && uq != nil && uq.PricePaise > 0 {
+					changePct = uq.ChangePercent
+					if strings.Contains(instrument.Symbol, "FUT") {
+						pricePaise = int64(math.Round(float64(uq.PricePaise) * 1.0035))
+					} else {
+						// Derive approximate option premium from strike and moneyness
+						strikeVal, _ := strconv.ParseFloat(instrument.Strike, 64)
+						if strikeVal > 100000 {
+							strikeVal = strikeVal / 100.0
+						}
+						spotRs := float64(uq.PricePaise) / 100.0
+						if strikeVal <= 0 {
+							strikeVal = spotRs
+						}
+						moneyness := math.Abs(spotRs-strikeVal) / math.Max(1.0, spotRs)
+						premPct := math.Max(0.005, 0.035-moneyness*0.08)
+						pricePaise = int64(math.Round(float64(uq.PricePaise) * premPct))
+						if pricePaise < 50 {
+							pricePaise = 50
+						}
+					}
+				}
+			}
+		}
+
 		items = append(items, dto.StockResponse{
-			Token: instrument.Token, Symbol: instrument.Symbol, Name: instrument.Name,
-			Expiry: instrument.Expiry, Strike: instrument.Strike, LotSize: instrument.LotSize,
-			InstrumentType: instrument.InstrumentType, ExchangeSegment: instrument.ExchangeSegment,
-			TickSize: instrument.TickSize,
+			Token:           instrument.Token,
+			Symbol:          instrument.Symbol,
+			DisplayName:     dispName,
+			Name:            instrument.Name,
+			Expiry:          instrument.Expiry,
+			Strike:          instrument.Strike,
+			OptionType:      optType,
+			LotSize:         instrument.LotSize,
+			InstrumentType:  instrument.InstrumentType,
+			ExchangeSegment: instrument.ExchangeSegment,
+			TickSize:        instrument.TickSize,
+			PricePaise:      pricePaise,
+			ChangePercent:   changePct,
 		})
 	}
 	response.Success(c, http.StatusOK, "Stocks retrieved successfully", items)

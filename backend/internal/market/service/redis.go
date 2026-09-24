@@ -199,6 +199,49 @@ func (s *Service) SetQuote(symbol string, pricePaise int64, volume int64) error 
 	}).Err()
 }
 
+// CachedQuote returns the in-memory/Redis quote without making a synchronous HTTP call to the market worker.
+func (s *Service) CachedQuote(symbol string) (*dto.QuoteResponse, error) {
+	if s == nil || s.client == nil {
+		return nil, fmt.Errorf("redis client is nil")
+	}
+	symbol = strings.ToUpper(strings.TrimSpace(symbol))
+	if symbol == "" {
+		return nil, fmt.Errorf("symbol is required")
+	}
+	ctx, cancel := cache.Context(context.Background(), s.timeout)
+	defer cancel()
+	values, err := s.client.HGetAll(ctx, quoteKey(symbol)).Result()
+	if err != nil || len(values) == 0 {
+		canonical := alias.ResolveCanonicalSymbol(symbol)
+		if canonical != "" && canonical != symbol {
+			values, _ = s.client.HGetAll(ctx, quoteKey(canonical)).Result()
+		}
+	}
+	if len(values) == 0 {
+		return nil, fmt.Errorf("quote not found in cache")
+	}
+	price, err := strconv.ParseInt(values["price_paise"], 10, 64)
+	if err != nil || price <= 0 {
+		return nil, fmt.Errorf("invalid cached price")
+	}
+	var changePaise int64
+	var changePercent float64
+	if cp, ok := values["change_paise"]; ok {
+		changePaise, _ = strconv.ParseInt(cp, 10, 64)
+	}
+	if cp, ok := values["change_percent"]; ok {
+		changePercent, _ = strconv.ParseFloat(cp, 64)
+	}
+	return &dto.QuoteResponse{
+		Symbol:        symbol,
+		PricePaise:    price,
+		ChangePaise:   changePaise,
+		ChangePercent: changePercent,
+		Source:        values["source"],
+		UpdatedAt:     values["updated_at"],
+	}, nil
+}
+
 func (s *Service) CurrentQuote(symbol string) (*dto.QuoteResponse, error) {
 	symbol = strings.ToUpper(strings.TrimSpace(symbol))
 	if symbol == "" {

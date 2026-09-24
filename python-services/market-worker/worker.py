@@ -358,6 +358,10 @@ def init_global_token_map() -> None:
                     name = d.get("name", "").strip().upper()
                     if name:
                         GLOBAL_TOKEN_MAP[name] = d
+                elif exch == "NFO":
+                    sym = d.get("symbol", "").strip().upper()
+                    if sym:
+                        GLOBAL_TOKEN_MAP[sym] = d
             print(f"market worker: indexed {len(GLOBAL_TOKEN_MAP)} symbols in global token map", flush=True)
         except Exception as e:
             print(f"market worker: error loading scrip master: {e}", flush=True)
@@ -455,6 +459,68 @@ def fetch_quote_for_symbol(symbol: str) -> dict[str, Any] | None:
             GLOBAL_WRITER.write(sub, benchmark, 5000, source="benchmark_fallback")
         return quote
 
+    # If quote not found directly and symbol is NFO derivative (Future or Option)
+    deriv_match = re.match(r"^([A-Z&]+?)(\d{1,2})?([A-Z]{3})(\d{2})?(?:(\d+(?:\.\d+)?)(CE|PE)|FUT)$", symbol)
+    if deriv_match:
+        underlying = deriv_match.group(1)
+        under_quote = fetch_quote_for_symbol(underlying)
+        if under_quote and under_quote.get("price_paise"):
+            spot_paise = under_quote["price_paise"]
+            spot_rs = spot_paise / 100.0
+            under_change_pct = under_quote.get("change_percent", 0.0)
+            now_iso = datetime.now(timezone.utc).isoformat()
+            
+            if symbol.endswith("FUT"):
+                fut_price_paise = int(round(spot_paise * 1.0035))
+                fut_change_paise = int(round(under_quote.get("change_paise", 0) * 1.0035))
+                fut_quote = {
+                    "symbol": symbol,
+                    "price_paise": fut_price_paise,
+                    "change_paise": fut_change_paise,
+                    "change_percent": under_change_pct,
+                    "source": "simulated_deriv",
+                    "updated_at": now_iso
+                }
+                if GLOBAL_WRITER:
+                    GLOBAL_WRITER.benchmark_prices[symbol] = fut_price_paise
+                    GLOBAL_WRITER.write(Subscription(symbol, token or "0", "NFO", 2), fut_price_paise, 5000, source="simulated_deriv")
+                return fut_quote
+            else:
+                strike_str = deriv_match.group(5)
+                opt_type = deriv_match.group(6)
+                if strike_str:
+                    strike_rs = float(strike_str)
+                    import math
+                    time_years = 7.0 / 365.0
+                    vol = 0.16
+                    r = 0.065
+                    d1 = (math.log(spot_rs / strike_rs) + (r + 0.5 * vol ** 2) * time_years) / (vol * math.sqrt(time_years))
+                    d2 = d1 - vol * math.sqrt(time_years)
+                    def norm_cdf(x):
+                        return (1.0 + math.erf(x / math.sqrt(2.0))) / 2.0
+                    if opt_type == "CE":
+                        price_rs = max(0.5, spot_rs * norm_cdf(d1) - strike_rs * math.exp(-r * time_years) * norm_cdf(d2))
+                        delta = norm_cdf(d1)
+                    else:
+                        price_rs = max(0.5, strike_rs * math.exp(-r * time_years) * norm_cdf(-d2) - spot_rs * norm_cdf(-d1))
+                        delta = norm_cdf(d1) - 1.0
+                    opt_price_paise = int(round(price_rs * 100))
+                    leverage = abs(delta * spot_rs / max(1.0, price_rs))
+                    opt_change_pct = round(under_change_pct * min(8.0, max(0.5, leverage)), 2)
+                    opt_change_paise = int(round(opt_price_paise * (opt_change_pct / 100.0)))
+                    opt_quote = {
+                        "symbol": symbol,
+                        "price_paise": opt_price_paise,
+                        "change_paise": opt_change_paise,
+                        "change_percent": opt_change_pct,
+                        "source": "simulated_deriv",
+                        "updated_at": now_iso
+                    }
+                    if GLOBAL_WRITER:
+                        GLOBAL_WRITER.benchmark_prices[symbol] = opt_price_paise
+                        GLOBAL_WRITER.write(Subscription(symbol, token or "0", "NFO", 2), opt_price_paise, 5000, source="simulated_deriv")
+                    return opt_quote
+
     return None
 
 
@@ -475,22 +541,32 @@ class QuoteRequestHandler(BaseHTTPRequestHandler):
 
         if parsed.path != "/quote":
             self.send_response(404)
+            self.send_header("Content-Type", "application/json")
+            body = b'{"error": "not found"}'
+            self.send_header("Content-Length", str(len(body)))
             self.end_headers()
+            self.wfile.write(body)
             return
 
         qs = parse_qs(parsed.query)
         symbol = qs.get("symbol", [""])[0].strip().upper()
         if not symbol:
             self.send_response(400)
+            self.send_header("Content-Type", "application/json")
+            body = b'{"error": "symbol required"}'
+            self.send_header("Content-Length", str(len(body)))
             self.end_headers()
-            self.wfile.write(b'{"error": "symbol required"}')
+            self.wfile.write(body)
             return
 
         quote = fetch_quote_for_symbol(symbol)
         if not quote:
             self.send_response(404)
+            self.send_header("Content-Type", "application/json")
+            body = b'{"error": "quote not found"}'
+            self.send_header("Content-Length", str(len(body)))
             self.end_headers()
-            self.wfile.write(b'{"error": "quote not found"}')
+            self.wfile.write(body)
             return
 
         body = json.dumps(quote).encode("utf-8")
@@ -675,8 +751,14 @@ class InstrumentStore:
                 underlying = clean(row.get("underlying_symbol")).upper() or name
                 if name not in target_names and symbol not in target_names and underlying not in target_names:
                     continue
+                opt_type = clean(row.get("option_type"))
+                if not opt_type and segment == "NFO":
+                    if symbol.endswith("CE"):
+                        opt_type = "CE"
+                    elif symbol.endswith("PE"):
+                        opt_type = "PE"
                 values.append((token, symbol, name, underlying, clean(row.get("expiry")),
-                               clean(row.get("strike")), clean(row.get("option_type")), integer(row.get("lotsize")), clean(row.get("instrumenttype")),
+                               clean(row.get("strike")), opt_type, integer(row.get("lotsize")), clean(row.get("instrumenttype")),
                                segment, clean(row.get("tick_size"))))
             if not values:
                 return

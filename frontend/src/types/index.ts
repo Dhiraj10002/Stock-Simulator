@@ -343,11 +343,15 @@ export type WatchlistDbItem = {
 export type StockSearchResult = {
   token: string;
   symbol: string;
+  display_name?: string;
   name: string;
   expiry: string;
   strike: string;
+  option_type?: string;
   lot_size: number;
   instrument_type: string;
   exchange_segment: string;
   tick_size: string;
+  price_paise?: number;
+  change_percent?: number;
 };
