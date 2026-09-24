@@ -18,7 +18,6 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { formatPaise } from "@/lib/format";
-import { INSTRUMENT_METADATA } from "@/lib/mockData";
 import MarketDepth from "./MarketDepth";
 import { orderFormSchema } from "@/schemas/order";
 import OrderConfirmationModal, {
@@ -84,11 +83,7 @@ export default function OrderEntryTicket({
   prefill,
   onPriceLevelsChange,
 }: OrderEntryTicketProps) {
-  const meta = INSTRUMENT_METADATA[symbol] ?? {
-    basePricePaise: 250000,
-  };
-
-  const defaultPriceRupees = (quote?.price_paise ?? meta.basePricePaise) / 100;
+  const defaultPriceRupees = quote?.price_paise ? quote.price_paise / 100 : 0;
 
   const isFnoSymbol =
     symbol.endsWith("CE") ||
@@ -210,7 +205,7 @@ export default function OrderEntryTicket({
   const [prevSymbol, setPrevSymbol] = useState(symbol);
   if (prevSymbol !== symbol) {
     setPrevSymbol(symbol);
-    const newPrice = (quote?.price_paise ?? meta.basePricePaise) / 100;
+    const newPrice = (quote?.price_paise ?? 0) / 100;
     setLimitRupees(newPrice);
     setTriggerRupees(newPrice);
     const isBuy = side === "BUY";
@@ -228,7 +223,7 @@ export default function OrderEntryTicket({
     }
   }
 
-  const ltpRupees = (quote?.price_paise ?? meta.basePricePaise) / 100;
+  const ltpRupees = (quote?.price_paise ?? 0) / 100;
   const isStopOrder = type === "SL" || type === "SL-M";
   const isLimitOrder = type === "LIMIT" || type === "SL";
 
@@ -322,7 +317,7 @@ export default function OrderEntryTicket({
           product,
           type,
           quantity,
-          price_paise: pricePaise > 0 ? pricePaise : meta.basePricePaise,
+          price_paise: pricePaise > 0 ? pricePaise : (quote?.price_paise ?? 0),
           stop_loss_paise: isSLActive ? Math.round(stopLossRupees * 100) : 0,
           target_paise: isTargetActive ? Math.round(targetRupees * 100) : 0,
         }),

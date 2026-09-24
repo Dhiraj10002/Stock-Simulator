@@ -29,7 +29,20 @@ export function getAuthoritativeFeedStatus(
     };
   }
 
-  // 2. If backend feed supervisor is reconnecting / retrying:
+  // 2. If backend feed supervisor is unavailable:
+  if (feedStatus.feedState === "UNAVAILABLE") {
+    return {
+      badgeText: "UNAVAILABLE",
+      subText: "NO FEED",
+      fullLabel: "UNAVAILABLE — NO FEED",
+      pillClasses: "bg-rose-950/40 border-rose-500/30 text-rose-300 dark:bg-rose-950/40 dark:border-rose-500/30 dark:text-rose-300",
+      dotClasses: "bg-rose-400",
+      isLive: false,
+      tooltip: "Market feed is unavailable. No trade execution allowed.",
+    };
+  }
+
+  // 3. If backend feed supervisor is reconnecting / retrying:
   if (feedStatus.feedState === "RETRYING" || feedStatus.feedState === "DISCONNECTED") {
     return {
       badgeText: "DISCONNECTED",

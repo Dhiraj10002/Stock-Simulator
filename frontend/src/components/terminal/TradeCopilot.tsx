@@ -8,6 +8,7 @@ import {
   ShieldAlert,
   ShieldCheck,
   AlertTriangle,
+  AlertCircle,
   Award,
   Zap,
   HelpCircle,
@@ -89,62 +90,13 @@ Maintain single-trade position sizing below 2% – 5% of total capital (₹20,00
 • **Mandatory Stop-Loss:** Always enter hard Stop-Loss (SL) trigger orders upon order fill rather than relying on mental stops.`,
 };
 
-const DEFAULT_DEMO_CRITIQUE: TradeCritiqueResponse = {
-  discipline_score: 88,
-  risk_rating: "EXCELLENT",
-  grade: "A",
-  metrics: {
-    win_rate: 75.0,
-    realized_pnl_paise: 7645000,
-    concentration_risk: "MODERATE",
-    leverage_risk: "SAFE",
-    revenge_trading_detected: false,
-    limit_order_usage_pct: 85.0,
-    total_trades_evaluated: 20,
-  },
-  behavioral_flags: [
-    {
-      type: "POSITIVE",
-      title: "Strict Risk-to-Reward Symmetry",
-      description: "Average win (₹5,753) is 2.9x larger than average loss (₹1,970). Favorable asymmetric expectancy.",
-    },
-    {
-      type: "POSITIVE",
-      title: "Zero Revenge Trading Spikes",
-      description: "No rapid consecutive re-entries or volume doubling detected following loss trades.",
-    },
-    {
-      type: "WARNING",
-      title: "Sector Concentration in Energy",
-      description: "RELIANCE and TATAMOTORS account for 45% of total traded capital. Consider diversifying into banking or index options.",
-    },
-    {
-      type: "POSITIVE",
-      title: "Disciplined Limit Order Usage",
-      description: "85% of executions used Limit orders, avoiding aggressive market slippage on breakout attempts.",
-    },
-  ],
-  critique: `Institutional Trading Post-Mortem & Coaching Audit:
-
-1. Executive Verdict:
-Overall discipline grade is A (Discipline Score: 88/100). The trading record demonstrates solid emotional control and adherence to pre-planned price invalidation levels.
-
-2. Positive Behavioral Strengths:
-• Strong Win/Loss Payoff: Wins significantly outpace losses (Profit Factor 8.76).
-• Execution Patience: You utilized Limit orders on 85% of executions, systematically avoiding chase slippage on green momentum bars.
-• No Revenge Cycles: Loss days did not trigger excessive trade counts or aggressive margin overloading.
-
-3. Actionable Areas for Improvement:
-• Single-Counter Weighting: Over 40% of realized P&L is concentrated in Reliance. Expanding watchlists to high-volume Nifty 50 constituents will reduce counter-specific gap risk.
-• Derivative Delta Management: On F&O option trades, consider scaling out 50% at 1:1.5 target and trailing the remaining lot at cost to lock in consistent profits.`,
-};
-
 export default function TradeCopilot({ token, apiUrl }: TradeCopilotProps) {
   const [question, setQuestion] = useState("");
   const [asking, setAsking] = useState(false);
-  const [critique, setCritique] = useState<TradeCritiqueResponse | null>(DEFAULT_DEMO_CRITIQUE);
+  const [critique, setCritique] = useState<TradeCritiqueResponse | null>(null);
+  const [critiqueError, setCritiqueError] = useState<string | null>(null);
   const [critiquing, setCritiquing] = useState(false);
-  const [showCritique, setShowCritique] = useState(true);
+  const [showCritique, setShowCritique] = useState(false);
 
   const [messages, setMessages] = useState<ChatMessage[]>(() => [
     {
@@ -255,28 +207,35 @@ Regarding "${q}":
 
   // Run Trade Post-Mortem Critique
   const handleCritique = async () => {
-    setCritiquing(true);
-    try {
-      if (token) {
-        const res = await fetch(`${apiUrl}/ai/trade-critique`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-        });
-        const data = await res.json();
-        if (data.success && data.data) {
-          setCritique(data.data);
-          setShowCritique(true);
-          return;
-        }
-      }
-      // Demo fallback
-      setCritique(DEFAULT_DEMO_CRITIQUE);
+    if (!token) {
+      setCritique(null);
+      setCritiqueError("Please log in to generate an AI trade critique for your account.");
       setShowCritique(true);
-    } catch {
-      setCritique(DEFAULT_DEMO_CRITIQUE);
+      return;
+    }
+
+    setCritiquing(true);
+    setCritiqueError(null);
+    try {
+      const res = await fetch(`${apiUrl}/ai/trade-critique`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      const data = await res.json();
+      if (data.success && data.data) {
+        setCritique(data.data);
+        setShowCritique(true);
+      } else {
+        setCritique(null);
+        setCritiqueError(data.message || "Failed to generate trade critique. Ensure you have closed trades in your account.");
+        setShowCritique(true);
+      }
+    } catch (err: unknown) {
+      setCritique(null);
+      setCritiqueError(err instanceof Error ? err.message : "Network error contacting critique desk.");
       setShowCritique(true);
     } finally {
       setCritiquing(false);
@@ -305,9 +264,9 @@ Regarding "${q}":
     }
   };
 
-  const score = critique?.discipline_score ?? 88;
-  const rating = critique?.risk_rating ?? "EXCELLENT";
-  const grade = critique?.grade ?? (score >= 85 ? "A" : score >= 70 ? "B" : "C");
+  const score = critique?.discipline_score ?? 0;
+  const rating = critique?.risk_rating ?? "NEUTRAL";
+  const grade = critique?.grade ?? (score >= 85 ? "A" : score >= 70 ? "B" : score >= 50 ? "C" : "D");
 
   const getScoreBadge = () => {
     if (score >= 80)
@@ -370,7 +329,7 @@ Regarding "${q}":
             </span>
             <div className="flex items-center gap-2">
               <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">
-                Evaluated 20 Trade Executions
+                Evaluated {critique.metrics.total_trades_evaluated} Trade Executions
               </span>
               <button
                 onClick={() => setShowCritique(false)}
@@ -495,14 +454,31 @@ Regarding "${q}":
           </div>
 
           {/* Compact Executive Audit Takeaway */}
-          <div className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-[11px] text-slate-700 dark:text-slate-300 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 leading-relaxed">
+          <div className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-[11px] text-slate-700 dark:text-slate-300 shadow-sm flex flex-col items-start gap-2 leading-relaxed">
             <div className="flex items-start gap-2">
               <Zap className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400 shrink-0 mt-0.5" />
-              <span>
-                <strong>Executive Coach Verdict:</strong> Grade <strong>{grade}</strong> ({score}/100). Solid emotional discipline &amp; healthy stop-loss symmetry. Diversify single-stock weighting beyond Reliance into index options to hedge gap risk.
-              </span>
+              <div className="whitespace-pre-line">
+                <strong>Executive Coach Verdict:</strong> Grade <strong>{grade}</strong> ({score}/100).
+                {critique.critique ? `\n\n${critique.critique}` : " Trade audit completed."}
+              </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Error / Information notice when critique fails */}
+      {critiqueError && showCritique && (
+        <div className="p-4 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800/60 rounded-2xl flex items-center justify-between text-xs text-amber-900 dark:text-amber-200 animate-fade-in">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+            <span>{critiqueError}</span>
+          </div>
+          <button
+            onClick={() => setShowCritique(false)}
+            className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
         </div>
       )}
 

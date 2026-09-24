@@ -12,7 +12,6 @@ import {
   TrendingDown,
   Shield,
   Percent,
-  Sparkles,
 } from "lucide-react";
 import { formatPaise } from "@/lib/format";
 import { API_URL } from "@/lib/api";
@@ -21,103 +20,11 @@ import type { ContractNoteResponse } from "@/types";
 interface ContractNoteViewProps {
   token?: string;
   apiUrl?: string;
-  useDemoData?: boolean;
 }
-
-// Realistic Demonstration Contract Note matching demo executed trades
-const DEMO_CONTRACT_NOTE: ContractNoteResponse = {
-  contract_note_number: `CN-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-DEMO8910`,
-  trade_date: new Date().toISOString().slice(0, 10),
-  settlement_date: new Date(Date.now() + 86400000).toISOString().slice(0, 10),
-  exchange: "NSE / NFO",
-  client_name: "Dhiraj (Trader)",
-  client_email: "dhirajgupta1002@gmail.com",
-  client_uuid: "48315868-e29e-4cca-b97a-e6e57069b4a0",
-  total_trades: 3,
-  total_buy_turnover_paise: 147972500, // ₹14,79,725.00
-  total_sell_turnover_paise: 0,
-  gross_turnover_paise: 147972500,
-  charges_summary: {
-    brokerage_paise: 2000, // ₹20.00
-    stt_paise: 31400, // ₹314.00
-    exchange_txn_paise: 58300, // ₹583.00
-    sebi_charges_paise: 1500, // ₹15.00
-    stamp_duty_paise: 27900, // ₹279.00
-    gst_paise: 10800, // ₹108.00
-    total_tax_charges_paise: 131900, // ₹1,319.00
-  },
-  net_payin_payout_paise: -148104400, // -₹14,81,044.00 (Payin debit)
-  items: [
-    {
-      trade_uuid: "tr-demo-1",
-      order_uuid: "ord-demo-1",
-      symbol: "RELIANCE",
-      side: "BUY",
-      product: "DELIVERY",
-      quantity: 60,
-      price_paise: 284000,
-      gross_total_paise: 17040000,
-      charges: {
-        brokerage_paise: 0,
-        stt_paise: 17040,
-        exchange_txn_paise: 554,
-        sebi_charges_paise: 17,
-        stamp_duty_paise: 2556,
-        gst_paise: 103,
-        total_tax_charges_paise: 20270,
-      },
-      net_obligation_paise: 17060270,
-      executed_at: "09:24:18",
-    },
-    {
-      trade_uuid: "tr-demo-2",
-      order_uuid: "ord-demo-2",
-      symbol: "TCS",
-      side: "BUY",
-      product: "DELIVERY",
-      quantity: 35,
-      price_paise: 409500,
-      gross_total_paise: 14332500,
-      charges: {
-        brokerage_paise: 0,
-        stt_paise: 14333,
-        exchange_txn_paise: 466,
-        sebi_charges_paise: 14,
-        stamp_duty_paise: 2150,
-        gst_paise: 86,
-        total_tax_charges_paise: 17049,
-      },
-      net_obligation_paise: 14349549,
-      executed_at: "10:15:42",
-    },
-    {
-      trade_uuid: "tr-demo-3",
-      order_uuid: "ord-demo-3",
-      symbol: "NIFTY24SEPFUT",
-      side: "BUY",
-      product: "FNO",
-      quantity: 50,
-      price_paise: 2332000,
-      gross_total_paise: 116600000,
-      charges: {
-        brokerage_paise: 2000,
-        stt_paise: 0,
-        exchange_txn_paise: 57280,
-        sebi_charges_paise: 1469,
-        stamp_duty_paise: 23194,
-        gst_paise: 10611,
-        total_tax_charges_paise: 94581,
-      },
-      net_obligation_paise: 116694581,
-      executed_at: "11:38:55",
-    },
-  ],
-};
 
 export default function ContractNoteView({
   token = "",
   apiUrl = API_URL,
-  useDemoData = false,
 }: ContractNoteViewProps) {
   const [selectedDate, setSelectedDate] = useState<string>(() => {
     const d = new Date();
@@ -132,14 +39,6 @@ export default function ContractNoteView({
 
   const fetchContractNote = useCallback(
     async (date: string) => {
-      if (useDemoData) {
-        setContractNote({
-          ...DEMO_CONTRACT_NOTE,
-          trade_date: date,
-        });
-        return;
-      }
-
       if (!token) {
         setContractNote(null);
         return;
@@ -170,7 +69,7 @@ export default function ContractNoteView({
         setLoading(false);
       }
     },
-    [apiUrl, token, useDemoData]
+    [apiUrl, token]
   );
 
   useEffect(() => {
@@ -255,7 +154,7 @@ export default function ContractNoteView({
           </div>
 
           <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-            {useDemoData ? "SHOWCASE DEMO" : "POSTGRES LIVE"}
+            SEBI COMPLIANT
           </span>
         </div>
 

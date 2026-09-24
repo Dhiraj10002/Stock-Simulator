@@ -20,8 +20,6 @@ import {
 import { formatPaise } from "@/lib/format";
 import { apiFetch } from "@/lib/api";
 import {
-  DEMO_DAY_PNL_RECORDS,
-  DEMO_EQUITY_CURVE,
   type DayPnlRecord,
   type HoldingItem,
 } from "./PortfolioTypes";
@@ -75,7 +73,6 @@ export interface PnlCalendar {
 }
 
 export interface PortfolioPnlAnalyticsProps {
-  useDemoData?: boolean;
   totalValuationPaise?: number;
   totalUnrealizedPnlPaise?: number;
   availableBalancePaise?: number;
@@ -86,7 +83,6 @@ export interface PortfolioPnlAnalyticsProps {
 }
 
 export default function PortfolioPnlAnalytics({
-  useDemoData = true,
   totalValuationPaise = 70640800,
   totalUnrealizedPnlPaise = 3495300,
   availableBalancePaise = 100000000,
@@ -96,26 +92,26 @@ export default function PortfolioPnlAnalytics({
   token = "",
 }: PortfolioPnlAnalyticsProps) {
   // ---------------------------------------------------------------------------
-  // Real Backend Data Queries (Active in Live Ledger mode)
+  // Real Backend Data Queries
   // ---------------------------------------------------------------------------
   const { data: perf } = useQuery<PerformanceOverview>({
     queryKey: ["analytics-performance", token],
     queryFn: () => apiFetch<PerformanceOverview>("/analytics/performance"),
-    enabled: !useDemoData && !!token,
+    enabled: !!token,
     refetchInterval: 10000,
   });
 
   const { data: calData } = useQuery<PnlCalendar>({
     queryKey: ["analytics-calendar", token],
     queryFn: () => apiFetch<PnlCalendar>("/analytics/pnl-calendar"),
-    enabled: !useDemoData && !!token,
+    enabled: !!token,
     refetchInterval: 10000,
   });
 
   const { data: liveTrades = [] } = useQuery<LiveTrade[]>({
     queryKey: ["trades", token],
     queryFn: () => apiFetch<LiveTrade[]>("/trades"),
-    enabled: !useDemoData && !!token,
+    enabled: !!token,
     refetchInterval: 10000,
   });
 
@@ -123,9 +119,6 @@ export default function PortfolioPnlAnalytics({
   // Build Day P&L Calendar Records
   // ---------------------------------------------------------------------------
   const dayRecords: DayPnlRecord[] = useMemo(() => {
-    if (useDemoData) {
-      return DEMO_DAY_PNL_RECORDS;
-    }
 
     const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -196,7 +189,7 @@ export default function PortfolioPnlAnalytics({
     });
 
     return Array.from(dateMap.values()).sort((a, b) => a.date.localeCompare(b.date));
-  }, [useDemoData, liveTrades, calData, totalUnrealizedPnlPaise]);
+  }, [liveTrades, calData, totalUnrealizedPnlPaise]);
 
   // Selected calendar day
   const [selectedDayDate, setSelectedDayDate] = useState<string | null>(null);
@@ -213,36 +206,17 @@ export default function PortfolioPnlAnalytics({
 
   // Filter trades for the selected day in live ledger mode
   const selectedDayTrades: LiveTrade[] = useMemo(() => {
-    if (useDemoData || !activeSelectedDay) return [];
+    if (!activeSelectedDay) return [];
     return liveTrades.filter((t) => {
       const d = t.executed_at ? t.executed_at.slice(0, 10) : "";
       return d === activeSelectedDay.date;
     });
-  }, [useDemoData, activeSelectedDay, liveTrades]);
+  }, [activeSelectedDay, liveTrades]);
 
   // ---------------------------------------------------------------------------
-  // Top 4 Metrics (Real vs Demo)
+  // Top 4 Metrics
   // ---------------------------------------------------------------------------
   const metrics = useMemo(() => {
-    if (useDemoData) {
-      const totalPnl = DEMO_DAY_PNL_RECORDS.reduce((acc, r) => acc + r.pnlPaise, 0);
-      const winningDays = DEMO_DAY_PNL_RECORDS.filter((r) => r.isProfit).length;
-      const winRate = (winningDays / DEMO_DAY_PNL_RECORDS.length) * 100;
-      const bestDay = Math.max(...DEMO_DAY_PNL_RECORDS.map((r) => r.pnlPaise));
-      const worstDay = Math.min(...DEMO_DAY_PNL_RECORDS.map((r) => r.pnlPaise));
-      return {
-        cumulativePnlPaise: totalPnl,
-        pnlLabel: "14-Day Realized P&L",
-        pnlSubtext: "Net booked trading profit",
-        winRate: `${winRate.toFixed(0)}%`,
-        winRateSubtext: `${winningDays} profitable of ${DEMO_DAY_PNL_RECORDS.length} days`,
-        bestDayPaise: bestDay,
-        bestDaySubtext: "High watermark single session",
-        maxLossPaise: worstDay,
-        maxLossSubtext: "Strictly contained risk profile",
-      };
-    }
-
     // Live Ledger Metrics
     const realizedPnl = perf?.net_realized_pnl_paise ?? 0;
     const totalTradesCount = perf?.total_trades || liveTrades.length;
@@ -284,16 +258,12 @@ export default function PortfolioPnlAnalytics({
         ? `${perf.largest_loss_symbol} contained loss`
         : "Zero closed capital loss",
     };
-  }, [useDemoData, perf, liveTrades, totalUnrealizedPnlPaise, positions.length, holdings.length]);
+  }, [perf, liveTrades, totalUnrealizedPnlPaise, positions.length, holdings.length]);
 
   // ---------------------------------------------------------------------------
   // Intraday Equity Curve Trajectory
   // ---------------------------------------------------------------------------
   const equityCurvePoints = useMemo(() => {
-    if (useDemoData) {
-      return DEMO_EQUITY_CURVE;
-    }
-
     // Live Equity Curve based on user's live portfolio equity
     const currentEquityPaise = availableBalancePaise + totalValuationPaise;
     const initialBasePaise = 100000000; // ₹10,00,000 initial virtual capital
@@ -307,7 +277,7 @@ export default function PortfolioPnlAnalytics({
       { time: "14:45", pnl: Math.round(diff * 0.85), balance: Math.round(initialBasePaise + diff * 0.85) },
       { time: "15:28", pnl: diff, balance: currentEquityPaise },
     ];
-  }, [useDemoData, availableBalancePaise, totalValuationPaise]);
+  }, [availableBalancePaise, totalValuationPaise]);
 
   const minBal = Math.min(...equityCurvePoints.map((p) => p.balance));
   const maxBal = Math.max(...equityCurvePoints.map((p) => p.balance));
@@ -333,22 +303,20 @@ export default function PortfolioPnlAnalytics({
   return (
     <div className="space-y-6">
       {/* Live Mode Indicator Banner */}
-      {!useDemoData && (
-        <div className="p-3 rounded-xl bg-emerald-50/80 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 flex items-center justify-between text-xs animate-fade-in">
-          <div className="flex items-center gap-2">
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
-            </span>
-            <span className="font-bold text-emerald-800 dark:text-emerald-300">
-              Live Ledger Active • Authentic Backend Analytics & Fills
-            </span>
-          </div>
-          <span className="font-mono text-[11px] text-emerald-700 dark:text-emerald-400 font-bold">
-            Account Equity: ₹{currentEquityRupees}
+      <div className="p-3 rounded-xl bg-emerald-50/80 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 flex items-center justify-between text-xs animate-fade-in">
+        <div className="flex items-center gap-2">
+          <span className="relative flex h-2 w-2">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+          </span>
+          <span className="font-bold text-emerald-800 dark:text-emerald-300">
+            Live Ledger Active • Authentic Backend Analytics & Fills
           </span>
         </div>
-      )}
+        <span className="font-mono text-[11px] text-emerald-700 dark:text-emerald-400 font-bold">
+          Account Equity: ₹{currentEquityRupees}
+        </span>
+      </div>
 
       {/* Top 4 Trading Performance Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -434,19 +402,11 @@ export default function PortfolioPnlAnalytics({
                 <span>P&L Journal Calendar</span>
               </h3>
               <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                {useDemoData
-                  ? "Session performance timeline across recent trading days"
-                  : `Actual trading sessions (${dayRecords.length} active recorded days)`}
+                Actual trading sessions ({dayRecords.length} active recorded days)
               </p>
             </div>
-            <span
-              className={`text-xs font-mono font-bold px-2 py-0.5 rounded border ${
-                useDemoData
-                  ? "text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 border-emerald-200 dark:border-emerald-800/50"
-                  : "text-cyan-600 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-950/60 border-cyan-200 dark:border-cyan-800/50"
-              }`}
-            >
-              {useDemoData ? "Green Streak" : "Live Trading History"}
+            <span className="text-xs font-mono font-bold px-2 py-0.5 rounded border text-cyan-600 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-950/60 border-cyan-200 dark:border-cyan-800/50">
+              Live Trading History
             </span>
           </div>
 
@@ -464,7 +424,7 @@ export default function PortfolioPnlAnalytics({
                       ? "ring-2 ring-cyan-500 scale-102 shadow-md bg-white dark:bg-slate-800"
                       : "hover:scale-101"
                   } ${
-                    !useDemoData && rec.tradesCount === 0 && rec.pnlPaise === 0
+                    rec.tradesCount === 0 && rec.pnlPaise === 0
                       ? "bg-slate-50/50 dark:bg-slate-850/30 border-slate-200/80 dark:border-slate-800/60"
                       : rec.pnlPaise >= 0
                       ? "bg-emerald-50/70 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800/60"
@@ -477,19 +437,19 @@ export default function PortfolioPnlAnalytics({
                   </div>
                   <div
                     className={`text-xs font-black font-tabular ${
-                      !useDemoData && rec.tradesCount === 0 && rec.pnlPaise === 0
+                      rec.tradesCount === 0 && rec.pnlPaise === 0
                         ? "text-slate-400 dark:text-slate-500"
                         : rec.pnlPaise >= 0
                         ? "text-emerald-700 dark:text-emerald-400"
                         : "text-rose-700 dark:text-rose-400"
                     }`}
                   >
-                    {!useDemoData && rec.tradesCount === 0 && rec.pnlPaise === 0
+                    {rec.tradesCount === 0 && rec.pnlPaise === 0
                       ? "₹0.00"
                       : `${rec.pnlPaise >= 0 ? "+" : ""}${formatPaise(rec.pnlPaise).replace("₹", "")}`}
                   </div>
                   <div className="text-[9px] text-slate-500 dark:text-slate-400 mt-1 font-medium">
-                    {!useDemoData && rec.tradesCount === 0
+                    {rec.tradesCount === 0
                       ? "No trades"
                       : `${rec.tradesCount} ${rec.tradesCount === 1 ? "trade" : "trades"}`}
                   </div>
@@ -523,13 +483,13 @@ export default function PortfolioPnlAnalytics({
                     {formatPaise(activeSelectedDay.pnlPaise)}
                   </div>
                   <span className="text-[10px] text-slate-500 dark:text-slate-400">
-                    {useDemoData ? "Net Closed P&L" : "Booked Realized P&L"}
+                    Booked Realized P&L
                   </span>
                 </div>
               </div>
 
               {/* Real Executed Trades List for Live Ledger Mode */}
-              {!useDemoData && selectedDayTrades.length > 0 && (
+              {selectedDayTrades.length > 0 && (
                 <div className="pt-2.5 border-t border-slate-200 dark:border-slate-700/60 space-y-1.5">
                   <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1">
                     <ListFilter className="w-3 h-3" />
@@ -584,9 +544,7 @@ export default function PortfolioPnlAnalytics({
                 <span>Intraday Equity Curve</span>
               </h3>
               <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                {useDemoData
-                  ? "Mark-to-market trajectory through today's market hours"
-                  : "Live account equity tracking (Cash + Position MTM)"}
+                Live account equity tracking (Cash + Position MTM)
               </p>
             </div>
             <span className="text-xs font-mono font-bold text-cyan-600 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-950/60 px-2 py-0.5 rounded border border-cyan-200 dark:border-cyan-800/50">

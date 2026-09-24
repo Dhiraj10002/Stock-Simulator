@@ -6,8 +6,8 @@ export type MarketStatus = "PRE_OPEN" | "OPEN" | "POST_MARKET" | "CLOSED" | "HOL
 export type ConnectionState = "connected" | "connecting" | "disconnected";
 
 export interface FeedStatus {
-  feedProvider: "angel_one" | "synthetic" | "unknown";
-  feedState: "LIVE" | "FALLBACK" | "CONNECTING" | "DISCONNECTED" | "RETRYING" | "STOPPED";
+  feedProvider: "angel_one" | "synthetic" | "unknown" | "none";
+  feedState: "LIVE" | "FALLBACK" | "CONNECTING" | "DISCONNECTED" | "RETRYING" | "STOPPED" | "UNAVAILABLE";
   isSynthetic: boolean;
   lastTick?: string | null;
   updatedAt?: string | null;
@@ -32,7 +32,7 @@ interface MarketStoreState {
 }
 
 function deriveFeedProviderLegacy(feedStatus: FeedStatus, connectionState: ConnectionState): "Angel One" | "Synthetic" | "Connecting" | "Offline" {
-  if (connectionState === "disconnected" || feedStatus.feedState === "DISCONNECTED") {
+  if (connectionState === "disconnected" || feedStatus.feedState === "DISCONNECTED" || feedStatus.feedState === "UNAVAILABLE") {
     return "Offline";
   }
   if (feedStatus.feedState === "CONNECTING") {

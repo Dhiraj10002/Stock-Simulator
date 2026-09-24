@@ -182,11 +182,9 @@ class HistoricalCandleSeedTest(unittest.TestCase):
         self.assertIn(history_key, mock_redis.store)
         self.assertEqual(len(mock_redis.store[history_key]), 50)
 
-        # Verify quote was also set
+        # Verify fake quote was NOT injected into Redis quotes
         quote_key = "market:quote:INFY"
-        self.assertIn(quote_key, mock_redis.store)
-        self.assertEqual(mock_redis.store[quote_key]["symbol"], "INFY")
-        self.assertEqual(mock_redis.store[quote_key]["source"], "initial_seed")
+        self.assertNotIn(quote_key, mock_redis.store)
 
 
 class FallbackMasterTest(unittest.TestCase):
@@ -257,7 +255,7 @@ class FeedSupervisorTest(unittest.TestCase):
         self.assertTrue(res)
         self.assertEqual(self.supervisor.fail_count, 1)
 
-    def test_three_consecutive_failures_triggers_fallback(self):
+    def test_three_consecutive_failures_publishes_unavailable_and_retries_live(self):
         run_fn = MagicMock(return_value=False)
         self.assertTrue(self.supervisor.handle_feed_cycle(run_fn))
         self.assertEqual(self.supervisor.fail_count, 1)
@@ -265,11 +263,11 @@ class FeedSupervisorTest(unittest.TestCase):
         self.assertTrue(self.supervisor.handle_feed_cycle(run_fn))
         self.assertEqual(self.supervisor.fail_count, 2)
 
-        # 3rd failure activates synthetic fallback
+        # 3rd failure publishes UNAVAILABLE but continues retrying live (no synthetic fallback)
         res = self.supervisor.handle_feed_cycle(run_fn)
-        self.assertFalse(res)  # returns False to break out of live loop
+        self.assertTrue(res)  # returns True to keep retrying Angel One
         self.assertEqual(self.supervisor.fail_count, 3)
-        self.assertTrue(self.supervisor.fallback_active)
+        self.assertFalse(self.supervisor.fallback_active)
 
     def test_recovery_resets_counter_before_fallback_threshold(self):
         run_fail = MagicMock(return_value=False)
@@ -412,25 +410,17 @@ class BenchmarkFallbackSourceTest(unittest.TestCase):
         self.assertTrue(len(feed_state_calls) > 0)
         self.assertIn("last_tick", feed_state_calls[0][2]["mapping"])
 
-    def test_fallback_mode_guards_against_angelone_live(self):
+    def test_quote_writer_writes_authentic_source_without_mutation(self):
         mock_redis = MagicMock()
         writer = worker.QuoteWriter(mock_redis, 300, 86400, 500)
         sub = worker.Subscription("RELIANCE", "2885", "NSE", 1)
 
-        mock_supervisor = MagicMock()
-        mock_supervisor.fallback_active = True
-        old_supervisor = worker.GLOBAL_SUPERVISOR
-        try:
-            worker.GLOBAL_SUPERVISOR = mock_supervisor
-            writer.write(sub, 250000, 100, source="angelone_live")
-            mock_pipe = mock_redis.pipeline.return_value.__enter__.return_value
-            hset_calls = [c for c in mock_pipe.method_calls if c[0] == "hset"]
-            quote_calls = [c for c in hset_calls if "market:quote:" in c[1][0]]
-            mapping = quote_calls[0][2]["mapping"]
-            self.assertNotEqual(mapping.get("source"), "angelone_live")
-            self.assertEqual(mapping.get("source"), "fallback_synthetic")
-        finally:
-            worker.GLOBAL_SUPERVISOR = old_supervisor
+        writer.write(sub, 250000, 100, source="angelone_live")
+        mock_pipe = mock_redis.pipeline.return_value.__enter__.return_value
+        hset_calls = [c for c in mock_pipe.method_calls if c[0] == "hset"]
+        quote_calls = [c for c in hset_calls if "market:quote:" in c[1][0]]
+        mapping = quote_calls[0][2]["mapping"]
+        self.assertEqual(mapping.get("source"), "angelone_live")
 
 
 class QuoteServerArchitectureTest(unittest.TestCase):
@@ -525,12 +515,12 @@ class FeedStateTest(unittest.TestCase):
         self.assertEqual(parsed_pub["type"], "feed_status")
         self.assertEqual(parsed_pub["feed_provider"], "angel_one")
 
-    def test_feed_supervisor_publishes_fallback_state_on_threshold(self):
+    def test_feed_supervisor_publishes_unavailable_state_on_threshold(self):
         mock_redis = MagicMock()
         mock_writer = MagicMock()
         mock_writer.client = mock_redis
         control = worker.FeedControl()
-        supervisor = worker.FeedSupervisor(None, mock_writer, control, mode="auto", max_failures=2)
+        supervisor = worker.FeedSupervisor(None, mock_writer, control, mode="live", max_failures=2)
 
         def failing_feed(store, writer, control):
             return False
@@ -540,13 +530,30 @@ class FeedStateTest(unittest.TestCase):
         self.assertEqual(supervisor.fail_count, 1)
         retrying_calls = [c for c in mock_redis.hset.call_args_list if c[1]["mapping"].get("feed_state") == "RETRYING"]
         self.assertTrue(len(retrying_calls) > 0)
+        self.assertEqual(retrying_calls[0][1]["mapping"]["feed_provider"], "angel_one")
+        self.assertEqual(retrying_calls[0][1]["mapping"]["is_synthetic"], "false")
 
-        # Second failure -> triggers fallback
+        # Second failure -> triggers UNAVAILABLE state (never synthetic fallback!)
         res = supervisor.handle_feed_cycle(failing_feed)
-        self.assertFalse(res)
-        fallback_calls = [c for c in mock_redis.hset.call_args_list if c[1]["mapping"].get("feed_state") == "FALLBACK"]
-        self.assertTrue(len(fallback_calls) > 0)
-        self.assertEqual(fallback_calls[0][1]["mapping"]["feed_provider"], "synthetic")
+        self.assertTrue(res)  # continues live retry loop
+        unavailable_calls = [c for c in mock_redis.hset.call_args_list if c[1]["mapping"].get("feed_state") == "UNAVAILABLE"]
+        self.assertTrue(len(unavailable_calls) > 0)
+        self.assertEqual(unavailable_calls[0][1]["mapping"]["feed_provider"], "angel_one")
+        self.assertEqual(unavailable_calls[0][1]["mapping"]["is_synthetic"], "false")
+
+    def test_live_mode_without_credentials_publishes_unavailable(self):
+        mock_redis = MagicMock()
+        state = worker.publish_feed_state(mock_redis, "angel_one", "UNAVAILABLE", is_synthetic=False)
+        self.assertEqual(state["feed_provider"], "angel_one")
+        self.assertEqual(state["feed_state"], "UNAVAILABLE")
+        self.assertEqual(state["is_synthetic"], False)
+
+    def test_synthetic_mode_publishes_synthetic_live_state(self):
+        mock_redis = MagicMock()
+        state = worker.publish_feed_state(mock_redis, "synthetic", "LIVE", is_synthetic=True)
+        self.assertEqual(state["feed_provider"], "synthetic")
+        self.assertEqual(state["feed_state"], "LIVE")
+        self.assertEqual(state["is_synthetic"], True)
 
 
 if __name__ == "__main__":

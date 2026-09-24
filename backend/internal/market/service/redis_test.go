@@ -619,3 +619,320 @@ func TestService_InstrumentFinderValidation(t *testing.T) {
 		}
 	})
 }
+
+func TestCurrentQuote_RedisOnlyArchitecture(t *testing.T) {
+	// 1. Worker mock server that counts incoming HTTP requests
+	workerCalls := 0
+	mockWorker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		workerCalls++
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(dto.QuoteResponse{
+			Symbol:     "TEST_RESCUE",
+			PricePaise: 999999,
+			Source:     "worker_rescue",
+			UpdatedAt:  time.Now().UTC().Format(time.RFC3339),
+		})
+	}))
+	defer mockWorker.Close()
+
+	svc, err := New("redis://localhost:6379/0", time.Second)
+	if err != nil || svc.Client() == nil || svc.Client().Ping(t.Context()).Err() != nil {
+		t.Skip("skipping test: Redis not reachable on localhost:6379")
+	}
+	svc.SetWorkerURL(mockWorker.URL)
+	ctx := t.Context()
+	client := svc.Client()
+
+	t.Run("Missing quote returns ErrQuoteNotFound with ZERO worker calls", func(t *testing.T) {
+		sym := "MISSING_SYM"
+		_ = client.Del(ctx, "market:quote:"+sym).Err()
+		workerCalls = 0
+
+		_, err := svc.CurrentQuote(sym)
+		if err == nil {
+			t.Fatal("expected error for missing quote, got nil")
+		}
+		if !errors.Is(err, ErrQuoteNotFound) {
+			t.Fatalf("expected ErrQuoteNotFound, got: %v", err)
+		}
+		if workerCalls != 0 {
+			t.Fatalf("SAFETY VIOLATION: CurrentQuote performed %d worker HTTP calls on missing quote!", workerCalls)
+		}
+	})
+
+	t.Run("Stale quote returns ErrQuoteStale with ZERO worker calls", func(t *testing.T) {
+		sym := "STALE_SYM"
+		staleTime := time.Now().Add(-5 * time.Minute).UTC().Format(time.RFC3339)
+		_ = client.HSet(ctx, "market:quote:"+sym, map[string]interface{}{
+			"price_paise": "250000",
+			"source":      "angelone_live",
+			"updated_at":  staleTime,
+		}).Err()
+		defer client.Del(ctx, "market:quote:"+sym)
+		workerCalls = 0
+
+		_, err := svc.CurrentQuote(sym)
+		if err == nil {
+			t.Fatal("expected error for stale quote, got nil")
+		}
+		if !errors.Is(err, ErrQuoteStale) {
+			t.Fatalf("expected ErrQuoteStale, got: %v", err)
+		}
+		if workerCalls != 0 {
+			t.Fatalf("SAFETY VIOLATION: CurrentQuote performed %d worker HTTP calls on stale quote!", workerCalls)
+		}
+	})
+
+	t.Run("Seeded quotes are rejected in production flow with ZERO worker calls", func(t *testing.T) {
+		seedSources := []string{"initial_seed", "benchmark_fallback", "auto_seeded", "mock"}
+		for _, src := range seedSources {
+			sym := "SEED_" + src
+			_ = client.HSet(ctx, "market:quote:"+sym, map[string]interface{}{
+				"price_paise": "200000",
+				"source":      src,
+				"updated_at":  time.Now().UTC().Format(time.RFC3339),
+			}).Err()
+			defer client.Del(ctx, "market:quote:"+sym)
+			workerCalls = 0
+
+			_, err := svc.CurrentQuote(sym)
+			if err == nil {
+				t.Fatalf("expected seeded quote source %q to be rejected in production flow", src)
+			}
+			if !errors.Is(err, ErrQuoteNotFound) {
+				t.Fatalf("expected ErrQuoteNotFound for seeded quote source %q, got: %v", src, err)
+			}
+			if workerCalls != 0 {
+				t.Fatalf("SAFETY VIOLATION: CurrentQuote performed %d worker HTTP calls for seeded quote!", workerCalls)
+			}
+		}
+	})
+
+	t.Run("Valid authoritative quote from Redis is returned with ZERO worker calls", func(t *testing.T) {
+		sym := "VALID_SYM"
+		nowStr := time.Now().UTC().Format(time.RFC3339)
+		_ = client.HSet(ctx, "market:quote:"+sym, map[string]interface{}{
+			"price_paise": "350000",
+			"source":      "angelone_live",
+			"updated_at":  nowStr,
+		}).Err()
+		defer client.Del(ctx, "market:quote:"+sym)
+		workerCalls = 0
+
+		q, err := svc.CurrentQuote(sym)
+		if err != nil {
+			t.Fatalf("expected valid quote, got error: %v", err)
+		}
+		if q.PricePaise != 350000 || q.Source != "angelone_live" {
+			t.Fatalf("unexpected quote content: %+v", q)
+		}
+		if workerCalls != 0 {
+			t.Fatalf("SAFETY VIOLATION: CurrentQuote performed %d worker HTTP calls for valid quote!", workerCalls)
+		}
+	})
+}
+
+func TestCurrentQuote_Phase2_ExplicitFeedModes(t *testing.T) {
+	svc, err := New("redis://localhost:6379/0", time.Second)
+	if err != nil || svc.Client() == nil || svc.Client().Ping(t.Context()).Err() != nil {
+		t.Skip("skipping test: Redis not reachable on localhost:6379")
+	}
+	ctx := t.Context()
+	client := svc.Client()
+
+	t.Run("LIVE mode only serves angelone_live and strictly rejects synthetic or seeded quotes", func(t *testing.T) {
+		svc.SetFeedMode(dto.FeedModeLive)
+
+		// 1. Live quote succeeds
+		nowStr := time.Now().UTC().Format(time.RFC3339)
+		_ = client.HSet(ctx, "market:quote:RELIANCE", map[string]interface{}{
+			"price_paise": "250000",
+			"source":      "angelone_live",
+			"updated_at":  nowStr,
+		}).Err()
+		defer client.Del(ctx, "market:quote:RELIANCE")
+
+		q, err := svc.CurrentQuote("RELIANCE")
+		if err != nil {
+			t.Fatalf("expected angelone_live quote to succeed, got: %v", err)
+		}
+		if q.Source != "angelone_live" {
+			t.Fatalf("expected source angelone_live, got: %s", q.Source)
+		}
+
+		// 2. Synthetic quote in Redis must be rejected with ErrQuoteIneligible
+		_ = client.HSet(ctx, "market:quote:TCS", map[string]interface{}{
+			"price_paise": "350000",
+			"source":      "synthetic_gbm",
+			"updated_at":  nowStr,
+		}).Err()
+		defer client.Del(ctx, "market:quote:TCS")
+
+		_, err = svc.CurrentQuote("TCS")
+		if err == nil {
+			t.Fatal("expected synthetic_gbm quote to be rejected in LIVE mode, but got nil error")
+		}
+		if !errors.Is(err, ErrQuoteIneligible) {
+			t.Fatalf("expected ErrQuoteIneligible, got: %v", err)
+		}
+
+		// 3. FNO engine quote in Redis must be rejected in LIVE mode
+		_ = client.HSet(ctx, "market:quote:NIFTY26SEP25000CE", map[string]interface{}{
+			"price_paise": "12000",
+			"source":      "fno_engine",
+			"updated_at":  nowStr,
+		}).Err()
+		defer client.Del(ctx, "market:quote:NIFTY26SEP25000CE")
+
+		_, err = svc.CurrentQuote("NIFTY26SEP25000CE")
+		if err == nil {
+			t.Fatal("expected fno_engine quote to be rejected in LIVE mode, but got nil error")
+		}
+		if !errors.Is(err, ErrQuoteIneligible) {
+			t.Fatalf("expected ErrQuoteIneligible, got: %v", err)
+		}
+	})
+
+	t.Run("SYNTHETIC mode accepts synthetic quotes and rejects live quotes", func(t *testing.T) {
+		svc.SetFeedMode(dto.FeedModeSynthetic)
+		nowStr := time.Now().UTC().Format(time.RFC3339)
+
+		// 1. synthetic_gbm quote succeeds
+		_ = client.HSet(ctx, "market:quote:INFY", map[string]interface{}{
+			"price_paise": "180000",
+			"source":      "synthetic_gbm",
+			"updated_at":  nowStr,
+		}).Err()
+		defer client.Del(ctx, "market:quote:INFY")
+
+		q, err := svc.CurrentQuote("INFY")
+		if err != nil {
+			t.Fatalf("expected synthetic_gbm quote to succeed in SYNTHETIC mode, got: %v", err)
+		}
+		if q.Source != "synthetic_gbm" {
+			t.Fatalf("expected source synthetic_gbm, got: %s", q.Source)
+		}
+
+		// 2. fno_engine quote succeeds
+		_ = client.HSet(ctx, "market:quote:BANKNIFTY_OPT", map[string]interface{}{
+			"price_paise": "15000",
+			"source":      "fno_engine",
+			"updated_at":  nowStr,
+		}).Err()
+		defer client.Del(ctx, "market:quote:BANKNIFTY_OPT")
+
+		q, err = svc.CurrentQuote("BANKNIFTY_OPT")
+		if err != nil {
+			t.Fatalf("expected fno_engine quote to succeed in SYNTHETIC mode, got: %v", err)
+		}
+
+		// 3. angelone_live quote rejected with ErrQuoteIneligible in SYNTHETIC mode
+		_ = client.HSet(ctx, "market:quote:HDFCBANK", map[string]interface{}{
+			"price_paise": "160000",
+			"source":      "angelone_live",
+			"updated_at":  nowStr,
+		}).Err()
+		defer client.Del(ctx, "market:quote:HDFCBANK")
+
+		_, err = svc.CurrentQuote("HDFCBANK")
+		if err == nil {
+			t.Fatal("expected angelone_live to be rejected in SYNTHETIC mode, got nil error")
+		}
+		if !errors.Is(err, ErrQuoteIneligible) {
+			t.Fatalf("expected ErrQuoteIneligible, got: %v", err)
+		}
+	})
+
+	t.Run("UNAVAILABLE mode serves NO quotes and allows NO execution", func(t *testing.T) {
+		svc.SetFeedMode(dto.FeedModeUnavailable)
+		nowStr := time.Now().UTC().Format(time.RFC3339)
+
+		_ = client.HSet(ctx, "market:quote:SBIN", map[string]interface{}{
+			"price_paise": "75000",
+			"source":      "angelone_live",
+			"updated_at":  nowStr,
+		}).Err()
+		defer client.Del(ctx, "market:quote:SBIN")
+
+		// CurrentQuote returns ErrQuoteUnavailable
+		_, err := svc.CurrentQuote("SBIN")
+		if err == nil {
+			t.Fatal("expected CurrentQuote to fail in UNAVAILABLE mode, got nil")
+		}
+		if !errors.Is(err, ErrQuoteUnavailable) {
+			t.Fatalf("expected ErrQuoteUnavailable, got: %v", err)
+		}
+
+		// ExecutableQuote returns ErrQuoteUnavailable
+		_, err = svc.ExecutableQuote("SBIN")
+		if err == nil {
+			t.Fatal("expected ExecutableQuote to fail in UNAVAILABLE mode, got nil")
+		}
+		if !errors.Is(err, ErrQuoteUnavailable) {
+			t.Fatalf("expected ErrQuoteUnavailable for execution, got: %v", err)
+		}
+
+		// HistoricalQuotes returns ErrQuoteUnavailable
+		_, err = svc.HistoricalQuotes("SBIN", 10)
+		if err == nil {
+			t.Fatal("expected HistoricalQuotes to fail in UNAVAILABLE mode, got nil")
+		}
+		if !errors.Is(err, ErrQuoteUnavailable) {
+			t.Fatalf("expected ErrQuoteUnavailable for history, got: %v", err)
+		}
+	})
+
+	t.Run("Dynamic Redis feed state UNAVAILABLE immediately shuts down quotes and execution", func(t *testing.T) {
+		svc.SetFeedMode(dto.FeedModeLive)
+		nowStr := time.Now().UTC().Format(time.RFC3339)
+
+		_ = client.HSet(ctx, "market:quote:TATAMOTORS", map[string]interface{}{
+			"price_paise": "90000",
+			"source":      "angelone_live",
+			"updated_at":  nowStr,
+		}).Err()
+		defer client.Del(ctx, "market:quote:TATAMOTORS")
+
+		// When feed state is LIVE, quote works
+		_ = client.HSet(ctx, FeedStateKey, map[string]interface{}{
+			"feed_provider": "angel_one",
+			"feed_state":    "LIVE",
+			"is_synthetic":  "false",
+		}).Err()
+		defer client.Del(ctx, FeedStateKey)
+
+		q, err := svc.CurrentQuote("TATAMOTORS")
+		if err != nil {
+			t.Fatalf("expected success with LIVE feed state, got: %v", err)
+		}
+		if q.PricePaise != 90000 {
+			t.Fatalf("expected 90000, got: %d", q.PricePaise)
+		}
+
+		// When feed supervisor transitions to UNAVAILABLE (e.g. Angel One down):
+		_ = client.HSet(ctx, FeedStateKey, map[string]interface{}{
+			"feed_provider": "angel_one",
+			"feed_state":    "UNAVAILABLE",
+			"is_synthetic":  "false",
+		}).Err()
+
+		// Quotes immediately fail with ErrQuoteUnavailable
+		_, err = svc.CurrentQuote("TATAMOTORS")
+		if err == nil {
+			t.Fatal("expected CurrentQuote to fail when Redis feed state is UNAVAILABLE")
+		}
+		if !errors.Is(err, ErrQuoteUnavailable) {
+			t.Fatalf("expected ErrQuoteUnavailable, got: %v", err)
+		}
+
+		// Executable quote fails with ErrQuoteUnavailable (No execution!)
+		_, err = svc.ExecutableQuote("TATAMOTORS")
+		if err == nil {
+			t.Fatal("expected ExecutableQuote to fail when Redis feed state is UNAVAILABLE")
+		}
+		if !errors.Is(err, ErrQuoteUnavailable) {
+			t.Fatalf("expected ErrQuoteUnavailable for execution, got: %v", err)
+		}
+	})
+}
+

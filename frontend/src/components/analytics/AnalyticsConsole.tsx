@@ -16,9 +16,7 @@ import {
   AlertCircle,
   RefreshCw,
   Wallet,
-  Sparkles,
   Award,
-  Zap,
   BarChart3,
   Search,
   IndianRupee,
@@ -51,24 +49,6 @@ const SETUP_TAGS = [
   "Other",
 ];
 
-// Curated Showcase Demo Dataset
-const DEMO_PERFORMANCE: PerformanceOverview = {
-  net_realized_pnl_paise: 7645000,
-  gross_profit_paise: 8630000,
-  gross_loss_paise: 985000,
-  total_trades: 20,
-  winning_trades: 15,
-  losing_trades: 5,
-  break_even_trades: 0,
-  win_rate_pct: 75.0,
-  profit_factor: 8.76,
-  win_loss_ratio: 3.0,
-  average_win_paise: 575333,
-  average_loss_paise: 197000,
-  largest_win_paise: 1480000,
-  largest_loss_paise: 320000,
-};
-
 const EMPTY_LIVE_PERFORMANCE: PerformanceOverview = {
   net_realized_pnl_paise: 0,
   gross_profit_paise: 0,
@@ -86,190 +66,6 @@ const EMPTY_LIVE_PERFORMANCE: PerformanceOverview = {
   largest_loss_paise: 0,
 };
 
-const DEMO_CALENDAR_DAYS: DailyPnlDay[] = [
-  { date: "2026-09-02", realized_pnl_paise: 340000, trades_count: 2, win_trades: 2, loss_trades: 0 },
-  { date: "2026-09-04", realized_pnl_paise: 1250000, trades_count: 3, win_trades: 3, loss_trades: 0 },
-  { date: "2026-09-07", realized_pnl_paise: -280000, trades_count: 1, win_trades: 0, loss_trades: 1 },
-  { date: "2026-09-08", realized_pnl_paise: 620000, trades_count: 2, win_trades: 2, loss_trades: 0 },
-  { date: "2026-09-09", realized_pnl_paise: 410000, trades_count: 1, win_trades: 1, loss_trades: 0 },
-  { date: "2026-09-11", realized_pnl_paise: 1480000, trades_count: 2, win_trades: 2, loss_trades: 0 },
-  { date: "2026-09-14", realized_pnl_paise: -320000, trades_count: 1, win_trades: 0, loss_trades: 1 },
-  { date: "2026-09-15", realized_pnl_paise: 850000, trades_count: 2, win_trades: 2, loss_trades: 0 },
-  { date: "2026-09-17", realized_pnl_paise: 960000, trades_count: 2, win_trades: 2, loss_trades: 0 },
-  { date: "2026-09-18", realized_pnl_paise: 320000, trades_count: 1, win_trades: 1, loss_trades: 0 },
-  { date: "2026-09-21", realized_pnl_paise: -195000, trades_count: 1, win_trades: 0, loss_trades: 1 },
-  { date: "2026-09-22", realized_pnl_paise: 510000, trades_count: 2, win_trades: 2, loss_trades: 0 },
-  { date: "2026-09-24", realized_pnl_paise: 740000, trades_count: 2, win_trades: 2, loss_trades: 0 },
-  { date: "2026-09-25", realized_pnl_paise: 480000, trades_count: 1, win_trades: 1, loss_trades: 0 },
-  { date: "2026-09-28", realized_pnl_paise: -210000, trades_count: 1, win_trades: 0, loss_trades: 1 },
-  { date: "2026-09-29", realized_pnl_paise: 670000, trades_count: 2, win_trades: 2, loss_trades: 0 },
-];
-
-const DEMO_CALENDAR_RESPONSE: PnlCalendarResponse = {
-  month: "2026-09",
-  days: DEMO_CALENDAR_DAYS,
-  month_total_pnl_paise: 7645000,
-  profitable_days_count: 12,
-  loss_days_count: 4,
-};
-
-const DEMO_TRADES: Trade[] = [
-  {
-    uuid: "t-001",
-    order_uuid: "ord-001",
-    symbol: "RELIANCE",
-    side: "BUY",
-    product: "DELIVERY",
-    quantity: 50,
-    executed_price_paise: 294000,
-    executed_at: "2026-09-29T14:30:00Z",
-    realized_pnl_paise: 670000,
-    tag: "Breakout",
-    notes: "Clean daily horizontal breakout with high volume confirmation.",
-  },
-  {
-    uuid: "t-002",
-    order_uuid: "ord-002",
-    symbol: "TATAMOTORS",
-    side: "BUY",
-    product: "INTRADAY",
-    quantity: 100,
-    executed_price_paise: 96800,
-    executed_at: "2026-09-28T11:15:00Z",
-    realized_pnl_paise: -210000,
-    notes: "Chased entry near the session high without waiting for VWAP pullback.",
-  },
-  {
-    uuid: "t-003",
-    order_uuid: "ord-003",
-    symbol: "TITAN",
-    side: "BUY",
-    product: "DELIVERY",
-    quantity: 30,
-    executed_price_paise: 345000,
-    executed_at: "2026-09-25T13:45:00Z",
-    realized_pnl_paise: 480000,
-    tag: "Momentum",
-    notes: "Followed pre-festive retail demand trend. Target reached cleanly.",
-  },
-  {
-    uuid: "t-004",
-    order_uuid: "ord-004",
-    symbol: "NIFTY 25500 PE",
-    side: "BUY",
-    product: "FNO",
-    quantity: 75,
-    executed_price_paise: 11200,
-    executed_at: "2026-09-24T10:20:00Z",
-    realized_pnl_paise: 740000,
-    tag: "Hedge",
-    notes: "Weekly expiry hedge after rejection at 25,600 psychological resistance.",
-  },
-  {
-    uuid: "t-005",
-    order_uuid: "ord-005",
-    symbol: "SUNPHARMA",
-    side: "BUY",
-    product: "INTRADAY",
-    quantity: 60,
-    executed_price_paise: 168000,
-    executed_at: "2026-09-22T14:10:00Z",
-    realized_pnl_paise: 510000,
-    tag: "Scalp",
-    notes: "Quick 20-minute scalp off the 15M 20 EMA rebound.",
-  },
-  {
-    uuid: "t-006",
-    order_uuid: "ord-006",
-    symbol: "AXISBANK",
-    side: "BUY",
-    product: "INTRADAY",
-    quantity: 45,
-    executed_price_paise: 122000,
-    executed_at: "2026-09-21T10:05:00Z",
-    realized_pnl_paise: -195000,
-    notes: "Failed double-bottom setup; respected stop loss immediately.",
-  },
-  {
-    uuid: "t-007",
-    order_uuid: "ord-007",
-    symbol: "KOTAKBANK",
-    side: "BUY",
-    product: "DELIVERY",
-    quantity: 40,
-    executed_price_paise: 181000,
-    executed_at: "2026-09-18T12:30:00Z",
-    realized_pnl_paise: 320000,
-    tag: "Breakout",
-    notes: "Range expansion breakout at European market open.",
-  },
-  {
-    uuid: "t-008",
-    order_uuid: "ord-008",
-    symbol: "LT",
-    side: "BUY",
-    product: "DELIVERY",
-    quantity: 25,
-    executed_price_paise: 365000,
-    executed_at: "2026-09-17T14:50:00Z",
-    realized_pnl_paise: 960000,
-    tag: "Momentum",
-    notes: "Heavy order flow post-infrastructure capex contract announcement.",
-  },
-  {
-    uuid: "t-009",
-    order_uuid: "ord-009",
-    symbol: "TCS",
-    side: "BUY",
-    product: "INTRADAY",
-    quantity: 35,
-    executed_price_paise: 428000,
-    executed_at: "2026-09-15T11:40:00Z",
-    realized_pnl_paise: 850000,
-    tag: "Scalp",
-    notes: "Gap fill trade following NASDAQ strength overnight.",
-  },
-  {
-    uuid: "t-010",
-    order_uuid: "ord-010",
-    symbol: "BAJFINANCE",
-    side: "BUY",
-    product: "INTRADAY",
-    quantity: 20,
-    executed_price_paise: 735000,
-    executed_at: "2026-09-14T09:45:00Z",
-    realized_pnl_paise: -320000,
-    tag: "Breakout",
-    notes: "Traded opening volatility before 9:30 AM range stabilized.",
-  },
-  {
-    uuid: "t-011",
-    order_uuid: "ord-011",
-    symbol: "NIFTY 25400 CE",
-    side: "BUY",
-    product: "FNO",
-    quantity: 150,
-    executed_price_paise: 14500,
-    executed_at: "2026-09-11T13:20:00Z",
-    realized_pnl_paise: 1480000,
-    tag: "F&O Expiry",
-    notes: "Hero-or-zero expiry momentum play on afternoon short covering rally.",
-  },
-  {
-    uuid: "t-012",
-    order_uuid: "ord-012",
-    symbol: "ICICIBANK",
-    side: "BUY",
-    product: "INTRADAY",
-    quantity: 50,
-    executed_price_paise: 124000,
-    executed_at: "2026-09-09T10:15:00Z",
-    realized_pnl_paise: 410000,
-    tag: "Scalp",
-    notes: "Standard opening 5-minute high breakout with 1:2 risk-reward.",
-  },
-];
-
 export default function AnalyticsConsole({
   apiUrl = getApiUrl(),
   token: propToken,
@@ -280,9 +76,6 @@ export default function AnalyticsConsole({
 
   // Tab State: analytics | journal | statement
   const [activeTab, setActiveTab] = useState<"analytics" | "journal" | "statement">(initialTab);
-
-  // Showcase Demo vs Live Ledger Mode
-  const [dataSource, setDataSource] = useState<"demo" | "live">("demo");
 
   const [token] = useState<string>(() => {
     if (propToken) return propToken;
@@ -334,7 +127,7 @@ export default function AnalyticsConsole({
       const data = await res.json();
       return data.success ? data.data : null;
     },
-    enabled: !!token && dataSource === "live",
+    enabled: !!token,
   });
 
   // 2. Fetch PnL Calendar for current month
@@ -352,7 +145,7 @@ export default function AnalyticsConsole({
       const data = await res.json();
       return data.success ? data.data : null;
     },
-    enabled: !!token && dataSource === "live",
+    enabled: !!token,
   });
 
   // 3. Fetch Trades list for journal
@@ -370,36 +163,26 @@ export default function AnalyticsConsole({
       const data = await res.json();
       return data.success ? data.data || [] : [];
     },
-    enabled: !!token && dataSource === "live",
+    enabled: !!token,
   });
 
-  // STRICT SEPARATION: Demo vs Live
-  const isDemo = dataSource === "demo";
+  const performance: PerformanceOverview = livePerformance || EMPTY_LIVE_PERFORMANCE;
 
-  // In live mode, use true backend live data, OR clean zero empty state if no trades closed yet
-  const performance: PerformanceOverview = isDemo
-    ? DEMO_PERFORMANCE
-    : livePerformance || EMPTY_LIVE_PERFORMANCE;
+  const calendarData: PnlCalendarResponse = liveCalendarData || {
+    month: currentMonth,
+    days: [],
+    month_total_pnl_paise: 0,
+    profitable_days_count: 0,
+    loss_days_count: 0,
+  };
 
-  const calendarData: PnlCalendarResponse = isDemo
-    ? DEMO_CALENDAR_RESPONSE
-    : liveCalendarData || {
-        month: currentMonth,
-        days: [],
-        month_total_pnl_paise: 0,
-        profitable_days_count: 0,
-        loss_days_count: 0,
-      };
+  const trades: Trade[] = liveTrades;
 
-  const trades: Trade[] = isDemo ? DEMO_TRADES : liveTrades;
-
-  const loading = dataSource === "live" && (loadingPerformance || loadingCalendar || loadingTrades);
+  const loading = loadingPerformance || loadingCalendar || loadingTrades;
   const error =
-    dataSource === "live"
-      ? (errorPerformance instanceof Error ? errorPerformance.message : null) ||
-        (errorCalendar instanceof Error ? errorCalendar.message : null) ||
-        (errorTrades instanceof Error ? errorTrades.message : null)
-      : null;
+    (errorPerformance instanceof Error ? errorPerformance.message : null) ||
+    (errorCalendar instanceof Error ? errorCalendar.message : null) ||
+    (errorTrades instanceof Error ? errorTrades.message : null);
 
   // Calendar grid computation
   const { monthLabel, leadingDays, daysOfMonth } = useMemo(() => {
@@ -466,35 +249,7 @@ export default function AnalyticsConsole({
       };
     });
 
-    if (!token || isDemo) {
-      setTimeout(() => {
-        setJournalEdits((prev) => {
-          const existing = prev[tradeUuid];
-          return {
-            ...prev,
-            [tradeUuid]: {
-              tag: newTag ?? existing?.tag ?? "",
-              notes: newNotes ?? existing?.notes ?? "",
-              saving: false,
-              saved: true,
-            },
-          };
-        });
-        setTimeout(() => {
-          setJournalEdits((prev) => {
-            const existing = prev[tradeUuid];
-            return {
-              ...prev,
-              [tradeUuid]: {
-                tag: existing?.tag ?? "",
-                notes: existing?.notes ?? "",
-                saving: false,
-                saved: false,
-              },
-            };
-          });
-        }, 2000);
-      }, 400);
+    if (!token) {
       return;
     }
 
@@ -641,21 +396,15 @@ export default function AnalyticsConsole({
     let intraday = 0;
     let fno = 0;
 
-    if (isDemo) {
-      delivery = 9;
-      intraday = 7;
-      fno = 4;
-    } else {
-      trades.forEach((t) => {
-        if (t.product === "DELIVERY") delivery++;
-        else if (t.product === "INTRADAY") intraday++;
-        else if (t.product === "FNO") fno++;
-      });
-    }
+    trades.forEach((t) => {
+      if (t.product === "DELIVERY") delivery++;
+      else if (t.product === "INTRADAY") intraday++;
+      else if (t.product === "FNO") fno++;
+    });
 
-    const total = isDemo ? 20 : trades.length;
+    const total = trades.length;
     return { total, delivery, intraday, fno };
-  }, [trades, isDemo]);
+  }, [trades]);
 
   return (
     <div className="flex flex-col bg-white dark:bg-slate-900/90 border border-slate-200/90 dark:border-slate-800 rounded-3xl shadow-2xl shadow-slate-200/60 dark:shadow-slate-950/70 overflow-hidden transition-all duration-300">
@@ -670,53 +419,19 @@ export default function AnalyticsConsole({
               <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100 tracking-tight">
                 Trader Performance & Journal Console
               </h2>
-              {isDemo ? (
-                <span className="inline-flex items-center gap-1 text-[11px] px-2.5 py-0.5 rounded-full bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-800 font-semibold">
-                  <Sparkles className="w-3 h-3 text-amber-500" />
-                  Showcase Simulation
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1.5 text-[11px] px-2.5 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800 font-semibold">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                  Live Account Ledger
-                </span>
-              )}
+              <span className="inline-flex items-center gap-1.5 text-[11px] px-2.5 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800 font-semibold">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                Live Account Ledger
+              </span>
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              {isDemo
-                ? "Previewing institutional benchmark metrics, win ratios, and trade setups journal."
-                : "Auditing live closed paper trades from your active trading session."}
+              Auditing live closed paper trades from your active trading session.
             </p>
           </div>
         </div>
 
-        {/* Right Controls: Showcase / Live Segmented Switcher & Workspace Tabs */}
+        {/* Right Controls: Workspace Tabs */}
         <div className="flex flex-wrap items-center gap-3">
-          {/* Segmented Mode Switcher */}
-          <div className="flex items-center bg-slate-200/70 dark:bg-slate-950 p-1 rounded-2xl border border-slate-300/80 dark:border-slate-800 shadow-inner">
-            <button
-              onClick={() => setDataSource("demo")}
-              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                isDemo
-                  ? "bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-md shadow-slate-300/40 dark:shadow-black/40 scale-100"
-                  : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
-              }`}
-            >
-              <Sparkles className={`w-3.5 h-3.5 ${isDemo ? "text-amber-500" : ""}`} />
-              <span>Showcase Demo</span>
-            </button>
-            <button
-              onClick={() => setDataSource("live")}
-              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                !isDemo
-                  ? "bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-md shadow-slate-300/40 dark:shadow-black/40 scale-100"
-                  : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
-              }`}
-            >
-              <Zap className={`w-3.5 h-3.5 ${!isDemo ? "text-emerald-500" : ""}`} />
-              <span>Live Ledger</span>
-            </button>
-          </div>
 
           {/* Primary View Tabs */}
           <div className="flex items-center bg-slate-100 dark:bg-slate-950 p-1 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-x-auto scrollbar-none shadow-sm">
@@ -999,21 +714,11 @@ export default function AnalyticsConsole({
                     <div className="w-full h-full flex flex-col items-center justify-center text-center p-4 rounded-xl border border-dashed border-slate-200 dark:border-slate-800">
                       <Compass className="w-6 h-6 text-slate-400 mb-1" />
                       <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                        {isDemo ? "Building equity curve..." : "No live closed trades yet"}
+                        No live closed trades yet
                       </p>
                       <p className="text-[11px] text-slate-500 dark:text-slate-400 max-w-sm mt-0.5">
-                        {isDemo
-                          ? "Trade simulation will plot performance here."
-                          : "Execute buy and sell paper orders on Terminal or Stocks to see your live equity curve plot automatically."}
+                        Execute buy and sell paper orders on Terminal or Stocks to see your live equity curve plot automatically.
                       </p>
-                      {!isDemo && (
-                        <button
-                          onClick={() => setDataSource("demo")}
-                          className="mt-2 text-[11px] font-bold text-cyan-600 dark:text-cyan-400 hover:underline"
-                        >
-                          View Showcase Demo Curve →
-                        </button>
-                      )}
                     </div>
                   )}
                 </div>
@@ -1233,21 +938,12 @@ export default function AnalyticsConsole({
                 </div>
               </div>
 
-              {/* Friendly helper when in Live Ledger mode with no trades */}
-              {!isDemo && calendarData.profitable_days_count === 0 && calendarData.loss_days_count === 0 && (
-                <div className="p-4 rounded-2xl bg-cyan-50/60 dark:bg-cyan-950/30 border border-cyan-200/80 dark:border-cyan-800/60 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
-                  <div className="flex items-center gap-2.5">
-                    <Sparkles className="w-4 h-4 text-cyan-600 dark:text-cyan-400 shrink-0" />
-                    <span className="text-slate-700 dark:text-slate-300">
-                      No live closed trades recorded for this month yet. Switch to Showcase Demo to preview full historical calendar analytics, or place a paper trade on the terminal!
-                    </span>
-                  </div>
-                  <button
-                    onClick={() => setDataSource("demo")}
-                    className="shrink-0 px-3.5 py-1.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs shadow-sm transition-all"
-                  >
-                    Switch to Demo
-                  </button>
+              {calendarData.profitable_days_count === 0 && calendarData.loss_days_count === 0 && (
+                <div className="p-4 rounded-2xl bg-cyan-50/60 dark:bg-cyan-950/30 border border-cyan-200/80 dark:border-cyan-800/60 flex items-center gap-2.5 text-xs">
+                  <Compass className="w-4 h-4 text-cyan-600 dark:text-cyan-400 shrink-0" />
+                  <span className="text-slate-700 dark:text-slate-300">
+                    No live closed trades recorded for this month yet. Place a paper trade on the terminal to see your daily PnL populated.
+                  </span>
                 </div>
               )}
             </div>
@@ -1354,11 +1050,6 @@ export default function AnalyticsConsole({
                 <p className="font-semibold text-slate-700 dark:text-slate-300">
                   No trades match the selected journal filters.
                 </p>
-                {!isDemo && (
-                  <p className="text-slate-500">
-                    Switch to Showcase Demo to preview realistic trade journal entries with mindset notes.
-                  </p>
-                )}
               </div>
             ) : (
               <div className="space-y-3">
@@ -1508,7 +1199,7 @@ export default function AnalyticsConsole({
 
         {/* TAB 3: VIRTUAL CAPITAL LEDGER */}
         {activeTab === "statement" && (
-          <LedgerStatementView token={token} apiUrl={baseApi} isDemo={isDemo} />
+          <LedgerStatementView token={token} apiUrl={baseApi} />
         )}
       </div>
     </div>

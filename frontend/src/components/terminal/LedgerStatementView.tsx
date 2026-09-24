@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   BookOpen,
   Download,
@@ -10,7 +10,6 @@ import {
   ArrowDownLeft,
   DollarSign,
   ShieldCheck,
-  Sparkles,
 } from "lucide-react";
 import { formatPaise } from "@/lib/format";
 import type { LedgerStatementResponse, LedgerEntry } from "@/types";
@@ -18,116 +17,11 @@ import type { LedgerStatementResponse, LedgerEntry } from "@/types";
 interface LedgerStatementViewProps {
   token?: string | null;
   apiUrl: string;
-  isDemo?: boolean;
 }
-
-// Realistic virtual paper trading ledger fallback
-const MOCK_LEDGER_ENTRIES: LedgerEntry[] = [
-  {
-    uuid: "v-tx-001",
-    date: "2026-09-01 09:15:00",
-    narration: "Virtual Paper Capital Allocation Grant (Risk-Free Starting Funds)",
-    type: "CREDIT",
-    debit_paise: 0,
-    credit_paise: 100000000,
-    balance_paise: 100000000,
-  },
-  {
-    uuid: "v-tx-002",
-    date: "2026-09-03 10:24:12",
-    narration: "Equity Delivery Buy — RELIANCE (50 Qty @ ₹2,940.00)",
-    type: "DEBIT",
-    debit_paise: 14700000,
-    credit_paise: 0,
-    balance_paise: 85300000,
-  },
-  {
-    uuid: "v-tx-003",
-    date: "2026-09-05 14:45:30",
-    narration: "Equity Delivery Sell — RELIANCE (50 Qty @ ₹3,025.00) Realized Profit +₹4,250",
-    type: "CREDIT",
-    debit_paise: 0,
-    credit_paise: 15125000,
-    balance_paise: 100425000,
-  },
-  {
-    uuid: "v-tx-004",
-    date: "2026-09-08 11:10:05",
-    narration: "Intraday Buy — TATAMOTORS (100 Qty @ ₹968.20)",
-    type: "DEBIT",
-    debit_paise: 9682000,
-    credit_paise: 0,
-    balance_paise: 90743000,
-  },
-  {
-    uuid: "v-tx-005",
-    date: "2026-09-08 15:15:40",
-    narration: "Intraday Square-off — TATAMOTORS (100 Qty @ ₹984.50) Profit +₹1,630",
-    type: "CREDIT",
-    debit_paise: 0,
-    credit_paise: 9845000,
-    balance_paise: 100588000,
-  },
-  {
-    uuid: "v-tx-006",
-    date: "2026-09-12 09:30:15",
-    narration: "F&O Option Long Call — NIFTY 25400 CE (75 Qty @ ₹142.00)",
-    type: "DEBIT",
-    debit_paise: 1065000,
-    credit_paise: 0,
-    balance_paise: 99523000,
-  },
-  {
-    uuid: "v-tx-007",
-    date: "2026-09-12 13:20:00",
-    narration: "F&O Option Exit — NIFTY 25400 CE (75 Qty @ ₹226.00) Profit +₹6,300",
-    type: "CREDIT",
-    debit_paise: 0,
-    credit_paise: 1695000,
-    balance_paise: 101218000,
-  },
-  {
-    uuid: "v-tx-008",
-    date: "2026-09-16 11:05:22",
-    narration: "Equity Intraday Buy — HDFCBANK (40 Qty @ ₹1,650.00)",
-    type: "DEBIT",
-    debit_paise: 6600000,
-    credit_paise: 0,
-    balance_paise: 94618000,
-  },
-  {
-    uuid: "v-tx-009",
-    date: "2026-09-16 14:50:11",
-    narration: "Equity Intraday Stop Loss — HDFCBANK (40 Qty @ ₹1,615.00) Loss -₹1,400",
-    type: "CREDIT",
-    debit_paise: 0,
-    credit_paise: 6460000,
-    balance_paise: 101078000,
-  },
-  {
-    uuid: "v-tx-010",
-    date: "2026-09-18 10:15:30",
-    narration: "Equity Delivery Buy — INFY (50 Qty @ ₹1,820.00)",
-    type: "DEBIT",
-    debit_paise: 9100000,
-    credit_paise: 0,
-    balance_paise: 91978000,
-  },
-  {
-    uuid: "v-tx-011",
-    date: "2026-09-19 15:20:45",
-    narration: "Equity Delivery Sell — INFY (50 Qty @ ₹1,885.00) Profit +₹3,250",
-    type: "CREDIT",
-    debit_paise: 0,
-    credit_paise: 9425000,
-    balance_paise: 101403000,
-  },
-];
 
 export default function LedgerStatementView({
   token,
   apiUrl,
-  isDemo = false,
 }: LedgerStatementViewProps) {
   const [rangePreset, setRangePreset] = useState<"MONTH" | "30DAYS" | "ALL">("MONTH");
   const [fromDate, setFromDate] = useState<string>(() => {
@@ -167,116 +61,35 @@ export default function LedgerStatementView({
   };
 
   const fetchStatement = useCallback(async () => {
+    if (!token) {
+      setStatement(null);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     try {
-      if (isDemo) {
-        // Showcase Demo Dataset: 11 active simulated trading records
+      const res = await fetch(`${apiUrl}/reports/ledger-statement?from=${fromDate}&to=${toDate}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      const json = await res.json();
+      if (res.ok && json.success && json.data) {
+        const data: LedgerStatementResponse = json.data;
         setStatement({
-          period_from: fromDate,
-          period_to: toDate,
-          opening_balance_paise: 100000000,
-          total_credit_paise: 144500000,
-          total_debit_paise: 43097000,
-          closing_balance_paise: 101403000,
-          total_entries: MOCK_LEDGER_ENTRIES.length,
-          entries: MOCK_LEDGER_ENTRIES,
+          ...data,
+          entries: data.entries || [],
         });
-        setLoading(false);
-        return;
+      } else {
+        setStatement(null);
       }
-
-      // LIVE LEDGER MODE: Attempt real backend fetch
-      if (token) {
-        const res = await fetch(`${apiUrl}/reports/ledger-statement?from=${fromDate}&to=${toDate}`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-        const json = await res.json();
-        if (res.ok && json.success && json.data) {
-          const data: LedgerStatementResponse = json.data;
-          // If user has real closed trades, display them
-          if (data.entries && data.entries.length > 0) {
-            setStatement(data);
-            setLoading(false);
-            return;
-          }
-
-          // If no closed trades yet in this period, show clean live starting grant
-          const openBal = data.opening_balance_paise || 100000000;
-          const closeBal = data.closing_balance_paise || openBal;
-          setStatement({
-            period_from: fromDate,
-            period_to: toDate,
-            opening_balance_paise: openBal,
-            total_credit_paise: data.total_credit_paise || 0,
-            total_debit_paise: data.total_debit_paise || 0,
-            closing_balance_paise: closeBal,
-            total_entries: 1,
-            entries: [
-              {
-                uuid: "live-grant-001",
-                date: `${fromDate} 09:15:00`,
-                narration: "Virtual Paper Capital Allocation Grant (Risk-Free Starting Funds)",
-                type: "CREDIT",
-                debit_paise: 0,
-                credit_paise: openBal,
-                balance_paise: closeBal,
-              },
-            ],
-          });
-          setLoading(false);
-          return;
-        }
-      }
-
-      // Live mode default initial state (e.g. unauthenticated or fresh session)
-      setStatement({
-        period_from: fromDate,
-        period_to: toDate,
-        opening_balance_paise: 100000000,
-        total_credit_paise: 0,
-        total_debit_paise: 0,
-        closing_balance_paise: 100000000,
-        total_entries: 1,
-        entries: [
-          {
-            uuid: "live-grant-001",
-            date: `${fromDate} 09:15:00`,
-            narration: "Virtual Paper Capital Allocation Grant (Risk-Free Starting Funds)",
-            type: "CREDIT",
-            debit_paise: 0,
-            credit_paise: 100000000,
-            balance_paise: 100000000,
-          },
-        ],
-      });
     } catch {
-      // Graceful live mode fallback
-      setStatement({
-        period_from: fromDate,
-        period_to: toDate,
-        opening_balance_paise: 100000000,
-        total_credit_paise: 0,
-        total_debit_paise: 0,
-        closing_balance_paise: 100000000,
-        total_entries: 1,
-        entries: [
-          {
-            uuid: "live-grant-001",
-            date: `${fromDate} 09:15:00`,
-            narration: "Virtual Paper Capital Allocation Grant (Risk-Free Starting Funds)",
-            type: "CREDIT",
-            debit_paise: 0,
-            credit_paise: 100000000,
-            balance_paise: 100000000,
-          },
-        ],
-      });
+      setStatement(null);
     } finally {
       setLoading(false);
     }
-  }, [apiUrl, token, fromDate, toDate, isDemo]);
+  }, [apiUrl, token, fromDate, toDate]);
 
   useEffect(() => {
     queueMicrotask(() => {
@@ -307,7 +120,7 @@ export default function LedgerStatementView({
     link.setAttribute("href", encodedUri);
     link.setAttribute(
       "download",
-      `${isDemo ? "ShowcaseDemo" : "LiveAccount"}-LedgerStatement-${statement.period_from}-to-${statement.period_to}.csv`
+      `LedgerStatement-${statement.period_from}-to-${statement.period_to}.csv`
     );
     document.body.appendChild(link);
     link.click();
@@ -356,17 +169,10 @@ export default function LedgerStatementView({
         </div>
 
         <div className="flex items-center gap-2">
-          {isDemo ? (
-            <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-purple-700 dark:text-purple-300 bg-purple-100 dark:bg-purple-950/60 border border-purple-300 dark:border-purple-800 px-2.5 py-1 rounded-full shadow-sm">
-              <Sparkles className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
-              Showcase Demo Statement
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-800 px-2.5 py-1 rounded-full shadow-sm">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              Live Account Ledger (Real-time)
-            </span>
-          )}
+          <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-800 px-2.5 py-1 rounded-full shadow-sm">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            Live Account Ledger
+          </span>
           <button
             onClick={handleExportCSV}
             disabled={!statement || statement.entries.length === 0}
@@ -387,7 +193,7 @@ export default function LedgerStatementView({
       {statement && !loading && (
         <div className="space-y-4">
           {/* Informative notice for live account with 0 trading debits/credits */}
-          {!isDemo && statement.total_debit_paise === 0 && statement.total_credit_paise === 0 && (
+          {statement.total_debit_paise === 0 && statement.total_credit_paise === 0 && (
             <div className="flex items-center gap-2.5 px-4 py-3 bg-sky-50/90 dark:bg-sky-950/30 border border-sky-200 dark:border-sky-800/60 rounded-xl text-xs text-sky-800 dark:text-sky-300 shadow-sm">
               <ShieldCheck className="w-4 h-4 text-sky-600 dark:text-sky-400 shrink-0" />
               <span>
@@ -517,6 +323,16 @@ export default function LedgerStatementView({
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {!statement && !loading && (
+        <div className="p-8 text-center text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 rounded-2xl">
+          <BookOpen className="w-8 h-8 text-slate-400 mx-auto mb-2 opacity-50" />
+          <p className="font-semibold text-slate-700 dark:text-slate-300">No Ledger Statement Available</p>
+          <p className="text-[11px] text-slate-400 mt-1">
+            {!token ? "Please log in to view your ledger statement." : "No records returned for the selected date range."}
+          </p>
         </div>
       )}
     </div>

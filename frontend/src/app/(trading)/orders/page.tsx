@@ -7,7 +7,6 @@ import Navbar from "@/components/layout/Navbar";
 import OrdersTable from "@/components/terminal/OrdersTable";
 import TradesTable from "@/components/orders/TradesTable";
 import ContractNoteView from "@/components/terminal/ContractNoteView";
-import { DEMO_ORDERS, DEMO_TRADES } from "@/components/orders/OrdersDemoData";
 import { formatPaise } from "@/lib/format";
 import { API_URL } from "@/lib/api";
 import {
@@ -33,7 +32,6 @@ export default function OrdersPage() {
   const [activeTab, setActiveTab] = useState<OrdersTab>("orders");
 
   const [mounted, setMounted] = useState(false);
-  const [useDemoData, setUseDemoData] = useState(false);
   const [token, setToken] = useState("");
   const [mountTime] = useState(() => Date.now());
 
@@ -48,9 +46,6 @@ export default function OrdersPage() {
         localStorage.getItem("stock-simulator-access-token") ||
         "";
       setToken(t);
-      if (!t) {
-        setUseDemoData(true);
-      }
       const params = new URLSearchParams(window.location.search);
       const tabParam = params.get("tab");
       if (tabParam === "contract-note" || tabParam === "trades" || tabParam === "orders") {
@@ -216,10 +211,10 @@ export default function OrdersPage() {
   const [isClearing, setIsClearing] = useState(false);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
 
-  // Determine active dataset (Demo vs Live) with 24-hour automatic expiration
+  // Filter active dataset with 24-hour automatic expiration
   const filtered24hOrders = useMemo(() => {
     if (clearedOrderHistory) return [];
-    const raw = useDemoData ? DEMO_ORDERS : liveOrders;
+    const raw = liveOrders;
     const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
 
     return raw.filter((ord) => {
@@ -229,11 +224,11 @@ export default function OrdersPage() {
       const isOpen = ord.status === "OPEN" || ord.status === "PENDING" || ord.status === "TRIGGER_PENDING";
       return isOpen || (mountTime - t <= TWENTY_FOUR_HOURS_MS);
     });
-  }, [useDemoData, liveOrders, clearedOrderHistory, mountTime]);
+  }, [liveOrders, clearedOrderHistory, mountTime]);
 
   const filtered24hTrades = useMemo(() => {
     if (clearedOrderHistory) return [];
-    const raw = useDemoData ? DEMO_TRADES : liveTrades;
+    const raw = liveTrades;
     const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
 
     return raw.filter((trade: Partial<Trade> & Record<string, unknown>) => {
@@ -243,7 +238,7 @@ export default function OrdersPage() {
       if (isNaN(t)) return true;
       return mountTime - t <= TWENTY_FOUR_HOURS_MS;
     });
-  }, [useDemoData, liveTrades, clearedOrderHistory, mountTime]);
+  }, [liveTrades, clearedOrderHistory, mountTime]);
 
   const displayOrders = filtered24hOrders;
   const displayTrades = filtered24hTrades;
@@ -282,7 +277,6 @@ export default function OrdersPage() {
   }, [displayTrades]);
 
   const handleClearHistory = async () => {
-    if (useDemoData) return;
     if (displayOrders.length === 0 && displayTrades.length === 0) return;
     if (!window.confirm("Are you sure you want to delete your live order history? This will permanently remove your completed and cancelled orders.")) {
       return;
@@ -362,7 +356,7 @@ export default function OrdersPage() {
     <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-150">
       <Navbar
         availableBalancePaise={wallet?.available_balance_paise}
-        unrealizedPnlPaise={useDemoData ? 0 : (portfolio?.unrealized_pnl_paise ?? 0)}
+        unrealizedPnlPaise={portfolio?.unrealized_pnl_paise ?? 0}
       />
 
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
@@ -376,48 +370,6 @@ export default function OrdersPage() {
                 <ClipboardList className="w-6 h-6 text-cyan-600 dark:text-cyan-400" />
                 <span>Order Book & Execution Desk</span>
               </h1>
-
-              {/* Elegant Luxury Segmented Capsule Switcher */}
-              <div className="inline-flex items-center p-1 rounded-full bg-slate-100/90 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60 shadow-xs backdrop-blur-md">
-                <button
-                  type="button"
-                  onClick={() => setUseDemoData(true)}
-                  className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold tracking-tight transition-all duration-200 cursor-pointer select-none ${
-                    useDemoData
-                      ? "bg-white dark:bg-slate-900 text-cyan-700 dark:text-cyan-300 shadow-sm border border-slate-200/80 dark:border-slate-700"
-                      : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
-                  }`}
-                >
-                  <Sparkles
-                    className={`w-3.5 h-3.5 transition-colors ${
-                      useDemoData ? "text-cyan-600 dark:text-cyan-400" : "text-slate-400"
-                    }`}
-                  />
-                  <span>Showcase Demo</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setUseDemoData(false)}
-                  className={`flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold tracking-tight transition-all duration-200 cursor-pointer select-none ${
-                    !useDemoData
-                      ? "bg-white dark:bg-slate-900 text-emerald-700 dark:text-emerald-300 shadow-sm border border-slate-200/80 dark:border-slate-700"
-                      : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
-                  }`}
-                >
-                  <span className="relative flex h-2 w-2">
-                    {!useDemoData && (
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                    )}
-                    <span
-                      className={`relative inline-flex rounded-full h-2 w-2 ${
-                        !useDemoData ? "bg-emerald-500" : "bg-slate-400"
-                      }`}
-                    ></span>
-                  </span>
-                  <span>Live Ledger</span>
-                </button>
-              </div>
             </div>
 
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 flex items-center gap-2">
@@ -641,7 +593,7 @@ export default function OrdersPage() {
             </div>
 
             <div className="flex items-center gap-3">
-              {!useDemoData && (displayOrders.length > 0 || displayTrades.length > 0) && (
+              {(displayOrders.length > 0 || displayTrades.length > 0) && (
                 <button
                   type="button"
                   onClick={handleClearHistory}
@@ -663,7 +615,7 @@ export default function OrdersPage() {
           <div>
             {activeTab === "orders" && (
               <>
-                {!useDemoData && loadingOrders ? (
+                {loadingOrders ? (
                   <div className="p-16 text-center text-slate-500">
                     <div className="w-8 h-8 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
                     <p className="text-xs">Loading order book from exchange…</p>
@@ -676,7 +628,7 @@ export default function OrdersPage() {
 
             {activeTab === "trades" && (
               <>
-                {!useDemoData && loadingTrades ? (
+                {loadingTrades ? (
                   <div className="p-16 text-center text-slate-500">
                     <div className="w-8 h-8 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
                     <p className="text-xs">Loading trade execution logs…</p>
@@ -692,7 +644,6 @@ export default function OrdersPage() {
                 <ContractNoteView
                   token={token}
                   apiUrl={apiUrl}
-                  useDemoData={useDemoData}
                 />
               </div>
             )}

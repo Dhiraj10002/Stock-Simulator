@@ -21,63 +21,12 @@ import { useWalletTransactions } from "@/hooks/useWalletTransactions";
 import type { Transaction } from "@/types";
 
 interface WalletTransactionsTableProps {
-  useDemoData?: boolean;
   token?: string;
   compact?: boolean;
   limit?: number;
 }
 
-// Realistic Showcase Demo Ledger records
-const DEMO_TRANSACTIONS: Transaction[] = [
-  {
-    uuid: "tx-demo-005",
-    type: "CREDIT",
-    amount_paise: 1245000, // ₹12,450.00
-    balance_paise: 98565000,
-    blocked_paise: 36800000,
-    note: "Realized intraday profit credited on MIS square-off",
-    created_at: new Date(Date.now() - 1000 * 60 * 45).toISOString(),
-  },
-  {
-    uuid: "tx-demo-004",
-    type: "RELEASE",
-    amount_paise: 8500000, // ₹85,000.00
-    balance_paise: 97320000,
-    blocked_paise: 36800000,
-    note: "Margin released after squaring off NIFTY 24000 CE",
-    created_at: new Date(Date.now() - 1000 * 60 * 50).toISOString(),
-  },
-  {
-    uuid: "tx-demo-003",
-    type: "RESERVE",
-    amount_paise: 8500000, // ₹85,000.00
-    balance_paise: 97320000,
-    blocked_paise: 45300000,
-    note: "Margin blocked for 2 lots NIFTY 24000 CE (MIS Intraday)",
-    created_at: new Date(Date.now() - 1000 * 60 * 180).toISOString(),
-  },
-  {
-    uuid: "tx-demo-002",
-    type: "DEBIT",
-    amount_paise: 2680000, // ₹26,800.00
-    balance_paise: 97320000,
-    blocked_paise: 36800000,
-    note: "Bought 10 RELIANCE CNC Demat Equity @ ₹2,680.00",
-    created_at: new Date(Date.now() - 1000 * 60 * 60 * 6).toISOString(),
-  },
-  {
-    uuid: "tx-demo-001",
-    type: "INITIAL_CREDIT",
-    amount_paise: 100000000, // ₹10,00,000.00
-    balance_paise: 100000000,
-    blocked_paise: 0,
-    note: "Initial virtual seed capital allocation",
-    created_at: new Date(Date.now() - 1000 * 60 * 60 * 48).toISOString(),
-  },
-];
-
 export default function WalletTransactionsTable({
-  useDemoData = false,
   token = "",
   compact = false,
   limit,
@@ -87,7 +36,7 @@ export default function WalletTransactionsTable({
   const [filterType, setFilterType] = useState<string>("ALL");
   const [searchQuery, setSearchQuery] = useState<string>("");
 
-  const rawTransactions = useDemoData ? DEMO_TRANSACTIONS : liveTxs;
+  const rawTransactions = liveTxs;
 
   const filteredTransactions = useMemo(() => {
     let list = [...rawTransactions];
@@ -295,12 +244,12 @@ export default function WalletTransactionsTable({
           </div>
 
           <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-            {useDemoData ? "SHOWCASE DEMO" : "POSTGRES LIVE"}
+            AUDIT LEDGER
           </span>
         </div>
 
         {/* Table Body */}
-        {isLoading && !useDemoData ? (
+        {isLoading ? (
           <div className="py-12 flex flex-col items-center justify-center text-slate-400 text-xs gap-2">
             <RefreshCw className="w-5 h-5 animate-spin text-cyan-500" />
             <span>Fetching cash transactions ledger...</span>

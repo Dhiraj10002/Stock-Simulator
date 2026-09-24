@@ -42,6 +42,14 @@ func (h *Handler) Quote(c *gin.Context) {
 			response.Error(c, http.StatusNotFound, "Market quote not found", "QUOTE_NOT_FOUND")
 			return
 		}
+		if errors.Is(err, service.ErrQuoteStale) {
+			response.Error(c, http.StatusUnprocessableEntity, "Market quote is stale", "QUOTE_STALE")
+			return
+		}
+		if errors.Is(err, service.ErrQuoteIneligible) {
+			response.Error(c, http.StatusUnprocessableEntity, "Market quote source is ineligible", "QUOTE_INELIGIBLE")
+			return
+		}
 		if errors.Is(err, cache.ErrUnavailable) || errors.Is(err, service.ErrQuoteUnavailable) {
 			response.Error(c, http.StatusServiceUnavailable, "Market data temporarily unavailable", "MARKET_DATA_UNAVAILABLE")
 			return

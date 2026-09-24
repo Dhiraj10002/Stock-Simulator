@@ -59,3 +59,16 @@ test("feedStatus: Disconnected frontend websocket", () => {
   assert.equal(result.subText, "RECONNECTING");
   assert.equal(result.isLive, false);
 });
+
+test("feedStatus: Explicit UNAVAILABLE state", () => {
+  const result = getAuthoritativeFeedStatus(
+    { feedProvider: "angel_one", feedState: "UNAVAILABLE", isSynthetic: false },
+    "OPEN",
+    "connected"
+  );
+  assert.equal(result.badgeText, "UNAVAILABLE");
+  assert.equal(result.subText, "NO FEED");
+  assert.equal(result.isLive, false);
+  assert.match(result.pillClasses, /rose/);
+});
+

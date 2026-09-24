@@ -13,7 +13,7 @@ import {
   Plus,
   BarChart2,
 } from "lucide-react";
-import { INSTRUMENT_METADATA, InstrumentMetadata } from "@/lib/mockData";
+import type { InstrumentMetadata } from "@/types";
 import { formatPaise, formatPercent } from "@/lib/format";
 import { useTerminalStore } from "@/stores/terminal-store";
 import { useUIStore } from "@/stores/ui-store";
@@ -250,114 +250,60 @@ export default function SearchModal() {
 
   // Comprehensive results query formatted in clean Kite style
   const results = useMemo(() => {
-    const q = debouncedQuery.toUpperCase();
-    const allMock = Object.values(INSTRUMENT_METADATA);
-
-    // If query is empty, show default popular recommendations
-    if (!q) {
-      let filtered = allMock;
-      if (segmentFilter === "EQUITY") {
-        filtered = filtered.filter((i) => i.segment === "EQUITY" || i.segment === "INDEX");
-      } else if (segmentFilter === "FUTURES") {
-        filtered = filtered.filter((i) => i.segment === "FUTURES");
-      } else if (segmentFilter === "OPTIONS") {
-        filtered = filtered.filter((i) => i.segment === "OPTIONS");
-      }
-      return filtered.slice(0, 10).map((item) => {
-        const kite = formatKiteSymbol(item.symbol, item.expiry, item.strikePrice?.toString(), item.optionType);
-        return {
-          ...item,
-          displayName: item.displayName || kite.displayName,
-          exchange: kite.exchangeTag,
-        };
-      });
+    if (!apiResults || apiResults.length === 0) {
+      return [];
     }
 
     const items: (InstrumentMetadata & { exchangeTag: string })[] = [];
     const seenSymbols = new Set<string>();
 
-    // 1. Process backend API results
-    if (apiResults && apiResults.length > 0) {
-      for (const item of apiResults) {
-        if (seenSymbols.has(item.symbol)) continue;
-        seenSymbols.add(item.symbol);
+    for (const item of apiResults) {
+      if (seenSymbols.has(item.symbol)) continue;
+      seenSymbols.add(item.symbol);
 
-        const kite = formatKiteSymbol(item.symbol, item.expiry, item.strike, item.option_type);
+      const kite = formatKiteSymbol(item.symbol, item.expiry, item.strike, item.option_type);
 
-        const isOpt =
-          item.instrument_type?.startsWith("OPT") ||
-          item.symbol.endsWith("CE") ||
-          item.symbol.endsWith("PE") ||
-          item.symbol.includes(" CE") ||
-          item.symbol.includes(" PE");
-        const isFut = item.instrument_type?.startsWith("FUT") || item.symbol.endsWith("FUT");
-        const isIndex =
-          item.instrument_type === "INDEX" ||
-          item.symbol.startsWith("NIFTY") ||
-          item.symbol.startsWith("BANKNIFTY");
+      const isOpt =
+        item.instrument_type?.startsWith("OPT") ||
+        item.symbol.endsWith("CE") ||
+        item.symbol.endsWith("PE") ||
+        item.symbol.includes(" CE") ||
+        item.symbol.includes(" PE");
+      const isFut = item.instrument_type?.startsWith("FUT") || item.symbol.endsWith("FUT");
+      const isIndex =
+        item.instrument_type === "INDEX" ||
+        item.symbol.startsWith("NIFTY") ||
+        item.symbol.startsWith("BANKNIFTY");
 
-        let seg: "EQUITY" | "INDEX" | "FUTURES" | "OPTIONS" = "EQUITY";
-        if (isOpt) seg = "OPTIONS";
-        else if (isFut) seg = "FUTURES";
-        else if (isIndex) seg = "INDEX";
+      let seg: "EQUITY" | "INDEX" | "FUTURES" | "OPTIONS" = "EQUITY";
+      if (isOpt) seg = "OPTIONS";
+      else if (isFut) seg = "FUTURES";
+      else if (isIndex) seg = "INDEX";
 
-        const optType: "CE" | "PE" | undefined =
-          item.symbol.endsWith("CE") || item.symbol.includes(" CE")
-            ? "CE"
-            : item.symbol.endsWith("PE") || item.symbol.includes(" PE")
-            ? "PE"
-            : undefined;
+      const optType: "CE" | "PE" | undefined =
+        item.symbol.endsWith("CE") || item.symbol.includes(" CE")
+          ? "CE"
+          : item.symbol.endsWith("PE") || item.symbol.includes(" PE")
+          ? "PE"
+          : undefined;
 
-        const live = marketQuotes[item.symbol];
-        const basePrice =
-          live?.price_paise ||
-          item.price_paise ||
-          INSTRUMENT_METADATA[item.symbol]?.basePricePaise ||
-          250000;
-        const changePct =
-          live?.change_percent ??
-          item.change_percent ??
-          (INSTRUMENT_METADATA[item.symbol]?.dayChangePercent ?? 0);
+      const live = marketQuotes[item.symbol];
+      const basePrice = live?.price_paise || item.price_paise || 0;
+      const changePct = live?.change_percent ?? item.change_percent ?? 0;
 
-        items.push({
-          symbol: item.symbol,
-          displayName: item.display_name || kite.displayName,
-          name: item.name || item.symbol,
-          exchange: kite.exchangeTag,
-          exchangeTag: kite.exchangeTag,
-          basePricePaise: basePrice,
-          lotSize: item.lot_size || 1,
-          dayChangePercent: changePct,
-          segment: seg,
-          expiry: item.expiry,
-          optionType: optType,
-        });
-      }
-    }
-
-    // 2. Also match local instruments for index & stock instant suggestions
-    const localFiltered = allMock.filter((item) => {
-      const matchSym = item.symbol.toUpperCase().includes(q);
-      const matchName = item.name.toUpperCase().includes(q);
-      const matchUnderlying = item.underlying
-        ? item.underlying.toUpperCase().includes(q)
-        : false;
-      const matchType = item.optionType
-        ? item.optionType.toUpperCase().includes(q)
-        : false;
-      return matchSym || matchName || matchUnderlying || matchType;
-    });
-
-    for (const item of localFiltered) {
-      if (!seenSymbols.has(item.symbol)) {
-        seenSymbols.add(item.symbol);
-        const kite = formatKiteSymbol(item.symbol, item.expiry, item.strikePrice?.toString(), item.optionType);
-        items.push({
-          ...item,
-          displayName: item.displayName || kite.displayName,
-          exchangeTag: kite.exchangeTag,
-        });
-      }
+      items.push({
+        symbol: item.symbol,
+        displayName: item.display_name || kite.displayName,
+        name: item.name || item.symbol,
+        exchange: kite.exchangeTag,
+        exchangeTag: kite.exchangeTag,
+        basePricePaise: basePrice,
+        lotSize: item.lot_size || 1,
+        dayChangePercent: changePct,
+        segment: seg,
+        expiry: item.expiry,
+        optionType: optType,
+      });
     }
 
     // Filter by active segment tab
@@ -371,7 +317,7 @@ export default function SearchModal() {
     }
 
     return filtered.slice(0, 30);
-  }, [debouncedQuery, apiResults, segmentFilter, marketQuotes]);
+  }, [apiResults, segmentFilter, marketQuotes]);
 
   if (!isSearchPaletteOpen && !isFnoModalOpen) return null;
 
@@ -452,15 +398,17 @@ export default function SearchModal() {
                     <Search className="w-5 h-5" />
                   </div>
                   <p className="text-slate-600 dark:text-slate-400 text-sm font-semibold">
-                    No instruments found matching &quot;{query}&quot;
+                    {query.trim() ? `No instruments found matching "${query}"` : "Search Instruments"}
                   </p>
                   <p className="text-xs text-slate-400">
-                    Try searching by stock name (e.g. TCS, KEI, Reliance) or derivative contract (e.g. SEP FUT, 2300 CE).
+                    {query.trim()
+                      ? "Try searching by stock name (e.g. TCS, KEI, RELIANCE) or derivative contract (e.g. SEP FUT, 2300 CE)."
+                      : "Type a symbol, company name, or contract to search NSE and NFO instruments."}
                   </p>
                 </div>
               ) : (
                 results.map((item) => {
-                  const isProfit = item.dayChangePercent >= 0;
+                  const isProfit = (item.dayChangePercent ?? 0) >= 0;
                   const isFno = item.segment === "FUTURES" || item.segment === "OPTIONS";
                   const inWatchlist = watchlistSet.has(item.symbol.toUpperCase());
                   const displayName = item.displayName || item.symbol;
@@ -497,7 +445,7 @@ export default function SearchModal() {
                             <span className="text-xs text-slate-400 dark:text-slate-500 truncate max-w-[180px] sm:max-w-xs font-normal">
                               {item.name}
                             </span>
-                          ) : item.lotSize > 1 ? (
+                          ) : item.lotSize && item.lotSize > 1 ? (
                             <span className="text-[11px] text-slate-400 font-mono hidden sm:inline">
                               Lot: {item.lotSize}
                             </span>
@@ -566,7 +514,7 @@ export default function SearchModal() {
                         {/* Price & Change % */}
                         <div className="text-right min-w-[75px]">
                           <div className="text-xs font-bold font-tabular text-slate-900 dark:text-slate-100">
-                            {formatPaise(item.basePricePaise)}
+                            {formatPaise(item.basePricePaise ?? 0)}
                           </div>
                           <div
                             className={`text-[11px] font-semibold font-tabular flex items-center justify-end gap-0.5 ${
@@ -575,7 +523,7 @@ export default function SearchModal() {
                                 : "text-rose-600 dark:text-rose-400"
                             }`}
                           >
-                            <span>{formatPercent(item.dayChangePercent)}</span>
+                            <span>{formatPercent(item.dayChangePercent ?? 0)}</span>
                           </div>
                         </div>
 

@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { formatPaise } from "@/lib/format";
 import { API_URL } from "@/lib/api";
-import type { InstrumentMetadata } from "@/lib/mockData";
+import type { InstrumentMetadata } from "@/types";
 
 export interface FnoOrderModalProps {
   isOpen: boolean;
@@ -71,7 +71,7 @@ export default function FnoOrderModal({
         if (initialSide) {
           setSide(initialSide);
         }
-        const ltp = (instrument.basePricePaise / 100).toFixed(2);
+        const ltp = ((instrument.basePricePaise ?? 0) / 100).toFixed(2);
         setLimitPrice(ltp);
       });
     }
@@ -79,9 +79,9 @@ export default function FnoOrderModal({
 
   if (!isOpen || !instrument) return null;
 
-  const lotSize = instrument.lotSize > 0 ? instrument.lotSize : 1;
+  const lotSize = instrument.lotSize && instrument.lotSize > 0 ? instrument.lotSize : 1;
   const totalQuantity = lots * lotSize;
-  const ltpRupees = instrument.basePricePaise / 100;
+  const ltpRupees = (instrument.basePricePaise ?? 0) / 100;
   const activePrice =
     orderType === "LIMIT" && parseFloat(limitPrice) > 0
       ? parseFloat(limitPrice)
@@ -194,12 +194,12 @@ export default function FnoOrderModal({
             </div>
             <div
               className={`text-xs font-bold font-tabular flex items-center justify-end gap-1 ${
-                instrument.dayChangePercent >= 0
+                (instrument.dayChangePercent ?? 0) >= 0
                   ? "text-emerald-600 dark:text-emerald-400"
                   : "text-rose-600 dark:text-rose-400"
               }`}
             >
-              <span>{instrument.dayChangePercent >= 0 ? "+" : ""}{instrument.dayChangePercent.toFixed(2)}%</span>
+              <span>{(instrument.dayChangePercent ?? 0) >= 0 ? "+" : ""}{(instrument.dayChangePercent ?? 0).toFixed(2)}%</span>
             </div>
             <button
               onClick={onClose}

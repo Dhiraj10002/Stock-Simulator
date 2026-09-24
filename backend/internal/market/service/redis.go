@@ -199,58 +199,18 @@ func (s *Service) SetQuote(symbol string, pricePaise int64, volume int64) error 
 	}).Err()
 }
 
-// CachedQuote returns the in-memory/Redis quote without making a synchronous HTTP call to the market worker.
+// CachedQuote returns the quote from Redis, identical to CurrentQuote.
 func (s *Service) CachedQuote(symbol string) (*dto.QuoteResponse, error) {
-	symbol = strings.ToUpper(strings.TrimSpace(symbol))
-	if symbol == "" {
-		return nil, fmt.Errorf("symbol is required")
-	}
-	if s != nil && s.instrumentFinder != nil {
-		found, err := s.instrumentFinder(symbol)
-		if err != nil {
-			return nil, err
-		}
-		if !found {
-			return nil, fmt.Errorf("%w: %s", ErrInstrumentNotFound, symbol)
-		}
-	}
-	if s == nil || s.client == nil {
-		return nil, ErrQuoteUnavailable
-	}
-	ctx, cancel := cache.Context(context.Background(), s.timeout)
-	defer cancel()
-	values, err := s.client.HGetAll(ctx, quoteKey(symbol)).Result()
-	if err != nil || len(values) == 0 {
-		canonical := alias.ResolveCanonicalSymbol(symbol)
-		if canonical != "" && canonical != symbol {
-			values, _ = s.client.HGetAll(ctx, quoteKey(canonical)).Result()
-		}
-	}
-	if len(values) == 0 {
-		return nil, ErrQuoteNotFound
-	}
-	price, err := strconv.ParseInt(values["price_paise"], 10, 64)
-	if err != nil || price <= 0 {
-		return nil, fmt.Errorf("invalid cached price")
-	}
-	var changePaise int64
-	var changePercent float64
-	if cp, ok := values["change_paise"]; ok {
-		changePaise, _ = strconv.ParseInt(cp, 10, 64)
-	}
-	if cp, ok := values["change_percent"]; ok {
-		changePercent, _ = strconv.ParseFloat(cp, 64)
-	}
-	return &dto.QuoteResponse{
-		Symbol:        symbol,
-		PricePaise:    price,
-		ChangePaise:   changePaise,
-		ChangePercent: changePercent,
-		Source:        values["source"],
-		UpdatedAt:     values["updated_at"],
-	}, nil
+	return s.CurrentQuote(symbol)
 }
 
+// CurrentQuote retrieves the authoritative quote for a symbol directly and only from Redis.
+// Missing quote returns ErrQuoteNotFound.
+// Stale quote (> 2 minutes) returns ErrQuoteStale.
+// Seeded or auto-generated quotes are strictly rejected in production application flow.
+// When market feed is UNAVAILABLE or Redis feed state is UNAVAILABLE, returns ErrQuoteUnavailable.
+// Under LIVE feed mode, only authentic angelone_live quotes are served; synthetic quotes are rejected with ErrQuoteIneligible.
+// No synchronous HTTP worker rescue is performed.
 func (s *Service) CurrentQuote(symbol string) (*dto.QuoteResponse, error) {
 	symbol = strings.ToUpper(strings.TrimSpace(symbol))
 	if symbol == "" {
@@ -268,8 +228,22 @@ func (s *Service) CurrentQuote(symbol string) (*dto.QuoteResponse, error) {
 	if s == nil || s.client == nil {
 		return nil, ErrQuoteUnavailable
 	}
+
+	mode := s.FeedMode()
+	if mode == dto.FeedModeUnavailable {
+		return nil, ErrQuoteUnavailable
+	}
+
 	ctx, cancel := cache.Context(context.Background(), s.timeout)
 	defer cancel()
+
+	// Check dynamic Redis feed state: if feed is explicitly UNAVAILABLE, quotes cannot be served
+	if feedState, err := s.client.HGet(ctx, FeedStateKey, "feed_state").Result(); err == nil {
+		if strings.ToUpper(strings.TrimSpace(feedState)) == string(dto.FeedModeUnavailable) {
+			return nil, ErrQuoteUnavailable
+		}
+	}
+
 	values, err := s.client.HGetAll(ctx, quoteKey(symbol)).Result()
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", cache.ErrUnavailable, err)
@@ -283,36 +257,38 @@ func (s *Service) CurrentQuote(symbol string) (*dto.QuoteResponse, error) {
 		}
 	}
 
-	isStale := false
-	if updatedAtStr, ok := values["updated_at"]; ok {
-		if t, parseErr := time.Parse(time.RFC3339, updatedAtStr); parseErr == nil {
-			if time.Since(t) > maxExecutableQuoteAge {
-				isStale = true
-			}
-		} else {
-			isStale = true
-		}
+	if len(values) == 0 {
+		return nil, ErrQuoteNotFound
 	}
 
-	needsWorkerRefresh := len(values) == 0 || IsSeededSource(values["source"]) || isStale
-	if needsWorkerRefresh {
-		liveQuote, err := s.fetchLiveFromWorker(symbol)
-		if (err != nil || liveQuote == nil || liveQuote.PricePaise <= 0) && canonical != "" && canonical != symbol {
-			liveQuote, err = s.fetchLiveFromWorker(canonical)
-		}
-		if err == nil && liveQuote != nil && liveQuote.PricePaise > 0 {
-			// Purely observational read: do NOT call HSet on Redis
-			return liveQuote, nil
-		}
-		if len(values) == 0 {
-			return nil, ErrQuoteNotFound
-		}
+	source := values["source"]
+	allowSeeded := s != nil && s.allowSeededQuotes
+	if !allowSeeded && IsSeededSource(source) {
+		return nil, ErrQuoteNotFound
+	}
+
+	normSource := dto.NormalizeQuoteSource(source)
+	if mode == dto.FeedModeLive && normSource != dto.QuoteSourceAngelOneLive {
+		return nil, fmt.Errorf("%w: live feed mode requires angelone_live source, got %q", ErrQuoteIneligible, source)
+	}
+	if mode == dto.FeedModeSynthetic && normSource == dto.QuoteSourceAngelOneLive {
+		return nil, fmt.Errorf("%w: synthetic feed mode cannot use live quote source %q", ErrQuoteIneligible, source)
 	}
 
 	price, err := strconv.ParseInt(values["price_paise"], 10, 64)
 	if err != nil || price <= 0 {
 		return nil, fmt.Errorf("invalid stored quote")
 	}
+
+	updatedAtStr, ok := values["updated_at"]
+	if !ok || strings.TrimSpace(updatedAtStr) == "" {
+		return nil, ErrQuoteStale
+	}
+	updatedAt, parseErr := time.Parse(time.RFC3339, updatedAtStr)
+	if parseErr != nil || time.Since(updatedAt) > maxExecutableQuoteAge {
+		return nil, ErrQuoteStale
+	}
+
 	var changePaise int64
 	var changePercent float64
 	if cp, ok := values["change_paise"]; ok {
@@ -326,7 +302,7 @@ func (s *Service) CurrentQuote(symbol string) (*dto.QuoteResponse, error) {
 		PricePaise:    price,
 		ChangePaise:   changePaise,
 		ChangePercent: changePercent,
-		Source:        values["source"],
+		Source:        source,
 		UpdatedAt:     values["updated_at"],
 	}, nil
 }
@@ -470,11 +446,17 @@ func (s *Service) HistoricalQuotes(symbol string, limit int) ([]dto.CandleRespon
 	if limit <= 0 || limit > 500 {
 		return nil, fmt.Errorf("limit must be between 1 and 500")
 	}
-	if s == nil || s.client == nil {
+	if s == nil || s.client == nil || s.FeedMode() == dto.FeedModeUnavailable {
 		return nil, ErrQuoteUnavailable
 	}
 	ctx, cancel := cache.Context(context.Background(), s.timeout)
 	defer cancel()
+
+	if feedState, err := s.client.HGet(ctx, FeedStateKey, "feed_state").Result(); err == nil {
+		if strings.ToUpper(strings.TrimSpace(feedState)) == string(dto.FeedModeUnavailable) {
+			return nil, ErrQuoteUnavailable
+		}
+	}
 	items, err := s.client.LRange(ctx, historyKey(symbol), 0, int64(limit-1)).Result()
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", cache.ErrUnavailable, err)

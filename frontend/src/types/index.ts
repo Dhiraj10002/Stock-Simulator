@@ -107,6 +107,23 @@ export type MarketDepth = {
   total_ask_qty: number;
 };
 
+export interface InstrumentMetadata {
+  symbol: string;
+  name: string;
+  exchange: string;
+  basePricePaise?: number;
+  lotSize?: number;
+  dayChangePercent?: number;
+  high52WPaise?: number;
+  low52WPaise?: number;
+  segment?: "EQUITY" | "INDEX" | "FUTURES" | "OPTIONS";
+  displayName?: string;
+  underlying?: string;
+  expiry?: string;
+  strikePrice?: number;
+  optionType?: "CE" | "PE";
+}
+
 export type GTTTrigger = {
   id: string;
   symbol: string;

@@ -25,7 +25,6 @@ interface PortfolioAllocationViewProps {
   holdings: HoldingItem[];
   positions: Position[];
   availableMarginPaise: number;
-  useDemoData?: boolean;
   token?: string;
 }
 
@@ -33,7 +32,6 @@ export default function PortfolioAllocationView({
   holdings = [],
   positions = [],
   availableMarginPaise = 100000000,
-  useDemoData = true,
   token = "",
 }: PortfolioAllocationViewProps) {
   const [hoveredSegment, setHoveredSegment] = useState<string | null>(null);
@@ -176,8 +174,8 @@ export default function PortfolioAllocationView({
     };
   });
 
-  // Determine RMS values (Live Backend vs Showcase Demo)
-  const isLive = !useDemoData && !!overview;
+  // Determine RMS values
+  const isLive = !!overview;
 
   const rmsStatus = isLive ? overview.status : "HEALTHY";
   const rmsUtilization = isLive

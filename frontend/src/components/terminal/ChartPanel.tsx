@@ -28,7 +28,6 @@ import {
   Crosshair,
 } from "lucide-react";
 import { formatPaise, formatPercent, getIndianMarketStatus } from "@/lib/format";
-import { generateSyntheticCandles, INSTRUMENT_METADATA } from "@/lib/mockData";
 import type { Candle, Quote } from "@/types";
 
 type ChartPanelProps = {
@@ -183,7 +182,7 @@ export default function ChartPanel({
   const [timeframe, setTimeframe] = useState<Timeframe>("5m");
   const [chartType, setChartType] = useState<ChartType>("candles");
   const [candles, setCandles] = useState<Candle[]>([]);
-  const [dataSource, setDataSource] = useState<"LIVE" | "SYNTHETIC">("LIVE");
+  const [dataSource, setDataSource] = useState<"LIVE" | "UNAVAILABLE">("LIVE");
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   // Indicators toggle state
@@ -405,7 +404,7 @@ export default function ChartPanel({
     };
   }, []);
 
-  // Fetch or synthesize candle historical data
+  // Fetch candle historical data from backend
   useEffect(() => {
     let cancelled = false;
 
@@ -418,24 +417,22 @@ export default function ChartPanel({
             setCandles(items);
             setDataSource("LIVE");
           } else {
-            const fallback = generateSyntheticCandles(symbol, quote?.price_paise, 120, timeframe);
-            setCandles(fallback);
-            setDataSource("SYNTHETIC");
+            setCandles([]);
+            setDataSource("UNAVAILABLE");
           }
         }
       })
       .catch(() => {
         if (!cancelled) {
-          const fallback = generateSyntheticCandles(symbol, quote?.price_paise, 120, timeframe);
-          setCandles(fallback);
-          setDataSource("SYNTHETIC");
+          setCandles([]);
+          setDataSource("UNAVAILABLE");
         }
       });
 
     return () => {
       cancelled = true;
     };
-  }, [symbol, timeframe, apiUrl, quote?.price_paise]);
+  }, [symbol, timeframe, apiUrl]);
 
   // Precompute indicator values for candle array
   const indicatorMaps = useMemo(() => {
@@ -668,23 +665,17 @@ export default function ChartPanel({
     };
   }, [symbol, targetPriceRupees, stopLossPriceRupees, entryPriceRupees]);
 
-  const meta = INSTRUMENT_METADATA[symbol] ?? {
-    name: symbol,
-    basePricePaise: 200000,
-    dayChangePercent: 0,
-  };
-
   const lastCandle = candles[candles.length - 1];
   const activeCandle = hoveredTimestamp ? candlesMap.get(hoveredTimestamp) ?? lastCandle : lastCandle;
 
-  const ltpPaise = quote?.price_paise ?? lastCandle?.close_paise ?? meta.basePricePaise;
-  const highPaise = quote?.high_paise ?? lastCandle?.high_paise ?? Math.round(ltpPaise * 1.012);
-  const lowPaise = quote?.low_paise ?? lastCandle?.low_paise ?? Math.round(ltpPaise * 0.988);
-  const openPaise = quote?.open_paise ?? candles[0]?.open_paise ?? Math.round(ltpPaise * 0.995);
+  const ltpPaise = quote?.price_paise ?? lastCandle?.close_paise ?? 0;
+  const highPaise = quote?.high_paise ?? lastCandle?.high_paise ?? ltpPaise;
+  const lowPaise = quote?.low_paise ?? lastCandle?.low_paise ?? ltpPaise;
+  const openPaise = quote?.open_paise ?? candles[0]?.open_paise ?? ltpPaise;
 
-  const dayChangePaise = ltpPaise - openPaise;
+  const dayChangePaise = quote?.change_paise ?? (ltpPaise && openPaise ? ltpPaise - openPaise : 0);
   const dayChangePct =
-    openPaise > 0 ? (dayChangePaise / openPaise) * 100 : quote?.change_percent ?? meta.dayChangePercent;
+    quote?.change_percent ?? (openPaise > 0 ? (dayChangePaise / openPaise) * 100 : 0);
   const isPositive = dayChangePaise >= 0;
 
   // Day range percentage
@@ -730,23 +721,23 @@ export default function ChartPanel({
                   className={`text-[9px] px-1.5 py-0.2 rounded font-mono font-medium flex items-center gap-1 ${
                     dataSource === "LIVE"
                       ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-                      : "bg-amber-500/10 text-amber-400 border border-amber-500/20"
+                      : "bg-slate-800 text-slate-400 border border-slate-700"
                   }`}
                   title={
                     dataSource === "LIVE"
                       ? "Streaming live market history data"
-                      : "Simulated market history ticks"
+                      : "Market history data unavailable"
                   }
                 >
                   <span
                     className={`w-1.5 h-1.5 rounded-full ${
-                      dataSource === "LIVE" ? "bg-emerald-400 animate-pulse" : "bg-amber-400"
+                      dataSource === "LIVE" ? "bg-emerald-400 animate-pulse" : "bg-slate-500"
                     }`}
                   />
-                  {dataSource === "LIVE" ? "LIVE" : "SIM"}
+                  {dataSource === "LIVE" ? "LIVE" : "UNAVAILABLE"}
                 </span>
               </div>
-              <div className="text-[10px] text-slate-400 truncate max-w-[130px]">{meta.name}</div>
+              <div className="text-[10px] text-slate-400 truncate max-w-[130px]">{quote?.symbol ?? symbol}</div>
             </div>
           </div>
 
@@ -1058,7 +1049,15 @@ export default function ChartPanel({
       </div>
 
       {/* TradingView Lightweight Charts Canvas Container */}
-      <div ref={container} className="flex-1 w-full h-full relative" />
+      <div ref={container} className="flex-1 w-full h-full relative">
+        {candles.length === 0 && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/60 backdrop-blur-[2px] z-20 text-slate-400">
+            <BarChart2 className="w-8 h-8 text-slate-600 mb-2" />
+            <p className="text-xs font-semibold text-slate-300">No Historical Candles Available</p>
+            <p className="text-[11px] text-slate-500 mt-0.5">Waiting for historical market data stream for {symbol}...</p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

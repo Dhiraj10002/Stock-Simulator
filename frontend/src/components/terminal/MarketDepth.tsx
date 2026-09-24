@@ -2,17 +2,17 @@
 
 import { useMemo, useState, useEffect } from "react";
 import { formatPaise, getIndianMarketStatus } from "@/lib/format";
-import { generateMarketDepth, getDynamicMetadata } from "@/lib/mockData";
 import { Lock, MousePointerClick, ArrowUpDown } from "lucide-react";
-import type { Quote } from "@/types";
+import type { Quote, MarketDepth as MarketDepthType } from "@/types";
 
 interface MarketDepthProps {
   symbol: string;
   quote: Quote | null;
+  depth?: MarketDepthType | null;
   onSelectPrice?: (priceRupees: number) => void;
 }
 
-export default function MarketDepth({ symbol, quote, onSelectPrice }: MarketDepthProps) {
+export default function MarketDepth({ symbol, quote, depth, onSelectPrice }: MarketDepthProps) {
   const [marketStatus, setMarketStatus] = useState(() => getIndianMarketStatus());
 
   useEffect(() => {
@@ -22,22 +22,27 @@ export default function MarketDepth({ symbol, quote, onSelectPrice }: MarketDept
     return () => clearInterval(timer);
   }, []);
 
-  const meta = getDynamicMetadata(symbol);
-
-  const ltpPaise = quote?.price_paise && quote.price_paise > 0 ? quote.price_paise : meta.basePricePaise;
-  const depth = useMemo(() => generateMarketDepth(ltpPaise), [ltpPaise]);
+  const ltpPaise = quote?.price_paise && quote.price_paise > 0 ? quote.price_paise : 0;
+  const hasDepth = Boolean(depth && (depth.bids?.length > 0 || depth.asks?.length > 0));
 
   const maxQty = useMemo(() => {
+    if (!hasDepth || !depth) return 1;
     const allQtys = [...depth.bids.map((b) => b.quantity), ...depth.asks.map((a) => a.quantity)];
     return Math.max(...allQtys, 1);
-  }, [depth]);
+  }, [hasDepth, depth]);
 
-  const spreadPaise = Math.max(5, (depth.asks[0]?.price_paise ?? ltpPaise) - (depth.bids[0]?.price_paise ?? ltpPaise));
-  const spreadPercent = ((spreadPaise / ltpPaise) * 100).toFixed(2);
+  const spreadPaise = useMemo(() => {
+    if (!hasDepth || !depth || !ltpPaise) return 0;
+    const bestAsk = depth.asks[0]?.price_paise ?? ltpPaise;
+    const bestBid = depth.bids[0]?.price_paise ?? ltpPaise;
+    return Math.max(0, bestAsk - bestBid);
+  }, [hasDepth, depth, ltpPaise]);
+
+  const spreadPercent = ltpPaise > 0 ? ((spreadPaise / ltpPaise) * 100).toFixed(2) : "0.00";
 
   // Buyer vs Seller ratio
-  const totalQty = depth.total_bid_qty + depth.total_ask_qty;
-  const buyerPercent = totalQty > 0 ? Math.round((depth.total_bid_qty / totalQty) * 100) : 50;
+  const totalQty = (depth?.total_bid_qty ?? 0) + (depth?.total_ask_qty ?? 0);
+  const buyerPercent = totalQty > 0 ? Math.round(((depth?.total_bid_qty ?? 0) / totalQty) * 100) : 50;
   const sellerPercent = 100 - buyerPercent;
 
   const handlePriceClick = (pricePaise: number) => {
@@ -45,6 +50,20 @@ export default function MarketDepth({ symbol, quote, onSelectPrice }: MarketDept
       onSelectPrice(Number((pricePaise / 100).toFixed(2)));
     }
   };
+
+  if (!hasDepth || !depth) {
+    return (
+      <div className="flex flex-col items-center justify-center py-8 px-4 text-center bg-slate-900/50 rounded-xl border border-slate-800/80 text-xs space-y-2 select-none">
+        <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-slate-500">
+          <ArrowUpDown className="w-4 h-4" />
+        </div>
+        <span className="font-semibold text-slate-300 text-xs">Market Depth (L2) Unavailable</span>
+        <p className="text-[11px] text-slate-500 max-w-xs">
+          Real-time Level 2 order book is not provided by the active market feed for {symbol}.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col bg-slate-900/50 rounded-xl border border-slate-800/80 p-3 text-xs space-y-3 select-none">
@@ -54,9 +73,6 @@ export default function MarketDepth({ symbol, quote, onSelectPrice }: MarketDept
           <div className="flex items-center gap-2">
             <span className="font-bold text-slate-200 uppercase tracking-wider text-[11px]">
               Market Depth (L2)
-            </span>
-            <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/10 border border-amber-500/20 text-amber-300 font-mono font-medium">
-              SIMULATED
             </span>
             <span className="text-[9px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 font-mono">
               NSE

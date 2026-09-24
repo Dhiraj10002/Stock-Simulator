@@ -550,34 +550,12 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
   }, [stock, apiQuote, liveWsQuote]);
 
   // ---------------------------------------------------------------------------
-  // CHART: Use real candle data when available, fall back to synthetic
+  // CHART: Real candle data from API (no synthetic fallback)
   // ---------------------------------------------------------------------------
   const candles: Candle[] = useMemo(() => {
     if (rawCandles && rawCandles.length > 0) return rawCandles;
-    // Synthetic fallback — generate fake candles from stock price
-    const base = stock.price;
-    const numPoints = candleLimit;
-    const fakeCandles: Candle[] = [];
-    const baseTime = 1774000000;
-    for (let i = 0; i < numPoints; i++) {
-      const noise = (Math.sin(i * 0.6) + Math.cos(i * 0.3) * 0.5) * (base * 0.003);
-      const trend = (i / numPoints) * stock.change;
-      const close = +(base - stock.change + trend + noise).toFixed(2);
-      const open = i === 0 ? base - stock.change : fakeCandles[i - 1].close_paise;
-      const high = Math.round(Math.max(open, close * 100) + Math.abs(noise) * 40);
-      const low = Math.round(Math.min(open, close * 100) - Math.abs(noise) * 40);
-      const deterministicVolume = Math.floor(1000 + (Math.sin(i * 1.5) * 0.5 + 0.5) * 5000);
-      fakeCandles.push({
-        timestamp: baseTime - (numPoints - i) * 60,
-        open_paise: Math.round(open),
-        high_paise: high,
-        low_paise: low,
-        close_paise: Math.round(close * 100),
-        volume: deterministicVolume,
-      });
-    }
-    return fakeCandles;
-  }, [rawCandles, stock.price, stock.change, candleLimit]);
+    return [];
+  }, [rawCandles]);
 
   const chartPoints = useMemo(() => {
     if (candles.length === 0) return [stock.price];
@@ -590,6 +568,9 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
 
   // SVG coordinates generator for area chart
   const svgPath = useMemo(() => {
+    if (chartPoints.length === 0) {
+      return { linePath: "", areaPath: "" };
+    }
     const width = 800;
     const height = 260;
     const padding = 20;
@@ -600,10 +581,13 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
       return `${x.toFixed(1)},${y.toFixed(1)}`;
     });
 
-    const linePath = `M ${coords.join(" L ")}`;
-    const areaPath = `M ${coords[0].split(",")[0]},${height - padding} L ${coords.join(" L ")} L ${
-      coords[coords.length - 1].split(",")[0]
-    },${height - padding} Z`;
+    const linePath = coords.length > 0 ? `M ${coords.join(" L ")}` : "";
+    const areaPath =
+      coords.length > 0
+        ? `M ${coords[0].split(",")[0]},${height - padding} L ${coords.join(" L ")} L ${
+            coords[coords.length - 1].split(",")[0]
+          },${height - padding} Z`
+        : "";
 
     return { linePath, areaPath };
   }, [chartPoints, minChart, chartRange]);
@@ -1024,92 +1008,100 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
 
               {/* Chart Rendering */}
               <div className="relative h-64 w-full">
-                <svg viewBox="0 0 800 260" className="w-full h-full overflow-visible" preserveAspectRatio="none">
-                  <defs>
-                    <linearGradient id="stockAreaGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#06b6d4" stopOpacity="0.25" />
-                      <stop offset="100%" stopColor="#06b6d4" stopOpacity="0.0" />
-                    </linearGradient>
-                  </defs>
+                {candles.length === 0 ? (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-400 bg-slate-900/20 rounded-xl border border-dashed border-slate-800">
+                    <BarChart3 className="w-8 h-8 text-slate-500 mb-2 opacity-50" />
+                    <p className="text-sm font-semibold text-slate-300">No Historical Candles Available</p>
+                    <p className="text-xs text-slate-500 mt-0.5">Historical candle data for {stock.symbol} will appear as market data streams in.</p>
+                  </div>
+                ) : (
+                  <svg viewBox="0 0 800 260" className="w-full h-full overflow-visible" preserveAspectRatio="none">
+                    <defs>
+                      <linearGradient id="stockAreaGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#06b6d4" stopOpacity="0.25" />
+                        <stop offset="100%" stopColor="#06b6d4" stopOpacity="0.0" />
+                      </linearGradient>
+                    </defs>
 
-                  {/* Horizontal grid lines */}
-                  <line x1="20" y1="40" x2="780" y2="40" stroke="currentColor" strokeOpacity="0.08" strokeDasharray="3 3" />
-                  <line x1="20" y1="120" x2="780" y2="120" stroke="currentColor" strokeOpacity="0.08" strokeDasharray="3 3" />
-                  <line x1="20" y1="200" x2="780" y2="200" stroke="currentColor" strokeOpacity="0.08" strokeDasharray="3 3" />
+                    {/* Horizontal grid lines */}
+                    <line x1="20" y1="40" x2="780" y2="40" stroke="currentColor" strokeOpacity="0.08" strokeDasharray="3 3" />
+                    <line x1="20" y1="120" x2="780" y2="120" stroke="currentColor" strokeOpacity="0.08" strokeDasharray="3 3" />
+                    <line x1="20" y1="200" x2="780" y2="200" stroke="currentColor" strokeOpacity="0.08" strokeDasharray="3 3" />
 
-                  {chartType === "area" ? (
-                    <>
-                      {/* Gradient Area Fill */}
-                      <path d={svgPath.areaPath} fill="url(#stockAreaGradient)" />
-                      {/* Top Curve Line */}
-                      <path
-                        d={svgPath.linePath}
-                        fill="none"
-                        stroke="#0891b2"
-                        strokeWidth="2.5"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </>
-                  ) : (
-                    /* Candlestick Chart */
-                    <>
-                      {candles.map((c, idx) => {
-                        const width = 800;
-                        const height = 260;
-                        const padding = 20;
-                        const len = candles.length;
-                        const candleWidth = Math.max(2, ((width - padding * 2) / len) * 0.6);
-                        const gap = (width - padding * 2) / len;
-                        const x = padding + idx * gap + gap / 2;
+                    {chartType === "area" ? (
+                      <>
+                        {/* Gradient Area Fill */}
+                        <path d={svgPath.areaPath} fill="url(#stockAreaGradient)" />
+                        {/* Top Curve Line */}
+                        <path
+                          d={svgPath.linePath}
+                          fill="none"
+                          stroke="#0891b2"
+                          strokeWidth="2.5"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </>
+                    ) : (
+                      /* Candlestick Chart */
+                      <>
+                        {candles.map((c, idx) => {
+                          const width = 800;
+                          const height = 260;
+                          const padding = 20;
+                          const len = candles.length;
+                          const candleWidth = Math.max(2, ((width - padding * 2) / len) * 0.6);
+                          const gap = (width - padding * 2) / len;
+                          const x = padding + idx * gap + gap / 2;
 
-                        const allPrices = candles.flatMap((cc) => [cc.high_paise, cc.low_paise]);
-                        const minP = Math.min(...allPrices);
-                        const maxP = Math.max(...allPrices);
-                        const range = maxP - minP || 1;
+                          const allPrices = candles.flatMap((cc) => [cc.high_paise, cc.low_paise]);
+                          const minP = Math.min(...allPrices);
+                          const maxP = Math.max(...allPrices);
+                          const range = maxP - minP || 1;
 
-                        const yScale = (paise: number) =>
-                          height - padding - ((paise - minP) / range) * (height - padding * 2);
+                          const yScale = (paise: number) =>
+                            height - padding - ((paise - minP) / range) * (height - padding * 2);
 
-                        const open = c.open_paise;
-                        const close = c.close_paise;
-                        const high = c.high_paise;
-                        const low = c.low_paise;
-                        const isBullish = close >= open;
-                        const color = isBullish ? "#10b981" : "#ef4444";
+                          const open = c.open_paise;
+                          const close = c.close_paise;
+                          const high = c.high_paise;
+                          const low = c.low_paise;
+                          const isBullish = close >= open;
+                          const color = isBullish ? "#10b981" : "#ef4444";
 
-                        const bodyTop = yScale(Math.max(open, close));
-                        const bodyBottom = yScale(Math.min(open, close));
-                        const bodyHeight = Math.max(1, bodyBottom - bodyTop);
+                          const bodyTop = yScale(Math.max(open, close));
+                          const bodyBottom = yScale(Math.min(open, close));
+                          const bodyHeight = Math.max(1, bodyBottom - bodyTop);
 
-                        return (
-                          <g key={idx}>
-                            {/* Wick (high-low line) */}
-                            <line
-                              x1={x}
-                              y1={yScale(high)}
-                              x2={x}
-                              y2={yScale(low)}
-                              stroke={color}
-                              strokeWidth="1"
-                            />
-                            {/* Body */}
-                            <rect
-                              x={x - candleWidth / 2}
-                              y={bodyTop}
-                              width={candleWidth}
-                              height={bodyHeight}
-                              fill={isBullish ? color : color}
-                              stroke={color}
-                              strokeWidth="0.5"
-                              rx="0.5"
-                            />
-                          </g>
-                        );
-                      })}
-                    </>
-                  )}
-                </svg>
+                          return (
+                            <g key={idx}>
+                              {/* Wick (high-low line) */}
+                              <line
+                                x1={x}
+                                y1={yScale(high)}
+                                x2={x}
+                                y2={yScale(low)}
+                                stroke={color}
+                                strokeWidth="1"
+                              />
+                              {/* Body */}
+                              <rect
+                                x={x - candleWidth / 2}
+                                y={bodyTop}
+                                width={candleWidth}
+                                height={bodyHeight}
+                                fill={isBullish ? color : color}
+                                stroke={color}
+                                strokeWidth="0.5"
+                                rx="0.5"
+                              />
+                            </g>
+                          );
+                        })}
+                      </>
+                    )}
+                  </svg>
+                )}
 
                 {/* Live Current Price Badge Overlay */}
                 <div className="absolute top-2 right-2 px-2.5 py-1 rounded-lg bg-cyan-50 dark:bg-cyan-950/60 border border-cyan-200 dark:border-cyan-800/50 text-cyan-700 dark:text-cyan-300 text-xs font-bold font-tabular shadow-2xs">

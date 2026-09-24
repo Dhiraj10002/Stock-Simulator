@@ -420,9 +420,6 @@ def fetch_quote_for_symbol(symbol: str) -> dict[str, Any] | None:
                     change_percent = round((change_paise / close_paise) * 100, 2) if close_paise > 0 else 0.0
 
                     source = "angelone_live"
-                    if GLOBAL_SUPERVISOR and getattr(GLOBAL_SUPERVISOR, "fallback_active", False):
-                        source = "benchmark_fallback"
-
                     now_iso = datetime.now(timezone.utc).isoformat()
                     quote = {
                         "symbol": symbol,
@@ -861,9 +858,6 @@ class QuoteWriter:
         self.benchmark_prices = DEFAULT_BENCHMARK_PRICES_PAISE
 
     def write(self, subscription: Subscription, price_paise: int, volume: int, source: str = "synthetic") -> None:
-        if source == "angelone_live" and GLOBAL_SUPERVISOR and getattr(GLOBAL_SUPERVISOR, "fallback_active", False):
-            source = "fallback_synthetic"
-
         now = datetime.now(timezone.utc)
         benchmark = self.benchmark_prices.get(subscription.symbol, price_paise)
         change_paise = price_paise - benchmark
@@ -1001,24 +995,7 @@ def seed_historical_candles(client: redis.Redis, subscriptions: list[Subscriptio
 
     for sub in subscriptions:
         history_key = f"market:history:{sub.symbol}"
-        quote_key = f"market:quote:{sub.symbol}"
         base_price = DEFAULT_BENCHMARK_PRICES_PAISE.get(sub.symbol, 200000)
-
-        # Always ensure a valid initial quote exists in Redis immediately!
-        try:
-            existing_quote = client.hgetall(quote_key)
-            if not existing_quote:
-                client.hset(quote_key, mapping={
-                    "symbol": sub.symbol,
-                    "price_paise": base_price,
-                    "change_paise": 0,
-                    "change_percent": 0.0,
-                    "source": "initial_seed",
-                    "updated_at": now.isoformat()
-                })
-                client.expire(quote_key, 300)
-        except Exception:
-            pass
 
         try:
             existing_count = client.llen(history_key)
@@ -1217,10 +1194,12 @@ def watch_feed(control: FeedControl, stale_after_seconds: int) -> None:
 
 class FeedSupervisor:
     """
-    Manages the lifecycle and fallback loop for the live market feed.
-    Tracks consecutive failures and transitions to synthetic fallback when threshold is met.
+    Manages the lifecycle and retry loop for the live market feed.
+    In LIVE feed mode, consecutive failures transition the published feed state to UNAVAILABLE
+    while continuing to retry connecting to Angel One.
+    Automatic hidden mode switching to synthetic ticks is strictly disallowed.
     """
-    def __init__(self, store: Any, writer: Any, control: FeedControl, mode: str = "auto", max_failures: int = 3, tick_interval: float = 1.0) -> None:
+    def __init__(self, store: Any, writer: Any, control: FeedControl, mode: str = "live", max_failures: int = 3, tick_interval: float = 1.0) -> None:
         global GLOBAL_SUPERVISOR
         self.store = store
         self.writer = writer
@@ -1235,7 +1214,8 @@ class FeedSupervisor:
     def handle_feed_cycle(self, run_feed_fn) -> bool:
         """
         Runs one iteration of the feed.
-        Returns True to continue the live loop, or False when synthetic fallback should activate.
+        Returns True to continue the live feed retry loop.
+        Never switches automatically to synthetic fallback.
         """
         try:
             opened = run_feed_fn(self.store, self.writer, self.control)
@@ -1248,12 +1228,11 @@ class FeedSupervisor:
             self.fail_count += 1
             print(f"market worker: live feed error: {error} (failure count {self.fail_count}/{self.max_failures})", flush=True)
 
-        if self.mode == "auto" and self.fail_count >= self.max_failures:
-            print(f"market worker: live feed failed {self.fail_count} times in auto mode; switching to synthetic feed fallback", flush=True)
-            self.fallback_active = True
+        if self.fail_count >= self.max_failures:
+            print(f"market worker: live feed failed {self.fail_count} times; marking state as UNAVAILABLE (retrying live feed; no synthetic fallback)", flush=True)
             if self.writer and getattr(self.writer, "client", None):
-                publish_feed_state(self.writer.client, feed_provider="synthetic", feed_state="FALLBACK", is_synthetic=True)
-            return False
+                publish_feed_state(self.writer.client, feed_provider="angel_one", feed_state="UNAVAILABLE", is_synthetic=False)
+            return True
 
         if self.fail_count > 0:
             if self.writer and getattr(self.writer, "client", None):
@@ -1264,7 +1243,11 @@ class FeedSupervisor:
 
 def main() -> None:
     global GLOBAL_WRITER
-    mode = os.getenv("MARKET_FEED_MODE", "auto").strip().lower()
+    mode = os.getenv("MARKET_FEED_MODE", "live").strip().lower()
+    if mode == "auto":
+        print("market worker: 'auto' feed mode is deprecated; strictly enforcing LIVE feed mode with explicit UNAVAILABLE state", flush=True)
+        mode = "live"
+
     default_symbols = (
         "RELIANCE,TCS,INFY,HDFCBANK,TATAMOTORS,TMPV,TMCV,BHARTIARTL,ETERNAL,ZOMATO,SUZLON,TRENT,ADANIENT,YESBANK,BEL,"
         "NIFTY,BANKNIFTY,FINNIFTY,MIDCPNIFTY,SENSEX,SBIN,ICICIBANK,ATGL,POONAWALLA,TATACHEM,TATAPOWER,"
@@ -1299,20 +1282,37 @@ def main() -> None:
     init_smart_api()
     start_quote_server()
 
-    # Seed initial quotes and historical candles immediately so Redis is never blank!
+    # Seed historical candles immediately so charts have candle context
     seed_historical_candles(client, store.subscriptions(), history_ttl, history_max)
 
-    # Synthetic Feed Mode
-    if mode == "synthetic" or (mode == "auto" and not has_angel_credentials()):
-        print(f"market worker: running in SYNTHETIC feed mode (mode={mode})", flush=True)
+    # Synthetic Feed Mode (explicit only)
+    if mode == "synthetic":
+        print("market worker: running in explicit SYNTHETIC feed mode", flush=True)
         publish_feed_state(client, feed_provider="synthetic", feed_state="LIVE", is_synthetic=True)
         tick_interval = float(os.getenv("SYNTHETIC_TICK_INTERVAL_SECONDS", "1.0"))
         synthetic_feed = SyntheticFeed(store.subscriptions(), writer, tick_interval_seconds=tick_interval)
         synthetic_feed.run()
         return
 
-    # Live Feed Mode (with automatic failover in auto mode)
+    # Unavailable Mode (explicit)
+    if mode == "unavailable":
+        print("market worker: running in explicit UNAVAILABLE feed mode", flush=True)
+        publish_feed_state(client, feed_provider="none", feed_state="UNAVAILABLE", is_synthetic=False)
+        while True:
+            time.sleep(30)
+            publish_feed_state(client, feed_provider="none", feed_state="UNAVAILABLE", is_synthetic=False)
+        return
+
+    # Live Feed Mode (strict Angel One, no automatic fallback)
     print("market worker: running in LIVE ANGEL ONE feed mode", flush=True)
+    if not has_angel_credentials():
+        print("market worker: Angel One credentials missing in LIVE mode; setting state to UNAVAILABLE (no hidden synthetic fallback)", flush=True)
+        publish_feed_state(client, feed_provider="angel_one", feed_state="UNAVAILABLE", is_synthetic=False)
+        while True:
+            time.sleep(30)
+            publish_feed_state(client, feed_provider="angel_one", feed_state="UNAVAILABLE", is_synthetic=False)
+        return
+
     publish_feed_state(client, feed_provider="angel_one", feed_state="CONNECTING", is_synthetic=False)
     control = FeedControl()
     threading.Thread(target=refresh_daily, args=(store, control, client), daemon=True).start()
@@ -1324,15 +1324,9 @@ def main() -> None:
 
     backoff = 1
     while True:
-        continue_live = supervisor.handle_feed_cycle(run_feed)
-        if not continue_live:
-            synthetic_feed = SyntheticFeed(store.subscriptions(), writer, tick_interval_seconds=supervisor.tick_interval)
-            synthetic_feed.run()
-            return
-
+        supervisor.handle_feed_cycle(run_feed)
         time.sleep(backoff)
         backoff = min(backoff * 2, 60)
-
 
 
 if __name__ == "__main__":

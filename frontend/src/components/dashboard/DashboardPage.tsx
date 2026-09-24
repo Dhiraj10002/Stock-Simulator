@@ -47,7 +47,8 @@ import {
   ShoppingBag,
 } from "lucide-react";
 import { formatPaise, formatPercent } from "@/lib/format";
-import type { Wallet, Portfolio, ApiResponse } from "@/types";
+import { apiFetch } from "@/lib/api";
+import type { Wallet, Portfolio, ApiResponse, Candle } from "@/types";
 
 // ---------------------------------------------------------------------------
 // TYPES & CATALOG EXPORTS (Kept for compatibility with stock details & routes)
@@ -645,49 +646,55 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
       ? Math.round((totalSectorGainers / totalSectorStocks) * 100)
       : 50;
 
+  const indexKey =
+    selectedIndex === "NIFTY 50"
+      ? "NIFTY"
+      : selectedIndex === "SENSEX"
+      ? "SENSEX"
+      : "BANKNIFTY";
+
+  const { data: indexCandles } = useQuery<Candle[]>({
+    queryKey: ["index-candles", indexKey, selectedTimeframe],
+    queryFn: async () => {
+      try {
+        const res = await apiFetch<Candle[]>(`/market/quotes/${indexKey}/history?limit=50`);
+        return res || [];
+      } catch {
+        return [];
+      }
+    },
+    staleTime: 60_000,
+  });
+
   // Market Overview Chart Coordinates & Values Generator
   const chartData = useMemo(() => {
-    const indexKey =
-      selectedIndex === "NIFTY 50"
-        ? "NIFTY"
-        : selectedIndex === "SENSEX"
-        ? "SENSEX"
-        : "BANKNIFTY";
     const liveIdxQuote = quotes[indexKey];
-    const basePrice = liveIdxQuote?.price_paise
-      ? liveIdxQuote.price_paise / 100
-      : selectedIndex === "NIFTY 50"
-      ? 23401.2
-      : selectedIndex === "SENSEX"
-      ? 74790.03
-      : 56250.0;
+    const livePrice = liveIdxQuote?.price_paise ? liveIdxQuote.price_paise / 100 : 0;
     const liveChange =
-      liveIdxQuote?.change_paise !== undefined
-        ? liveIdxQuote.change_paise / 100
-        : null;
-    const liveChangePercent =
-      liveIdxQuote?.change_percent !== undefined
-        ? liveIdxQuote.change_percent
-        : null;
+      liveIdxQuote?.change_paise !== undefined ? liveIdxQuote.change_paise / 100 : 0;
+    const liveChangePercent = liveIdxQuote?.change_percent ?? 0;
 
-    const pointsCount = selectedTimeframe === "1D" ? 32 : selectedTimeframe === "1W" ? 40 : 50;
-    const pts: { price: number; time: string }[] = [];
-
-    // Synthetic trend matching Kite's curve
-    const waveOffsets = [
-      0, 20, 15, 35, 42, 60, 50, 45, 70, 65, 80, 55, 30, 20, -10, -25, -40, -50,
-      -35, -20, -15, -45, -30, -10, -5, 10, 25, 20, 35, 45, 55, 62,
-    ];
-
-    for (let i = 0; i < pointsCount; i++) {
-      const offset = waveOffsets[i % waveOffsets.length] * (basePrice * 0.00015);
-      const val = +(basePrice + offset).toFixed(2);
-      const hour = 9 + Math.floor((i * 6.25) / pointsCount);
-      const min = Math.floor(((i * 6.25) % 1) * 60)
-        .toString()
-        .padStart(2, "0");
-      pts.push({ price: val, time: `${hour}:${min}` });
+    const candles = indexCandles || [];
+    if (candles.length === 0) {
+      return {
+        pts: [],
+        min: 0,
+        max: 0,
+        coords: [],
+        linePath: "",
+        areaPath: "",
+        currentPrice: livePrice,
+        firstPrice: livePrice,
+        change: liveChange,
+        changePercent: liveChangePercent,
+      };
     }
+
+    const pts = candles.map((c) => {
+      const d = new Date(c.timestamp * 1000);
+      const time = `${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
+      return { price: c.close_paise / 100, time };
+    });
 
     const prices = pts.map((p) => p.price);
     const min = Math.min(...prices);
@@ -699,24 +706,26 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
     const padding = 12;
 
     const coords = pts.map((pt, idx) => {
-      const x = (idx / (pts.length - 1)) * (width - padding * 2) + padding;
+      const x = (idx / (pts.length - 1 || 1)) * (width - padding * 2) + padding;
       const y = height - padding - ((pt.price - min) / range) * (height - padding * 2);
       return { x, y, pt };
     });
 
-    const linePath = `M ${coords.map((c) => `${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(" L ")}`;
-    const areaPath = `M ${coords[0].x.toFixed(1)},${height} L ${coords
-      .map((c) => `${c.x.toFixed(1)},${c.y.toFixed(1)}`)
-      .join(" L ")} L ${coords[coords.length - 1].x.toFixed(1)},${height} Z`;
+    const linePath = coords.length > 0 ? `M ${coords.map((c) => `${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(" L ")}` : "";
+    const areaPath =
+      coords.length > 0
+        ? `M ${coords[0].x.toFixed(1)},${height} L ${coords
+            .map((c) => `${c.x.toFixed(1)},${c.y.toFixed(1)}`)
+            .join(" L ")} L ${coords[coords.length - 1].x.toFixed(1)},${height} Z`
+        : "";
 
-    const finalCurrentPrice = liveIdxQuote?.price_paise
-      ? liveIdxQuote.price_paise / 100
-      : pts[pts.length - 1].price;
-    const finalChange = liveChange ?? +(pts[pts.length - 1].price - pts[0].price).toFixed(2);
-    const finalChangePercent = liveChangePercent ?? +(
-      ((pts[pts.length - 1].price - pts[0].price) / pts[0].price) *
-      100
-    ).toFixed(2);
+    const finalCurrentPrice = livePrice || (pts.length > 0 ? pts[pts.length - 1].price : 0);
+    const finalChange = liveChange ?? (pts.length > 1 ? +(pts[pts.length - 1].price - pts[0].price).toFixed(2) : 0);
+    const finalChangePercent =
+      liveChangePercent ??
+      (pts.length > 1 && pts[0].price > 0
+        ? +(((pts[pts.length - 1].price - pts[0].price) / pts[0].price) * 100).toFixed(2)
+        : 0);
 
     return {
       pts,
@@ -730,7 +739,7 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
       change: finalChange,
       changePercent: finalChangePercent,
     };
-  }, [selectedIndex, selectedTimeframe, quotes]);
+  }, [indexKey, indexCandles, quotes]);
 
   const availableBalance = wallet?.available_balance_paise ?? 100000000;
   const cashBalance = wallet?.cash_balance_paise ?? 100000000;
@@ -1636,49 +1645,57 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
 
             {/* SVG Interactive Trend Chart */}
             <div className="relative w-full h-[200px] select-none pt-2">
-              <svg
-                viewBox="0 0 760 180"
-                className="w-full h-full overflow-visible"
-                preserveAspectRatio="none"
-              >
-                <defs>
-                  <linearGradient id="overviewGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#06b6d4" stopOpacity="0.35" />
-                    <stop offset="100%" stopColor="#06b6d4" stopOpacity="0.0" />
-                  </linearGradient>
-                </defs>
+              {chartData.coords.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-slate-400 bg-slate-900/10 dark:bg-slate-950/20 rounded-xl border border-dashed border-slate-200 dark:border-slate-800">
+                  <TrendingUp className="w-7 h-7 text-slate-400 dark:text-slate-600 mb-1.5 opacity-60" />
+                  <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">Index Chart Unavailable</p>
+                  <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">Historical candle data for {selectedIndex} is not available</p>
+                </div>
+              ) : (
+                <svg
+                  viewBox="0 0 760 180"
+                  className="w-full h-full overflow-visible"
+                  preserveAspectRatio="none"
+                >
+                  <defs>
+                    <linearGradient id="overviewGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#06b6d4" stopOpacity="0.35" />
+                      <stop offset="100%" stopColor="#06b6d4" stopOpacity="0.0" />
+                    </linearGradient>
+                  </defs>
 
-                {/* Horizontal guide lines */}
-                <line x1="0" y1="30" x2="760" y2="30" stroke="currentColor" className="text-slate-100 dark:text-slate-800/60" strokeDasharray="3 3" />
-                <line x1="0" y1="90" x2="760" y2="90" stroke="currentColor" className="text-slate-100 dark:text-slate-800/60" strokeDasharray="3 3" />
-                <line x1="0" y1="150" x2="760" y2="150" stroke="currentColor" className="text-slate-100 dark:text-slate-800/60" strokeDasharray="3 3" />
+                  {/* Horizontal guide lines */}
+                  <line x1="0" y1="30" x2="760" y2="30" stroke="currentColor" className="text-slate-100 dark:text-slate-800/60" strokeDasharray="3 3" />
+                  <line x1="0" y1="90" x2="760" y2="90" stroke="currentColor" className="text-slate-100 dark:text-slate-800/60" strokeDasharray="3 3" />
+                  <line x1="0" y1="150" x2="760" y2="150" stroke="currentColor" className="text-slate-100 dark:text-slate-800/60" strokeDasharray="3 3" />
 
-                {/* Shaded Area */}
-                <path d={chartData.areaPath} fill="url(#overviewGradient)" />
+                  {/* Shaded Area */}
+                  <path d={chartData.areaPath} fill="url(#overviewGradient)" />
 
-                {/* Main Line Curve */}
-                <path
-                  d={chartData.linePath}
-                  fill="none"
-                  stroke="#06b6d4"
-                  strokeWidth="2.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-
-                {/* Interactive cursor points */}
-                {chartData.coords.map((c, i) => (
-                  <circle
-                    key={i}
-                    cx={c.x}
-                    cy={c.y}
-                    r="4"
-                    className="opacity-0 hover:opacity-100 fill-cyan-500 transition-opacity cursor-pointer"
-                    onMouseEnter={() => setHoveredChartPoint({ price: c.pt.price, time: c.pt.time })}
-                    onMouseLeave={() => setHoveredChartPoint(null)}
+                  {/* Main Line Curve */}
+                  <path
+                    d={chartData.linePath}
+                    fill="none"
+                    stroke="#06b6d4"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
                   />
-                ))}
-              </svg>
+
+                  {/* Interactive cursor points */}
+                  {chartData.coords.map((c, i) => (
+                    <circle
+                      key={i}
+                      cx={c.x}
+                      cy={c.y}
+                      r="4"
+                      className="opacity-0 hover:opacity-100 fill-cyan-500 transition-opacity cursor-pointer"
+                      onMouseEnter={() => setHoveredChartPoint({ price: c.pt.price, time: c.pt.time })}
+                      onMouseLeave={() => setHoveredChartPoint(null)}
+                    />
+                  ))}
+                </svg>
+              )}
             </div>
           </div>
 

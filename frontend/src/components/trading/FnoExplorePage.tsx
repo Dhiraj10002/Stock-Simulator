@@ -28,7 +28,7 @@ import {
 import { formatPaise, formatNumber } from "@/lib/format";
 import type { Wallet, Portfolio, ApiResponse } from "@/types";
 import FnoOrderModal from "@/components/trading/FnoOrderModal";
-import type { InstrumentMetadata } from "@/lib/mockData";
+import type { InstrumentMetadata } from "@/types";
 
 // ---------------------------------------------------------------------------
 // TYPES & DATA CONTRACTS

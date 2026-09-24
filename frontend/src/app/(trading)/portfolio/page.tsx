@@ -12,11 +12,7 @@ import WalletTransactionsTable from "@/components/portfolio/WalletTransactionsTa
 import AddFundsModal from "@/components/portfolio/AddFundsModal";
 import PortfolioAiInsightsModal from "@/components/portfolio/PortfolioAiInsightsModal";
 import ResetSimulationModal from "@/components/modals/ResetSimulationModal";
-import {
-  DEMO_HOLDINGS,
-  DEMO_POSITIONS,
-  type HoldingItem,
-} from "@/components/portfolio/PortfolioTypes";
+import { type HoldingItem } from "@/components/portfolio/PortfolioTypes";
 import {
   PieChart,
   Briefcase,
@@ -94,14 +90,6 @@ export default function PortfolioPage() {
   const [isAiInsightsOpen, setIsAiInsightsOpen] = useState(false);
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
 
-  // Demo Showcase vs Live Ledger toggle state (defaults to Live when authenticated)
-  const [useDemoData, setUseDemoData] = useState(() => {
-    if (typeof window !== "undefined") {
-      const t = localStorage.getItem("auth_token") || localStorage.getItem("stock-simulator-access-token");
-      return !t;
-    }
-    return false;
-  });
 
   const [token] = useState<string>(() => {
     if (typeof window !== "undefined") {
@@ -210,7 +198,7 @@ export default function PortfolioPage() {
 
   const quotes = useMarketStore((state) => state.quotes);
 
-  // Live vs Demo positions and holdings
+  // Live positions and holdings
   const livePositions = portfolio?.positions ?? [];
 
   const rawLiveHoldings = livePositions.filter(
@@ -222,68 +210,64 @@ export default function PortfolioPage() {
     return sum + ltpPaise * p.quantity;
   }, 0);
 
-  const activeHoldings: HoldingItem[] = useDemoData
-    ? DEMO_HOLDINGS
-    : rawLiveHoldings.map((p, idx) => {
-        const liveQuote = quotes[p.symbol];
-        const ltpPaise = liveQuote?.price_paise || p.current_price_paise || p.average_price_paise;
-        const prevClosePaise =
-          liveQuote && liveQuote.change_paise !== undefined
-            ? ltpPaise - liveQuote.change_paise
-            : p.average_price_paise;
-        const dayChangePaise =
-          liveQuote && liveQuote.change_paise !== undefined
-            ? Math.round(liveQuote.change_paise * p.quantity)
-            : Math.round((ltpPaise - p.average_price_paise) * p.quantity * 0.1);
-        const dayChangePercent =
-          liveQuote && liveQuote.change_percent !== undefined
-            ? liveQuote.change_percent
-            : prevClosePaise > 0
-            ? ((ltpPaise - prevClosePaise) / prevClosePaise) * 100
-            : 0;
+  const activeHoldings: HoldingItem[] = rawLiveHoldings.map((p, idx) => {
+    const liveQuote = quotes[p.symbol];
+    const ltpPaise = liveQuote?.price_paise || p.current_price_paise || p.average_price_paise;
+    const prevClosePaise =
+      liveQuote && liveQuote.change_paise !== undefined
+        ? ltpPaise - liveQuote.change_paise
+        : p.average_price_paise;
+    const dayChangePaise =
+      liveQuote && liveQuote.change_paise !== undefined
+        ? Math.round(liveQuote.change_paise * p.quantity)
+        : Math.round((ltpPaise - p.average_price_paise) * p.quantity * 0.1);
+    const dayChangePercent =
+      liveQuote && liveQuote.change_percent !== undefined
+        ? liveQuote.change_percent
+        : prevClosePaise > 0
+        ? ((ltpPaise - prevClosePaise) / prevClosePaise) * 100
+        : 0;
 
-        const investedValuePaise =
-          p.invested_value_paise || p.average_price_paise * p.quantity;
-        const currentValuePaise = ltpPaise * p.quantity;
-        const unrealizedPnlPaise = currentValuePaise - investedValuePaise;
-        const pnlPercent =
-          investedValuePaise > 0
-            ? (unrealizedPnlPaise / investedValuePaise) * 100
-            : 0;
+    const investedValuePaise =
+      p.invested_value_paise || p.average_price_paise * p.quantity;
+    const currentValuePaise = ltpPaise * p.quantity;
+    const unrealizedPnlPaise = currentValuePaise - investedValuePaise;
+    const pnlPercent =
+      investedValuePaise > 0
+        ? (unrealizedPnlPaise / investedValuePaise) * 100
+        : 0;
 
-        const stockInfo = STOCK_INFO_MAP[p.symbol] || {
-          name: `${p.symbol} Equity`,
-          sector: "Other" as const,
-        };
+    const stockInfo = STOCK_INFO_MAP[p.symbol] || {
+      name: `${p.symbol} Equity`,
+      sector: "Other" as const,
+    };
 
-        const weightPercent =
-          totalLiveHoldingsCurrentPaise > 0
-            ? (currentValuePaise / totalLiveHoldingsCurrentPaise) * 100
-            : 100 / Math.max(rawLiveHoldings.length, 1);
+    const weightPercent =
+      totalLiveHoldingsCurrentPaise > 0
+        ? (currentValuePaise / totalLiveHoldingsCurrentPaise) * 100
+        : 100 / Math.max(rawLiveHoldings.length, 1);
 
-        return {
-          id: `h-live-${p.uuid || idx}`,
-          symbol: p.symbol,
-          name: stockInfo.name,
-          exchange: "NSE",
-          sector: stockInfo.sector,
-          quantity: p.quantity,
-          avgBuyPricePaise: p.average_price_paise,
-          ltpPaise,
-          prevClosePaise,
-          investedValuePaise,
-          currentValuePaise,
-          unrealizedPnlPaise,
-          pnlPercent,
-          dayChangePaise,
-          dayChangePercent,
-          weightPercent,
-        };
-      });
+    return {
+      id: `h-live-${p.uuid || idx}`,
+      symbol: p.symbol,
+      name: stockInfo.name,
+      exchange: "NSE",
+      sector: stockInfo.sector,
+      quantity: p.quantity,
+      avgBuyPricePaise: p.average_price_paise,
+      ltpPaise,
+      prevClosePaise,
+      investedValuePaise,
+      currentValuePaise,
+      unrealizedPnlPaise,
+      pnlPercent,
+      dayChangePaise,
+      dayChangePercent,
+      weightPercent,
+    };
+  });
 
-  const activePositions: Position[] = useDemoData
-    ? DEMO_POSITIONS
-    : livePositions.filter((p) => p.product !== "DELIVERY" || p.quantity < 0);
+  const activePositions: Position[] = livePositions.filter((p) => p.product !== "DELIVERY" || p.quantity < 0);
 
   // Financial calculations
   const holdingsCurrentVal = activeHoldings.reduce((sum, h) => sum + h.currentValuePaise, 0);
@@ -321,9 +305,7 @@ export default function PortfolioPage() {
   const isDayProfit = dayPnlPaise >= 0;
 
   const availableBalancePaise = wallet?.available_balance_paise ?? 100000000;
-  const blockedMarginPaise = isPositionsTab
-    ? (wallet?.blocked_paise ?? (useDemoData ? 36800000 : 0))
-    : (wallet?.blocked_paise ?? 0);
+  const blockedMarginPaise = wallet?.blocked_paise ?? 0;
 
   // Square off position
   const handleSquareOff = async (pos: Position) => {
@@ -410,48 +392,6 @@ export default function PortfolioPage() {
                 <PieChart className="w-6 h-6 text-cyan-600 dark:text-cyan-400" />
                 <span>Institutional Portfolio Desk</span>
               </h1>
-
-              {/* Elegant Luxury Segmented Capsule Switcher */}
-              <div className="inline-flex items-center p-1 rounded-full bg-slate-100/90 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60 shadow-xs backdrop-blur-md">
-                <button
-                  type="button"
-                  onClick={() => setUseDemoData(true)}
-                  className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold tracking-tight transition-all duration-200 cursor-pointer select-none ${
-                    useDemoData
-                      ? "bg-white dark:bg-slate-900 text-cyan-700 dark:text-cyan-300 shadow-sm border border-slate-200/80 dark:border-slate-700"
-                      : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
-                  }`}
-                >
-                  <Sparkles
-                    className={`w-3.5 h-3.5 transition-colors ${
-                      useDemoData ? "text-cyan-600 dark:text-cyan-400" : "text-slate-400"
-                    }`}
-                  />
-                  <span>Showcase Demo</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setUseDemoData(false)}
-                  className={`flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold tracking-tight transition-all duration-200 cursor-pointer select-none ${
-                    !useDemoData
-                      ? "bg-white dark:bg-slate-900 text-emerald-700 dark:text-emerald-300 shadow-sm border border-slate-200/80 dark:border-slate-700"
-                      : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
-                  }`}
-                >
-                  <span className="relative flex h-2 w-2">
-                    {!useDemoData && (
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                    )}
-                    <span
-                      className={`relative inline-flex rounded-full h-2 w-2 ${
-                        !useDemoData ? "bg-emerald-500" : "bg-slate-400"
-                      }`}
-                    ></span>
-                  </span>
-                  <span>Live Ledger</span>
-                </button>
-              </div>
             </div>
 
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 flex items-center gap-2">
@@ -749,7 +689,6 @@ export default function PortfolioPage() {
             holdings={activeHoldings}
             positions={activePositions}
             availableMarginPaise={availableBalancePaise}
-            useDemoData={useDemoData}
             token={token || ""}
           />
         )}
@@ -759,7 +698,6 @@ export default function PortfolioPage() {
         {/* ===================================================================== */}
         {activeTab === "ANALYTICS" && (
           <PortfolioPnlAnalytics
-            useDemoData={useDemoData}
             totalValuationPaise={totalValuationPaise}
             totalUnrealizedPnlPaise={totalUnrealizedPnlPaise}
             availableBalancePaise={availableBalancePaise}
@@ -775,7 +713,6 @@ export default function PortfolioPage() {
         {/* ===================================================================== */}
         {activeTab === "LEDGER" && (
           <WalletTransactionsTable
-            useDemoData={useDemoData}
             token={token || ""}
           />
         )}
