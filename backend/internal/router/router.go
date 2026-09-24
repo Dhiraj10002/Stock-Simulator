@@ -11,9 +11,14 @@ import (
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/database"
 	fnoHandler "github.com/Dhiraj10002/Stock-Simulator/backend/internal/fno/handler"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/handler"
+	"strings"
+
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/alias"
+	marketDTO "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/dto"
 	marketHandler "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/handler"
 	marketWebsocket "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/websocket"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/middleware"
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
 	newsHandler "github.com/Dhiraj10002/Stock-Simulator/backend/internal/news/handler"
 	orderHandler "github.com/Dhiraj10002/Stock-Simulator/backend/internal/order/handler"
 	portfolioHandler "github.com/Dhiraj10002/Stock-Simulator/backend/internal/portfolio/handler"
@@ -53,8 +58,39 @@ func Setup(ctx context.Context, cfg *config.Config) *gin.Engine {
 	if cfg.MarketWorkerURL != "" {
 		market.Service().SetWorkerURL(cfg.MarketWorkerURL)
 	}
+	if cfg.MarketFeedMode != "" {
+		market.Service().SetFeedMode(marketDTO.NormalizeFeedMode(cfg.MarketFeedMode))
+	}
 	if cfg.AllowSeededQuotes {
 		market.Service().SetAllowSeededQuotes(true)
+	}
+	if database.GetDB() != nil {
+		market.Service().SetInstrumentFinder(func(symbol string) (bool, error) {
+			clean := strings.ToUpper(strings.TrimSpace(symbol))
+			var count int64
+			err := database.GetDB().Model(&model.Instrument{}).
+				Where("UPPER(symbol) = ? OR UPPER(symbol) = ? OR UPPER(name) = ?", clean, clean+"-EQ", clean).
+				Count(&count).Error
+			if err != nil {
+				return false, err
+			}
+			if count > 0 {
+				return true, nil
+			}
+			canonical := alias.ResolveCanonicalSymbol(clean)
+			if canonical != "" && canonical != clean {
+				err = database.GetDB().Model(&model.Instrument{}).
+					Where("UPPER(symbol) = ? OR UPPER(symbol) = ? OR UPPER(name) = ?", canonical, canonical+"-EQ", canonical).
+					Count(&count).Error
+				if err != nil {
+					return false, err
+				}
+				if count > 0 {
+					return true, nil
+				}
+			}
+			return false, nil
+		})
 	}
 	portfolio := portfolioHandler.New(market.Service())
 	orders := orderHandler.New(market.Service(), cfg)

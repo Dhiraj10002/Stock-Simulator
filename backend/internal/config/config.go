@@ -37,6 +37,7 @@ type Config struct {
 	OptionSellMarginPercent    int64
 	AllowSeededQuotes          bool
 	MarketWorkerURL            string
+	MarketFeedMode             string
 }
 
 func Load() (*Config, error) {
@@ -70,6 +71,11 @@ func Load() (*Config, error) {
 		OptionSellMarginPercent:    viper.GetInt64("OPTION_SELL_MARGIN_PERCENT"),
 		AllowSeededQuotes:          viper.GetBool("ALLOW_SEEDED_QUOTES") || viper.GetBool("SIMULATION_MODE") || viper.GetBool("ALLOW_SEEDED_EXECUTABLE_QUOTES"),
 		MarketWorkerURL:            viper.GetString("MARKET_WORKER_URL"),
+		MarketFeedMode:             viper.GetString("MARKET_FEED_MODE"),
+	}
+
+	if cfg.MarketFeedMode == "" {
+		cfg.MarketFeedMode = "LIVE"
 	}
 
 	if cfg.Port == "" {

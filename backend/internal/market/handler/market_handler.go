@@ -34,8 +34,16 @@ func (h *Handler) SetWorkerURL(workerURL string) {
 func (h *Handler) Quote(c *gin.Context) {
 	quote, err := h.service.CurrentQuote(c.Param("symbol"))
 	if err != nil {
-		if errors.Is(err, cache.ErrUnavailable) {
-			response.Error(c, http.StatusServiceUnavailable, "Market data temporarily unavailable", nil)
+		if errors.Is(err, service.ErrInstrumentNotFound) {
+			response.Error(c, http.StatusNotFound, "Instrument not found in canonical master", "INSTRUMENT_NOT_FOUND")
+			return
+		}
+		if errors.Is(err, service.ErrQuoteNotFound) {
+			response.Error(c, http.StatusNotFound, "Market quote not found", "QUOTE_NOT_FOUND")
+			return
+		}
+		if errors.Is(err, cache.ErrUnavailable) || errors.Is(err, service.ErrQuoteUnavailable) {
+			response.Error(c, http.StatusServiceUnavailable, "Market data temporarily unavailable", "MARKET_DATA_UNAVAILABLE")
 			return
 		}
 		response.Error(c, http.StatusBadRequest, err.Error(), nil)
@@ -64,8 +72,12 @@ func (h *Handler) History(c *gin.Context) {
 	}
 	candles, err := h.service.HistoricalQuotes(c.Param("symbol"), limit)
 	if err != nil {
-		if errors.Is(err, cache.ErrUnavailable) {
-			response.Error(c, http.StatusServiceUnavailable, "Market data temporarily unavailable", nil)
+		if errors.Is(err, service.ErrInstrumentNotFound) {
+			response.Error(c, http.StatusNotFound, "Instrument not found in canonical master", "INSTRUMENT_NOT_FOUND")
+			return
+		}
+		if errors.Is(err, cache.ErrUnavailable) || errors.Is(err, service.ErrQuoteUnavailable) {
+			response.Error(c, http.StatusServiceUnavailable, "Market data temporarily unavailable", "MARKET_DATA_UNAVAILABLE")
 			return
 		}
 		response.Error(c, http.StatusBadRequest, err.Error(), nil)

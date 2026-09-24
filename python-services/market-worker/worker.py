@@ -441,7 +441,7 @@ def fetch_quote_for_symbol(symbol: str) -> dict[str, Any] | None:
         except Exception as e:
             print(f"market worker: error fetching live quote for {symbol} from Angel One: {e}", flush=True)
 
-    benchmark = DEFAULT_BENCHMARK_PRICES_PAISE.get(clean_sym) or DEFAULT_BENCHMARK_PRICES_PAISE.get(lookup_sym)
+    benchmark = DEFAULT_BENCHMARK_PRICES_PAISE.get(clean_sym) or DEFAULT_BENCHMARK_PRICES_PAISE.get(canonical_sym)
     if benchmark:
         now_iso = datetime.now(timezone.utc).isoformat()
         quote = {

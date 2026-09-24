@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -42,6 +43,26 @@ func (h *OrderHandler) Create(c *gin.Context) {
 	}
 	order, err := h.service.Create(c.GetString("user_id"), request)
 	if err != nil {
+		if errors.Is(err, service.ErrInstrumentNotFound) {
+			response.Error(c, http.StatusNotFound, "Instrument not found in canonical master", "INSTRUMENT_NOT_FOUND")
+			return
+		}
+		if errors.Is(err, marketService.ErrQuoteNotFound) {
+			response.Error(c, http.StatusNotFound, "Market quote not found for symbol", "QUOTE_NOT_FOUND")
+			return
+		}
+		if errors.Is(err, marketService.ErrQuoteStale) {
+			response.Error(c, http.StatusBadRequest, "Market quote is stale; cannot execute order", "QUOTE_STALE")
+			return
+		}
+		if errors.Is(err, marketService.ErrQuoteIneligible) {
+			response.Error(c, http.StatusBadRequest, "Market quote source is not eligible for execution", "QUOTE_INELIGIBLE")
+			return
+		}
+		if errors.Is(err, marketService.ErrQuoteUnavailable) {
+			response.Error(c, http.StatusServiceUnavailable, "Market data is currently unavailable", "MARKET_DATA_UNAVAILABLE")
+			return
+		}
 		response.Error(c, http.StatusBadRequest, err.Error(), nil)
 		return
 	}
@@ -80,6 +101,22 @@ func (h *OrderHandler) Execute(c *gin.Context) {
 		return
 	}
 	if err := h.service.Execute(c.GetString("user_id"), c.Param("id")); err != nil {
+		if errors.Is(err, marketService.ErrQuoteNotFound) {
+			response.Error(c, http.StatusNotFound, "Market quote not found for symbol", "QUOTE_NOT_FOUND")
+			return
+		}
+		if errors.Is(err, marketService.ErrQuoteStale) {
+			response.Error(c, http.StatusBadRequest, "Market quote is stale; cannot execute order", "QUOTE_STALE")
+			return
+		}
+		if errors.Is(err, marketService.ErrQuoteIneligible) {
+			response.Error(c, http.StatusBadRequest, "Market quote source is not eligible for execution", "QUOTE_INELIGIBLE")
+			return
+		}
+		if errors.Is(err, marketService.ErrQuoteUnavailable) {
+			response.Error(c, http.StatusServiceUnavailable, "Market data is currently unavailable", "MARKET_DATA_UNAVAILABLE")
+			return
+		}
 		response.Error(c, http.StatusBadRequest, err.Error(), nil)
 		return
 	}

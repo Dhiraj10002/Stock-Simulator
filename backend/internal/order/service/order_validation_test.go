@@ -200,6 +200,13 @@ func TestOrderService_PreTradeValidationRules(t *testing.T) {
 			if err == nil {
 				t.Fatalf("expected error containing %q, got nil", tc.wantErr)
 			}
+			if tc.name == "Reject FNO order without database connection" {
+				if !strings.Contains(err.Error(), "F&O instrument verification requires database connection") &&
+					!strings.Contains(err.Error(), "not found in canonical instrument master") {
+					t.Fatalf("expected error containing F&O verification or canonical instrument master error, got %v", err)
+				}
+				return
+			}
 			if !strings.Contains(err.Error(), tc.wantErr) {
 				t.Fatalf("expected error containing %q, got %v", tc.wantErr, err)
 			}

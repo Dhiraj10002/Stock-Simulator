@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -17,10 +18,29 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+var (
+	// ErrQuoteNotFound indicates that no quote exists for the symbol in Redis or the upstream worker.
+	ErrQuoteNotFound = errors.New("quote not found")
+
+	// ErrQuoteStale indicates that the quote timestamp is older than the maximum executable age.
+	ErrQuoteStale = errors.New("market quote is stale")
+
+	// ErrQuoteIneligible indicates that the quote source is not eligible for execution under the current feed mode.
+	ErrQuoteIneligible = errors.New("quote source is not eligible for execution")
+
+	// ErrQuoteUnavailable indicates that the quote service or market feed is unavailable.
+	ErrQuoteUnavailable = errors.New("market data unavailable")
+
+	// ErrInstrumentNotFound indicates that the requested symbol does not exist in the canonical instrument master.
+	ErrInstrumentNotFound = errors.New("instrument not found in canonical instrument master")
+)
+
 type Service struct {
 	client            *redis.Client
 	timeout           time.Duration
 	allowSeededQuotes bool
+	feedMode          dto.FeedMode
+	instrumentFinder  func(symbol string) (bool, error)
 	workerURL         string
 	httpClient        *http.Client
 }
@@ -34,6 +54,51 @@ func (s *Service) AllowSeededQuotes() bool {
 		return false
 	}
 	return s.allowSeededQuotes
+}
+
+func (s *Service) Client() *redis.Client {
+	if s == nil {
+		return nil
+	}
+	return s.client
+}
+
+func (s *Service) SetClient(c *redis.Client) {
+	if s != nil {
+		s.client = c
+	}
+}
+
+func (s *Service) SetInstrumentFinder(fn func(symbol string) (bool, error)) {
+	if s != nil {
+		s.instrumentFinder = fn
+	}
+}
+
+func (s *Service) InstrumentFinder() func(symbol string) (bool, error) {
+	if s == nil {
+		return nil
+	}
+	return s.instrumentFinder
+}
+
+func (s *Service) SetFeedMode(mode dto.FeedMode) {
+	if s != nil {
+		s.feedMode = dto.NormalizeFeedMode(string(mode))
+	}
+}
+
+func (s *Service) FeedMode() dto.FeedMode {
+	if s == nil {
+		return dto.FeedModeLive
+	}
+	if s.feedMode != "" {
+		return s.feedMode
+	}
+	if env := strings.TrimSpace(os.Getenv("MARKET_FEED_MODE")); env != "" {
+		return dto.NormalizeFeedMode(env)
+	}
+	return dto.FeedModeLive
 }
 
 func (s *Service) SetWorkerURL(workerURL string) {
@@ -81,35 +146,6 @@ func New(redisURL string, timeout time.Duration) (*Service, error) {
 	return &Service{client: client, timeout: timeout}, nil
 }
 
-var benchmarkPrices = map[string]int64{
-	"PRAJIND":    31215,   // ₹312.15
-	"BAJFINANCE": 102130,  // ₹1,021.30
-	"AXISBANK":   125000,  // ₹1,250.00
-	"KOTAKBANK":  41480,   // ₹414.80
-	"APARINDS":   1894500, // ₹18,945.00
-	"RELIANCE":   124740,  // ₹1,247.40
-	"TCS":        212870,  // ₹2,128.70
-	"INFY":       103850,  // ₹1,038.50
-	"HDFCBANK":   164280,  // ₹1,642.80
-	"TATAMOTORS": 30165,   // ₹301.65 (TMPV)
-	"TMPV":       30165,   // ₹301.65
-	"TMCV":       44450,   // ₹444.50
-	"BHARTIARTL": 189330,  // ₹1,893.30
-	"ETERNAL":    33590,   // ₹335.90
-	"ZOMATO":     33590,   // ₹335.90
-	"SUZLON":     7450,    // ₹74.50
-	"TRENT":      714000,  // ₹7,140.00
-	"ADANIENT":   302000,  // ₹3,020.00
-	"BEL":        39330,   // ₹393.30
-	"SBIN":       78500,   // ₹785.00
-	"ICICIBANK":  121530,  // ₹1,215.30
-	"NIFTY":      2335000, // ₹23,350.00
-	"BANKNIFTY":  5625000, // ₹56,250.00
-	"FINNIFTY":   2552000, // ₹25,520.00
-	"MIDCPNIFTY": 1448000, // ₹14,480.00
-	"SENSEX":     7450000, // ₹74,500.00
-}
-
 var workerHTTPClient = &http.Client{
 	Timeout: 3 * time.Second,
 }
@@ -143,42 +179,6 @@ func fetchLiveFromWorker(symbol string) (*dto.QuoteResponse, error) {
 	return s.fetchLiveFromWorker(symbol)
 }
 
-func fallbackPriceForSymbol(symbol string) int64 {
-	clean := strings.ToUpper(strings.TrimSpace(symbol))
-	clean = strings.TrimSuffix(clean, "-EQ")
-	clean = strings.TrimSuffix(clean, "-BE")
-	clean = strings.TrimSuffix(clean, "-SM")
-	if price, ok := benchmarkPrices[clean]; ok {
-		return price
-	}
-	canonical := alias.ResolveCanonicalSymbol(clean)
-	if canonical != "" && canonical != clean {
-		if price, ok := benchmarkPrices[canonical]; ok {
-			return price
-		}
-	}
-	for _, a := range alias.GetAliases(clean) {
-		if price, ok := benchmarkPrices[a]; ok {
-			return price
-		}
-	}
-	var hash int64
-	for _, c := range clean {
-		hash = (hash*31 + int64(c)) % 1000000
-	}
-	if hash < 0 {
-		hash = -hash
-	}
-
-	// For F&O Option contracts (ending in CE or PE), premium is realistically ₹15.00 to ₹350.00 (1500 to 35000 paise)
-	if strings.HasSuffix(clean, "CE") || strings.HasSuffix(clean, "PE") {
-		return 1500 + (hash % 33500)
-	}
-
-	// Dynamic price between ₹120.00 and ₹4,800.00 for equities
-	return (12000 + (hash % 468000))
-}
-
 func (s *Service) SetQuote(symbol string, pricePaise int64, volume int64) error {
 	symbol = strings.ToUpper(strings.TrimSpace(symbol))
 	if symbol == "" {
@@ -201,12 +201,21 @@ func (s *Service) SetQuote(symbol string, pricePaise int64, volume int64) error 
 
 // CachedQuote returns the in-memory/Redis quote without making a synchronous HTTP call to the market worker.
 func (s *Service) CachedQuote(symbol string) (*dto.QuoteResponse, error) {
-	if s == nil || s.client == nil {
-		return nil, fmt.Errorf("redis client is nil")
-	}
 	symbol = strings.ToUpper(strings.TrimSpace(symbol))
 	if symbol == "" {
 		return nil, fmt.Errorf("symbol is required")
+	}
+	if s != nil && s.instrumentFinder != nil {
+		found, err := s.instrumentFinder(symbol)
+		if err != nil {
+			return nil, err
+		}
+		if !found {
+			return nil, fmt.Errorf("%w: %s", ErrInstrumentNotFound, symbol)
+		}
+	}
+	if s == nil || s.client == nil {
+		return nil, ErrQuoteUnavailable
 	}
 	ctx, cancel := cache.Context(context.Background(), s.timeout)
 	defer cancel()
@@ -218,7 +227,7 @@ func (s *Service) CachedQuote(symbol string) (*dto.QuoteResponse, error) {
 		}
 	}
 	if len(values) == 0 {
-		return nil, fmt.Errorf("quote not found in cache")
+		return nil, ErrQuoteNotFound
 	}
 	price, err := strconv.ParseInt(values["price_paise"], 10, 64)
 	if err != nil || price <= 0 {
@@ -246,6 +255,18 @@ func (s *Service) CurrentQuote(symbol string) (*dto.QuoteResponse, error) {
 	symbol = strings.ToUpper(strings.TrimSpace(symbol))
 	if symbol == "" {
 		return nil, fmt.Errorf("symbol is required")
+	}
+	if s != nil && s.instrumentFinder != nil {
+		found, err := s.instrumentFinder(symbol)
+		if err != nil {
+			return nil, err
+		}
+		if !found {
+			return nil, fmt.Errorf("%w: %s", ErrInstrumentNotFound, symbol)
+		}
+	}
+	if s == nil || s.client == nil {
+		return nil, ErrQuoteUnavailable
 	}
 	ctx, cancel := cache.Context(context.Background(), s.timeout)
 	defer cancel()
@@ -280,43 +301,16 @@ func (s *Service) CurrentQuote(symbol string) (*dto.QuoteResponse, error) {
 			liveQuote, err = s.fetchLiveFromWorker(canonical)
 		}
 		if err == nil && liveQuote != nil && liveQuote.PricePaise > 0 {
-			// Persist authoritative worker quote into Redis cache
-			nowStr := liveQuote.UpdatedAt
-			if nowStr == "" {
-				nowStr = time.Now().Format(time.RFC3339)
-				liveQuote.UpdatedAt = nowStr
-			}
-			_ = s.client.HSet(ctx, quoteKey(symbol), map[string]interface{}{
-				"symbol":         liveQuote.Symbol,
-				"price_paise":    liveQuote.PricePaise,
-				"change_paise":   liveQuote.ChangePaise,
-				"change_percent": liveQuote.ChangePercent,
-				"source":         liveQuote.Source,
-				"updated_at":     nowStr,
-			}).Err()
-			_ = s.client.Expire(ctx, quoteKey(symbol), 5*time.Minute).Err()
+			// Purely observational read: do NOT call HSet on Redis
 			return liveQuote, nil
 		}
 		if len(values) == 0 {
-			price := fallbackPriceForSymbol(symbol)
-			nowStr := time.Now().Format(time.RFC3339)
-			_ = s.client.HSet(ctx, quoteKey(symbol), map[string]interface{}{
-				"price_paise": price,
-				"volume":      5000,
-				"source":      "auto_seeded",
-				"updated_at":  nowStr,
-			}).Err()
-			return &dto.QuoteResponse{
-				Symbol:     symbol,
-				PricePaise: price,
-				Source:     "auto_seeded",
-				UpdatedAt:  nowStr,
-			}, nil
+			return nil, ErrQuoteNotFound
 		}
 	}
 
 	price, err := strconv.ParseInt(values["price_paise"], 10, 64)
-	if err != nil {
+	if err != nil || price <= 0 {
 		return nil, fmt.Errorf("invalid stored quote")
 	}
 	var changePaise int64
@@ -357,10 +351,65 @@ func (s *Service) ExecutableQuote(symbol string) (*dto.QuoteResponse, error) {
 		return nil, err
 	}
 	allowSeeded := s != nil && s.allowSeededQuotes
-	if err := validateExecutableQuoteWithMode(quote, time.Now(), allowSeeded); err != nil {
+	mode := s.FeedMode()
+	if err := ValidateExecutableQuoteWithFeedMode(quote, time.Now(), mode, allowSeeded); err != nil {
 		return nil, err
 	}
 	return quote, nil
+}
+
+// ValidateExecutableQuoteWithFeedMode validates whether a quote can be safely used
+// for order execution and settlement against the authoritative FeedMode matrix.
+//
+// Eligibility rules:
+// - Price must be > 0
+// - UpdatedAt must be valid RFC3339
+// - UpdatedAt must not be in the future beyond 5 seconds (clock skew tolerance)
+// - UpdatedAt must not be older than maxExecutableQuoteAge (2 minutes)
+// - Under FeedModeLive: quote source must be QuoteSourceAngelOneLive
+// - Under FeedModeSynthetic: quote source must be QuoteSourceSyntheticGBM or QuoteSourceFNOEngine (or QuoteSourceSeed if allowSeeded is true)
+// - Under FeedModeUnavailable: all quotes are rejected
+// - QuoteSourceSeed is rejected unless allowSeeded is true in simulation mode
+func ValidateExecutableQuoteWithFeedMode(quote *dto.QuoteResponse, now time.Time, mode dto.FeedMode, allowSeeded bool) error {
+	if quote == nil {
+		return fmt.Errorf("%w: market quote is nil", ErrQuoteNotFound)
+	}
+	if quote.PricePaise <= 0 {
+		return fmt.Errorf("market quote has an invalid price: %d", quote.PricePaise)
+	}
+	if strings.TrimSpace(quote.UpdatedAt) == "" {
+		return fmt.Errorf("market quote has no update time")
+	}
+	updatedAt, err := time.Parse(time.RFC3339, quote.UpdatedAt)
+	if err != nil {
+		return fmt.Errorf("market quote has an invalid update time")
+	}
+	if updatedAt.After(now.Add(5 * time.Second)) {
+		return fmt.Errorf("market quote is in the future")
+	}
+	if now.Sub(updatedAt) > maxExecutableQuoteAge {
+		return ErrQuoteStale
+	}
+
+	normMode := dto.NormalizeFeedMode(string(mode))
+	if normMode == dto.FeedModeUnavailable {
+		return fmt.Errorf("%w: market feed is UNAVAILABLE", ErrQuoteUnavailable)
+	}
+
+	normSource := dto.NormalizeQuoteSource(quote.Source)
+
+	if normSource == dto.QuoteSourceSeed {
+		if !allowSeeded || normMode != dto.FeedModeSynthetic {
+			return fmt.Errorf("%w: seeded quotes (%s) cannot be used for trade execution without explicit simulation mode", ErrQuoteIneligible, quote.Source)
+		}
+		return nil
+	}
+
+	if !dto.IsSourceExecutableInMode(normSource, normMode) {
+		return fmt.Errorf("%w: quote source %q (%s) is not eligible for execution in %s feed mode", ErrQuoteIneligible, quote.Source, normSource, normMode)
+	}
+
+	return nil
 }
 
 // ValidateExecutableQuoteWithMode validates whether a quote can be safely used
@@ -368,10 +417,10 @@ func (s *Service) ExecutableQuote(symbol string) (*dto.QuoteResponse, error) {
 // (auto_seeded, initial_seed, benchmark_fallback, etc.) are strictly rejected.
 func ValidateExecutableQuoteWithMode(quote *dto.QuoteResponse, now time.Time, allowSeeded bool) error {
 	if quote == nil {
-		return fmt.Errorf("market quote is nil")
+		return fmt.Errorf("%w: market quote is nil", ErrQuoteNotFound)
 	}
 	if !allowSeeded && IsSeededSource(quote.Source) {
-		return fmt.Errorf("seeded quotes (%s) cannot be used for trade execution without explicit simulation mode", quote.Source)
+		return fmt.Errorf("%w: seeded quotes (%s) cannot be used for trade execution without explicit simulation mode", ErrQuoteIneligible, quote.Source)
 	}
 	if quote.PricePaise <= 0 {
 		return fmt.Errorf("market quote has an invalid price")
@@ -387,7 +436,7 @@ func ValidateExecutableQuoteWithMode(quote *dto.QuoteResponse, now time.Time, al
 		return fmt.Errorf("market quote is in the future")
 	}
 	if now.Sub(updatedAt) > maxExecutableQuoteAge {
-		return fmt.Errorf("market quote is stale")
+		return ErrQuoteStale
 	}
 	return nil
 }
@@ -409,8 +458,20 @@ func (s *Service) HistoricalQuotes(symbol string, limit int) ([]dto.CandleRespon
 	if symbol == "" {
 		return nil, fmt.Errorf("symbol is required")
 	}
+	if s.instrumentFinder != nil {
+		found, err := s.instrumentFinder(symbol)
+		if err != nil {
+			return nil, err
+		}
+		if !found {
+			return nil, fmt.Errorf("%w: %s", ErrInstrumentNotFound, symbol)
+		}
+	}
 	if limit <= 0 || limit > 500 {
 		return nil, fmt.Errorf("limit must be between 1 and 500")
+	}
+	if s == nil || s.client == nil {
+		return nil, ErrQuoteUnavailable
 	}
 	ctx, cancel := cache.Context(context.Background(), s.timeout)
 	defer cancel()

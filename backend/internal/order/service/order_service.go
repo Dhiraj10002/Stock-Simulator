@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -18,6 +19,11 @@ import (
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/order/repository"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/product"
 	"github.com/google/uuid"
+)
+
+var (
+	// ErrInstrumentNotFound indicates the symbol does not exist in the canonical instrument master.
+	ErrInstrumentNotFound = errors.New("instrument not found in canonical instrument master")
 )
 
 type OrderService struct {
@@ -135,13 +141,13 @@ func (s *OrderService) Create(userID string, request dto.CreateOrderRequest) (*d
 	if s.instrumentFinder != nil {
 		found, err := s.instrumentFinder(request.Symbol)
 		if err != nil || found == nil {
-			return nil, fmt.Errorf("instrument %q not found in canonical instrument master", request.Symbol)
+			return nil, fmt.Errorf("%w: instrument %q not found in canonical instrument master", ErrInstrumentNotFound, request.Symbol)
 		}
 		instrument = found
 	} else if database.GetDB() != nil {
 		found, err := s.repo.FindInstrument(request.Symbol)
 		if err != nil || found == nil {
-			return nil, fmt.Errorf("instrument %q not found in canonical instrument master", request.Symbol)
+			return nil, fmt.Errorf("%w: instrument %q not found in canonical instrument master", ErrInstrumentNotFound, request.Symbol)
 		}
 		instrument = found
 	} else if request.Product == model.OrderProductFNO {
