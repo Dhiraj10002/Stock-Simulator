@@ -12,6 +12,8 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { formatPaise, formatPercent } from "@/lib/format";
+import { useMarketStore } from "@/stores/market-store";
+import { resolveCanonicalSymbol } from "@/lib/alias";
 import type { Position } from "@/types";
 
 type SegmentFilter = "ALL" | "DELIVERY" | "INTRADAY" | "FNO";
@@ -47,13 +49,54 @@ export default function PositionsTable({
   const [squaringOff, setSquaringOff] = useState<string | null>(null);
   const [bulkClosing, setBulkClosing] = useState(false);
 
-  // Normalize positions so product is always guaranteed
+  const quotes = useMarketStore((s) => s.quotes);
+
+  // Normalize positions and reprice from live quote stream if available
   const normalizedPositions = useMemo(() => {
-    return positions.map((p) => ({
-      ...p,
-      product: resolvePositionProduct(p),
-    }));
-  }, [positions]);
+    return positions.map((p) => {
+      const prod = resolvePositionProduct(p);
+      const canonical = resolveCanonicalSymbol(p.symbol);
+      const liveQuote = quotes[p.symbol] || quotes[canonical];
+
+      let currentPricePaise = p.current_price_paise;
+      let quoteStatus = p.quote_status || (p.current_price_paise > 0 ? "FRESH" : "UNAVAILABLE");
+      let isAvailable = p.is_quote_available ?? (p.current_price_paise > 0);
+      const isStale = p.is_quote_stale ?? false;
+
+      if (liveQuote && liveQuote.price_paise > 0) {
+        currentPricePaise = liveQuote.price_paise;
+        isAvailable = true;
+        quoteStatus = "FRESH";
+      }
+
+      const qty = p.quantity;
+      const avg = p.average_price_paise;
+      let currentValuePaise = p.current_value_paise;
+      let unrealizedPnlPaise = p.unrealized_pnl_paise;
+
+      if (isAvailable && currentPricePaise > 0) {
+        currentValuePaise = Math.abs(qty) * currentPricePaise;
+        if (qty < 0) {
+          // Short position: gains when market price drops below average entry
+          unrealizedPnlPaise = (avg - currentPricePaise) * Math.abs(qty);
+        } else {
+          // Long position: gains when market price rises above average entry
+          unrealizedPnlPaise = (currentPricePaise - avg) * qty;
+        }
+      }
+
+      return {
+        ...p,
+        product: prod,
+        current_price_paise: currentPricePaise,
+        current_value_paise: currentValuePaise,
+        unrealized_pnl_paise: unrealizedPnlPaise,
+        quote_status: quoteStatus,
+        is_quote_available: isAvailable,
+        is_quote_stale: isStale,
+      };
+    });
+  }, [positions, quotes]);
 
   // Filter positions by segment
   const filteredPositions = useMemo(() => {
@@ -70,13 +113,11 @@ export default function PositionsTable({
     filteredPositions.forEach((pos) => {
       const posInvested =
         pos.invested_value_paise || pos.average_price_paise * Math.abs(pos.quantity);
-      const posCurrent =
-        pos.current_value_paise || pos.current_price_paise * Math.abs(pos.quantity);
-      const posPnl = pos.unrealized_pnl_paise ?? (posCurrent - posInvested);
-
       invested += posInvested;
-      current += posCurrent;
-      pnl += posPnl;
+      if (pos.is_quote_available !== false && pos.quote_status !== "UNAVAILABLE") {
+        current += pos.current_value_paise || (pos.current_price_paise * Math.abs(pos.quantity));
+        pnl += pos.unrealized_pnl_paise;
+      }
     });
 
     const pnlPercent = invested > 0 ? (pnl / invested) * 100 : 0;
@@ -309,40 +350,65 @@ export default function PositionsTable({
                   </td>
 
                   {/* Current Market Price */}
-                  <td className="py-3 px-2.5 text-right text-slate-900 dark:text-slate-100 font-bold">
-                    {formatPaise(pos.current_price_paise)}
+                  <td className="py-3 px-2.5 text-right font-bold">
+                    {pos.quote_status === "UNAVAILABLE" || pos.is_quote_available === false ? (
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800/40">
+                        UNAVAILABLE
+                      </span>
+                    ) : (
+                      <span className="text-slate-900 dark:text-slate-100 inline-flex items-center justify-end gap-1">
+                        {formatPaise(pos.current_price_paise)}
+                        {pos.quote_status === "STALE" || pos.is_quote_stale ? (
+                          <span className="text-[9px] font-bold px-1 py-0.2 rounded bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300">
+                            STALE
+                          </span>
+                        ) : null}
+                      </span>
+                    )}
                   </td>
 
                   {/* Current Value */}
                   <td className="py-3 px-2.5 text-right text-slate-700 dark:text-slate-300 font-semibold">
-                    {formatPaise(pos.current_value_paise)}
+                    {pos.quote_status === "UNAVAILABLE" || pos.is_quote_available === false ? (
+                      <span className="text-slate-400 dark:text-slate-500 text-xs font-mono">—</span>
+                    ) : (
+                      formatPaise(pos.current_value_paise)
+                    )}
                   </td>
 
                   {/* Unrealized P&L */}
                   <td className="py-3 px-3 text-right">
-                    <div
-                      className={`font-black text-xs flex items-center justify-end gap-1 font-tabular ${
-                        isProfit ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
-                      }`}
-                    >
-                      {isProfit ? (
-                        <TrendingUp className="w-3.5 h-3.5" />
-                      ) : (
-                        <TrendingDown className="w-3.5 h-3.5" />
-                      )}
-                      <span>
-                        {isProfit ? "+" : ""}
-                        {formatPaise(pnlPaise)}
+                    {pos.quote_status === "UNAVAILABLE" || pos.is_quote_available === false ? (
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                        UNAVAILABLE
                       </span>
-                    </div>
-                    <div
-                      className={`text-[10px] font-bold ${
-                        isProfit ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
-                      }`}
-                    >
-                      {isProfit ? "+" : ""}
-                      {formatPercent(pnlPercent)}
-                    </div>
+                    ) : (
+                      <>
+                        <div
+                          className={`font-black text-xs flex items-center justify-end gap-1 font-tabular ${
+                            isProfit ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
+                          }`}
+                        >
+                          {isProfit ? (
+                            <TrendingUp className="w-3.5 h-3.5" />
+                          ) : (
+                            <TrendingDown className="w-3.5 h-3.5" />
+                          )}
+                          <span>
+                            {isProfit ? "+" : ""}
+                            {formatPaise(pnlPaise)}
+                          </span>
+                        </div>
+                        <div
+                          className={`text-[10px] font-bold ${
+                            isProfit ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
+                          }`}
+                        >
+                          {isProfit ? "+" : ""}
+                          {formatPercent(pnlPercent)}
+                        </div>
+                      </>
+                    )}
                   </td>
 
                   {/* One-Click Square-Off Action */}

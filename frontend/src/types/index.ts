@@ -24,6 +24,10 @@ export type Position = {
   unrealized_pnl_paise: number;
   realized_pnl_paise?: number;
   margin_blocked_paise?: number;
+  quote_status?: "FRESH" | "STALE" | "UNAVAILABLE";
+  quote_source?: string;
+  is_quote_available?: boolean;
+  is_quote_stale?: boolean;
 };
 
 export type Portfolio = {
@@ -31,6 +35,9 @@ export type Portfolio = {
   current_value_paise: number;
   unrealized_pnl_paise: number;
   realized_pnl_paise?: number;
+  daily_pnl_paise?: number;
+  total_pnl_paise?: number;
+  valuation_status?: "REALTIME" | "STALE" | "DEGRADED";
   positions: Position[];
 };
 

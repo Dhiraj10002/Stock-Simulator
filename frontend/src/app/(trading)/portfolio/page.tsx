@@ -36,6 +36,7 @@ import {
 } from "lucide-react";
 import { formatPaise, formatPercent } from "@/lib/format";
 import { useMarketStore } from "@/stores/market-store";
+import { resolveCanonicalSymbol } from "@/lib/alias";
 import { API_URL } from "@/lib/api";
 import type { Portfolio, Wallet, ApiResponse, Position } from "@/types";
 
@@ -209,14 +210,18 @@ export default function PortfolioPage() {
     (p) => p.product === "DELIVERY" && p.quantity > 0
   );
   const totalLiveHoldingsCurrentPaise = rawLiveHoldings.reduce((sum, p) => {
-    const liveQuote = quotes[p.symbol];
-    const ltpPaise = liveQuote?.price_paise || p.current_price_paise || p.average_price_paise;
-    return sum + ltpPaise * p.quantity;
+    const canonical = resolveCanonicalSymbol(p.symbol);
+    const liveQuote = quotes[p.symbol] || quotes[canonical];
+    const isAvail = p.is_quote_available ?? (liveQuote ? liveQuote.price_paise > 0 : p.current_price_paise > 0);
+    const ltpPaise = liveQuote?.price_paise || p.current_price_paise || (isAvail ? p.average_price_paise : 0);
+    return sum + (isAvail ? ltpPaise * p.quantity : 0);
   }, 0);
 
   const activeHoldings: HoldingItem[] = rawLiveHoldings.map((p, idx) => {
-    const liveQuote = quotes[p.symbol];
-    const ltpPaise = liveQuote?.price_paise || p.current_price_paise || p.average_price_paise;
+    const canonical = resolveCanonicalSymbol(p.symbol);
+    const liveQuote = quotes[p.symbol] || quotes[canonical];
+    const isAvail = p.is_quote_available ?? (liveQuote ? liveQuote.price_paise > 0 : p.current_price_paise > 0);
+    const ltpPaise = liveQuote?.price_paise || p.current_price_paise || (isAvail ? p.average_price_paise : 0);
     const prevClosePaise =
       liveQuote && liveQuote.change_paise !== undefined
         ? ltpPaise - liveQuote.change_paise
@@ -224,7 +229,9 @@ export default function PortfolioPage() {
     const dayChangePaise =
       liveQuote && liveQuote.change_paise !== undefined
         ? Math.round(liveQuote.change_paise * p.quantity)
-        : Math.round((ltpPaise - p.average_price_paise) * p.quantity * 0.1);
+        : isAvail && ltpPaise > 0
+        ? Math.round((ltpPaise - p.average_price_paise) * p.quantity * 0.1)
+        : 0;
     const dayChangePercent =
       liveQuote && liveQuote.change_percent !== undefined
         ? liveQuote.change_percent
@@ -234,8 +241,8 @@ export default function PortfolioPage() {
 
     const investedValuePaise =
       p.invested_value_paise || p.average_price_paise * p.quantity;
-    const currentValuePaise = ltpPaise * p.quantity;
-    const unrealizedPnlPaise = currentValuePaise - investedValuePaise;
+    const currentValuePaise = isAvail ? ltpPaise * p.quantity : (p.current_value_paise || 0);
+    const unrealizedPnlPaise = isAvail ? currentValuePaise - investedValuePaise : (p.unrealized_pnl_paise || 0);
     const pnlPercent =
       investedValuePaise > 0
         ? (unrealizedPnlPaise / investedValuePaise) * 100

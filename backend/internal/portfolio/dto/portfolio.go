@@ -12,6 +12,10 @@ type PositionResponse struct {
 	CurrentValuePaise  int64  `json:"current_value_paise"`
 	UnrealizedPnlPaise int64  `json:"unrealized_pnl_paise"`
 	RealizedPnlPaise   int64  `json:"realized_pnl_paise"`
+	QuoteStatus        string `json:"quote_status,omitempty"` // "FRESH", "STALE", "UNAVAILABLE"
+	QuoteSource        string `json:"quote_source,omitempty"`
+	IsQuoteAvailable   bool   `json:"is_quote_available"`
+	IsQuoteStale       bool   `json:"is_quote_stale"`
 }
 
 type PortfolioResponse struct {
@@ -22,4 +26,6 @@ type PortfolioResponse struct {
 	RealizedPnlPaise   int64              `json:"realized_pnl_paise"`
 	DailyPnlPaise      int64              `json:"daily_pnl_paise"`
 	TotalPnlPaise      int64              `json:"total_pnl_paise"`
+	ValuationStatus    string             `json:"valuation_status,omitempty"` // "REALTIME", "STALE", "DEGRADED"
 }
+

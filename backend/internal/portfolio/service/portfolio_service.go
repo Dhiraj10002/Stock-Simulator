@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"time"
@@ -14,10 +15,12 @@ import (
 )
 
 type PortfolioService struct {
-	repo             *repository.PortfolioRepository
-	market           *marketService.Service
-	currentQuoteFunc func(symbol string) (*marketDTO.QuoteResponse, error)
-	nowFunc          func() time.Time
+	repo              *repository.PortfolioRepository
+	market            *marketService.Service
+	currentQuoteFunc  func(symbol string) (*marketDTO.QuoteResponse, error)
+	nowFunc           func() time.Time
+	listPositionsFunc func(userUUID uuid.UUID) ([]model.Position, error)
+	realizedPnlFunc   func(userUUID uuid.UUID, from time.Time) (int64, error)
 }
 
 func New(market *marketService.Service) *PortfolioService {
@@ -30,6 +33,14 @@ func (s *PortfolioService) SetCurrentQuoteFunc(fn func(symbol string) (*marketDT
 
 func (s *PortfolioService) SetNowFunc(fn func() time.Time) {
 	s.nowFunc = fn
+}
+
+func (s *PortfolioService) SetListPositionsFunc(fn func(userUUID uuid.UUID) ([]model.Position, error)) {
+	s.listPositionsFunc = fn
+}
+
+func (s *PortfolioService) SetRealizedPnlFunc(fn func(userUUID uuid.UUID, from time.Time) (int64, error)) {
+	s.realizedPnlFunc = fn
 }
 
 func (s *PortfolioService) currentQuote(symbol string) (*marketDTO.QuoteResponse, error) {
@@ -49,51 +60,131 @@ func (s *PortfolioService) now() time.Time {
 	return time.Now()
 }
 
+func (s *PortfolioService) listPositions(userUUID uuid.UUID) ([]model.Position, error) {
+	if s.listPositionsFunc != nil {
+		return s.listPositionsFunc(userUUID)
+	}
+	if s.repo != nil {
+		return s.repo.ListPositions(userUUID)
+	}
+	return nil, fmt.Errorf("portfolio repository not configured")
+}
+
+func (s *PortfolioService) realizedPnl(userUUID uuid.UUID, from time.Time) (int64, error) {
+	if s.realizedPnlFunc != nil {
+		return s.realizedPnlFunc(userUUID, from)
+	}
+	if s.repo != nil {
+		return s.repo.RealizedPnl(userUUID, from)
+	}
+	return 0, nil
+}
+
 func (s *PortfolioService) Get(userID string) (*dto.PortfolioResponse, error) {
 	userUUID, err := uuid.Parse(userID)
 	if err != nil {
 		return nil, fmt.Errorf("invalid user identity")
 	}
-	positions, err := s.repo.ListPositions(userUUID)
+	positions, err := s.listPositions(userUUID)
 	if err != nil {
 		return nil, err
 	}
 
-	result := &dto.PortfolioResponse{Positions: make([]dto.PositionResponse, 0, len(positions))}
+	result := &dto.PortfolioResponse{
+		Positions:       make([]dto.PositionResponse, 0, len(positions)),
+		ValuationStatus: "REALTIME",
+	}
+
+	allQuotesFresh := true
+	hasUnavailableQuote := false
+
 	for _, position := range positions {
-		// Display valuation uses CurrentQuote (latest tick/cached price) decoupled
-		// from 120s executable freshness so users can view holdings outside market hours
-		// or on weekends. If Redis is unavailable, fall back to last recorded price or cost basis.
 		var quotePrice int64
+		quoteStatus := "FRESH"
+		quoteSource := ""
+		isAvailable := false
+		isStale := false
+
 		quote, quoteErr := s.currentQuote(position.Symbol)
 		if quoteErr == nil && quote != nil && quote.PricePaise > 0 {
 			quotePrice = quote.PricePaise
-		} else if position.CurrentPricePaise > 0 {
-			quotePrice = position.CurrentPricePaise
-		} else if position.AveragePricePaise > 0 {
-			quotePrice = position.AveragePricePaise
+			quoteSource = quote.Source
+			isAvailable = true
+			if quote.UpdatedAt != "" {
+				if t, parseErr := time.Parse(time.RFC3339, quote.UpdatedAt); parseErr == nil {
+					if s.now().Sub(t) > 2*time.Minute {
+						quoteStatus = "STALE"
+						isStale = true
+						allQuotesFresh = false
+					}
+				}
+			}
+		} else if errors.Is(quoteErr, marketService.ErrQuoteStale) {
+			quoteStatus = "STALE"
+			isStale = true
+			isAvailable = true
+			allQuotesFresh = false
+			if quote != nil && quote.PricePaise > 0 {
+				quotePrice = quote.PricePaise
+				quoteSource = quote.Source
+			} else if position.CurrentPricePaise > 0 {
+				quotePrice = position.CurrentPricePaise
+			}
 		} else {
-			return nil, fmt.Errorf("current quote for %s: price not available", position.Symbol)
+			// Quote is missing or feed unavailable.
+			// Hard rule: Never hide missing market data behind fake prices or silent fallbacks to cost basis.
+			quoteStatus = "UNAVAILABLE"
+			isAvailable = false
+			hasUnavailableQuote = true
+			allQuotesFresh = false
+			if position.CurrentPricePaise > 0 {
+				quotePrice = position.CurrentPricePaise
+			} else {
+				quotePrice = 0
+			}
 		}
 
 		position.CurrentPricePaise = quotePrice
 		item := toPositionResponse(position)
+		item.QuoteStatus = quoteStatus
+		item.QuoteSource = quoteSource
+		item.IsQuoteAvailable = isAvailable
+		item.IsQuoteStale = isStale
+
 		result.Positions = append(result.Positions, item)
 		result.InvestedValuePaise += item.InvestedValuePaise
-		result.CurrentValuePaise += item.CurrentValuePaise
-		result.UnrealizedPnlPaise += item.UnrealizedPnlPaise
+
+		if isAvailable {
+			result.CurrentValuePaise += item.CurrentValuePaise
+			result.UnrealizedPnlPaise += item.UnrealizedPnlPaise
+		} else if position.CurrentPricePaise > 0 {
+			// Retain last known recorded value for degraded display
+			result.CurrentValuePaise += item.CurrentValuePaise
+			result.UnrealizedPnlPaise += item.UnrealizedPnlPaise
+		}
 	}
-	result.RealizedPnlPaise, err = s.repo.RealizedPnl(userUUID, time.Unix(0, 0))
+
+	if len(positions) == 0 {
+		result.ValuationStatus = "REALTIME"
+	} else if hasUnavailableQuote {
+		result.ValuationStatus = "DEGRADED"
+	} else if !allQuotesFresh {
+		result.ValuationStatus = "STALE"
+	} else {
+		result.ValuationStatus = "REALTIME"
+	}
+
+	result.RealizedPnlPaise, err = s.realizedPnl(userUUID, time.Unix(0, 0))
 	if err != nil {
 		return nil, err
 	}
 	location, err := time.LoadLocation("Asia/Kolkata")
 	if err != nil {
-		return nil, err
+		location = time.UTC
 	}
 	now := s.now().In(location)
 	dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, location)
-	dailyRealized, err := s.repo.RealizedPnl(userUUID, dayStart)
+	dailyRealized, err := s.realizedPnl(userUUID, dayStart)
 	if err != nil {
 		return nil, err
 	}
@@ -127,12 +218,17 @@ func (s *PortfolioService) Pnl(userID string) (*dto.PortfolioResponse, error) {
 
 func toPositionResponse(position model.Position) dto.PositionResponse {
 	return dto.PositionResponse{
-		UUID: position.UUID.String(), Symbol: position.Symbol,
-		Product: position.Product, UnderlyingSymbol: position.UnderlyingSymbol,
-		Quantity:          position.Quantity,
-		AveragePricePaise: position.AveragePricePaise, CurrentPricePaise: position.CurrentPricePaise,
-		InvestedValuePaise: position.InvestedValuePaise(), CurrentValuePaise: position.CurrentValuePaise(),
-		UnrealizedPnlPaise: position.UnrealizedPnlPaise(), RealizedPnlPaise: position.RealizedPnlPaise,
+		UUID:               position.UUID.String(),
+		Symbol:             position.Symbol,
+		Product:            position.Product,
+		UnderlyingSymbol:   position.UnderlyingSymbol,
+		Quantity:           position.Quantity,
+		AveragePricePaise:  position.AveragePricePaise,
+		CurrentPricePaise:  position.CurrentPricePaise,
+		InvestedValuePaise: position.InvestedValuePaise(),
+		CurrentValuePaise:  position.CurrentValuePaise(),
+		UnrealizedPnlPaise: position.UnrealizedPnlPaise(),
+		RealizedPnlPaise:   position.RealizedPnlPaise,
 	}
 }
 
@@ -142,3 +238,4 @@ func addPnl(left, right int64) (int64, error) {
 	}
 	return left + right, nil
 }
+
