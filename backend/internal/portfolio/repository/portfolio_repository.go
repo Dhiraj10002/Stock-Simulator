@@ -13,7 +13,7 @@ func New() *PortfolioRepository { return &PortfolioRepository{} }
 
 func (r *PortfolioRepository) ListPositions(userUUID uuid.UUID) ([]model.Position, error) {
 	var positions []model.Position
-	err := database.GetDB().Where("user_uuid = ? AND quantity > 0", userUUID).Order("symbol ASC").Find(&positions).Error
+	err := database.GetDB().Where("user_uuid = ? AND quantity <> 0", userUUID).Order("symbol ASC").Find(&positions).Error
 	return positions, err
 }
 

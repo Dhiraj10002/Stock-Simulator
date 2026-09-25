@@ -4,7 +4,7 @@ import React, { useState, useMemo } from "react";
 import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Navbar from "@/components/layout/Navbar";
-import PositionsTable from "@/components/terminal/PositionsTable";
+import PositionsTable from "@/components/portfolio/PositionsTable";
 import PortfolioHoldingsTable from "@/components/portfolio/PortfolioHoldingsTable";
 import PortfolioAllocationView from "@/components/portfolio/PortfolioAllocationView";
 import PortfolioPnlAnalytics from "@/components/portfolio/PortfolioPnlAnalytics";
@@ -93,7 +93,11 @@ export default function PortfolioPage() {
 
   const [token] = useState<string>(() => {
     if (typeof window !== "undefined") {
-      return localStorage.getItem("auth_token") || "";
+      return (
+        localStorage.getItem("auth_token") ||
+        localStorage.getItem("stock-simulator-access-token") ||
+        ""
+      );
     }
     return "";
   });

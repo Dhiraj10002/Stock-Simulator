@@ -4,7 +4,7 @@ import React, { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { getApiUrl } from "@/lib/config";
-import { useTerminalStore } from "@/stores/terminal-store";
+import { useTradingStore } from "@/stores/trading-store";
 import {
   Newspaper,
   ExternalLink,
@@ -19,6 +19,7 @@ interface NewsFeedProps {
   token?: string;
   apiUrl?: string;
   limit?: number;
+  onSelectSymbol?: (symbol: string) => void;
 }
 
 const FALLBACK_ARTICLES: Article[] = [
@@ -73,9 +74,10 @@ export default function NewsFeed({
   token,
   apiUrl = getApiUrl(),
   limit = 20,
+  onSelectSymbol,
 }: NewsFeedProps) {
   const router = useRouter();
-  const setSelectedSymbol = useTerminalStore((s) => s.setSelectedSymbol);
+  const setSelectedSymbol = useTradingStore((s) => s.setSelectedSymbol);
   const [filter, setFilter] = useState<"ALL" | "POSITIVE" | "NEGATIVE" | "NEUTRAL">("ALL");
 
   const { data: articles = [], isLoading } = useQuery<Article[]>({
@@ -106,7 +108,11 @@ export default function NewsFeed({
   const handleSymbolClick = (e: React.MouseEvent, sym: string) => {
     e.stopPropagation();
     setSelectedSymbol(sym);
-    router.push(`/stocks/${encodeURIComponent(sym)}`);
+    if (onSelectSymbol) {
+      onSelectSymbol(sym);
+    } else {
+      router.push(`/stocks/${encodeURIComponent(sym)}`);
+    }
   };
 
   const [currentTime] = useState(() => Date.now());

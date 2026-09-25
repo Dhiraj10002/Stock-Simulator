@@ -4,9 +4,9 @@ import React, { useState, useMemo } from "react";
 import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Navbar from "@/components/layout/Navbar";
-import OrdersTable from "@/components/terminal/OrdersTable";
+import OrdersTable from "@/components/orders/OrdersTable";
 import TradesTable from "@/components/orders/TradesTable";
-import ContractNoteView from "@/components/terminal/ContractNoteView";
+import ContractNoteView from "@/components/orders/ContractNoteView";
 import { formatPaise } from "@/lib/format";
 import { API_URL } from "@/lib/api";
 import {

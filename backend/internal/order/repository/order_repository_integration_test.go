@@ -205,17 +205,23 @@ func TestOrderRepository_FindInstrument_CanonicalAndAliases(t *testing.T) {
 		},
 	}
 
+	symbolsToPurge := []string{"PRAJIND", "ETERNAL", "ZOMATO", "TMPV", "TATAMOTORS", "NIFTY24OCT25000CE"}
+	purge := func() {
+		for _, sym := range symbolsToPurge {
+			_ = db.Where("symbol = ? OR symbol = ? OR name = ?", sym, sym+"-EQ", sym).Delete(&model.Instrument{})
+		}
+		for _, inst := range instruments {
+			_ = db.Where("token = ?", inst.Token).Delete(&model.Instrument{})
+		}
+	}
+	purge()
+	defer purge()
+
 	for _, inst := range instruments {
-		_ = db.Where("symbol = ?", inst.Symbol).Delete(&model.Instrument{})
 		if err := db.Create(&inst).Error; err != nil {
 			t.Fatalf("seed instrument %s: %v", inst.Symbol, err)
 		}
 	}
-	defer func() {
-		for _, inst := range instruments {
-			_ = db.Where("symbol = ?", inst.Symbol).Delete(&model.Instrument{})
-		}
-	}()
 
 	// 1. PRAJIND (exact, and without -EQ suffix)
 	praj, err := repo.FindInstrument("PRAJIND")

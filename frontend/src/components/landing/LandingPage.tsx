@@ -18,6 +18,8 @@ import {
   Globe,
   BrainCircuit,
   Quote,
+  TrendingUp,
+  PieChart,
 } from "lucide-react";
 
 /* -------------------------------------------------------------
@@ -714,13 +716,13 @@ export default function LandingPage({ onOpenAuth }: LandingPageProps = {}) {
           {/* ── Right Actions ── */}
           <div className="flex items-center gap-2 shrink-0">
             <button
-              onClick={() => (onOpenAuth ? onOpenAuth("login") : (window.location.href = "/stocks/ITC"))}
+              onClick={() => (onOpenAuth ? onOpenAuth("login") : (window.location.href = "/stocks"))}
               className="px-4 py-[6px] rounded-lg text-[12px] font-medium text-white/60 hover:text-white hover:bg-white/[0.07] transition-all cursor-pointer"
             >
               Log In
             </button>
             <button
-              onClick={() => (onOpenAuth ? onOpenAuth("register") : (window.location.href = "/stocks/ITC"))}
+              onClick={() => (onOpenAuth ? onOpenAuth("register") : (window.location.href = "/stocks"))}
               className="relative px-5 py-[7px] rounded-lg text-[12px] font-semibold text-white overflow-hidden transition-all hover:scale-[1.03] active:scale-[0.98] cursor-pointer shadow-[0_0_20px_rgba(6,182,212,0.2)]"
               style={{
                 background: 'linear-gradient(135deg, #06b6d4 0%, #3b82f6 50%, #8b5cf6 100%)',
@@ -790,7 +792,7 @@ export default function LandingPage({ onOpenAuth }: LandingPageProps = {}) {
         {/* Interactive Action Hub */}
         <div className="flex flex-wrap items-center justify-center gap-3.5 pt-7">
           <button
-            onClick={() => (onOpenAuth ? onOpenAuth("login") : (window.location.href = "/stocks/ITC"))}
+            onClick={() => (onOpenAuth ? onOpenAuth("login") : (window.location.href = "/stocks"))}
             className="group relative inline-flex items-center gap-2.5 px-8 py-3.5 rounded-xl text-white font-bold text-sm tracking-wide overflow-hidden transition-all hover:scale-[1.04] active:scale-[0.98] cursor-pointer shadow-[0_4px_24px_rgba(6,182,212,0.25),0_8px_32px_rgba(139,92,246,0.15)]"
             style={{
               background: 'linear-gradient(135deg, #06b6d4 0%, #3b82f6 50%, #8b5cf6 100%)',
@@ -802,6 +804,14 @@ export default function LandingPage({ onOpenAuth }: LandingPageProps = {}) {
             <ArrowRight className="relative w-4 h-4 transition-transform duration-200 group-hover:translate-x-1" />
           </button>
 
+          <Link
+            href="/stocks"
+            className="inline-flex items-center gap-2 px-6 py-3.5 rounded-xl text-cyan-300 hover:text-white font-bold text-sm tracking-wide transition-all border border-cyan-500/40 bg-cyan-950/40 hover:bg-cyan-900/60 hover:border-cyan-400 hover:scale-105"
+          >
+            <TrendingUp className="w-4 h-4 text-cyan-400" />
+            <span>Explore Stocks</span>
+          </Link>
+
           <a
             href="#platform"
             className="inline-flex items-center gap-1.5 px-6 py-3.5 rounded-xl text-white/70 hover:text-white font-medium text-sm tracking-wide transition-all border border-white/[0.1] hover:border-white/[0.2] hover:bg-white/[0.05]"
@@ -810,7 +820,7 @@ export default function LandingPage({ onOpenAuth }: LandingPageProps = {}) {
           </a>
         </div>
 
-        {/* 3D FLOATING HOLOGRAPHIC TERMINAL SLAB (FITS IN 100% ZOOM FRAME) */}
+        {/* 3D FLOATING HOLOGRAPHIC PLATFORM SLAB (FITS IN 100% ZOOM FRAME) */}
         <div
           className="relative mt-8 sm:mt-10 max-w-4xl w-full mx-auto"
           style={{
@@ -1525,7 +1535,7 @@ export default function LandingPage({ onOpenAuth }: LandingPageProps = {}) {
                   </div>
 
                   <p className="text-slate-200 text-xs sm:text-[14px] lg:text-[14.5px] leading-relaxed italic mb-4">
-                    &ldquo;Execution speed and Level 2 depth feel identical to my real broker terminal. I run my morning warm-up scalps here every single day without slippage surprises.&rdquo;
+                    &ldquo;Execution speed and Level 2 depth feel identical to my real broker. I run my morning warm-up scalps here every single day without slippage surprises.&rdquo;
                   </p>
 
                   <div className="p-2.5 sm:p-3 rounded-xl bg-white/[0.03] border border-white/[0.06] flex items-center justify-between text-xs sm:text-[12.5px] font-mono text-slate-300 mb-4">
@@ -1728,10 +1738,10 @@ export default function LandingPage({ onOpenAuth }: LandingPageProps = {}) {
                 {/* Action Buttons */}
                 <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3.5">
                   <Link
-                    href="/stocks/ITC"
+                    href="/stocks"
                     className="group inline-flex items-center justify-center gap-3 px-9 py-4 rounded-full bg-[linear-gradient(135deg,#ff7a29_0%,#f43f5e_50%,#7c3aed_100%)] hover:bg-[linear-gradient(135deg,#ff8f4a_0%,#fb7185_50%,#8b5cf6_100%)] text-white font-bold text-sm sm:text-base tracking-wide shadow-[inset_0_1px_1px_rgba(255,255,255,0.4),0_10px_35px_-4px_rgba(255,122,41,0.5),0_8px_25px_-4px_rgba(124,58,237,0.4)] hover:shadow-[inset_0_1px_1px_rgba(255,255,255,0.5),0_16px_45px_-4px_rgba(255,122,41,0.65),0_12px_32px_-4px_rgba(124,58,237,0.55)] border border-white/25 hover:scale-105 transition-all duration-200 w-full sm:w-auto"
                   >
-                    <span>Explore Live Stocks</span>
+                    <span>Get Started</span>
                     <ArrowRight className="w-4 h-4 transition-transform duration-200 group-hover:translate-x-1.5" />
                   </Link>
 
@@ -1785,25 +1795,25 @@ export default function LandingPage({ onOpenAuth }: LandingPageProps = {}) {
                 </div>
               </div>
               <p className="text-xs sm:text-[13px] text-slate-400 leading-relaxed max-w-md font-normal">
-                India&apos;s premier institutional-fidelity paper trading terminal. Master NSE/BSE cash equities, BankNifty options chains, and futures risk-free with ₹10,00,000 in virtual seed capital.
+                India&apos;s premier institutional-fidelity paper trading platform. Master NSE/BSE cash equities, BankNifty options chains, and futures risk-free with ₹10,00,000 in virtual seed capital.
               </p>
 
               {/* Developer & Social Badges */}
               <div className="flex flex-wrap items-center gap-2.5 pt-1">
                 <Link
-                  href="/stocks/ITC"
+                  href="/stocks"
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.08] hover:border-cyan-500/40 text-slate-400 hover:text-cyan-300 text-xs font-mono transition-all duration-200"
                 >
                   <Code2 className="w-3.5 h-3.5" />
                   <span>Explore Stocks</span>
                 </Link>
-                <a
-                  href="#platform"
+                <Link
+                  href="/portfolio"
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.08] hover:border-cyan-500/40 text-slate-400 hover:text-cyan-300 text-xs font-mono transition-all duration-200"
                 >
-                  <Globe className="w-3.5 h-3.5" />
-                  <span>NSE Live Depth</span>
-                </a>
+                  <PieChart className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>Portfolio</span>
+                </Link>
                 <a
                   href="#testimonials"
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.08] hover:border-cyan-500/40 text-slate-400 hover:text-cyan-300 text-xs font-mono transition-all duration-200"
@@ -1824,7 +1834,13 @@ export default function LandingPage({ onOpenAuth }: LandingPageProps = {}) {
                 </h4>
                 <ul className="space-y-2 text-xs text-slate-400">
                   <li>
-                    <Link href="/stocks/ITC" className="hover:text-cyan-300 transition-colors flex items-center gap-1.5">
+                    <Link href="/stocks" className="hover:text-cyan-300 transition-colors flex items-center gap-1.5 font-bold text-slate-200">
+                      <TrendingUp className="w-3.5 h-3.5 text-cyan-400" />
+                      <span>Stock Explorer</span>
+                    </Link>
+                  </li>
+                  <li>
+                    <Link href="/stocks" className="hover:text-cyan-300 transition-colors flex items-center gap-1.5">
                       <span>Equities Overview</span>
                     </Link>
                   </li>
@@ -1855,7 +1871,7 @@ export default function LandingPage({ onOpenAuth }: LandingPageProps = {}) {
                 </h4>
                 <ul className="space-y-2 text-xs text-slate-400">
                   <li><a href="#how" className="hover:text-orange-300 transition-colors">How It Works</a></li>
-                  <li><a href="#features" className="hover:text-orange-300 transition-colors">Terminal Features</a></li>
+                  <li><a href="#features" className="hover:text-orange-300 transition-colors">Platform Features</a></li>
                   <li><a href="#testimonials" className="hover:text-orange-300 transition-colors">Trader Reviews</a></li>
                   <li><Link href="/options" className="hover:text-orange-300 transition-colors">Risk Calculator</Link></li>
                 </ul>

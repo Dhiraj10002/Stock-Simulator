@@ -109,7 +109,7 @@ func TestFNO_RealVsSimulated_Separation(t *testing.T) {
 			Side:       model.OrderSideBuy,
 			Type:       model.OrderTypeLimit,
 			Product:    model.OrderProductFNO,
-			Quantity:   25, // lot size 25
+			Quantity:   25,    // lot size 25
 			PricePaise: 15000, // tick size 5 paise multiple
 		}
 		resp, err := svc.Create(userID, req)
@@ -236,7 +236,7 @@ func TestFNO_All6TradingActions_Rules_Margin_Premium_PnL(t *testing.T) {
 	// -------------------------------------------------------------------------
 	t.Run("CE Buy: Premium only, 0 margin blocked, linear upside PnL, ITM/OTM expiry", func(t *testing.T) {
 		qty := int64(25)
-		premiumPrice := int64(10000) // ₹100
+		premiumPrice := int64(10000)       // ₹100
 		totalPremium := qty * premiumPrice // 25 * 100 = ₹2,500 (250,000 paise)
 
 		// Margin required at order reservation: Long option requires full premium
@@ -257,11 +257,11 @@ func TestFNO_All6TradingActions_Rules_Margin_Premium_PnL(t *testing.T) {
 		}
 
 		// Unrealized P&L
-		pos.CurrentPricePaise = 15000 // ₹150 (gained ₹50)
+		pos.CurrentPricePaise = 15000                       // ₹150 (gained ₹50)
 		if pnl := pos.UnrealizedPnlPaise(); pnl != 125000 { // +₹1,250
 			t.Errorf("CE Buy unrealized gain expected 125000, got %d", pnl)
 		}
-		pos.CurrentPricePaise = 6000 // ₹60 (lost ₹40)
+		pos.CurrentPricePaise = 6000                         // ₹60 (lost ₹40)
 		if pnl := pos.UnrealizedPnlPaise(); pnl != -100000 { // -₹1,000
 			t.Errorf("CE Buy unrealized loss expected -100000, got %d", pnl)
 		}
@@ -274,7 +274,7 @@ func TestFNO_All6TradingActions_Rules_Margin_Premium_PnL(t *testing.T) {
 		if intrinsicITM != 50000 { // ₹500
 			t.Errorf("CE ITM intrinsic expected 50000, got %d", intrinsicITM)
 		}
-		settlementVal := qty * intrinsicITM // 25 * 500 = ₹12,500 (1,250,000 paise)
+		settlementVal := qty * intrinsicITM         // 25 * 500 = ₹12,500 (1,250,000 paise)
 		realizedPnL := settlementVal - totalPremium // 1,250,000 - 250,000 = +1,000,000 paise (+₹10,000)
 		if realizedPnL != 1000000 {
 			t.Errorf("CE ITM realized PnL expected 1000000, got %d", realizedPnL)
@@ -297,7 +297,7 @@ func TestFNO_All6TradingActions_Rules_Margin_Premium_PnL(t *testing.T) {
 	// -------------------------------------------------------------------------
 	t.Run("CE Sell: Blocked margin, premium received, short PnL, ITM/OTM expiry", func(t *testing.T) {
 		qty := int64(-25)
-		premiumPrice := int64(10000) // ₹100
+		premiumPrice := int64(10000)            // ₹100
 		totalPremium := abs(qty) * premiumPrice // ₹2,500
 		notional := abs(qty) * premiumPrice
 
@@ -319,11 +319,11 @@ func TestFNO_All6TradingActions_Rules_Margin_Premium_PnL(t *testing.T) {
 		}
 
 		// Unrealized P&L for short: gains when option price drops
-		pos.CurrentPricePaise = 6000 // ₹60 (dropped ₹40)
+		pos.CurrentPricePaise = 6000                        // ₹60 (dropped ₹40)
 		if pnl := pos.UnrealizedPnlPaise(); pnl != 100000 { // +₹1,000
 			t.Errorf("CE Sell unrealized gain expected 100000, got %d", pnl)
 		}
-		pos.CurrentPricePaise = 15000 // ₹150 (rose ₹50)
+		pos.CurrentPricePaise = 15000                        // ₹150 (rose ₹50)
 		if pnl := pos.UnrealizedPnlPaise(); pnl != -125000 { // -₹1,250
 			t.Errorf("CE Sell unrealized loss expected -125000, got %d", pnl)
 		}
@@ -344,7 +344,7 @@ func TestFNO_All6TradingActions_Rules_Margin_Premium_PnL(t *testing.T) {
 		// Case B: ITM (Spot 25500) -> Seller pays intrinsic (500)
 		spotITM := int64(2550000)
 		intrinsicITM, _ := optionIntrinsic("CE", spotITM, strike)
-		sellerPayout := abs(qty) * intrinsicITM // 25 * 500 = 1,250,000 paise
+		sellerPayout := abs(qty) * intrinsicITM      // 25 * 500 = 1,250,000 paise
 		sellerPnL_ITM := totalPremium - sellerPayout // 250,000 - 1,250,000 = -1,000,000 paise
 		if sellerPnL_ITM != -1000000 {
 			t.Errorf("CE Sell ITM loss expected -1000000, got %d", sellerPnL_ITM)
@@ -356,7 +356,7 @@ func TestFNO_All6TradingActions_Rules_Margin_Premium_PnL(t *testing.T) {
 	// -------------------------------------------------------------------------
 	t.Run("PE Buy: Premium only, 0 margin blocked, put upside PnL, ITM/OTM expiry", func(t *testing.T) {
 		qty := int64(25)
-		premiumPrice := int64(12000) // ₹120
+		premiumPrice := int64(12000)       // ₹120
 		totalPremium := qty * premiumPrice // 300,000 paise (₹3,000)
 
 		resMargin, _ := rules.Margin(model.OrderProductFNO, product.InstrumentOption, model.OrderSideBuy, totalPremium)
@@ -372,11 +372,11 @@ func TestFNO_All6TradingActions_Rules_Margin_Premium_PnL(t *testing.T) {
 		}
 
 		// Unrealized P&L: gains when put price rises
-		pos.CurrentPricePaise = 18000 // ₹180 (+₹60)
+		pos.CurrentPricePaise = 18000                       // ₹180 (+₹60)
 		if pnl := pos.UnrealizedPnlPaise(); pnl != 150000 { // +₹1,500
 			t.Errorf("PE Buy unrealized gain expected 150000, got %d", pnl)
 		}
-		pos.CurrentPricePaise = 5000 // ₹50 (-₹70)
+		pos.CurrentPricePaise = 5000                         // ₹50 (-₹70)
 		if pnl := pos.UnrealizedPnlPaise(); pnl != -175000 { // -₹1,750
 			t.Errorf("PE Buy unrealized loss expected -175000, got %d", pnl)
 		}
@@ -411,7 +411,7 @@ func TestFNO_All6TradingActions_Rules_Margin_Premium_PnL(t *testing.T) {
 	// -------------------------------------------------------------------------
 	t.Run("PE Sell: Blocked margin, premium received, short PnL, ITM/OTM expiry", func(t *testing.T) {
 		qty := int64(-25)
-		premiumPrice := int64(12000) // ₹120
+		premiumPrice := int64(12000)            // ₹120
 		totalPremium := abs(qty) * premiumPrice // ₹3,000
 		notional := abs(qty) * premiumPrice
 
@@ -429,11 +429,11 @@ func TestFNO_All6TradingActions_Rules_Margin_Premium_PnL(t *testing.T) {
 		}
 
 		// Unrealized P&L: gains when put price drops
-		pos.CurrentPricePaise = 4000 // ₹40 (dropped ₹80)
+		pos.CurrentPricePaise = 4000                        // ₹40 (dropped ₹80)
 		if pnl := pos.UnrealizedPnlPaise(); pnl != 200000 { // +₹2,000
 			t.Errorf("PE Sell unrealized gain expected 200000, got %d", pnl)
 		}
-		pos.CurrentPricePaise = 20000 // ₹200 (rose ₹80)
+		pos.CurrentPricePaise = 20000                        // ₹200 (rose ₹80)
 		if pnl := pos.UnrealizedPnlPaise(); pnl != -200000 { // -₹2,000
 			t.Errorf("PE Sell unrealized loss expected -200000, got %d", pnl)
 		}
@@ -451,7 +451,7 @@ func TestFNO_All6TradingActions_Rules_Margin_Premium_PnL(t *testing.T) {
 		// Case B: ITM (Spot 24500) -> Seller pays intrinsic (500)
 		spotITM := int64(2450000)
 		intrinsicITM, _ := optionIntrinsic("PE", spotITM, strike)
-		sellerPayout := abs(qty) * intrinsicITM // 1,250,000 paise
+		sellerPayout := abs(qty) * intrinsicITM      // 1,250,000 paise
 		sellerPnL_ITM := totalPremium - sellerPayout // 300,000 - 1,250,000 = -950,000 paise
 		if sellerPnL_ITM != -950000 {
 			t.Errorf("PE Sell ITM loss expected -950000, got %d", sellerPnL_ITM)
@@ -481,17 +481,17 @@ func TestFNO_All6TradingActions_Rules_Margin_Premium_PnL(t *testing.T) {
 		}
 
 		// Unrealized P&L: linear with price
-		pos.CurrentPricePaise = 2550000 // +₹500 per unit
+		pos.CurrentPricePaise = 2550000                      // +₹500 per unit
 		if pnl := pos.UnrealizedPnlPaise(); pnl != 1250000 { // +₹12,500
 			t.Errorf("Future Buy unrealized gain expected 1250000, got %d", pnl)
 		}
-		pos.CurrentPricePaise = 2450000 // -₹500 per unit
+		pos.CurrentPricePaise = 2450000                       // -₹500 per unit
 		if pnl := pos.UnrealizedPnlPaise(); pnl != -1250000 { // -₹12,500
 			t.Errorf("Future Buy unrealized loss expected -1250000, got %d", pnl)
 		}
 
 		// Expiry Settlement at final spot price
-		spotPrice := int64(2560000) // ₹25,600
+		spotPrice := int64(2560000)                      // ₹25,600
 		settlementPnL := (spotPrice - futurePrice) * qty // (25600 - 25000) * 25 = +₹15,000 (1,500,000 paise)
 		if settlementPnL != 1500000 {
 			t.Errorf("Future Buy settlement PnL expected 1500000, got %d", settlementPnL)
@@ -503,7 +503,7 @@ func TestFNO_All6TradingActions_Rules_Margin_Premium_PnL(t *testing.T) {
 	// -------------------------------------------------------------------------
 	t.Run("Future Sell: Margin blocked, no premium credit, inverse PnL, cash settlement at spot", func(t *testing.T) {
 		qty := int64(-25)
-		futurePrice := int64(2500000) // ₹25,000
+		futurePrice := int64(2500000)      // ₹25,000
 		notional := abs(qty) * futurePrice // ₹625,000
 
 		// Margin required: 20% of contract notional
@@ -521,17 +521,17 @@ func TestFNO_All6TradingActions_Rules_Margin_Premium_PnL(t *testing.T) {
 		}
 
 		// Unrealized P&L: short gains when price drops
-		pos.CurrentPricePaise = 2450000 // dropped ₹500
+		pos.CurrentPricePaise = 2450000                      // dropped ₹500
 		if pnl := pos.UnrealizedPnlPaise(); pnl != 1250000 { // +₹12,500
 			t.Errorf("Future Sell unrealized gain expected 1250000, got %d", pnl)
 		}
-		pos.CurrentPricePaise = 2550000 // rose ₹500
+		pos.CurrentPricePaise = 2550000                       // rose ₹500
 		if pnl := pos.UnrealizedPnlPaise(); pnl != -1250000 { // -₹12,500
 			t.Errorf("Future Sell unrealized loss expected -1250000, got %d", pnl)
 		}
 
 		// Expiry Settlement at final spot price
-		spotPrice := int64(2440000) // ₹24,400 (dropped ₹600)
+		spotPrice := int64(2440000)                           // ₹24,400 (dropped ₹600)
 		settlementPnL := (futurePrice - spotPrice) * abs(qty) // (25000 - 24400) * 25 = +₹15,000
 		if settlementPnL != 1500000 {
 			t.Errorf("Future Sell settlement PnL expected 1500000, got %d", settlementPnL)

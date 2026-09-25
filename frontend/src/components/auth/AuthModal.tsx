@@ -423,7 +423,7 @@ export default function AuthModal({
                 <>
                   <ShieldCheck className="w-4 h-4 text-cyan-100" />
                   <span className="drop-shadow-[0_1px_2px_rgba(0,0,0,0.5)]">
-                    {mode === "login" ? "Sign In & Open Terminal" : "Create Account & Open Terminal"}
+                    {mode === "login" ? "Sign In & Continue" : "Create Account & Continue"}
                   </span>
                 </>
               )}

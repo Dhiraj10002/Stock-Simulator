@@ -4,7 +4,7 @@ import React, { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useTerminalStore } from "@/stores/terminal-store";
+import { useTradingStore } from "@/stores/trading-store";
 import { useMultiSymbolQuotes } from "@/stores/market-store";
 import { getQuoteSync, fetchBatchQuotes } from "@/lib/quoteService";
 import { formatPaise, formatPercent } from "@/lib/format";
@@ -102,7 +102,7 @@ export interface WatchlistManagerDeskProps {
 export default function WatchlistManagerDesk({ token: propToken }: WatchlistManagerDeskProps = {}) {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const setSelectedSymbol = useTerminalStore((s) => s.setSelectedSymbol);
+  const setSelectedSymbol = useTradingStore((s) => s.setSelectedSymbol);
 
   const [token, setToken] = useState<string>(() => {
     if (propToken) return propToken;
@@ -861,7 +861,7 @@ export default function WatchlistManagerDesk({ token: propToken }: WatchlistMana
             </span>
             <div className="text-sm font-bold text-slate-900 dark:text-slate-100 mt-1 flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span>Two-Way Terminal Synced</span>
+              <span>Real-Time Market Synced</span>
             </div>
           </div>
           <Link

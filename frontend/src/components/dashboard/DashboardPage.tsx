@@ -757,7 +757,9 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
         resetting={resetting}
       />
 
+
       <main className="flex-1 max-w-[1720px] w-full mx-auto p-3 sm:p-5 lg:p-6">
+
         <div className="flex flex-col lg:flex-row gap-6 items-start">
           {/* ========================================================================= */}
           {/* LEFT SIDEBAR: TRENDING SECTORS DESK (Kite Marketwatch Panel Style)        */}

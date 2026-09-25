@@ -12,7 +12,11 @@ import type { Portfolio, Wallet, ApiResponse } from "@/types";
 export default function WatchlistPage() {
   const [token] = useState<string>(() => {
     if (typeof window !== "undefined") {
-      return localStorage.getItem("auth_token") || "";
+      return (
+        localStorage.getItem("auth_token") ||
+        localStorage.getItem("stock-simulator-access-token") ||
+        ""
+      );
     }
     return "";
   });
@@ -127,7 +131,7 @@ export default function WatchlistPage() {
               Watchlist Manager
             </h1>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-              Organize, search, and monitor custom market groups across NSE & BSE with two-way terminal sync.
+              Organize, search, and monitor custom market groups across NSE & BSE with real-time market sync.
             </p>
           </div>
 

@@ -10,7 +10,9 @@ import (
 	marketDTO "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/dto"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/product"
+	"github.com/Dhiraj10002/Stock-Simulator/backend/pkg/logger"
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -18,6 +20,7 @@ import (
 // Execute settles an order at the current market quote. The client cannot
 // provide a fill price: the Redis market-data service is the only price source.
 func (s *OrderService) Execute(userID, orderID string) error {
+	execStart := time.Now()
 	userUUID, err := uuid.Parse(userID)
 	if err != nil {
 		return fmt.Errorf("invalid user identity")
@@ -34,9 +37,11 @@ func (s *OrderService) Execute(userID, orderID string) error {
 		return err
 	}
 	if pendingOrder.Product != model.OrderProductDelivery {
-		return s.executeMarginProduct(userUUID, orderUUID, pendingOrder)
+		return s.executeMarginProduct(userUUID, orderUUID, pendingOrder, execStart)
 	}
+	redisStart := time.Now()
 	quote, err := s.executableQuote(pendingOrder.Symbol)
+	redisDuration := time.Since(redisStart)
 	if err != nil {
 		return err
 	}
@@ -45,7 +50,9 @@ func (s *OrderService) Execute(userID, orderID string) error {
 		executionPricePaise = calculateSlippage(pendingOrder.Quantity, quote.PricePaise, pendingOrder.Side)
 	}
 
-	return database.GetDB().Transaction(func(tx *gorm.DB) error {
+	dbStart := time.Now()
+
+	txErr := database.GetDB().Transaction(func(tx *gorm.DB) error {
 		// The wallet is the per-user serialization point. Keep this ordering in
 		// sync with reservation, cancellation, and simulation reset.
 		var wallet model.Wallet
@@ -180,10 +187,35 @@ func (s *OrderService) Execute(userID, orderID string) error {
 
 		return tx.Save(&order).Error
 	})
+	dbDuration := time.Since(dbStart)
+	if txErr != nil {
+		return txErr
+	}
+
+	logger.Info("delivery order executed",
+		logger.OrderID(orderUUID.String()),
+		logger.UserID(userUUID.String()),
+		zap.String("symbol", pendingOrder.Symbol),
+		zap.String("side", pendingOrder.Side),
+		zap.String("product", pendingOrder.Product),
+		zap.Int64("quantity", pendingOrder.Quantity),
+		zap.Int64("executed_price_paise", executionPricePaise),
+		logger.ExecutionLatency(time.Since(execStart)),
+		logger.RedisLatency(redisDuration),
+		logger.DBLatency(dbDuration),
+	)
+
+	return nil
 }
 
-func (s *OrderService) executeMarginProduct(userUUID, orderUUID uuid.UUID, pending model.Order) error {
+func (s *OrderService) executeMarginProduct(userUUID, orderUUID uuid.UUID, pending model.Order, execStarts ...time.Time) error {
+	execStart := time.Now()
+	if len(execStarts) > 0 {
+		execStart = execStarts[0]
+	}
+	redisStart := time.Now()
 	quote, err := s.executableQuote(pending.Symbol)
+	redisDuration := time.Since(redisStart)
 	if err != nil {
 		return err
 	}
@@ -209,7 +241,8 @@ func (s *OrderService) executeMarginProduct(userUUID, orderUUID uuid.UUID, pendi
 		}
 		underlying = instrument.UnderlyingSymbol
 	}
-	return database.GetDB().Transaction(func(tx *gorm.DB) error {
+	dbStart := time.Now()
+	txErr := database.GetDB().Transaction(func(tx *gorm.DB) error {
 		var wallet model.Wallet
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_uuid = ?", userUUID).First(&wallet).Error; err != nil {
 			return err
@@ -241,6 +274,26 @@ func (s *OrderService) executeMarginProduct(userUUID, orderUUID uuid.UUID, pendi
 		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_uuid = ? AND symbol = ? AND product = ?", userUUID, order.Symbol, order.Product).First(&position).Error
 		if err != nil && err != gorm.ErrRecordNotFound {
 			return err
+		}
+		if order.Reason == model.OrderReasonMISSquareOff {
+			if position.Quantity == 0 {
+				order.Status = model.OrderStatusCancelled
+				return tx.Save(&order).Error
+			}
+			// Enforce side consistency: if position is long, square-off must be sell; if short, must be buy
+			if (position.Quantity > 0 && order.Side != model.OrderSideSell) || (position.Quantity < 0 && order.Side != model.OrderSideBuy) {
+				order.Status = model.OrderStatusCancelled
+				return tx.Save(&order).Error
+			}
+			// Adjust order quantity to remaining position to avoid overshooting across zero
+			if abs(position.Quantity) < order.Quantity {
+				order.Quantity = abs(position.Quantity)
+				var ok bool
+				total, ok = multiply(order.Quantity, fillPrice)
+				if !ok {
+					return errors.New("order value is too large")
+				}
+			}
 		}
 		transition, err := calculatePositionTransition(position.Quantity, position.AveragePricePaise, order.Quantity, quote.PricePaise, order.Side)
 		if err != nil {
@@ -332,6 +385,25 @@ func (s *OrderService) executeMarginProduct(userUUID, orderUUID uuid.UUID, pendi
 		order.Status, order.ExecutedPricePaise, order.ReservedPaise = model.OrderStatusExecuted, quote.PricePaise, 0
 		return tx.Save(&order).Error
 	})
+	dbDuration := time.Since(dbStart)
+	if txErr != nil {
+		return txErr
+	}
+
+	logger.Info("margin order executed",
+		logger.OrderID(orderUUID.String()),
+		logger.UserID(userUUID.String()),
+		zap.String("symbol", pending.Symbol),
+		zap.String("side", pending.Side),
+		zap.String("product", pending.Product),
+		zap.Int64("quantity", pending.Quantity),
+		zap.Int64("executed_price_paise", quote.PricePaise),
+		logger.ExecutionLatency(time.Since(execStart)),
+		logger.RedisLatency(redisDuration),
+		logger.DBLatency(dbDuration),
+	)
+
+	return nil
 }
 
 func (s *OrderService) marginForPosition(productName, instrumentType string, quantity, averagePrice int64) (int64, error) {

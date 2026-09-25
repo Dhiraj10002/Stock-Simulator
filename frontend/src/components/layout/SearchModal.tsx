@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import type { Instrument } from "@/types";
 import { formatPaise, formatPercent } from "@/lib/format";
-import { useTerminalStore } from "@/stores/terminal-store";
+import { useTradingStore } from "@/stores/trading-store";
 import { useUIStore } from "@/stores/ui-store";
 import { useMultiSymbolQuotes } from "@/stores/market-store";
 import { apiFetch } from "@/lib/api";
@@ -96,7 +96,7 @@ export function formatKiteSymbol(
 export default function SearchModal() {
   const router = useRouter();
   const { isSearchPaletteOpen, setSearchPaletteOpen } = useUIStore();
-  const setSelectedSymbol = useTerminalStore((s) => s.setSelectedSymbol);
+  const setSelectedSymbol = useTradingStore((s) => s.setSelectedSymbol);
 
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
@@ -427,7 +427,7 @@ export default function SearchModal() {
                   const isFno = item.segment === "FUTURES" || item.segment === "OPTIONS";
                   const inWatchlist = watchlistSet.has(item.symbol.toUpperCase());
                   const displayName = item.displayName || item.symbol;
-                  const exchangeTag = (item as any).exchangeTag || (isFno ? "NFO" : item.exchange || "NSE");
+                  const exchangeTag = (item as unknown as { exchangeTag?: string }).exchangeTag || (isFno ? "NFO" : item.exchange || "NSE");
 
                   return (
                     <div

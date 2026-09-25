@@ -30,7 +30,7 @@ import {
 } from "lucide-react";
 import { formatPaise } from "@/lib/format";
 import type { PerformanceOverview, PnlCalendarResponse, DailyPnlDay, Trade } from "@/types";
-import LedgerStatementView from "@/components/terminal/LedgerStatementView";
+import LedgerStatementView from "@/components/analytics/LedgerStatementView";
 
 export interface AnalyticsConsoleProps {
   apiUrl?: string;
@@ -717,7 +717,7 @@ export default function AnalyticsConsole({
                         No live closed trades yet
                       </p>
                       <p className="text-[11px] text-slate-500 dark:text-slate-400 max-w-sm mt-0.5">
-                        Execute buy and sell paper orders on Terminal or Stocks to see your live equity curve plot automatically.
+                        Execute buy and sell paper orders on Stocks to see your live equity curve plot automatically.
                       </p>
                     </div>
                   )}
@@ -942,7 +942,7 @@ export default function AnalyticsConsole({
                 <div className="p-4 rounded-2xl bg-cyan-50/60 dark:bg-cyan-950/30 border border-cyan-200/80 dark:border-cyan-800/60 flex items-center gap-2.5 text-xs">
                   <Compass className="w-4 h-4 text-cyan-600 dark:text-cyan-400 shrink-0" />
                   <span className="text-slate-700 dark:text-slate-300">
-                    No live closed trades recorded for this month yet. Place a paper trade on the terminal to see your daily PnL populated.
+                    No live closed trades recorded for this month yet. Place a paper trade to see your daily PnL populated.
                   </span>
                 </div>
               )}

@@ -22,7 +22,11 @@ export default function OptionsPage() {
 
   const [token] = useState<string>(() => {
     if (typeof window !== "undefined") {
-      return localStorage.getItem("auth_token") || "";
+      return (
+        localStorage.getItem("auth_token") ||
+        localStorage.getItem("stock-simulator-access-token") ||
+        ""
+      );
     }
     return "";
   });

@@ -14,13 +14,16 @@ from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any
+import uuid
 
 class SensitiveDataFilter(logging.Filter):
     """Redacts sensitive API keys, JWT tokens, and private keys from vendor and application logs."""
     PATTERNS = [
         (re.compile(r"(['\"]?Authorization['\"]?:\s*['\"]?Bearer\s+)[^'\"}\s,]+(['\"]?)", re.IGNORECASE), r"\1[REDACTED]\2"),
-        (re.compile(r"(['\"]?X-PrivateKey['\"]?:\s*['\"]?)[^'\"}\s,]+(['\"]?)", re.IGNORECASE), r"\1[REDACTED]\2"),
+        (re.compile(r"(['\"]?(?:X-PrivateKey|X-API-Key|Cookie|Set-Cookie)['\"]?:\s*['\"]?)[^'\"}\s,]+(['\"]?)", re.IGNORECASE), r"\1[REDACTED]\2"),
         (re.compile(r"(Bearer\s+ey[A-Za-z0-9._\-]+)", re.IGNORECASE), r"Bearer [REDACTED]"),
+        (re.compile(r"\bey[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\b"), r"[REDACTED_JWT]"),
+        (re.compile(r"(['\"]?(?:api[_-]?key|client[_-]?secret|jwt[_-]?secret|password|private[_-]?key|totp[_-]?secret)['\"]?\s*[:=]\s*['\"]?)[^'\"\s,;&]+(['\"]?)", re.IGNORECASE), r"\1[REDACTED]\2"),
     ]
 
     def redact_text(self, text: str) -> str:
@@ -819,7 +822,9 @@ def publish_feed_state(
     last_tick: str | None = None
 ) -> dict[str, Any]:
     now_iso = datetime.now(timezone.utc).isoformat()
+    market_event_id = f"mkt_feed_{int(time.time() * 1000)}_{uuid.uuid4().hex[:6]}"
     state_payload = {
+        "market_event_id": market_event_id,
         "feed_provider": feed_provider,
         "feed_state": feed_state,
         "is_synthetic": is_synthetic,
@@ -829,6 +834,7 @@ def publish_feed_state(
         state_payload["last_tick"] = last_tick
     try:
         mapping = {
+            "market_event_id": market_event_id,
             "feed_provider": feed_provider,
             "feed_state": feed_state,
             "is_synthetic": "true" if is_synthetic else "false",
@@ -842,7 +848,7 @@ def publish_feed_state(
             **state_payload
         }
         client.publish("market:updates", json.dumps(event))
-        print(f"market worker: authoritative feed state -> provider={feed_provider}, state={feed_state}, synthetic={is_synthetic}", flush=True)
+        print(f"market worker: authoritative feed state -> event_id={market_event_id}, provider={feed_provider}, state={feed_state}, synthetic={is_synthetic}", flush=True)
     except Exception as e:
         print(f"market worker: error updating feed state in Redis: {e}", flush=True)
     return state_payload
@@ -862,8 +868,10 @@ class QuoteWriter:
         benchmark = self.benchmark_prices.get(subscription.symbol, price_paise)
         change_paise = price_paise - benchmark
         change_percent = round((change_paise / benchmark) * 100, 2) if benchmark > 0 else 0.0
+        market_event_id = f"mkt_tick_{int(now.timestamp() * 1000)}_{subscription.symbol}_{uuid.uuid4().hex[:8]}"
 
         quote = {
+            "market_event_id": market_event_id,
             "symbol": subscription.symbol,
             "price_paise": price_paise,
             "change_paise": change_paise,
@@ -885,6 +893,7 @@ class QuoteWriter:
         if canonical not in symbols_to_write:
             symbols_to_write.append(canonical)
 
+        t0 = time.perf_counter()
         with self.client.pipeline() as pipe:
             pipe.hset("market:feed_state", mapping={"last_tick": now.isoformat()})
             for sym in symbols_to_write:
@@ -905,6 +914,10 @@ class QuoteWriter:
                 pipe.expire(h_key, self.history_ttl)
                 pipe.publish("market:updates", json.dumps(sym_quote))
             pipe.execute()
+        redis_latency_ms = round((time.perf_counter() - t0) * 1000, 2)
+        # Periodic or trace logging for tick persistence without log flooding
+        if random.random() < 0.01:
+            print(f"market worker: tick emitted -> event_id={market_event_id}, symbol={subscription.symbol}, price={price_paise}, redis_latency_ms={redis_latency_ms}", flush=True)
 
     def volume_delta(self, symbol: str, trading_day: date, cumulative_volume: int) -> int:
         cumulative_volume = max(cumulative_volume, 0)

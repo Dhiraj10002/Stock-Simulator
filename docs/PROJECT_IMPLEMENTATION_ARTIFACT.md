@@ -186,7 +186,7 @@ The frontend has these completed screens:
 
 - Register and login
 - Dashboard metrics
-- Market terminal and live chart
+- Market stocks explorer and live chart
 - Buy/sell order form
 - Orders
 - Portfolio and P&L
@@ -322,7 +322,7 @@ cd frontend && npm run build
 | App startup/migrations | `backend/internal/app/app.go` |
 | Configuration | `backend/internal/config/config.go` |
 | Docker services | `docker-compose.yml` |
-| Frontend terminal | `frontend/src/app/trading-terminal.tsx` |
+| Stock trading desk | `frontend/src/app/(trading)/stocks/page.tsx` |
 | Live chart | `frontend/src/app/market-chart.tsx` |
 | Market worker | `python-services/market-worker/worker.py` |
 | News worker | `python-services/news-worker/worker.py` |

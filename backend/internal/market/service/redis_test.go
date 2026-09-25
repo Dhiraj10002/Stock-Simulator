@@ -935,4 +935,3 @@ func TestCurrentQuote_Phase2_ExplicitFeedModes(t *testing.T) {
 		}
 	})
 }
-

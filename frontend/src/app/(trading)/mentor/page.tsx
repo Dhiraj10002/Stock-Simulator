@@ -16,7 +16,7 @@ import {
   Layers,
   Activity,
 } from "lucide-react";
-import TradeCopilot from "@/components/terminal/TradeCopilot";
+import TradeCopilot from "@/components/mentor/TradeCopilot";
 import PreTradeRiskLab from "@/components/mentor/PreTradeRiskLab";
 import { formatPaise } from "@/lib/format";
 import { API_URL } from "@/lib/api";
@@ -26,7 +26,11 @@ export default function MentorPage() {
   const [activeTab, setActiveTab] = useState<"copilot" | "risklab">("copilot");
   const [token] = useState<string>(() => {
     if (typeof window !== "undefined") {
-      return localStorage.getItem("auth_token") || "";
+      return (
+        localStorage.getItem("auth_token") ||
+        localStorage.getItem("stock-simulator-access-token") ||
+        ""
+      );
     }
     return "";
   });

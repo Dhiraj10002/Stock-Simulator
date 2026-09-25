@@ -227,6 +227,63 @@ class SensitiveDataFilterTest(unittest.TestCase):
         self.assertIn("Authorization: Bearer [REDACTED]", record.msg)
         self.assertIn("X-PrivateKey: '[REDACTED]'", record.msg)
 
+    def test_redacts_standalone_jwt_and_secrets(self):
+        jwt_token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
+        msg = f"User session: {jwt_token}, password='SuperSecretPassword123!', api_key='angel_live_secret', totp_secret: JBSWY3DPEHPK3PXP"
+        redacted = self.sanitizer.redact_text(msg)
+        self.assertNotIn(jwt_token, redacted)
+        self.assertNotIn("SuperSecretPassword123!", redacted)
+        self.assertNotIn("angel_live_secret", redacted)
+        self.assertNotIn("JBSWY3DPEHPK3PXP", redacted)
+        self.assertIn("[REDACTED_JWT]", redacted)
+        self.assertIn("password='[REDACTED]'", redacted)
+        self.assertIn("api_key='[REDACTED]'", redacted)
+        self.assertIn("totp_secret: [REDACTED]", redacted)
+
+    def test_quote_writer_attaches_market_event_id(self):
+        mock_redis = MagicMock()
+        mock_pipe = MagicMock()
+        mock_redis.pipeline.return_value.__enter__.return_value = mock_pipe
+        mock_redis.lindex.return_value = None
+
+        writer = worker.QuoteWriter(mock_redis, quote_ttl=60, history_ttl=300, history_max_items=50)
+        sub = worker.Subscription(symbol="RELIANCE", token="2885", exchange_segment="NSE", exchange_type=1)
+        writer.write(sub, price_paise=250000, volume=1000, source="synthetic")
+
+        # Verify pipe.publish was called with JSON containing market_event_id
+        publish_calls = mock_pipe.publish.call_args_list
+        self.assertTrue(len(publish_calls) > 0)
+        channel, payload_str = publish_calls[0][0]
+        self.assertEqual(channel, "market:updates")
+        payload = json.loads(payload_str)
+        self.assertIn("market_event_id", payload)
+        self.assertTrue(payload["market_event_id"].startswith("mkt_tick_"))
+        self.assertEqual(payload["symbol"], "RELIANCE")
+        self.assertEqual(payload["price_paise"], 250000)
+
+    def test_publish_feed_state_observability(self):
+        mock_redis = MagicMock()
+        state = worker.publish_feed_state(
+            mock_redis,
+            feed_provider="angel_one",
+            feed_state="CONNECTED",
+            is_synthetic=False,
+            last_tick="2026-09-25T10:00:00Z"
+        )
+        self.assertIn("market_event_id", state)
+        self.assertTrue(state["market_event_id"].startswith("mkt_feed_"))
+        self.assertEqual(state["feed_state"], "CONNECTED")
+        self.assertEqual(state["last_tick"], "2026-09-25T10:00:00Z")
+        self.assertFalse(state["is_synthetic"])
+
+        # Check Redis publish was called
+        mock_redis.publish.assert_called_once()
+        args = mock_redis.publish.call_args[0]
+        self.assertEqual(args[0], "market:updates")
+        published = json.loads(args[1])
+        self.assertEqual(published["feed_state"], "CONNECTED")
+        self.assertEqual(published["last_tick"], "2026-09-25T10:00:00Z")
+
 
 class FeedSupervisorTest(unittest.TestCase):
     def setUp(self):

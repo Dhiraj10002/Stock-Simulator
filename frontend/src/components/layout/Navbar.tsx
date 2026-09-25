@@ -45,7 +45,7 @@ interface NavbarProps {
 
 const NAV_LINKS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/stocks", label: "Stocks", icon: TrendingUp, highlight: true },
+  { href: "/stocks", label: "Stocks", icon: TrendingUp },
   { href: "/options", label: "F&O Hub", icon: Layers },
   { href: "/portfolio", label: "Portfolio", icon: PieChart },
   { href: "/orders", label: "Orders", icon: ClipboardList },
@@ -418,7 +418,7 @@ export default function Navbar({
                     className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 text-rose-600 dark:text-rose-400 font-semibold text-xs border border-rose-200/80 dark:border-rose-800/50 transition-all hover:scale-[1.01] active:scale-[0.98] cursor-pointer shadow-xs"
                   >
                     <LogOut className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
-                    <span>Sign Out of Terminal</span>
+                    <span>Sign Out</span>
                   </button>
                 </div>
               </div>
@@ -476,7 +476,7 @@ export default function Navbar({
                 isActive
                   ? "bg-cyan-500/10 dark:bg-cyan-500/15 text-cyan-700 dark:text-cyan-300 border-cyan-500/30 dark:border-cyan-400/40 shadow-[0_0_16px_-3px_rgba(6,182,212,0.3)] font-bold"
                   : "border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100/70 dark:hover:bg-white/[0.05]"
-              } ${link.highlight && !isActive ? "text-slate-800 dark:text-slate-200" : ""}`}
+              }`}
             >
               <Icon
                 className={`w-3.5 h-3.5 ${
@@ -486,9 +486,6 @@ export default function Navbar({
                 }`}
               />
               <span>{link.label}</span>
-              {link.highlight && (
-                <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 dark:bg-cyan-400 animate-pulse shadow-[0_0_8px_rgba(6,182,212,0.8)]" />
-              )}
             </Link>
           );
         })}

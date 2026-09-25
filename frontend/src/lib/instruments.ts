@@ -100,10 +100,39 @@ export async function fetchInstrumentBySymbol(symbol: string): Promise<Instrumen
   return null;
 }
 
+export interface RawInstrumentPayload {
+  id?: string | number;
+  symbol?: string;
+  display_symbol?: string;
+  displayName?: string;
+  name?: string;
+  exchange?: string;
+  token?: string | number;
+  instrument_type?: string;
+  segment?: string;
+  underlying?: string;
+  expiry?: string;
+  strike?: number | string;
+  strikePrice?: number | string;
+  option_type?: string;
+  optionType?: string;
+  lot_size?: number | string;
+  lotSize?: number | string;
+  tick_size?: number | string;
+  tickSize?: number | string;
+  active?: boolean;
+  price_paise?: number;
+  basePricePaise?: number;
+  change_paise?: number;
+  change_percent?: number;
+  dayChangePercent?: number;
+  [key: string]: unknown;
+}
+
 /**
  * Normalizes raw backend payload into the strict canonical Instrument model.
  */
-export function normalizeInstrument(raw: any): Instrument {
+export function normalizeInstrument(raw: RawInstrumentPayload): Instrument {
   const lotSize = Number(raw.lot_size ?? raw.lotSize ?? (raw.segment === "OPTIONS" || raw.segment === "FUTURES" ? 25 : 1));
   const tickSize = Number(raw.tick_size ?? raw.tickSize ?? 0.05);
   const strike = Number(raw.strike ?? raw.strikePrice ?? 0);
@@ -116,7 +145,7 @@ export function normalizeInstrument(raw: any): Instrument {
   else if (it.includes("INDEX")) seg = "INDEX";
 
   return {
-    id: raw.id ?? raw.token ?? raw.symbol,
+    id: (raw.id ?? raw.token ?? raw.symbol ?? String(dispSymbol || "unknown")) as string | number,
     symbol: String(raw.symbol || "").toUpperCase(),
     display_symbol: dispSymbol,
     exchange: String(raw.exchange || (seg === "FUTURES" || seg === "OPTIONS" ? "NFO" : "NSE")).toUpperCase(),

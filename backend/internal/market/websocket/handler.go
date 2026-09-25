@@ -3,15 +3,20 @@ package websocket
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"sort"
 	"strings"
+	"time"
 
 	marketDTO "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/dto"
 	marketService "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/service"
+	"github.com/Dhiraj10002/Stock-Simulator/backend/pkg/logger"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	ws "github.com/gorilla/websocket"
+	"go.uber.org/zap"
 )
 
 type Handler struct {
@@ -118,6 +123,14 @@ func (h *Handler) Serve(c *gin.Context) {
 	defer conn.Close()
 	conn.SetReadLimit(4096)
 
+	reqID := c.GetString("request_id")
+	if reqID == "" {
+		reqID = c.GetHeader("X-Request-ID")
+		if reqID == "" {
+			reqID = uuid.NewString()
+		}
+	}
+
 	ctx, cancel := context.WithCancel(c.Request.Context())
 	defer cancel()
 	pubsub := h.market.SubscribeQuotes(ctx)
@@ -125,6 +138,14 @@ func (h *Handler) Serve(c *gin.Context) {
 
 	// Send initial authoritative feed status immediately upon connection
 	if feedStatus, err := h.market.FeedStatus(ctx); err == nil && feedStatus != nil {
+		eventID := fmt.Sprintf("mkt_feed_%d_%s", time.Now().UnixNano(), uuid.NewString()[:8])
+		logger.Info("websocket client connected; initial feed status",
+			logger.RequestID(reqID),
+			logger.MarketEventID(eventID),
+			logger.FeedState(feedStatus.FeedState),
+			logger.LastTick(feedStatus.LastTick),
+			zap.String("client_ip", c.ClientIP()),
+		)
 		_ = conn.WriteJSON(event{Type: "feed_status", FeedStatus: feedStatus})
 	}
 
@@ -139,6 +160,14 @@ func (h *Handler) Serve(c *gin.Context) {
 			return
 		case cmd := <-commands:
 			symbols := normalizeSymbols(cmd.Symbols)
+			eventID := fmt.Sprintf("mkt_cmd_%d_%s", time.Now().UnixNano(), uuid.NewString()[:8])
+			logger.Info("websocket subscription command processed",
+				logger.RequestID(reqID),
+				logger.MarketEventID(eventID),
+				zap.String("action", cmd.Action),
+				zap.Strings("symbols", symbols),
+				zap.String("client_ip", c.ClientIP()),
+			)
 			switch strings.ToLower(cmd.Action) {
 			case "subscribe":
 				for _, symbol := range symbols {
@@ -167,6 +196,13 @@ func (h *Handler) Serve(c *gin.Context) {
 			if msgType, ok := raw["type"].(string); ok && msgType == "feed_status" {
 				var fs marketDTO.FeedStatusResponse
 				if err := json.Unmarshal([]byte(message.Payload), &fs); err == nil {
+					eventID := fmt.Sprintf("mkt_feed_%d_%s", time.Now().UnixNano(), uuid.NewString()[:8])
+					logger.Info("websocket streaming feed status event",
+						logger.RequestID(reqID),
+						logger.MarketEventID(eventID),
+						logger.FeedState(fs.FeedState),
+						logger.LastTick(fs.LastTick),
+					)
 					if err := conn.WriteJSON(event{Type: "feed_status", FeedStatus: &fs}); err != nil {
 						return
 					}

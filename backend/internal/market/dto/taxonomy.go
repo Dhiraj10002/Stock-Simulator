@@ -33,7 +33,7 @@ func NormalizeQuoteSource(source string) QuoteSource {
 	switch clean {
 	case string(QuoteSourceAngelOneLive):
 		return QuoteSourceAngelOneLive
-	case string(QuoteSourceSyntheticGBM), "synthetic", "fallback_synthetic":
+	case string(QuoteSourceSyntheticGBM), "synthetic", "fallback_synthetic", "synthetic_simulation":
 		return QuoteSourceSyntheticGBM
 	case string(QuoteSourceFNOEngine), "simulated_deriv":
 		return QuoteSourceFNOEngine

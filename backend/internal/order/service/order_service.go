@@ -18,7 +18,9 @@ import (
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/order/dto"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/order/repository"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/product"
+	"github.com/Dhiraj10002/Stock-Simulator/backend/pkg/logger"
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 )
 
 var (
@@ -93,6 +95,9 @@ func (s *OrderService) now() time.Time {
 }
 
 func (s *OrderService) Create(userID string, request dto.CreateOrderRequest) (*dto.OrderResponse, error) {
+	createStart := time.Now()
+	var redisDuration time.Duration
+
 	userUUID, err := uuid.Parse(userID)
 	if err != nil {
 		return nil, fmt.Errorf("invalid user identity")
@@ -244,9 +249,11 @@ func (s *OrderService) Create(userID string, request dto.CreateOrderRequest) (*d
 	if request.Type == model.OrderTypeMarket {
 		// Reject before persisting when there is no safe executable price. This
 		// prevents a market order becoming an unfillable pending order.
+		redisStart := time.Now()
 		if _, err := s.executableQuote(request.Symbol); err != nil {
 			return nil, err
 		}
+		redisDuration = time.Since(redisStart)
 	}
 
 	initialStatus := model.OrderStatusPending
@@ -300,6 +307,7 @@ func (s *OrderService) Create(userID string, request dto.CreateOrderRequest) (*d
 		return toResponse(order), nil
 	}
 
+	dbStart := time.Now()
 	if reservation > 0 {
 		if err := s.repo.CreateWithReservation(order, reservation); err != nil {
 			return nil, fmt.Errorf("insufficient available wallet balance")
@@ -311,6 +319,23 @@ func (s *OrderService) Create(userID string, request dto.CreateOrderRequest) (*d
 	} else if err := s.repo.Create(order); err != nil {
 		return nil, err
 	}
+	dbDuration := time.Since(dbStart)
+
+	logger.Info("order created",
+		logger.OrderID(order.UUID.String()),
+		logger.UserID(userID),
+		zap.String("symbol", order.Symbol),
+		zap.String("side", order.Side),
+		zap.String("type", order.Type),
+		zap.String("product", order.Product),
+		zap.Int64("quantity", order.Quantity),
+		zap.Int64("price_paise", order.PricePaise),
+		zap.Int64("reserved_paise", reservation),
+		zap.String("status", order.Status),
+		logger.Latency(time.Since(createStart)),
+		logger.RedisLatency(redisDuration),
+		logger.DBLatency(dbDuration),
+	)
 
 	if order.Type == model.OrderTypeMarket {
 		if err := s.Execute(userID, order.UUID.String()); err != nil {

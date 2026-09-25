@@ -182,10 +182,16 @@ func (s *ReportsService) GetLedgerStatement(userID, fromStr, toStr string) (*dto
 			runningBalance = t.AmountPaise
 		case "DEBIT", "BUY", "ORDER_BUY":
 			debit = t.AmountPaise
-			runningBalance -= t.AmountPaise
+			if debit < 0 {
+				debit = -debit
+			}
+			runningBalance -= debit
 		case "SELL", "ORDER_SELL":
 			credit = t.AmountPaise
-			runningBalance += t.AmountPaise
+			if credit < 0 {
+				credit = -credit
+			}
+			runningBalance += credit
 		case "RESERVE":
 			// Margin block
 			narration := t.Note

@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { useTerminalStore } from "@/stores/terminal-store";
+import { useTradingStore } from "@/stores/trading-store";
 import { formatPaise, formatPercent } from "@/lib/format";
 import { getApiUrl } from "@/lib/config";
 import {
@@ -77,7 +77,7 @@ export default function PreTradeRiskLab({
   token?: string;
 }) {
   const router = useRouter();
-  const setSelectedSymbol = useTerminalStore((s) => s.setSelectedSymbol);
+  const setSelectedSymbol = useTradingStore((s) => s.setSelectedSymbol);
 
   // Form State
   const [symbol, setSymbol] = useState("RELIANCE");
@@ -328,7 +328,7 @@ export default function PreTradeRiskLab({
     }
   };
 
-  const handleLaunchInTerminal = () => {
+  const handleLaunchInStocks = () => {
     setSelectedSymbol(symbol);
     router.push(`/stocks/${encodeURIComponent(symbol)}`);
   };
@@ -844,7 +844,7 @@ export default function PreTradeRiskLab({
             )}
           </div>
 
-          {/* Action Footer: Launch Setup into Terminal */}
+          {/* Action Footer: Launch Setup into Stocks */}
           {result && (
             <div className="pt-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3 flex-wrap">
               <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">
@@ -852,11 +852,11 @@ export default function PreTradeRiskLab({
               </span>
               <button
                 type="button"
-                onClick={handleLaunchInTerminal}
+                onClick={handleLaunchInStocks}
                 className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-bold text-xs shadow-md shadow-cyan-500/20 transition-all hover:scale-[1.02]"
               >
                 <SlidersHorizontal className="w-3.5 h-3.5" />
-                <span>Open {symbol} Stock Terminal</span>
+                <span>Trade {symbol}</span>
                 <ArrowRight className="w-3.5 h-3.5" />
               </button>
             </div>

@@ -13,8 +13,8 @@ import (
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/handler"
 	"strings"
 
-	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/alias"
 	instrumentHandler "github.com/Dhiraj10002/Stock-Simulator/backend/internal/instrument/handler"
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/alias"
 	marketDTO "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/dto"
 	marketHandler "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/handler"
 	marketWebsocket "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/websocket"
@@ -35,7 +35,23 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func Setup(ctx context.Context, cfg *config.Config) *gin.Engine {
+type SetupOption func(*setupOptions)
+
+type setupOptions struct {
+	ordersHandler *orderHandler.OrderHandler
+}
+
+func WithOrderHandler(oh *orderHandler.OrderHandler) SetupOption {
+	return func(o *setupOptions) {
+		o.ordersHandler = oh
+	}
+}
+
+func Setup(ctx context.Context, cfg *config.Config, opts ...SetupOption) *gin.Engine {
+	var sOpts setupOptions
+	for _, opt := range opts {
+		opt(&sOpts)
+	}
 
 	validation.Register()
 
@@ -94,7 +110,10 @@ func Setup(ctx context.Context, cfg *config.Config) *gin.Engine {
 		})
 	}
 	portfolio := portfolioHandler.New(market.Service())
-	orders := orderHandler.New(market.Service(), cfg)
+	orders := sOpts.ordersHandler
+	if orders == nil {
+		orders = orderHandler.New(market.Service(), cfg)
+	}
 	go orders.RunMatcher(ctx)
 	if database.GetDB() != nil {
 		go orders.RunProductLifecycle(ctx)
@@ -124,9 +143,12 @@ func Setup(ctx context.Context, cfg *config.Config) *gin.Engine {
 		}
 		rateLimiter = middleware.NewRateLimiter(client, cfg.RedisOperationTimeout)
 	}
+	r.GET("/health", healthHandler.Health)
+	r.GET("/ready", healthHandler.Readiness)
 	r.GET("/ws/market", marketWS.Serve)
 	{
 		api.GET("/health", healthHandler.Health)
+		api.GET("/ready", healthHandler.Readiness)
 		api.GET("/market/status", market.Status)
 		api.GET("/market/quotes/:symbol", market.Quote)
 		api.GET("/market/quotes/:symbol/history", market.History)

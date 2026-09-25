@@ -1,7 +1,7 @@
 import { create } from "zustand";
 
-export type TerminalProduct = "DELIVERY" | "INTRADAY" | "FNO";
-export type TerminalDeskTab = "positions" | "orders" | "gtt" | "copilot" | "depth";
+export type TradingProduct = "DELIVERY" | "INTRADAY" | "FNO";
+export type TradingDeskTab = "positions" | "orders" | "gtt" | "copilot" | "depth";
 
 export interface ChartIndicators {
   vwap: boolean;
@@ -11,25 +11,25 @@ export interface ChartIndicators {
   bollinger: boolean;
 }
 
-interface TerminalStoreState {
+interface TradingStoreState {
   selectedSymbol: string;
-  selectedProduct: TerminalProduct;
+  selectedProduct: TradingProduct;
   selectedTimeframe: string;
   indicators: ChartIndicators;
-  activeDeskTab: TerminalDeskTab;
+  activeDeskTab: TradingDeskTab;
   activeWatchlistId: number;
 
   // Actions
   setSelectedSymbol: (symbol: string) => void;
-  setSelectedProduct: (product: TerminalProduct) => void;
+  setSelectedProduct: (product: TradingProduct) => void;
   setSelectedTimeframe: (timeframe: string) => void;
   toggleIndicator: (indicator: keyof ChartIndicators) => void;
   setIndicators: (indicators: Partial<ChartIndicators>) => void;
-  setActiveDeskTab: (tab: TerminalDeskTab) => void;
+  setActiveDeskTab: (tab: TradingDeskTab) => void;
   setActiveWatchlistId: (id: number) => void;
 }
 
-export const useTerminalStore = create<TerminalStoreState>((set) => ({
+export const useTradingStore = create<TradingStoreState>((set) => ({
   selectedSymbol: "RELIANCE",
   selectedProduct: "DELIVERY",
   selectedTimeframe: "1D",

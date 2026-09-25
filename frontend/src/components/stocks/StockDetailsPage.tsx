@@ -937,6 +937,7 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
               >
                 SELL
               </button>
+
             </div>
           </div>
         </div>

@@ -1,6 +1,6 @@
 # Trading charts
 
-The frontend market terminal uses `lightweight-charts` and consumes the
+The frontend stock chart uses `lightweight-charts` and consumes the
 backend market contracts:
 
 - Historical candles: `GET /api/v1/market/quotes/:symbol/history?limit=100`

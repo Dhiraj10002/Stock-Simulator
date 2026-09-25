@@ -18,8 +18,8 @@ type apiResponse struct {
 }
 
 type singleApiResponse struct {
-	Success bool                 `json:"success"`
-	Message string               `json:"message"`
+	Success bool                   `json:"success"`
+	Message string                 `json:"message"`
 	Data    dto.InstrumentResponse `json:"data"`
 }
 

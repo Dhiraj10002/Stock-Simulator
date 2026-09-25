@@ -160,19 +160,19 @@ func (r *OrderRepository) FindInstrument(symbol string) (*model.Instrument, erro
 		return nil, gorm.ErrRecordNotFound
 	}
 
-	// 1. Direct query: exact symbol match, with -EQ suffix, or exact name
-	err := database.GetDB().Where("UPPER(symbol) = ? OR UPPER(symbol) = ? OR UPPER(name) = ?", clean, clean+"-EQ", clean).First(&instrument).Error
-	if err == nil {
-		return &instrument, nil
-	}
-
-	// 2. Dynamic alias resolution: check canonical symbol
+	// 1. Dynamic alias resolution: check canonical symbol first if mapped
 	canonical := alias.ResolveCanonicalSymbol(clean)
 	if canonical != "" && canonical != clean {
-		err = database.GetDB().Where("UPPER(symbol) = ? OR UPPER(symbol) = ? OR UPPER(name) = ?", canonical, canonical+"-EQ", canonical).First(&instrument).Error
+		err := database.GetDB().Where("UPPER(symbol) = ? OR UPPER(symbol) = ? OR UPPER(name) = ?", canonical, canonical+"-EQ", canonical).First(&instrument).Error
 		if err == nil {
 			return &instrument, nil
 		}
+	}
+
+	// 2. Direct query: exact symbol match, with -EQ suffix, or exact name
+	err := database.GetDB().Where("UPPER(symbol) = ? OR UPPER(symbol) = ? OR UPPER(name) = ?", clean, clean+"-EQ", clean).First(&instrument).Error
+	if err == nil {
+		return &instrument, nil
 	}
 
 	// 3. Reverse alias resolution: check any aliases that map to this symbol

@@ -3,7 +3,7 @@
 import React, { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { useTerminalStore } from "@/stores/terminal-store";
+import { useTradingStore } from "@/stores/trading-store";
 import { useSymbolQuote } from "@/stores/market-store";
 import { formatPaise, formatNumber } from "@/lib/format";
 import { API_URL } from "@/lib/api";
@@ -67,7 +67,7 @@ interface OptionChainDeskProps {
 
 export default function OptionChainDesk({ initialUnderlying = "NIFTY" }: OptionChainDeskProps) {
   const router = useRouter();
-  const setSelectedSymbol = useTerminalStore((s) => s.setSelectedSymbol);
+  const setSelectedSymbol = useTradingStore((s) => s.setSelectedSymbol);
 
   const [selectedUnderlying, setSelectedUnderlying] = useState(initialUnderlying);
   const liveSpotQuote = useSymbolQuote(selectedUnderlying);
@@ -123,7 +123,7 @@ export default function OptionChainDesk({ initialUnderlying = "NIFTY" }: OptionC
     setExecutionError(null);
   };
 
-  // Route single contract to trade terminal
+  // Route single contract to stock details
   const handleSelectContract = (contract: OptionContract, _side: "BUY" | "SELL") => {
     setSelectedSymbol(contract.symbol);
     router.push(`/stocks/${encodeURIComponent(contract.symbol)}`);

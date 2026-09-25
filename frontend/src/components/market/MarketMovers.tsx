@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { useTerminalStore } from "@/stores/terminal-store";
+import { useTradingStore } from "@/stores/trading-store";
 import {
   TrendingUp,
   TrendingDown,
@@ -202,7 +202,7 @@ type MoverTab = "gainers" | "losers" | "active";
 
 export default function MarketMovers() {
   const router = useRouter();
-  const setSelectedSymbol = useTerminalStore((s) => s.setSelectedSymbol);
+  const setSelectedSymbol = useTradingStore((s) => s.setSelectedSymbol);
   const [activeTab, setActiveTab] = useState<MoverTab>("gainers");
 
   const items = useMemo(() => {

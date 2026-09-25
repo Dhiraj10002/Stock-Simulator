@@ -2,7 +2,7 @@
 
 import React from "react";
 import { useRouter } from "next/navigation";
-import { useTerminalStore } from "@/stores/terminal-store";
+import { useTradingStore } from "@/stores/trading-store";
 import { TrendingUp, TrendingDown, ArrowUpRight } from "lucide-react";
 import { formatNumber, formatPercent } from "@/lib/format";
 
@@ -22,7 +22,7 @@ interface MarketIndicesCardProps {
 
 export default function MarketIndicesCard({ index }: MarketIndicesCardProps) {
   const router = useRouter();
-  const setSelectedSymbol = useTerminalStore((s) => s.setSelectedSymbol);
+  const setSelectedSymbol = useTradingStore((s) => s.setSelectedSymbol);
 
   const isPositive = index.change >= 0;
 

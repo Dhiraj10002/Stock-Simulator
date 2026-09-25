@@ -23,6 +23,12 @@ api.<your-oracle-domain>.com {
         reverse_proxy backend:8080
     }
 
+    # Readiness check endpoint for deployment validation
+    handle /ready {
+        rewrite * /api/v1/ready
+        reverse_proxy backend:8080
+    }
+
     log {
         output stdout
         format console

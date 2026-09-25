@@ -327,7 +327,7 @@ export default function PortfolioHoldingsTable({
                           <Link
                             href={`/stocks/${h.symbol}`}
                             className="px-2.5 py-1 rounded-lg bg-cyan-50 hover:bg-cyan-100 dark:bg-cyan-950/60 dark:hover:bg-cyan-900/60 border border-cyan-200 dark:border-cyan-800/60 text-cyan-700 dark:text-cyan-300 font-bold text-[11px] transition-colors"
-                            title="Buy more shares in terminal"
+                            title="Buy more shares"
                           >
                             + Add
                           </Link>
