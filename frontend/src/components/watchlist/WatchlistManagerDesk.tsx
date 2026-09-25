@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTradingStore } from "@/stores/trading-store";
-import { useMultiSymbolQuotes } from "@/stores/market-store";
+import { useMarketStore, useMultiSymbolQuotes, useTargetedSubscription } from "@/stores/market-store";
 import { getQuoteSync, fetchBatchQuotes } from "@/lib/quoteService";
 import { formatPaise, formatPercent } from "@/lib/format";
 import { apiFetch, getAuthToken, ApiError } from "@/lib/api";
@@ -240,6 +240,11 @@ export default function WatchlistManagerDesk({ token: propToken }: WatchlistMana
   // Synchronize cloud DB items into the primary watchlist tab (wl1) safely without losing local items
   useEffect(() => {
     if (token && Array.isArray(dbWatchlist) && dbWatchlist.length > 0) {
+      const dbSymbols = dbWatchlist
+        .map((it) => (it?.symbol || (it as Record<string, unknown>)?.ticker || "").toString().trim().toUpperCase())
+        .filter(Boolean);
+      useMarketStore.getState().setWatchlistSymbols(dbSymbols);
+
       queueMicrotask(() => {
         setWatchlists((prev) => {
           const currentPrimary = Array.isArray(prev["wl1"]) ? prev["wl1"] : [];
@@ -359,7 +364,10 @@ export default function WatchlistManagerDesk({ token: propToken }: WatchlistMana
       .filter((item): item is WatchlistItem => item !== null && typeof item.symbol === "string" && item.symbol.length > 0);
   }, [watchlists, activeTabId]);
 
-  const liveWsQuotes = useMultiSymbolQuotes(currentItems.map((i) => i.symbol));
+  const currentSymbols = useMemo(() => currentItems.map((i) => i.symbol), [currentItems]);
+  // Subscribe actively to the symbols currently displayed on the desk
+  useTargetedSubscription(currentSymbols);
+  const liveWsQuotes = useMultiSymbolQuotes(currentSymbols);
 
   // Prefetch real quotes from backend API for current watchlist items
   useEffect(() => {
@@ -425,6 +433,7 @@ export default function WatchlistManagerDesk({ token: propToken }: WatchlistMana
       [activeTabId]: [item, ...existing],
     };
     persistWatchlists(updated);
+    useMarketStore.getState().addWatchlistSymbol(item.symbol);
     setSearchQuery("");
 
     if (token) {
@@ -452,6 +461,7 @@ export default function WatchlistManagerDesk({ token: propToken }: WatchlistMana
       [activeTabId]: existing.filter((i) => i.symbol !== symbol),
     };
     persistWatchlists(updated);
+    useMarketStore.getState().removeWatchlistSymbol(symbol);
 
     if (token) {
       try {

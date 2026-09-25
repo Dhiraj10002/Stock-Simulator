@@ -17,7 +17,7 @@ import type { Instrument } from "@/types";
 import { formatPaise, formatPercent } from "@/lib/format";
 import { useTradingStore } from "@/stores/trading-store";
 import { useUIStore } from "@/stores/ui-store";
-import { useMultiSymbolQuotes } from "@/stores/market-store";
+import { useMarketStore, useMultiSymbolQuotes } from "@/stores/market-store";
 import { apiFetch } from "@/lib/api";
 import { fetchBatchQuotes } from "@/lib/quoteService";
 import type { StockSearchResult } from "@/types";
@@ -134,8 +134,10 @@ export default function SearchModal() {
     try {
       if (inWl) {
         await apiFetch(`/watchlist/${encodeURIComponent(clean)}`, { method: "DELETE" });
+        useMarketStore.getState().removeWatchlistSymbol(clean);
       } else {
         await apiFetch("/watchlist", { method: "POST", body: JSON.stringify({ symbol: clean }) });
+        useMarketStore.getState().addWatchlistSymbol(clean);
       }
       refetchWatchlist();
     } catch (err) {

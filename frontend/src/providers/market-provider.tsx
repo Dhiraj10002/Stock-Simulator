@@ -1,11 +1,17 @@
 "use client";
 
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useCallback } from "react";
 import { usePathname } from "next/navigation";
-import { useMarketStore } from "@/stores/market-store";
+import {
+  useMarketStore,
+  DEFAULT_BENCHMARK_SYMBOLS,
+  MAX_CLIENT_SUBSCRIPTIONS,
+} from "@/stores/market-store";
+import { useTradingStore } from "@/stores/trading-store";
 import { getApiUrl, getWsUrl } from "@/lib/config";
+import { apiFetch } from "@/lib/api";
 import { fetchInstruments } from "@/lib/instruments";
-import type { Quote, Instrument } from "@/types";
+import type { Quote } from "@/types";
 
 const PUBLIC_ROUTES = new Set(["/login", "/signup", "/3d"]);
 
@@ -20,36 +26,44 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
   const setMarketStatus = useMarketStore((s) => s.setMarketStatus);
   const setInstruments = useMarketStore((s) => s.setInstruments);
 
+  // Phase 5 Targeted Subscriptions
+  const watchlistSymbols = useMarketStore((s) => s.watchlistSymbols);
+  const activeViewSymbols = useMarketStore((s) => s.activeViewSymbols);
+  const setWatchlistSymbols = useMarketStore((s) => s.setWatchlistSymbols);
+  const setSubscribedSymbols = useMarketStore((s) => s.setSubscribedSymbols);
+  const selectedTradingSymbol = useTradingStore((s) => s.selectedSymbol);
+
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const instrumentsRef = useRef<Instrument[]>([]);
+  const subscribedSymbolsRef = useRef<Set<string>>(new Set());
 
-  // 1. Fetch canonical instruments from authoritative master
+  // 1. Fetch canonical instruments for client-side search and metadata lookup
   useEffect(() => {
     if (isPublic) return;
     fetchInstruments()
       .then((list) => {
-        instrumentsRef.current = list;
         setInstruments(list);
-        if (
-          wsRef.current &&
-          wsRef.current.readyState === WebSocket.OPEN &&
-          list.length > 0
-        ) {
-          wsRef.current.send(
-            JSON.stringify({
-              action: "subscribe",
-              symbols: list.map((i) => i.symbol),
-            })
-          );
-        }
       })
       .catch((err) => {
         console.error("Failed to fetch canonical instruments:", err);
       });
   }, [isPublic, setInstruments]);
 
-  // 1. Fetch authoritative market calendar & feed status on mount and periodically
+  // 2. Fetch user's DB-backed watchlist to populate initial targeted subscriptions
+  useEffect(() => {
+    if (isPublic) return;
+    apiFetch<{ symbol: string }[]>("/watchlist")
+      .then((items) => {
+        if (Array.isArray(items) && items.length > 0) {
+          setWatchlistSymbols(items.map((i) => i.symbol));
+        }
+      })
+      .catch(() => {
+        // Unauthenticated or watchlist empty
+      });
+  }, [isPublic, setWatchlistSymbols]);
+
+  // 3. Fetch authoritative market calendar & feed status periodically
   useEffect(() => {
     if (isPublic) return;
     const apiUrl = getApiUrl();
@@ -81,7 +95,66 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
     return () => clearInterval(interval);
   }, [isPublic, setMarketStatus, setFeedStatus]);
 
-  // 2. Manage WebSocket connection (only for authenticated / trading app routes)
+  // 4. Targeted subscription synchronizer: syncs active symbols over WebSocket
+  const syncSubscriptions = useCallback(() => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+
+    // Union of: benchmarks + active DB watchlist + current view + trading selection
+    const candidateSymbols = [
+      ...DEFAULT_BENCHMARK_SYMBOLS,
+      ...watchlistSymbols,
+      ...activeViewSymbols,
+      ...(selectedTradingSymbol ? [selectedTradingSymbol] : []),
+    ];
+
+    const targetList = Array.from(
+      new Set(
+        candidateSymbols
+          .map((s) => s.toUpperCase().trim())
+          .filter(Boolean)
+      )
+    ).slice(0, MAX_CLIENT_SUBSCRIPTIONS);
+
+    const targetSet = new Set(targetList);
+    const currentSet = subscribedSymbolsRef.current;
+
+    const toSubscribe = targetList.filter((s) => !currentSet.has(s));
+    const toUnsubscribe = Array.from(currentSet).filter((s) => !targetSet.has(s));
+
+    if (toSubscribe.length > 0) {
+      wsRef.current.send(
+        JSON.stringify({
+          action: "subscribe",
+          symbols: toSubscribe,
+        })
+      );
+      for (const sym of toSubscribe) {
+        currentSet.add(sym);
+      }
+    }
+
+    if (toUnsubscribe.length > 0) {
+      wsRef.current.send(
+        JSON.stringify({
+          action: "unsubscribe",
+          symbols: toUnsubscribe,
+        })
+      );
+      for (const sym of toUnsubscribe) {
+        currentSet.delete(sym);
+      }
+    }
+
+    setSubscribedSymbols(Array.from(currentSet));
+  }, [watchlistSymbols, activeViewSymbols, selectedTradingSymbol, setSubscribedSymbols]);
+
+  // Synchronize targeted subscriptions whenever targets change
+  useEffect(() => {
+    if (isPublic) return;
+    syncSubscriptions();
+  }, [isPublic, syncSubscriptions]);
+
+  // 5. Manage WebSocket connection (only for authenticated / trading app routes)
   useEffect(() => {
     if (isPublic) {
       if (wsRef.current) {
@@ -111,17 +184,8 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
         ws.onopen = () => {
           if (!isSubscribed) return;
           setConnectionState("connected");
-
-          // Subscribe to canonical instruments
-          const symbols = instrumentsRef.current.map((i) => i.symbol);
-          if (symbols.length > 0) {
-            ws.send(
-              JSON.stringify({
-                action: "subscribe",
-                symbols,
-              })
-            );
-          }
+          subscribedSymbolsRef.current.clear();
+          syncSubscriptions();
         };
 
         ws.onmessage = (event) => {
@@ -159,8 +223,8 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
 
         ws.onclose = () => {
           setConnectionState("disconnected");
+          subscribedSymbolsRef.current.clear();
           if (isSubscribed) {
-            // Reconnect after 2 seconds
             reconnectTimeoutRef.current = setTimeout(connect, 2000);
           }
         };
@@ -186,7 +250,7 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
         }
       }
     };
-  }, [isPublic, updateQuote, setConnectionState, setFeedStatus, setFeedProvider]);
+  }, [isPublic, updateQuote, setConnectionState, setFeedStatus, setFeedProvider, syncSubscriptions]);
 
   return <>{children}</>;
 }

@@ -103,3 +103,42 @@ func TestCheckOrigin_Development_EmptyOriginAllowed(t *testing.T) {
 		t.Fatalf("expected empty Origin to be allowed in development for tests/curl, but was rejected")
 	}
 }
+
+func TestNormalizeSymbols(t *testing.T) {
+	raw := []string{" reliance ", "tcs", "  ", "infy-eq", "HDFCBANK"}
+	expected := []string{"RELIANCE", "TCS", "INFY-EQ", "HDFCBANK"}
+	got := normalizeSymbols(raw)
+	if len(got) != len(expected) {
+		t.Fatalf("expected %d symbols, got %d", len(expected), len(got))
+	}
+	for i, sym := range got {
+		if sym != expected[i] {
+			t.Errorf("at index %d: expected %s, got %s", i, expected[i], sym)
+		}
+	}
+}
+
+func TestSortedSymbols(t *testing.T) {
+	set := map[string]struct{}{
+		"TCS":      {},
+		"RELIANCE": {},
+		"INFY":     {},
+	}
+	sorted := sortedSymbols(set)
+	expected := []string{"INFY", "RELIANCE", "TCS"}
+	if len(sorted) != len(expected) {
+		t.Fatalf("expected %d symbols, got %d", len(expected), len(sorted))
+	}
+	for i, sym := range sorted {
+		if sym != expected[i] {
+			t.Errorf("at index %d: expected %s, got %s", i, expected[i], sym)
+		}
+	}
+}
+
+func TestMaxSubscriptionsPerClient(t *testing.T) {
+	if MaxSubscriptionsPerClient != 100 {
+		t.Errorf("expected MaxSubscriptionsPerClient to be 100, got %d", MaxSubscriptionsPerClient)
+	}
+}
+

@@ -37,6 +37,10 @@ type event struct {
 	Message    string                        `json:"message,omitempty"`
 }
 
+// MaxSubscriptionsPerClient defines the hard ceiling of active symbol subscriptions per connection
+// to prevent denial-of-service via huge unbounded subscription lists.
+const MaxSubscriptionsPerClient = 100
+
 // New creates a new WebSocket Handler with origin restrictions.
 // In production (isProd=true), origins are strictly checked against allowedOrigins.
 // Empty origins or wildcard "*" in production are rejected to prevent CSWSH attacks.
@@ -170,11 +174,19 @@ func (h *Handler) Serve(c *gin.Context) {
 			)
 			switch strings.ToLower(cmd.Action) {
 			case "subscribe":
+				excess := false
 				for _, symbol := range symbols {
+					if _, exists := subscribed[symbol]; !exists && len(subscribed) >= MaxSubscriptionsPerClient {
+						excess = true
+						continue
+					}
 					subscribed[symbol] = struct{}{}
 					if q, err := h.market.CurrentQuote(symbol); err == nil && q != nil {
 						_ = conn.WriteJSON(event{Type: "quote", Quote: q})
 					}
+				}
+				if excess {
+					_ = conn.WriteJSON(event{Type: "error", Message: fmt.Sprintf("subscription limit of %d symbols exceeded; excess symbols ignored", MaxSubscriptionsPerClient)})
 				}
 				_ = conn.WriteJSON(event{Type: "subscribed", Symbols: sortedSymbols(subscribed)})
 			case "unsubscribe":

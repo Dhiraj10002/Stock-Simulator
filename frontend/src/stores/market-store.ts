@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { create } from "zustand";
 import { useShallow } from "zustand/shallow";
 import { Quote, Instrument } from "@/types";
@@ -23,6 +24,11 @@ interface MarketStoreState {
   feedStatus: FeedStatus;
   feedProvider: "Angel One" | "Synthetic" | "Connecting" | "Offline";
 
+  // Phase 5: Targeted WebSocket Subscriptions
+  watchlistSymbols: string[];
+  activeViewSymbols: string[];
+  subscribedSymbols: string[];
+
   // Actions
   setQuotes: (quotes: Record<string, Quote>) => void;
   updateQuote: (quote: Quote) => void;
@@ -32,6 +38,12 @@ interface MarketStoreState {
   setLastTickTimestamp: (timestamp: number) => void;
   setFeedStatus: (status: Partial<FeedStatus>) => void;
   setFeedProvider: (provider: "Angel One" | "Synthetic" | "Connecting" | "Offline") => void;
+
+  setWatchlistSymbols: (symbols: string[]) => void;
+  addWatchlistSymbol: (symbol: string) => void;
+  removeWatchlistSymbol: (symbol: string) => void;
+  setActiveViewSymbols: (symbols: string[]) => void;
+  setSubscribedSymbols: (symbols: string[]) => void;
 }
 
 function deriveFeedProviderLegacy(feedStatus: FeedStatus, connectionState: ConnectionState): "Angel One" | "Synthetic" | "Connecting" | "Offline" {
@@ -62,6 +74,9 @@ export const useMarketStore = create<MarketStoreState>((set) => ({
     updatedAt: null,
   },
   feedProvider: "Offline",
+  watchlistSymbols: [],
+  activeViewSymbols: [],
+  subscribedSymbols: [],
 
   setQuotes: (quotes) => set({ quotes }),
   setInstruments: (instrumentList) => {
@@ -101,6 +116,27 @@ export const useMarketStore = create<MarketStoreState>((set) => ({
       };
     }),
   setFeedProvider: (feedProvider) => set({ feedProvider }),
+
+  setWatchlistSymbols: (symbols) =>
+    set({
+      watchlistSymbols: Array.from(new Set(symbols.map((s) => s.toUpperCase().trim()).filter(Boolean))),
+    }),
+  addWatchlistSymbol: (symbol) =>
+    set((state) => {
+      const clean = symbol.toUpperCase().trim();
+      if (!clean || state.watchlistSymbols.includes(clean)) return state;
+      return { watchlistSymbols: [...state.watchlistSymbols, clean] };
+    }),
+  removeWatchlistSymbol: (symbol) =>
+    set((state) => {
+      const clean = symbol.toUpperCase().trim();
+      return { watchlistSymbols: state.watchlistSymbols.filter((s) => s !== clean) };
+    }),
+  setActiveViewSymbols: (symbols) =>
+    set({
+      activeViewSymbols: Array.from(new Set(symbols.map((s) => s.toUpperCase().trim()).filter(Boolean))),
+    }),
+  setSubscribedSymbols: (subscribedSymbols) => set({ subscribedSymbols }),
 }));
 
 /**
@@ -154,3 +190,31 @@ export const useCanonicalInstrument = (symbol: string | undefined): Instrument |
     return state.instruments[clean] || state.instruments[upper];
   });
 };
+
+/** Default benchmark index symbols always included in active subscription set */
+export const DEFAULT_BENCHMARK_SYMBOLS = ["NIFTY", "BANKNIFTY", "SENSEX"];
+
+/** Maximum concurrent symbol subscriptions per client to protect network and browser */
+export const MAX_CLIENT_SUBSCRIPTIONS = 50;
+
+/**
+ * Hook for views/pages to register active symbols they want live quotes for.
+ * Automatically adds the symbols to activeViewSymbols on mount / update,
+ * and clears them when the component unmounts.
+ */
+export const useTargetedSubscription = (symbols: string | string[] | undefined) => {
+  const setActiveViewSymbols = useMarketStore((s) => s.setActiveViewSymbols);
+
+  useEffect(() => {
+    if (!symbols) return;
+    const list = Array.isArray(symbols) ? symbols : [symbols];
+    const cleanList = list.map((s) => s.toUpperCase().trim()).filter(Boolean);
+    if (cleanList.length === 0) return;
+
+    setActiveViewSymbols(cleanList);
+    return () => {
+      setActiveViewSymbols([]);
+    };
+  }, [symbols, setActiveViewSymbols]);
+};
+

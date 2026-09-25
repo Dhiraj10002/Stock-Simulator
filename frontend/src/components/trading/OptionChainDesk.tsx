@@ -4,7 +4,7 @@ import React, { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { useTradingStore } from "@/stores/trading-store";
-import { useSymbolQuote } from "@/stores/market-store";
+import { useSymbolQuote, useTargetedSubscription } from "@/stores/market-store";
 import { formatPaise, formatNumber } from "@/lib/format";
 import { API_URL } from "@/lib/api";
 import {
@@ -70,6 +70,7 @@ export default function OptionChainDesk({ initialUnderlying = "NIFTY" }: OptionC
   const setSelectedSymbol = useTradingStore((s) => s.setSelectedSymbol);
 
   const [selectedUnderlying, setSelectedUnderlying] = useState(initialUnderlying);
+  useTargetedSubscription(selectedUnderlying);
   const liveSpotQuote = useSymbolQuote(selectedUnderlying);
   const [prevInitialUnderlying, setPrevInitialUnderlying] = useState(initialUnderlying);
   if (initialUnderlying !== prevInitialUnderlying) {

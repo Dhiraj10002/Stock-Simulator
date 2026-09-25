@@ -41,7 +41,7 @@ import {
 } from "lucide-react";
 import { formatPaise, formatPercent } from "@/lib/format";
 import { MASTER_STOCKS_CATALOG, WatchlistItem } from "@/components/dashboard/DashboardPage";
-import { useMarketStore, useSymbolQuote } from "@/stores/market-store";
+import { useMarketStore, useSymbolQuote, useTargetedSubscription } from "@/stores/market-store";
 import Navbar from "@/components/layout/Navbar";
 import { apiFetch, publicFetch, getAuthToken, ApiError } from "@/lib/api";
 import type { Wallet, Candle, ApiResponse, Quote as QuoteType } from "@/types";
@@ -404,6 +404,8 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
   const [orderSubmitting, setOrderSubmitting] = useState(false);
 
   const liveWsQuote = useSymbolQuote(symbolParam);
+  // Ensure the currently viewed stock is dynamically subscribed over WebSocket
+  useTargetedSubscription(symbolParam);
   const token = useMemo(() => getAuthToken(), []);
 
   // ---------------------------------------------------------------------------
@@ -664,6 +666,7 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
             );
           }
         }
+        useMarketStore.getState().removeWatchlistSymbol(stock.symbol);
         setToastMsg(`Removed ${stock.symbol} from Watchlist`);
       } else {
         // Add to active tab
@@ -678,6 +681,7 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
         if (!exists) {
           parsed[activeTab] = [newItem, ...currentList];
         }
+        useMarketStore.getState().addWatchlistSymbol(stock.symbol);
         setToastMsg(`✓ Added ${stock.symbol} to Watchlist`);
       }
 
