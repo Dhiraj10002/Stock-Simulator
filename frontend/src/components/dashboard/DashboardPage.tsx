@@ -576,21 +576,95 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
     });
   }, [quotes]);
 
+  const { data: marketMovers } = useQuery<{
+    gainers: { symbol: string; name?: string; price_paise: number; change_paise: number; change_percent: number; volume: number; exchange?: string }[];
+    losers: { symbol: string; name?: string; price_paise: number; change_paise: number; change_percent: number; volume: number; exchange?: string }[];
+    most_traded: { symbol: string; name?: string; price_paise: number; change_paise: number; change_percent: number; volume: number; exchange?: string }[];
+    trending: { symbol: string; name?: string; price_paise: number; change_paise: number; change_percent: number; volume: number; exchange?: string }[];
+  }>({
+    queryKey: ["market-movers-dashboard"],
+    queryFn: async () => {
+      try {
+        const res = await apiFetch<{
+          gainers: { symbol: string; name?: string; price_paise: number; change_paise: number; change_percent: number; volume: number; exchange?: string }[];
+          losers: { symbol: string; name?: string; price_paise: number; change_paise: number; change_percent: number; volume: number; exchange?: string }[];
+          most_traded: { symbol: string; name?: string; price_paise: number; change_paise: number; change_percent: number; volume: number; exchange?: string }[];
+          trending: { symbol: string; name?: string; price_paise: number; change_paise: number; change_percent: number; volume: number; exchange?: string }[];
+        }>("/market/movers?limit=8");
+        return res || { gainers: [], losers: [], most_traded: [], trending: [] };
+      } catch {
+        return { gainers: [], losers: [], most_traded: [], trending: [] };
+      }
+    },
+    refetchInterval: 5000,
+  });
+
+  const { data: marketBreadth } = useQuery<{
+    advances: number;
+    declines: number;
+    unchanged: number;
+    total: number;
+    advance_decline_ratio: number;
+    advance_percent: number;
+  }>({
+    queryKey: ["market-breadth-dashboard"],
+    queryFn: async () => {
+      try {
+        const res = await apiFetch<{
+          advances: number;
+          declines: number;
+          unchanged: number;
+          total: number;
+          advance_decline_ratio: number;
+          advance_percent: number;
+        }>("/market/breadth");
+        return res || { advances: 0, declines: 0, unchanged: 0, total: 0, advance_decline_ratio: 0, advance_percent: 0 };
+      } catch {
+        return { advances: 0, declines: 0, unchanged: 0, total: 0, advance_decline_ratio: 0, advance_percent: 0 };
+      }
+    },
+    refetchInterval: 5000,
+  });
+
   // Top Gainers and Top Losers dynamically sorted by live percentage change
-  // Only include items with confirmed live quotes (never hardcoded mock gainers)
+  // Computed dynamically on backend; falls back safely to live catalog
   const topGainers = useMemo(() => {
+    if (marketMovers?.gainers && marketMovers.gainers.length > 0) {
+      return marketMovers.gainers.map((g) => ({
+        symbol: g.symbol,
+        name: g.name || g.symbol,
+        exchange: g.exchange || "NSE",
+        price: g.price_paise / 100,
+        change: g.change_paise / 100,
+        changePercent: g.change_percent,
+        isPositive: true,
+        isQuoteAvailable: true,
+      }));
+    }
     return liveCatalog
       .filter((s) => s.isQuoteAvailable && s.price > 0 && s.changePercent >= 0)
       .sort((a, b) => b.changePercent - a.changePercent)
       .slice(0, 8);
-  }, [liveCatalog]);
+  }, [marketMovers, liveCatalog]);
 
   const topLosers = useMemo(() => {
+    if (marketMovers?.losers && marketMovers.losers.length > 0) {
+      return marketMovers.losers.map((l) => ({
+        symbol: l.symbol,
+        name: l.name || l.symbol,
+        exchange: l.exchange || "NSE",
+        price: l.price_paise / 100,
+        change: l.change_paise / 100,
+        changePercent: l.change_percent,
+        isPositive: false,
+        isQuoteAvailable: true,
+      }));
+    }
     return liveCatalog
       .filter((s) => s.isQuoteAvailable && s.price > 0 && s.changePercent < 0)
       .sort((a, b) => a.changePercent - b.changePercent)
       .slice(0, 8);
-  }, [liveCatalog]);
+  }, [marketMovers, liveCatalog]);
 
   // Dynamic Trending Sectors calculated from live stock prices
   const dynamicSectors = useMemo(() => {
@@ -642,16 +716,18 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
   }, [dynamicSectors, sectorSearch, sectorFilter]);
 
   const totalSectorGainers = useMemo(
-    () => dynamicSectors.reduce((acc, s) => acc + s.gainersCount, 0),
-    [dynamicSectors]
+    () => (marketBreadth && marketBreadth.total > 0 ? marketBreadth.advances : dynamicSectors.reduce((acc, s) => acc + s.gainersCount, 0)),
+    [marketBreadth, dynamicSectors]
   );
   const totalSectorLosers = useMemo(
-    () => dynamicSectors.reduce((acc, s) => acc + s.losersCount, 0),
-    [dynamicSectors]
+    () => (marketBreadth && marketBreadth.total > 0 ? marketBreadth.declines : dynamicSectors.reduce((acc, s) => acc + s.losersCount, 0)),
+    [marketBreadth, dynamicSectors]
   );
   const totalSectorStocks = totalSectorGainers + totalSectorLosers;
   const overallAdvancePercent =
-    totalSectorStocks > 0
+    marketBreadth && marketBreadth.total > 0
+      ? Math.round(marketBreadth.advance_percent)
+      : totalSectorStocks > 0
       ? Math.round((totalSectorGainers / totalSectorStocks) * 100)
       : 50;
 

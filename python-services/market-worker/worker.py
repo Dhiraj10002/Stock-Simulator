@@ -964,6 +964,7 @@ class QuoteWriter:
             "price_paise": price_paise,
             "change_paise": change_paise,
             "change_percent": change_percent,
+            "volume": volume,
             "source": source,
             "updated_at": now.isoformat()
         }

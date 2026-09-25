@@ -17,6 +17,7 @@ import (
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/dto"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/product"
 	"github.com/redis/go-redis/v9"
+	"gorm.io/gorm"
 )
 
 var (
@@ -42,6 +43,8 @@ type Service struct {
 	allowSeededQuotes bool
 	feedMode          dto.FeedMode
 	instrumentFinder  func(symbol string) (bool, error)
+	equityProvider    func(ctx context.Context) ([]EquityUniverseItem, error)
+	db                *gorm.DB
 	workerURL         string
 	httpClient        *http.Client
 }
@@ -81,6 +84,25 @@ func (s *Service) InstrumentFinder() func(symbol string) (bool, error) {
 		return nil
 	}
 	return s.instrumentFinder
+}
+
+func (s *Service) SetEquityProvider(fn func(ctx context.Context) ([]EquityUniverseItem, error)) {
+	if s != nil {
+		s.equityProvider = fn
+	}
+}
+
+func (s *Service) SetDB(db *gorm.DB) {
+	if s != nil {
+		s.db = db
+	}
+}
+
+func (s *Service) DB() *gorm.DB {
+	if s == nil {
+		return nil
+	}
+	return s.db
 }
 
 func (s *Service) SetFeedMode(mode dto.FeedMode) {
@@ -298,17 +320,22 @@ func (s *Service) CurrentQuote(symbol string) (*dto.QuoteResponse, error) {
 
 	var changePaise int64
 	var changePercent float64
+	var volume int64
 	if cp, ok := values["change_paise"]; ok {
 		changePaise, _ = strconv.ParseInt(cp, 10, 64)
 	}
 	if cp, ok := values["change_percent"]; ok {
 		changePercent, _ = strconv.ParseFloat(cp, 64)
 	}
+	if v, ok := values["volume"]; ok {
+		volume, _ = strconv.ParseInt(v, 10, 64)
+	}
 	return &dto.QuoteResponse{
 		Symbol:        symbol,
 		PricePaise:    price,
 		ChangePaise:   changePaise,
 		ChangePercent: changePercent,
+		Volume:        volume,
 		Source:        source,
 		UpdatedAt:     values["updated_at"],
 	}, nil

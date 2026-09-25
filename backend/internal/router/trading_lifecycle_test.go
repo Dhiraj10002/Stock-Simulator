@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -45,6 +46,13 @@ func getLifecycleTestDB(t *testing.T) *gorm.DB {
 	if dbURL == "" {
 		dbURL = "postgres://postgres:postgres@localhost:5433/testdb?sslmode=disable"
 	}
+	conn, err := net.DialTimeout("tcp", "localhost:5433", 50*time.Millisecond)
+	if err != nil {
+		t.Skipf("PostgreSQL not accessible at localhost:5433 (%v); skipping lifecycle integration test", err)
+		return nil
+	}
+	_ = conn.Close()
+
 	if err := database.Connect(&config.Config{DatabaseURL: dbURL}); err != nil {
 		t.Skipf("PostgreSQL not accessible at %s (%v); skipping lifecycle integration test", dbURL, err)
 		return nil
@@ -54,7 +62,7 @@ func getLifecycleTestDB(t *testing.T) *gorm.DB {
 		t.Skip("PostgreSQL database connection is nil; skipping lifecycle integration test")
 		return nil
 	}
-	err := db.AutoMigrate(
+	err = db.AutoMigrate(
 		&model.User{},
 		&model.Wallet{},
 		&model.WalletTransaction{},

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/cache"
@@ -148,3 +149,68 @@ func (h *Handler) Status(c *gin.Context) {
 		"last_tick":     lastTick,
 	})
 }
+
+// Movers handles GET /api/v1/market/movers
+// Query parameters:
+//   - limit: integer between 1 and 50 (default: 10)
+//   - type: "gainers", "losers", "most_traded", "trending", "all" (default: "all")
+//   - format: "array" (if type is specified and format=array, returns the raw slice)
+func (h *Handler) Movers(c *gin.Context) {
+	limit := 10
+	if rawLimit := c.Query("limit"); rawLimit != "" {
+		if parsed, err := strconv.Atoi(rawLimit); err == nil && parsed > 0 {
+			limit = parsed
+		}
+	}
+
+	movers, err := h.service.GetMarketMovers(c.Request.Context(), limit)
+	if err != nil {
+		if errors.Is(err, cache.ErrUnavailable) || errors.Is(err, service.ErrQuoteUnavailable) {
+			response.Error(c, http.StatusServiceUnavailable, "Market data temporarily unavailable", "MARKET_DATA_UNAVAILABLE")
+			return
+		}
+		response.Error(c, http.StatusBadRequest, err.Error(), nil)
+		return
+	}
+
+	moverType := strings.ToLower(strings.TrimSpace(c.Query("type")))
+	switch moverType {
+	case "gainers":
+		if c.Query("format") == "array" {
+			response.Success(c, http.StatusOK, "Market gainers retrieved successfully", movers.Gainers)
+			return
+		}
+	case "losers":
+		if c.Query("format") == "array" {
+			response.Success(c, http.StatusOK, "Market losers retrieved successfully", movers.Losers)
+			return
+		}
+	case "most_traded", "traded", "active":
+		if c.Query("format") == "array" {
+			response.Success(c, http.StatusOK, "Most traded market stocks retrieved successfully", movers.MostTraded)
+			return
+		}
+	case "trending":
+		if c.Query("format") == "array" {
+			response.Success(c, http.StatusOK, "Trending market stocks retrieved successfully", movers.Trending)
+			return
+		}
+	}
+
+	response.Success(c, http.StatusOK, "Market movers retrieved successfully", movers)
+}
+
+// Breadth handles GET /api/v1/market/breadth
+func (h *Handler) Breadth(c *gin.Context) {
+	breadth, err := h.service.GetMarketBreadth(c.Request.Context())
+	if err != nil {
+		if errors.Is(err, cache.ErrUnavailable) || errors.Is(err, service.ErrQuoteUnavailable) {
+			response.Error(c, http.StatusServiceUnavailable, "Market data temporarily unavailable", "MARKET_DATA_UNAVAILABLE")
+			return
+		}
+		response.Error(c, http.StatusBadRequest, err.Error(), nil)
+		return
+	}
+	response.Success(c, http.StatusOK, "Market breadth retrieved successfully", breadth)
+}
+

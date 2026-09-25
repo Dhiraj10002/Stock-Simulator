@@ -21,6 +21,8 @@ func setupTestRouter(svc *service.Service) *gin.Engine {
 	r := gin.New()
 	r.GET("/api/v1/market/quote/:symbol", h.Quote)
 	r.GET("/api/v1/market/history/:symbol", h.History)
+	r.GET("/api/v1/market/movers", h.Movers)
+	r.GET("/api/v1/market/breadth", h.Breadth)
 	return r
 }
 
@@ -186,4 +188,31 @@ func TestMarketHandler_ErrorSemantics(t *testing.T) {
 			t.Fatalf("expected error code MARKET_DATA_UNAVAILABLE, got %v", apiResp.Errors)
 		}
 	})
+
+	t.Run("Movers returns 503 MARKET_DATA_UNAVAILABLE when market service is disconnected", func(t *testing.T) {
+		svc := &service.Service{}
+		r := setupTestRouter(svc)
+
+		w := httptest.NewRecorder()
+		req, _ := http.NewRequest("GET", "/api/v1/market/movers", nil)
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusServiceUnavailable {
+			t.Fatalf("expected status 503, got %d. Body: %s", w.Code, w.Body.String())
+		}
+	})
+
+	t.Run("Breadth returns 503 MARKET_DATA_UNAVAILABLE when market service is disconnected", func(t *testing.T) {
+		svc := &service.Service{}
+		r := setupTestRouter(svc)
+
+		w := httptest.NewRecorder()
+		req, _ := http.NewRequest("GET", "/api/v1/market/breadth", nil)
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusServiceUnavailable {
+			t.Fatalf("expected status 503, got %d. Body: %s", w.Code, w.Body.String())
+		}
+	})
 }
+

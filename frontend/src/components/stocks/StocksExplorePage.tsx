@@ -8,6 +8,7 @@ import Navbar from "@/components/layout/Navbar";
 import { useMultiSymbolQuotes } from "@/stores/market-store";
 import { fetchBatchQuotes, getCachedQuote } from "@/lib/quoteService";
 import { getApiUrl } from "@/lib/config";
+import { apiFetch } from "@/lib/api";
 import {
   TrendingUp,
   TrendingDown,
@@ -338,62 +339,105 @@ export default function StocksExplorePage() {
     });
   }, [quotes]);
 
+  const { data: marketMovers } = useQuery<{
+    gainers: { symbol: string; name?: string; price_paise: number; change_paise: number; change_percent: number; volume: number }[];
+    losers: { symbol: string; name?: string; price_paise: number; change_paise: number; change_percent: number; volume: number }[];
+    most_traded: { symbol: string; name?: string; price_paise: number; change_paise: number; change_percent: number; volume: number }[];
+    trending: { symbol: string; name?: string; price_paise: number; change_paise: number; change_percent: number; volume: number }[];
+  }>({
+    queryKey: ["market-movers-explore"],
+    queryFn: async () => {
+      try {
+        const res = await apiFetch<{
+          gainers: { symbol: string; name?: string; price_paise: number; change_paise: number; change_percent: number; volume: number }[];
+          losers: { symbol: string; name?: string; price_paise: number; change_paise: number; change_percent: number; volume: number }[];
+          most_traded: { symbol: string; name?: string; price_paise: number; change_paise: number; change_percent: number; volume: number }[];
+          trending: { symbol: string; name?: string; price_paise: number; change_paise: number; change_percent: number; volume: number }[];
+        }>("/market/movers?limit=6");
+        return res || { gainers: [], losers: [], most_traded: [], trending: [] };
+      } catch {
+        return { gainers: [], losers: [], most_traded: [], trending: [] };
+      }
+    },
+    refetchInterval: 5000,
+  });
+
   // Generate mover list based on tab
   const moverList = useMemo(() => {
+    let sourceList: { symbol: string; name?: string; price_paise: number; change_paise: number; change_percent: number; volume: number }[] = [];
+    if (moverTab === "gainers") {
+      sourceList = marketMovers?.gainers || [];
+    } else if (moverTab === "losers") {
+      sourceList = marketMovers?.losers || [];
+    } else {
+      sourceList = marketMovers?.most_traded || marketMovers?.trending || [];
+    }
+
+    if (sourceList.length > 0) {
+      return sourceList.slice(0, 6).map((item) => {
+        const price = item.price_paise / 100;
+        const change = item.change_paise / 100;
+        const vol = item.volume;
+        const volumeStr =
+          vol >= 10000000
+            ? `${(vol / 10000000).toFixed(2)} Cr`
+            : vol >= 100000
+            ? `${(vol / 100000).toFixed(1)} Lakh`
+            : vol > 0
+            ? vol.toLocaleString()
+            : "—";
+
+        return {
+          symbol: item.symbol,
+          name: item.name || item.symbol,
+          price,
+          change,
+          changePercent: item.change_percent,
+          volume: volumeStr,
+          sparkline: [
+            price - change,
+            price - change * 0.7,
+            price - change * 0.4,
+            price - change * 0.8,
+            price - change * 0.2,
+            price + change * 0.1,
+            price,
+          ],
+        };
+      });
+    }
+
     const validStocks = liveCatalog.filter((s) => s.isQuoteAvailable && s.price > 0);
     if (moverTab === "gainers") {
       return validStocks
         .filter((s) => s.changePercent > 0)
         .sort((a, b) => b.changePercent - a.changePercent)
         .slice(0, 6)
-        .map((s, idx) => ({
+        .map((s) => ({
           ...s,
-          volume: `${(35 + idx * 8.4).toFixed(1)} Lakh`,
-          sparkline: [
-            s.price - s.change,
-            s.price - s.change * 0.7,
-            s.price - s.change * 0.4,
-            s.price - s.change * 0.8,
-            s.price - s.change * 0.2,
-            s.price + s.change * 0.1,
-            s.price,
-          ],
+          volume: "—",
+          sparkline: [s.price - s.change, s.price - s.change * 0.5, s.price],
         }));
     } else if (moverTab === "losers") {
       return validStocks
         .filter((s) => s.changePercent < 0)
         .sort((a, b) => a.changePercent - b.changePercent)
         .slice(0, 6)
-        .map((s, idx) => ({
+        .map((s) => ({
           ...s,
-          volume: `${(42 + idx * 6.2).toFixed(1)} Lakh`,
-          sparkline: [
-            s.price - s.change,
-            s.price - s.change * 0.3,
-            s.price - s.change * 0.6,
-            s.price - s.change * 0.2,
-            s.price - s.change * 0.8,
-            s.price,
-          ],
+          volume: "—",
+          sparkline: [s.price - s.change, s.price - s.change * 0.5, s.price],
         }));
     } else {
-      // Volume shockers
       return validStocks
-        .filter((s) => ["ZOMATO", "SUZLON", "TRENT", "BEL", "POONAWALLA", "ATGL"].includes(s.symbol))
-        .map((s, idx) => ({
+        .slice(0, 6)
+        .map((s) => ({
           ...s,
-          volume: `${(70 + idx * 22.5).toFixed(1)} Lakh`,
-          sparkline: [
-            s.price * 0.96,
-            s.price * 0.98,
-            s.price * 0.97,
-            s.price * 1.02,
-            s.price * 1.01,
-            s.price,
-          ],
+          volume: "—",
+          sparkline: [s.price * 0.98, s.price * 1.01, s.price],
         }));
     }
-  }, [moverTab, liveCatalog]);
+  }, [moverTab, marketMovers, liveCatalog]);
 
   // Dynamic Trending Sectors calculated from live constituent prices
   const dynamicExploreSectors = useMemo(() => {

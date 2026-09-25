@@ -83,6 +83,7 @@ func Setup(ctx context.Context, cfg *config.Config, opts ...SetupOption) *gin.En
 		market.Service().SetAllowSeededQuotes(true)
 	}
 	if database.GetDB() != nil {
+		market.Service().SetDB(database.GetDB())
 		market.Service().SetInstrumentFinder(func(symbol string) (bool, error) {
 			clean := strings.ToUpper(strings.TrimSpace(symbol))
 			var count int64
@@ -161,6 +162,8 @@ func Setup(ctx context.Context, cfg *config.Config, opts ...SetupOption) *gin.En
 		api.GET("/market/status", market.Status)
 		api.GET("/market/quotes/:symbol", market.Quote)
 		api.GET("/market/quotes/:symbol/history", market.History)
+		api.GET("/market/movers", market.Movers)
+		api.GET("/market/breadth", market.Breadth)
 		api.GET("/fno/option-chain", fno.GetOptionChain)
 		api.GET("/instruments", instruments.List)
 		api.GET("/instruments/:symbol", instruments.GetBySymbol)
