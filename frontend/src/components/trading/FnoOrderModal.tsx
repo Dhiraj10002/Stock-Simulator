@@ -122,6 +122,11 @@ export default function FnoOrderModal({
         }),
       });
 
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => null);
+        throw new Error(errJson?.error || errJson?.message || `Order placement failed with status ${res.status}`);
+      }
+
       // Invalidate queries so wallet, portfolio & orders immediately update
       void queryClient.invalidateQueries({ queryKey: ["wallet"] });
       void queryClient.invalidateQueries({ queryKey: ["portfolio"] });
@@ -140,18 +145,12 @@ export default function FnoOrderModal({
       setTimeout(() => {
         onClose();
       }, 1400);
-    } catch {
-      // Fallback graceful success simulation for paper trading desk
-      void queryClient.invalidateQueries({ queryKey: ["wallet"] });
-      void queryClient.invalidateQueries({ queryKey: ["portfolio"] });
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : "Failed to place order. Please check network/balance.";
       setFeedback({
-        type: "success",
-        message: `Order Executed (Simulated)! ${side} ${totalQuantity} ${instrument.symbol} @ ₹${activePrice.toFixed(2)}`,
+        type: "error",
+        message: errMsg,
       });
-      onSuccess?.();
-      setTimeout(() => {
-        onClose();
-      }, 1400);
     } finally {
       setExecuting(false);
     }

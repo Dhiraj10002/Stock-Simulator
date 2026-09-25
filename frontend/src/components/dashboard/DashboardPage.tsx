@@ -61,38 +61,39 @@ export interface WatchlistItem {
   change: number;
   changePercent: number;
   isPositive: boolean;
+  isQuoteAvailable?: boolean;
 }
 
 export const MASTER_STOCKS_CATALOG: WatchlistItem[] = [
-  { symbol: "POONAWALLA", exchange: "NSE", name: "Poonawalla Fincorp Ltd", price: 479.4, change: 46.6, changePercent: 10.77, isPositive: true },
-  { symbol: "ATGL", exchange: "NSE", name: "Adani Total Gas Ltd", price: 660.7, change: 73.7, changePercent: 12.56, isPositive: true },
-  { symbol: "EMCURE", exchange: "NSE", name: "Emcure Pharmaceuticals", price: 2003.8, change: 94.0, changePercent: 4.92, isPositive: true },
-  { symbol: "WELCORP", exchange: "NSE", name: "Welspun Corp Ltd", price: 2660.1, change: 198.5, changePercent: 8.12, isPositive: true },
-  { symbol: "BBTC", exchange: "NSE", name: "Bombay Burmah Trading", price: 1512.1, change: 112.4, changePercent: 8.05, isPositive: true },
-  { symbol: "JYOTICNC", exchange: "NSE", name: "Jyoti CNC Automation", price: 1049.7, change: 68.7, changePercent: 7.02, isPositive: true },
-  { symbol: "SPLPETRO", exchange: "NSE", name: "Supreme Petrochem Ltd", price: 865.7, change: 58.5, changePercent: 7.27, isPositive: true },
-  { symbol: "SUPREMEIND", exchange: "NSE", name: "Supreme Industries Ltd", price: 3580.3, change: 236.0, changePercent: 7.05, isPositive: true },
-  { symbol: "TRENT", exchange: "NSE", name: "Trent Ltd (Westside & Zudio)", price: 7140.0, change: 328.0, changePercent: 4.82, isPositive: true },
-  { symbol: "SUZLON", exchange: "NSE", name: "Suzlon Energy Ltd", price: 74.5, change: 3.0, changePercent: 4.2, isPositive: true },
-  { symbol: "RELIANCE", exchange: "NSE", name: "Reliance Industries Ltd", price: 2980.4, change: 24.8, changePercent: 0.84, isPositive: true },
-  { symbol: "HDFCBANK", exchange: "NSE", name: "HDFC Bank Ltd", price: 1642.5, change: 16.1, changePercent: 0.99, isPositive: true },
-  { symbol: "ICICIBANK", exchange: "NSE", name: "ICICI Bank Ltd", price: 1215.3, change: 13.5, changePercent: 1.12, isPositive: true },
-  { symbol: "TATACHEM", exchange: "NSE", name: "Tata Chemicals Ltd", price: 693.25, change: -86.1, changePercent: -11.04, isPositive: false },
-  { symbol: "GODIGIT", exchange: "NSE", name: "Go Digit General Insurance", price: 239.0, change: -16.2, changePercent: -6.46, isPositive: false },
-  { symbol: "TATATECH", exchange: "NSE", name: "Tata Technologies Ltd", price: 722.45, change: -36.2, changePercent: -4.78, isPositive: false },
-  { symbol: "NIACL", exchange: "NSE", name: "New India Assurance", price: 187.66, change: -9.4, changePercent: -4.77, isPositive: false },
-  { symbol: "KPITTECH", exchange: "NSE", name: "KPIT Technologies Ltd", price: 1640.0, change: -24.0, changePercent: -1.44, isPositive: false },
-  { symbol: "SUNTV", exchange: "NSE", name: "Sun TV Network Ltd", price: 451.7, change: -16.9, changePercent: -3.57, isPositive: false },
-  { symbol: "TCS", exchange: "NSE", name: "Tata Consultancy Services", price: 4210.0, change: -35.0, changePercent: -0.82, isPositive: false },
-  { symbol: "GILLETTE", exchange: "NSE", name: "Gillette India Ltd", price: 7073.0, change: -234.0, changePercent: -3.2, isPositive: false },
-  { symbol: "INFY", exchange: "NSE", name: "Infosys Ltd", price: 1785.2, change: -12.4, changePercent: -0.69, isPositive: false },
-  { symbol: "BHARTIARTL", exchange: "NSE", name: "Bharti Airtel Ltd", price: 1564.0, change: 7.0, changePercent: 0.45, isPositive: true },
-  { symbol: "SBIN", exchange: "NSE", name: "State Bank of India", price: 785.0, change: -2.8, changePercent: -0.35, isPositive: false },
-  { symbol: "PRAJIND", exchange: "NSE", name: "Praj Industries Ltd", price: 317.55, change: 5.4, changePercent: 1.73, isPositive: true },
-  { symbol: "BAJFINANCE", exchange: "NSE", name: "Bajaj Finance Ltd", price: 1008.8, change: -12.5, changePercent: -1.22, isPositive: false },
-  { symbol: "AXISBANK", exchange: "NSE", name: "Axis Bank Ltd", price: 1242.7, change: -7.3, changePercent: -0.58, isPositive: false },
-  { symbol: "KOTAKBANK", exchange: "NSE", name: "Kotak Mahindra Bank", price: 412.65, change: -2.15, changePercent: -0.52, isPositive: false },
-  { symbol: "APARINDS", exchange: "NSE", name: "Apar Industries Ltd", price: 18233.0, change: -712.0, changePercent: -3.76, isPositive: false },
+  { symbol: "POONAWALLA", exchange: "NSE", name: "Poonawalla Fincorp Ltd", price: 0, change: 0, changePercent: 0, isPositive: true },
+  { symbol: "ATGL", exchange: "NSE", name: "Adani Total Gas Ltd", price: 0, change: 0, changePercent: 0, isPositive: true },
+  { symbol: "EMCURE", exchange: "NSE", name: "Emcure Pharmaceuticals", price: 0, change: 0, changePercent: 0, isPositive: true },
+  { symbol: "WELCORP", exchange: "NSE", name: "Welspun Corp Ltd", price: 0, change: 0, changePercent: 0, isPositive: true },
+  { symbol: "BBTC", exchange: "NSE", name: "Bombay Burmah Trading", price: 0, change: 0, changePercent: 0, isPositive: true },
+  { symbol: "JYOTICNC", exchange: "NSE", name: "Jyoti CNC Automation", price: 0, change: 0, changePercent: 0, isPositive: true },
+  { symbol: "SPLPETRO", exchange: "NSE", name: "Supreme Petrochem Ltd", price: 0, change: 0, changePercent: 0, isPositive: true },
+  { symbol: "SUPREMEIND", exchange: "NSE", name: "Supreme Industries Ltd", price: 0, change: 0, changePercent: 0, isPositive: true },
+  { symbol: "TRENT", exchange: "NSE", name: "Trent Ltd (Westside & Zudio)", price: 0, change: 0, changePercent: 0, isPositive: true },
+  { symbol: "SUZLON", exchange: "NSE", name: "Suzlon Energy Ltd", price: 0, change: 0, changePercent: 0, isPositive: true },
+  { symbol: "RELIANCE", exchange: "NSE", name: "Reliance Industries Ltd", price: 0, change: 0, changePercent: 0, isPositive: true },
+  { symbol: "HDFCBANK", exchange: "NSE", name: "HDFC Bank Ltd", price: 0, change: 0, changePercent: 0, isPositive: true },
+  { symbol: "ICICIBANK", exchange: "NSE", name: "ICICI Bank Ltd", price: 0, change: 0, changePercent: 0, isPositive: true },
+  { symbol: "TATACHEM", exchange: "NSE", name: "Tata Chemicals Ltd", price: 0, change: 0, changePercent: 0, isPositive: false },
+  { symbol: "GODIGIT", exchange: "NSE", name: "Go Digit General Insurance", price: 0, change: 0, changePercent: 0, isPositive: false },
+  { symbol: "TATATECH", exchange: "NSE", name: "Tata Technologies Ltd", price: 0, change: 0, changePercent: 0, isPositive: false },
+  { symbol: "NIACL", exchange: "NSE", name: "New India Assurance", price: 0, change: 0, changePercent: 0, isPositive: false },
+  { symbol: "KPITTECH", exchange: "NSE", name: "KPIT Technologies Ltd", price: 0, change: 0, changePercent: 0, isPositive: false },
+  { symbol: "SUNTV", exchange: "NSE", name: "Sun TV Network Ltd", price: 0, change: 0, changePercent: 0, isPositive: false },
+  { symbol: "TCS", exchange: "NSE", name: "Tata Consultancy Services", price: 0, change: 0, changePercent: 0, isPositive: false },
+  { symbol: "GILLETTE", exchange: "NSE", name: "Gillette India Ltd", price: 0, change: 0, changePercent: 0, isPositive: false },
+  { symbol: "INFY", exchange: "NSE", name: "Infosys Ltd", price: 0, change: 0, changePercent: 0, isPositive: false },
+  { symbol: "BHARTIARTL", exchange: "NSE", name: "Bharti Airtel Ltd", price: 0, change: 0, changePercent: 0, isPositive: true },
+  { symbol: "SBIN", exchange: "NSE", name: "State Bank of India", price: 0, change: 0, changePercent: 0, isPositive: false },
+  { symbol: "PRAJIND", exchange: "NSE", name: "Praj Industries Ltd", price: 0, change: 0, changePercent: 0, isPositive: true },
+  { symbol: "BAJFINANCE", exchange: "NSE", name: "Bajaj Finance Ltd", price: 0, change: 0, changePercent: 0, isPositive: false },
+  { symbol: "AXISBANK", exchange: "NSE", name: "Axis Bank Ltd", price: 0, change: 0, changePercent: 0, isPositive: false },
+  { symbol: "KOTAKBANK", exchange: "NSE", name: "Kotak Mahindra Bank", price: 0, change: 0, changePercent: 0, isPositive: false },
+  { symbol: "APARINDS", exchange: "NSE", name: "Apar Industries Ltd", price: 0, change: 0, changePercent: 0, isPositive: false },
 ];
 
 import type { LucideIcon } from "lucide-react";
@@ -118,99 +119,99 @@ export const DASHBOARD_TRENDING_SECTORS: SectorTrending[] = [
     name: "Automotive & Electric Mobility",
     shortName: "Auto & EV",
     icon: Car,
-    gainersCount: 22,
-    losersCount: 6,
-    changePercent: 2.45,
-    topStock: "TATAMOTORS",
-    topStockChange: 1.93,
+    gainersCount: 0,
+    losersCount: 0,
+    changePercent: 0,
+    topStock: "—",
+    topStockChange: 0,
   },
   {
     id: "banking",
     name: "Banking & Financial Services",
     shortName: "Banking & Fin",
     icon: Building2,
-    gainersCount: 31,
-    losersCount: 9,
-    changePercent: 1.84,
-    topStock: "ICICIBANK",
-    topStockChange: 1.12,
+    gainersCount: 0,
+    losersCount: 0,
+    changePercent: 0,
+    topStock: "—",
+    topStockChange: 0,
   },
   {
     id: "energy",
     name: "Energy, Oil & Natural Gas",
     shortName: "Energy & Oil",
     icon: Zap,
-    gainersCount: 18,
-    losersCount: 8,
-    changePercent: 1.35,
-    topStock: "ATGL",
-    topStockChange: 12.56,
+    gainersCount: 0,
+    losersCount: 0,
+    changePercent: 0,
+    topStock: "—",
+    topStockChange: 0,
   },
   {
     id: "consumer",
     name: "Consumer Discretionary & Retail",
     shortName: "Retail & Consumer",
     icon: Flame,
-    gainersCount: 19,
-    losersCount: 15,
-    changePercent: 0.91,
-    topStock: "TRENT",
-    topStockChange: 4.82,
+    gainersCount: 0,
+    losersCount: 0,
+    changePercent: 0,
+    topStock: "—",
+    topStockChange: 0,
   },
   {
     id: "pharma",
     name: "Pharmaceuticals & Healthcare",
     shortName: "Pharma & Health",
     icon: Pill,
-    gainersCount: 16,
-    losersCount: 14,
-    changePercent: 0.45,
-    topStock: "SUNPHARMA",
-    topStockChange: 0.9,
+    gainersCount: 0,
+    losersCount: 0,
+    changePercent: 0,
+    topStock: "—",
+    topStockChange: 0,
   },
   {
     id: "metals",
     name: "Metals & Mining",
     shortName: "Metals & Mining",
     icon: Factory,
-    gainersCount: 14,
-    losersCount: 12,
-    changePercent: -0.32,
-    topStock: "TATASTEEL",
-    topStockChange: 1.45,
+    gainersCount: 0,
+    losersCount: 0,
+    changePercent: 0,
+    topStock: "—",
+    topStockChange: 0,
   },
   {
     id: "it",
     name: "Information Technology (IT)",
     shortName: "IT & Tech",
     icon: Cpu,
-    gainersCount: 8,
-    losersCount: 24,
-    changePercent: -1.27,
-    topStock: "TCS",
-    topStockChange: -0.82,
+    gainersCount: 0,
+    losersCount: 0,
+    changePercent: 0,
+    topStock: "—",
+    topStockChange: 0,
   },
   {
     id: "realty",
     name: "Real Estate & Infrastructure",
     shortName: "Realty & Infra",
     icon: Building,
-    gainersCount: 11,
-    losersCount: 5,
-    changePercent: 1.15,
-    topStock: "DLF",
-    topStockChange: 2.1,
+    gainersCount: 0,
+    losersCount: 0,
+    changePercent: 0,
+    topStock: "—",
+    topStockChange: 0,
   },
   {
     id: "fmcg",
     name: "FMCG & Consumer Staples",
     shortName: "FMCG Staples",
     icon: ShoppingBag,
-    gainersCount: 12,
-    losersCount: 10,
-    changePercent: 0.28,
-    topStock: "ITC",
-    topStockChange: 0.6,
+    gainersCount: 0,
+    losersCount: 0,
+    changePercent: 0,
+    topStock: "—",
+    topStockChange: 0,
   },
 ];
 
@@ -555,11 +556,13 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
   const liveCatalog: WatchlistItem[] = useMemo(() => {
     return MASTER_STOCKS_CATALOG.map((item) => {
       const q = quotes[item.symbol] || (item.symbol === "ZOMATO" ? quotes["ETERNAL"] : undefined) || getCachedQuote(item.symbol);
-      if (!q || !q.price_paise) return item;
+      if (!q || !q.price_paise) {
+        return { ...item, isQuoteAvailable: false };
+      }
 
       const price = q.price_paise / 100;
-      const change = q.change_paise !== undefined ? q.change_paise / 100 : +(price - item.price).toFixed(2);
-      const changePercent = q.change_percent !== undefined ? q.change_percent : +((change / (price - change || 1)) * 100).toFixed(2);
+      const change = q.change_paise !== undefined ? q.change_paise / 100 : 0;
+      const changePercent = q.change_percent !== undefined ? q.change_percent : (price > 0 && change !== 0 ? +((change / (price - change || 1)) * 100).toFixed(2) : 0);
       const isPositive = changePercent >= 0;
 
       return {
@@ -568,21 +571,23 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
         change,
         changePercent: +changePercent.toFixed(2),
         isPositive,
+        isQuoteAvailable: true,
       };
     });
   }, [quotes]);
 
   // Top Gainers and Top Losers dynamically sorted by live percentage change
+  // Only include items with confirmed live quotes (never hardcoded mock gainers)
   const topGainers = useMemo(() => {
-    return [...liveCatalog]
-      .filter((s) => s.changePercent >= 0)
+    return liveCatalog
+      .filter((s) => s.isQuoteAvailable && s.price > 0 && s.changePercent >= 0)
       .sort((a, b) => b.changePercent - a.changePercent)
       .slice(0, 8);
   }, [liveCatalog]);
 
   const topLosers = useMemo(() => {
-    return [...liveCatalog]
-      .filter((s) => s.changePercent < 0)
+    return liveCatalog
+      .filter((s) => s.isQuoteAvailable && s.price > 0 && s.changePercent < 0)
       .sort((a, b) => a.changePercent - b.changePercent)
       .slice(0, 8);
   }, [liveCatalog]);
@@ -591,8 +596,17 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
   const dynamicSectors = useMemo(() => {
     return DASHBOARD_TRENDING_SECTORS.map((sec) => {
       const symbols = SECTOR_CONSTITUENTS[sec.id] || [];
-      const constituents = liveCatalog.filter((s) => symbols.includes(s.symbol));
-      if (constituents.length === 0) return sec;
+      const constituents = liveCatalog.filter((s) => symbols.includes(s.symbol) && s.isQuoteAvailable && s.price > 0);
+      if (constituents.length === 0) {
+        return {
+          ...sec,
+          gainersCount: 0,
+          losersCount: 0,
+          changePercent: 0,
+          topStock: "—",
+          topStockChange: 0,
+        };
+      }
 
       const gainers = constituents.filter((s) => s.isPositive).length;
       const losers = constituents.filter((s) => !s.isPositive).length;
@@ -600,15 +614,10 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
       const sorted = [...constituents].sort((a, b) => b.changePercent - a.changePercent);
       const top = sorted[0];
 
-      const gainerRatio = constituents.length > 0 ? gainers / constituents.length : 0.5;
-      const totalTracked = sec.gainersCount + sec.losersCount;
-      const dynamicGainersCount = Math.round(totalTracked * gainerRatio);
-      const dynamicLosersCount = totalTracked - dynamicGainersCount;
-
       return {
         ...sec,
-        gainersCount: dynamicGainersCount,
-        losersCount: dynamicLosersCount,
+        gainersCount: gainers,
+        losersCount: losers,
         changePercent: +avgChange.toFixed(2),
         topStock: top.symbol,
         topStockChange: +top.changePercent.toFixed(2),
@@ -1121,34 +1130,40 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
               </div>
 
               <div className="divide-y divide-slate-100 dark:divide-slate-800/60 flex-1">
-                {topGainers.map((stock) => (
-                  <div
-                    key={stock.symbol}
-                    className="p-2.5 px-3 flex items-center justify-between hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors group"
-                  >
-                    <div className="min-w-0">
-                      <Link
-                        href={`/stocks/${stock.symbol}`}
-                        className="font-bold text-xs text-slate-900 dark:text-slate-100 group-hover:text-cyan-600 dark:group-hover:text-cyan-400 transition-colors"
-                      >
-                        {stock.symbol}
-                      </Link>
-                      <div className="text-[10px] uppercase font-mono text-slate-400">
-                        {stock.exchange || "NSE"}
+                {topGainers.length > 0 ? (
+                  topGainers.map((stock) => (
+                    <div
+                      key={stock.symbol}
+                      className="p-2.5 px-3 flex items-center justify-between hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors group"
+                    >
+                      <div className="min-w-0">
+                        <Link
+                          href={`/stocks/${stock.symbol}`}
+                          className="font-bold text-xs text-slate-900 dark:text-slate-100 group-hover:text-cyan-600 dark:group-hover:text-cyan-400 transition-colors"
+                        >
+                          {stock.symbol}
+                        </Link>
+                        <div className="text-[10px] uppercase font-mono text-slate-400">
+                          {stock.exchange || "NSE"}
+                        </div>
                       </div>
-                    </div>
 
-                    <div className="text-right">
-                      <div className="text-xs font-semibold font-tabular text-slate-900 dark:text-slate-100">
-                        ₹{stock.price.toFixed(2)}
-                      </div>
-                      <div className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center justify-end gap-0.5">
-                        <span>▲</span>
-                        <span>+{stock.changePercent.toFixed(2)}%</span>
+                      <div className="text-right">
+                        <div className="text-xs font-semibold font-tabular text-slate-900 dark:text-slate-100">
+                          ₹{stock.price.toFixed(2)}
+                        </div>
+                        <div className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center justify-end gap-0.5">
+                          <span>▲</span>
+                          <span>+{stock.changePercent.toFixed(2)}%</span>
+                        </div>
                       </div>
                     </div>
+                  ))
+                ) : (
+                  <div className="p-8 text-center text-xs text-slate-400">
+                    Awaiting live market feed ticks...
                   </div>
-                ))}
+                )}
               </div>
 
               <div className="p-2 border-t border-slate-200 dark:border-slate-800 text-center bg-slate-50/40 dark:bg-slate-900/40">
@@ -1176,34 +1191,40 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
               </div>
 
               <div className="divide-y divide-slate-100 dark:divide-slate-800/60 flex-1">
-                {topLosers.map((stock) => (
-                  <div
-                    key={stock.symbol}
-                    className="p-2.5 px-3 flex items-center justify-between hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors group"
-                  >
-                    <div className="min-w-0">
-                      <Link
-                        href={`/stocks/${stock.symbol}`}
-                        className="font-bold text-xs text-slate-900 dark:text-slate-100 group-hover:text-cyan-600 dark:group-hover:text-cyan-400 transition-colors"
-                      >
-                        {stock.symbol}
-                      </Link>
-                      <div className="text-[10px] uppercase font-mono text-slate-400">
-                        {stock.exchange || "NSE"}
+                {topLosers.length > 0 ? (
+                  topLosers.map((stock) => (
+                    <div
+                      key={stock.symbol}
+                      className="p-2.5 px-3 flex items-center justify-between hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors group"
+                    >
+                      <div className="min-w-0">
+                        <Link
+                          href={`/stocks/${stock.symbol}`}
+                          className="font-bold text-xs text-slate-900 dark:text-slate-100 group-hover:text-cyan-600 dark:group-hover:text-cyan-400 transition-colors"
+                        >
+                          {stock.symbol}
+                        </Link>
+                        <div className="text-[10px] uppercase font-mono text-slate-400">
+                          {stock.exchange || "NSE"}
+                        </div>
                       </div>
-                    </div>
 
-                    <div className="text-right">
-                      <div className="text-xs font-semibold font-tabular text-slate-900 dark:text-slate-100">
-                        ₹{stock.price.toFixed(2)}
-                      </div>
-                      <div className="text-[11px] font-bold text-rose-600 dark:text-rose-400 flex items-center justify-end gap-0.5">
-                        <span>▼</span>
-                        <span>{stock.changePercent.toFixed(2)}%</span>
+                      <div className="text-right">
+                        <div className="text-xs font-semibold font-tabular text-slate-900 dark:text-slate-100">
+                          ₹{stock.price.toFixed(2)}
+                        </div>
+                        <div className="text-[11px] font-bold text-rose-600 dark:text-rose-400 flex items-center justify-end gap-0.5">
+                          <span>▼</span>
+                          <span>{stock.changePercent.toFixed(2)}%</span>
+                        </div>
                       </div>
                     </div>
+                  ))
+                ) : (
+                  <div className="p-8 text-center text-xs text-slate-400">
+                    Awaiting live market feed ticks...
                   </div>
-                ))}
+                )}
               </div>
 
               <div className="p-2 border-t border-slate-200 dark:border-slate-800 text-center bg-slate-50/40 dark:bg-slate-900/40">

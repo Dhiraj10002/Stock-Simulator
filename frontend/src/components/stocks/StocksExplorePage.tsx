@@ -35,7 +35,7 @@ import {
   ZapOff,
 } from "lucide-react";
 import { formatPaise, formatPercent } from "@/lib/format";
-import { MASTER_STOCKS_CATALOG, WatchlistItem } from "@/components/dashboard/DashboardPage";
+import { MASTER_STOCKS_CATALOG, WatchlistItem, SECTOR_CONSTITUENTS } from "@/components/dashboard/DashboardPage";
 import type { Wallet, Portfolio, ApiResponse } from "@/types";
 
 // ---------------------------------------------------------------------------
@@ -45,9 +45,6 @@ interface PopularStock {
   symbol: string;
   name: string;
   sector: string;
-  price: number;
-  change: number;
-  changePercent: number;
   marketCap: string;
   tag: string;
   color: string;
@@ -58,9 +55,6 @@ const POPULAR_STOCKS: PopularStock[] = [
     symbol: "RELIANCE",
     name: "Reliance Industries Ltd",
     sector: "Energy & Conglomerate",
-    price: 2980.4,
-    change: 24.8,
-    changePercent: 0.84,
     marketCap: "₹20.1 Lakh Cr",
     tag: "Large Cap",
     color: "from-blue-600 to-indigo-700",
@@ -69,9 +63,6 @@ const POPULAR_STOCKS: PopularStock[] = [
     symbol: "HDFCBANK",
     name: "HDFC Bank Ltd",
     sector: "Banking & Financials",
-    price: 1642.5,
-    change: 16.1,
-    changePercent: 0.99,
     marketCap: "₹12.5 Lakh Cr",
     tag: "Large Cap",
     color: "from-sky-600 to-blue-800",
@@ -80,9 +71,6 @@ const POPULAR_STOCKS: PopularStock[] = [
     symbol: "TCS",
     name: "Tata Consultancy Services",
     sector: "IT & Technology",
-    price: 4210.0,
-    change: -35.0,
-    changePercent: -0.82,
     marketCap: "₹15.2 Lakh Cr",
     tag: "Large Cap",
     color: "from-cyan-600 to-teal-700",
@@ -91,9 +79,6 @@ const POPULAR_STOCKS: PopularStock[] = [
     symbol: "INFY",
     name: "Infosys Ltd",
     sector: "IT & Software Services",
-    price: 1785.2,
-    change: -12.4,
-    changePercent: -0.69,
     marketCap: "₹7.4 Lakh Cr",
     tag: "Large Cap",
     color: "from-indigo-600 to-purple-800",
@@ -102,9 +87,6 @@ const POPULAR_STOCKS: PopularStock[] = [
     symbol: "TATAMOTORS",
     name: "Tata Motors Ltd",
     sector: "Automotive & EV",
-    price: 968.2,
-    change: 18.3,
-    changePercent: 1.93,
     marketCap: "₹3.5 Lakh Cr",
     tag: "Large Cap",
     color: "from-emerald-600 to-teal-800",
@@ -113,9 +95,6 @@ const POPULAR_STOCKS: PopularStock[] = [
     symbol: "BHARTIARTL",
     name: "Bharti Airtel Ltd",
     sector: "Telecom & Cloud",
-    price: 1564.0,
-    change: 7.0,
-    changePercent: 0.45,
     marketCap: "₹8.8 Lakh Cr",
     tag: "Large Cap",
     color: "from-rose-600 to-red-800",
@@ -125,38 +104,30 @@ const POPULAR_STOCKS: PopularStock[] = [
 interface MostTradedStock {
   symbol: string;
   name: string;
-  price: number;
-  change: number;
-  changePercent: number;
   volume: string;
   turnoverCr: number;
 }
 
 const MOST_TRADED_STOCKS: MostTradedStock[] = [
-  { symbol: "ZOMATO", name: "Zomato Ltd (Eternal)", price: 272.5, change: 7.4, changePercent: 2.8, volume: "6.8 Cr", turnoverCr: 1850 },
-  { symbol: "SUZLON", name: "Suzlon Energy Ltd", price: 74.5, change: 3.0, changePercent: 4.2, volume: "14.2 Cr", turnoverCr: 1058 },
-  { symbol: "TRENT", name: "Trent Ltd (Westside & Zudio)", price: 7140.0, change: 328.0, changePercent: 4.82, volume: "38.5 Lakh", turnoverCr: 2748 },
-  { symbol: "ADANIENT", name: "Adani Enterprises Ltd", price: 3140.0, change: 64.5, changePercent: 2.1, volume: "42.1 Lakh", turnoverCr: 1320 },
-  { symbol: "YESBANK", name: "YES Bank Ltd", price: 24.15, change: 0.72, changePercent: 3.1, volume: "18.5 Cr", turnoverCr: 446 },
-  { symbol: "BEL", name: "Bharat Electronics Ltd", price: 312.4, change: 11.3, changePercent: 3.75, volume: "2.4 Cr", turnoverCr: 750 },
+  { symbol: "ZOMATO", name: "Zomato Ltd (Eternal)", volume: "6.8 Cr", turnoverCr: 1850 },
+  { symbol: "SUZLON", name: "Suzlon Energy Ltd", volume: "14.2 Cr", turnoverCr: 1058 },
+  { symbol: "TRENT", name: "Trent Ltd (Westside & Zudio)", volume: "38.5 Lakh", turnoverCr: 2748 },
+  { symbol: "ADANIENT", name: "Adani Enterprises Ltd", volume: "42.1 Lakh", turnoverCr: 1320 },
+  { symbol: "YESBANK", name: "YES Bank Ltd", volume: "18.5 Cr", turnoverCr: 446 },
+  { symbol: "BEL", name: "Bharat Electronics Ltd", volume: "2.4 Cr", turnoverCr: 750 },
 ];
 
 interface IntradayStock {
   symbol: string;
   name: string;
-  price: number;
-  change: number;
-  changePercent: number;
-  dayLow: number;
-  dayHigh: number;
   volatility: string;
 }
 
 const TOP_INTRADAY_STOCKS: IntradayStock[] = [
-  { symbol: "ATGL", name: "Adani Total Gas Ltd", price: 660.7, change: 73.7, changePercent: 12.56, dayLow: 588.0, dayHigh: 672.0, volatility: "High Beta (3.8%)" },
-  { symbol: "POONAWALLA", name: "Poonawalla Fincorp Ltd", price: 479.4, change: 46.6, changePercent: 10.77, dayLow: 434.0, dayHigh: 488.5, volatility: "High Beta (4.1%)" },
-  { symbol: "TATACHEM", name: "Tata Chemicals Ltd", price: 693.25, change: -86.1, changePercent: -11.04, dayLow: 685.0, dayHigh: 775.0, volatility: "Reversal Setup" },
-  { symbol: "TATAPOWER", name: "Tata Power Co Ltd", price: 442.1, change: 13.7, changePercent: 3.2, dayLow: 429.0, dayHigh: 446.5, volatility: "Breakout (2.4%)" },
+  { symbol: "ATGL", name: "Adani Total Gas Ltd", volatility: "High Beta" },
+  { symbol: "POONAWALLA", name: "Poonawalla Fincorp Ltd", volatility: "High Beta" },
+  { symbol: "TATACHEM", name: "Tata Chemicals Ltd", volatility: "Reversal Setup" },
+  { symbol: "TATAPOWER", name: "Tata Power Co Ltd", volatility: "Breakout" },
 ];
 
 interface SectorTrending {
@@ -170,21 +141,21 @@ interface SectorTrending {
 }
 
 const SECTORS_TRENDING: SectorTrending[] = [
-  { id: "s1", name: "Automotive & Electric Mobility", icon: Car, gainersCount: 22, losersCount: 6, changePercent: 2.45, topStock: "TATAMOTORS (+1.93%)" },
-  { id: "s2", name: "Banking & Financial Services", icon: Building2, gainersCount: 31, losersCount: 9, changePercent: 1.84, topStock: "ICICIBANK (+1.12%)" },
-  { id: "s3", name: "Energy, Oil & Natural Gas", icon: Zap, gainersCount: 18, losersCount: 8, changePercent: 1.35, topStock: "ATGL (+12.56%)" },
-  { id: "s4", name: "Consumer Discretionary & Retail", icon: Flame, gainersCount: 19, losersCount: 15, changePercent: 0.91, topStock: "TRENT (+4.82%)" },
-  { id: "s5", name: "Pharmaceuticals & Healthcare", icon: Pill, gainersCount: 16, losersCount: 14, changePercent: 0.45, topStock: "SUNPHARMA (+0.90%)" },
-  { id: "s6", name: "Metals & Mining", icon: Factory, gainersCount: 14, losersCount: 12, changePercent: -0.32, topStock: "TATASTEEL (+1.45%)" },
-  { id: "s7", name: "Information Technology (IT)", icon: Cpu, gainersCount: 8, losersCount: 24, changePercent: -1.27, topStock: "TCS (-0.82%)" },
+  { id: "auto", name: "Automotive & Electric Mobility", icon: Car, gainersCount: 0, losersCount: 0, changePercent: 0, topStock: "—" },
+  { id: "banking", name: "Banking & Financial Services", icon: Building2, gainersCount: 0, losersCount: 0, changePercent: 0, topStock: "—" },
+  { id: "energy", name: "Energy, Oil & Natural Gas", icon: Zap, gainersCount: 0, losersCount: 0, changePercent: 0, topStock: "—" },
+  { id: "consumer", name: "Consumer Discretionary & Retail", icon: Flame, gainersCount: 0, losersCount: 0, changePercent: 0, topStock: "—" },
+  { id: "pharma", name: "Pharmaceuticals & Healthcare", icon: Pill, gainersCount: 0, losersCount: 0, changePercent: 0, topStock: "—" },
+  { id: "metals", name: "Metals & Mining", icon: Factory, gainersCount: 0, losersCount: 0, changePercent: 0, topStock: "—" },
+  { id: "it", name: "Information Technology (IT)", icon: Cpu, gainersCount: 0, losersCount: 0, changePercent: 0, topStock: "—" },
 ];
 
 const MAJOR_INDICES_STRIP = [
-  { name: "NIFTY 50", value: "25,320.00", change: "+88.20", percent: "+0.35%", isGain: true },
-  { name: "SENSEX", value: "82,450.00", change: "+148.50", percent: "+0.18%", isGain: true },
-  { name: "BANK NIFTY", value: "52,140.00", change: "+290.00", percent: "+0.56%", isGain: true },
-  { name: "MIDCP NIFTY", value: "14,500.75", change: "+78.90", percent: "+0.55%", isGain: true },
-  { name: "FIN NIFTY", value: "25,510.00", change: "+48.40", percent: "+0.19%", isGain: true },
+  { name: "NIFTY 50", symbolKey: "NIFTY" },
+  { name: "SENSEX", symbolKey: "SENSEX" },
+  { name: "BANK NIFTY", symbolKey: "BANKNIFTY" },
+  { name: "MIDCP NIFTY", symbolKey: "MIDCPNIFTY" },
+  { name: "FIN NIFTY", symbolKey: "FINNIFTY" },
 ];
 
 // Helper to render mini SVG sparklines for table rows
@@ -330,35 +301,48 @@ export default function StocksExplorePage() {
     refetchInterval: token ? 5000 : false,
   });
 
-  const quotes = useMultiSymbolQuotes(MASTER_STOCKS_CATALOG.map((s) => s.symbol));
+  const exploreSymbols = useMemo(() => {
+    const s = new Set<string>();
+    MASTER_STOCKS_CATALOG.forEach((item) => s.add(item.symbol));
+    POPULAR_STOCKS.forEach((item) => s.add(item.symbol));
+    MOST_TRADED_STOCKS.forEach((item) => s.add(item.symbol));
+    TOP_INTRADAY_STOCKS.forEach((item) => s.add(item.symbol));
+    MAJOR_INDICES_STRIP.forEach((item) => s.add(item.symbolKey));
+    return Array.from(s);
+  }, []);
+
+  const quotes = useMultiSymbolQuotes(exploreSymbols);
 
   // Prefetch live quotes for all explore catalog items
   useEffect(() => {
-    const symbols = MASTER_STOCKS_CATALOG.map((item) => item.symbol);
-    fetchBatchQuotes(symbols).catch(() => {});
-  }, []);
+    fetchBatchQuotes(exploreSymbols).catch(() => {});
+  }, [exploreSymbols]);
 
   // Merge catalog with live Angel One quotes
   const liveCatalog = useMemo(() => {
     return MASTER_STOCKS_CATALOG.map((item) => {
       const live = quotes[item.symbol] || (item.symbol === "ZOMATO" ? quotes["ETERNAL"] : undefined) || getCachedQuote(item.symbol);
-      if (!live) return item;
+      if (!live || !live.price_paise) {
+        return { ...item, isQuoteAvailable: false };
+      }
       const price = live.price_paise / 100;
-      const changePercent = live.change_percent ?? item.changePercent;
-      const change = (price * changePercent) / 100;
+      const change = live.change_paise !== undefined ? live.change_paise / 100 : 0;
+      const changePercent = live.change_percent ?? (price > 0 && change !== 0 ? +((change / (price - change || 1)) * 100).toFixed(2) : 0);
       return {
         ...item,
         price,
         change,
         changePercent,
+        isQuoteAvailable: true,
       };
     });
   }, [quotes]);
 
   // Generate mover list based on tab
   const moverList = useMemo(() => {
+    const validStocks = liveCatalog.filter((s) => s.isQuoteAvailable && s.price > 0);
     if (moverTab === "gainers") {
-      return [...liveCatalog]
+      return validStocks
         .filter((s) => s.changePercent > 0)
         .sort((a, b) => b.changePercent - a.changePercent)
         .slice(0, 6)
@@ -376,7 +360,7 @@ export default function StocksExplorePage() {
           ],
         }));
     } else if (moverTab === "losers") {
-      return [...liveCatalog]
+      return validStocks
         .filter((s) => s.changePercent < 0)
         .sort((a, b) => a.changePercent - b.changePercent)
         .slice(0, 6)
@@ -394,7 +378,7 @@ export default function StocksExplorePage() {
         }));
     } else {
       // Volume shockers
-      return [...liveCatalog]
+      return validStocks
         .filter((s) => ["ZOMATO", "SUZLON", "TRENT", "BEL", "POONAWALLA", "ATGL"].includes(s.symbol))
         .map((s, idx) => ({
           ...s,
@@ -410,6 +394,37 @@ export default function StocksExplorePage() {
         }));
     }
   }, [moverTab, liveCatalog]);
+
+  // Dynamic Trending Sectors calculated from live constituent prices
+  const dynamicExploreSectors = useMemo(() => {
+    return SECTORS_TRENDING.map((sec) => {
+      const symbols = SECTOR_CONSTITUENTS[sec.id] || [];
+      const constituents = liveCatalog.filter((s) => symbols.includes(s.symbol) && s.isQuoteAvailable && s.price > 0);
+      if (constituents.length === 0) {
+        return {
+          ...sec,
+          gainersCount: 0,
+          losersCount: 0,
+          changePercent: 0,
+          topStock: "—",
+        };
+      }
+
+      const gainers = constituents.filter((s) => s.changePercent >= 0).length;
+      const losers = constituents.filter((s) => s.changePercent < 0).length;
+      const avgChange = constituents.reduce((acc, s) => acc + s.changePercent, 0) / constituents.length;
+      const sorted = [...constituents].sort((a, b) => b.changePercent - a.changePercent);
+      const top = sorted[0];
+
+      return {
+        ...sec,
+        gainersCount: gainers,
+        losersCount: losers,
+        changePercent: +avgChange.toFixed(2),
+        topStock: `${top.symbol} (${top.changePercent >= 0 ? "+" : ""}${top.changePercent.toFixed(2)}%)`,
+      };
+    });
+  }, [liveCatalog]);
 
   const availableBalance = wallet?.available_balance_paise ?? 100000000;
   const unrealizedPnl = portfolio?.unrealized_pnl_paise ?? 0;
@@ -428,13 +443,16 @@ export default function StocksExplorePage() {
       <div className="border-b border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60 backdrop-blur-sm px-4 sm:px-6 py-2 transition-colors">
         <div className="max-w-7xl mx-auto flex items-center gap-6 sm:gap-8 overflow-x-auto no-scrollbar text-xs">
           {MAJOR_INDICES_STRIP.map((idx) => {
-            const sym = idx.name.replace(/\s+/g, "").replace("50", "").replace("BANK", "BANKNIFTY").replace("MIDCP", "MIDCPNIFTY").replace("FIN", "FINNIFTY");
-            const lookupKey = sym === "NIFTY" ? "NIFTY" : sym === "BANKNIFTY" ? "BANKNIFTY" : sym === "SENSEX" ? "SENSEX" : sym === "MIDCPNIFTY" ? "MIDCPNIFTY" : sym === "FINNIFTY" ? "FINNIFTY" : sym;
-            const live = quotes[lookupKey];
-            const livePrice = live ? (live.price_paise / 100).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : idx.value;
-            const livePct = live?.change_percent !== undefined ? live.change_percent : parseFloat(idx.percent);
+            const live = quotes[idx.symbolKey];
+            const hasQuote = live && live.price_paise > 0;
+            const livePrice = hasQuote
+              ? (live.price_paise / 100).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+              : "—";
+            const livePct = live?.change_percent !== undefined ? live.change_percent : 0;
             const isGain = livePct >= 0;
-            const liveChange = live ? `${isGain ? "+" : ""}${((live.price_paise * (livePct / 100)) / 100).toFixed(2)}` : idx.change;
+            const liveChange = hasQuote
+              ? `${isGain ? "+" : ""}${live.change_paise !== undefined ? (live.change_paise / 100).toFixed(2) : ((live.price_paise * (livePct / 100)) / 100).toFixed(2)}`
+              : "—";
 
             return (
               <div key={idx.name} className="flex items-center gap-2 shrink-0">
@@ -444,16 +462,22 @@ export default function StocksExplorePage() {
                 <span className="font-semibold text-slate-900 dark:text-slate-100 font-tabular">
                   {livePrice}
                 </span>
-                <span
-                  className={`flex items-center gap-0.5 text-[11px] font-bold ${
-                    isGain
-                      ? "text-emerald-600 dark:text-emerald-400"
-                      : "text-rose-600 dark:text-rose-400"
-                  }`}
-                >
-                  <span>{liveChange}</span>
-                  <span>({isGain ? "+" : ""}{livePct.toFixed(2)}%)</span>
-                </span>
+                {hasQuote ? (
+                  <span
+                    className={`flex items-center gap-0.5 text-[11px] font-bold ${
+                      isGain
+                        ? "text-emerald-600 dark:text-emerald-400"
+                        : "text-rose-600 dark:text-rose-400"
+                    }`}
+                  >
+                    <span>{liveChange}</span>
+                    <span>({isGain ? "+" : ""}{livePct.toFixed(2)}%)</span>
+                  </span>
+                ) : (
+                  <span className="text-[11px] font-medium text-amber-500">
+                    Awaiting Feed
+                  </span>
+                )}
               </div>
             );
           })}
@@ -492,8 +516,9 @@ export default function StocksExplorePage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
                 {POPULAR_STOCKS.map((stock) => {
                   const live = quotes[stock.symbol];
-                  const currentPrice = live ? live.price_paise / 100 : stock.price;
-                  const currentPct = live?.change_percent !== undefined ? live.change_percent : stock.changePercent;
+                  const hasQuote = live && live.price_paise > 0;
+                  const currentPrice = hasQuote ? live.price_paise / 100 : 0;
+                  const currentPct = live?.change_percent !== undefined ? live.change_percent : 0;
                   const isGain = currentPct >= 0;
 
                   return (
@@ -527,22 +552,28 @@ export default function StocksExplorePage() {
                       <div className="mt-3.5 pt-2.5 border-t border-slate-100 dark:border-slate-800/80 flex items-end justify-between">
                         <div>
                           <div className="text-xs font-bold font-tabular text-slate-900 dark:text-slate-100">
-                            ₹{currentPrice.toFixed(2)}
+                            {hasQuote ? `₹${currentPrice.toFixed(2)}` : "₹—"}
                           </div>
                           <div className="text-[10px] text-slate-400">
                             Cap: {stock.marketCap}
                           </div>
                         </div>
 
-                        <div
-                          className={`text-xs font-bold font-tabular flex items-center gap-0.5 ${
-                            isGain
-                              ? "text-emerald-600 dark:text-emerald-400"
-                              : "text-rose-600 dark:text-rose-400"
-                          }`}
-                        >
-                          {isGain ? "▲" : "▼"} {Math.abs(currentPct).toFixed(2)}%
-                        </div>
+                        {hasQuote ? (
+                          <div
+                            className={`text-xs font-bold font-tabular flex items-center gap-0.5 ${
+                              isGain
+                                ? "text-emerald-600 dark:text-emerald-400"
+                                : "text-rose-600 dark:text-rose-400"
+                            }`}
+                          >
+                            {isGain ? "▲" : "▼"} {Math.abs(currentPct).toFixed(2)}%
+                          </div>
+                        ) : (
+                          <div className="text-[10px] font-medium text-amber-500">
+                            Awaiting Tick
+                          </div>
+                        )}
                       </div>
                     </Link>
                   );
@@ -575,10 +606,11 @@ export default function StocksExplorePage() {
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {MOST_TRADED_STOCKS.map((stock) => {
                   const live = quotes[stock.symbol] || (stock.symbol === "ZOMATO" ? quotes["ETERNAL"] : undefined);
-                  const currentPrice = live ? live.price_paise / 100 : stock.price;
-                  const currentPct = live?.change_percent !== undefined ? live.change_percent : stock.changePercent;
+                  const hasQuote = live && live.price_paise > 0;
+                  const currentPrice = hasQuote ? live.price_paise / 100 : 0;
+                  const currentPct = live?.change_percent !== undefined ? live.change_percent : 0;
                   const isGain = currentPct >= 0;
-                  const currentChange = live ? ((currentPrice * currentPct) / 100) : stock.change;
+                  const currentChange = hasQuote ? (live.change_paise !== undefined ? live.change_paise / 100 : (currentPrice * currentPct) / 100) : 0;
 
                   return (
                     <Link
@@ -595,19 +627,25 @@ export default function StocksExplorePage() {
                       </div>
 
                       <div className="text-xs font-bold font-tabular text-slate-900 dark:text-slate-100 mt-1">
-                        ₹{currentPrice.toFixed(2)}
+                        {hasQuote ? `₹${currentPrice.toFixed(2)}` : "₹—"}
                       </div>
 
-                      <div
-                        className={`text-[11px] font-bold font-tabular mt-0.5 ${
-                          isGain
-                            ? "text-emerald-600 dark:text-emerald-400"
-                            : "text-rose-600 dark:text-rose-400"
-                        }`}
-                      >
-                        {isGain ? "+" : ""}
-                        {currentChange.toFixed(2)} ({currentPct.toFixed(2)}%)
-                      </div>
+                      {hasQuote ? (
+                        <div
+                          className={`text-[11px] font-bold font-tabular mt-0.5 ${
+                            isGain
+                              ? "text-emerald-600 dark:text-emerald-400"
+                              : "text-rose-600 dark:text-rose-400"
+                          }`}
+                        >
+                          {isGain ? "+" : ""}
+                          {currentChange.toFixed(2)} ({currentPct.toFixed(2)}%)
+                        </div>
+                      ) : (
+                        <div className="text-[10px] font-medium text-amber-500 mt-0.5">
+                          Awaiting Tick
+                        </div>
+                      )}
 
                       <div className="text-[10px] text-slate-400 font-mono mt-1">
                         Vol: {stock.volume}
@@ -694,73 +732,81 @@ export default function StocksExplorePage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
-                    {moverList.map((stock) => {
-                      const isGain = stock.changePercent >= 0;
-                      return (
-                        <tr
-                          key={stock.symbol}
-                          className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors group"
-                        >
-                          <td className="py-3 pr-4">
-                            <div className="flex items-center gap-2.5">
-                              <div className="w-7 h-7 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 flex items-center justify-center font-bold text-[11px] border border-slate-200 dark:border-slate-700/60">
-                                {stock.symbol.slice(0, 2)}
-                              </div>
-                              <div>
-                                <Link
-                                  href={`/stocks/${stock.symbol}`}
-                                  className="font-bold text-slate-900 dark:text-slate-100 group-hover:text-cyan-600 dark:group-hover:text-cyan-400 transition-colors"
-                                >
-                                  {stock.symbol}
-                                </Link>
-                                <div className="text-[10px] text-slate-400 truncate max-w-[140px] sm:max-w-[180px]">
-                                  {stock.name}
+                    {moverList.length > 0 ? (
+                      moverList.map((stock) => {
+                        const isGain = stock.changePercent >= 0;
+                        return (
+                          <tr
+                            key={stock.symbol}
+                            className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors group"
+                          >
+                            <td className="py-3 pr-4">
+                              <div className="flex items-center gap-2.5">
+                                <div className="w-7 h-7 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 flex items-center justify-center font-bold text-[11px] border border-slate-200 dark:border-slate-700/60">
+                                  {stock.symbol.slice(0, 2)}
+                                </div>
+                                <div>
+                                  <Link
+                                    href={`/stocks/${stock.symbol}`}
+                                    className="font-bold text-slate-900 dark:text-slate-100 group-hover:text-cyan-600 dark:group-hover:text-cyan-400 transition-colors"
+                                  >
+                                    {stock.symbol}
+                                  </Link>
+                                  <div className="text-[10px] text-slate-400 truncate max-w-[140px] sm:max-w-[180px]">
+                                    {stock.name}
+                                  </div>
                                 </div>
                               </div>
-                            </div>
-                          </td>
+                            </td>
 
-                          {/* 1D Mini Sparkline Curve */}
-                          <td className="py-3 px-2 text-center hidden sm:table-cell">
-                            <div className="flex justify-center">
-                              <MiniSparkline isGain={isGain} points={stock.sparkline} />
-                            </div>
-                          </td>
+                            {/* 1D Mini Sparkline Curve */}
+                            <td className="py-3 px-2 text-center hidden sm:table-cell">
+                              <div className="flex justify-center">
+                                <MiniSparkline isGain={isGain} points={stock.sparkline} />
+                              </div>
+                            </td>
 
-                          {/* Price & Change */}
-                          <td className="py-3 pl-2 pr-4 text-right">
-                            <div className="font-bold font-tabular text-slate-900 dark:text-slate-100">
-                              ₹{stock.price.toFixed(2)}
-                            </div>
-                            <div
-                              className={`text-[11px] font-bold font-tabular ${
-                                isGain
-                                  ? "text-emerald-600 dark:text-emerald-400"
-                                  : "text-rose-600 dark:text-rose-400"
-                              }`}
-                            >
-                              {isGain ? "+" : ""}
-                              {stock.change.toFixed(2)} ({stock.changePercent.toFixed(2)}%)
-                            </div>
-                          </td>
+                            {/* Price & Change */}
+                            <td className="py-3 pl-2 pr-4 text-right">
+                              <div className="font-bold font-tabular text-slate-900 dark:text-slate-100">
+                                ₹{stock.price.toFixed(2)}
+                              </div>
+                              <div
+                                className={`text-[11px] font-bold font-tabular ${
+                                  isGain
+                                    ? "text-emerald-600 dark:text-emerald-400"
+                                    : "text-rose-600 dark:text-rose-400"
+                                }`}
+                              >
+                                {isGain ? "+" : ""}
+                                {stock.change.toFixed(2)} ({stock.changePercent.toFixed(2)}%)
+                              </div>
+                            </td>
 
-                          {/* Volume */}
-                          <td className="py-3 px-2 text-right hidden md:table-cell font-mono text-slate-500 dark:text-slate-400">
-                            {stock.volume}
-                          </td>
+                            {/* Volume */}
+                            <td className="py-3 px-2 text-right hidden md:table-cell font-mono text-slate-500 dark:text-slate-400">
+                              {stock.volume}
+                            </td>
 
-                          {/* 1-Click Trade CTA */}
-                          <td className="py-3 pl-2 text-right">
-                            <Link
-                              href={`/stocks/${stock.symbol}`}
-                              className="px-3 py-1 rounded-lg bg-cyan-50 hover:bg-cyan-100 dark:bg-cyan-950/60 dark:hover:bg-cyan-900/60 text-cyan-700 dark:text-cyan-300 font-bold text-xs border border-cyan-200 dark:border-cyan-800/60 transition-colors"
-                            >
-                              Trade
-                            </Link>
-                          </td>
-                        </tr>
-                      );
-                    })}
+                            {/* 1-Click Trade CTA */}
+                            <td className="py-3 pl-2 text-right">
+                              <Link
+                                href={`/stocks/${stock.symbol}`}
+                                className="px-3 py-1 rounded-lg bg-cyan-50 hover:bg-cyan-100 dark:bg-cyan-950/60 dark:hover:bg-cyan-900/60 text-cyan-700 dark:text-cyan-300 font-bold text-xs border border-cyan-200 dark:border-cyan-800/60 transition-colors"
+                              >
+                                Trade
+                              </Link>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    ) : (
+                      <tr>
+                        <td colSpan={5} className="py-8 text-center text-xs text-slate-400">
+                          Awaiting live market feed ticks...
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -799,9 +845,15 @@ export default function StocksExplorePage() {
               {/* 4-Col Card Grid with High-Low bars */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                 {TOP_INTRADAY_STOCKS.map((stock) => {
-                  const isGain = stock.changePercent >= 0;
-                  const rangePercent =
-                    ((stock.price - stock.dayLow) / (stock.dayHigh - stock.dayLow || 1)) * 100;
+                  const live = quotes[stock.symbol];
+                  const hasQuote = live && live.price_paise > 0;
+                  const price = hasQuote ? live.price_paise / 100 : 0;
+                  const pct = live?.change_percent !== undefined ? live.change_percent : 0;
+                  const isGain = pct >= 0;
+                  const change = hasQuote ? (live.change_paise !== undefined ? live.change_paise / 100 : (price * pct) / 100) : 0;
+                  const dayLow = live?.low_paise ? live.low_paise / 100 : price;
+                  const dayHigh = live?.high_paise ? live.high_paise / 100 : price;
+                  const rangePercent = dayHigh > dayLow ? ((price - dayLow) / (dayHigh - dayLow)) * 100 : 50;
 
                   return (
                     <Link
@@ -825,18 +877,24 @@ export default function StocksExplorePage() {
 
                       <div className="my-2.5">
                         <div className="text-xs font-bold font-tabular text-slate-900 dark:text-slate-100">
-                          ₹{stock.price.toFixed(2)}
+                          {hasQuote ? `₹${price.toFixed(2)}` : "₹—"}
                         </div>
-                        <div
-                          className={`text-[11px] font-bold font-tabular ${
-                            isGain
-                              ? "text-emerald-600 dark:text-emerald-400"
-                              : "text-rose-600 dark:text-rose-400"
-                          }`}
-                        >
-                          {isGain ? "+" : ""}
-                          {stock.change.toFixed(2)} ({stock.changePercent.toFixed(2)}%)
-                        </div>
+                        {hasQuote ? (
+                          <div
+                            className={`text-[11px] font-bold font-tabular ${
+                              isGain
+                                ? "text-emerald-600 dark:text-emerald-400"
+                                : "text-rose-600 dark:text-rose-400"
+                            }`}
+                          >
+                            {isGain ? "+" : ""}
+                            {change.toFixed(2)} ({pct.toFixed(2)}%)
+                          </div>
+                        ) : (
+                          <div className="text-[10px] font-medium text-amber-500">
+                            Awaiting Tick
+                          </div>
+                        )}
                       </div>
 
                       {/* Day Low-High Bar */}
@@ -850,8 +908,8 @@ export default function StocksExplorePage() {
                           />
                         </div>
                         <div className="flex justify-between text-[9px] text-slate-400 font-mono">
-                          <span>L: ₹{stock.dayLow}</span>
-                          <span>H: ₹{stock.dayHigh}</span>
+                          <span>L: {hasQuote && dayLow > 0 ? `₹${dayLow.toFixed(2)}` : "—"}</span>
+                          <span>H: {hasQuote && dayHigh > 0 ? `₹${dayHigh.toFixed(2)}` : "—"}</span>
                         </div>
                       </div>
                     </Link>
@@ -891,11 +949,11 @@ export default function StocksExplorePage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
-                    {SECTORS_TRENDING.map((sec) => {
+                    {dynamicExploreSectors.map((sec) => {
                       const Icon = sec.icon;
                       const isGain = sec.changePercent >= 0;
                       const total = sec.gainersCount + sec.losersCount;
-                      const gainerPercent = (sec.gainersCount / total) * 100;
+                      const gainerPercent = total > 0 ? (sec.gainersCount / total) * 100 : 50;
 
                       return (
                         <tr
@@ -920,40 +978,52 @@ export default function StocksExplorePage() {
 
                           {/* Advance/Decline Split Bar (matching Groww reference) */}
                           <td className="py-3 px-4">
-                            <div className="max-w-[260px] mx-auto space-y-1">
-                              <div className="flex items-center justify-between text-[11px] font-mono font-bold">
-                                <span className="text-emerald-600 dark:text-emerald-400">
-                                  {sec.gainersCount}
-                                </span>
-                                <span className="text-rose-600 dark:text-rose-400">
-                                  {sec.losersCount}
-                                </span>
+                            {total === 0 ? (
+                              <div className="text-[11px] text-center text-slate-400 dark:text-slate-500 font-mono">
+                                Awaiting feed
                               </div>
-                              <div className="h-2 rounded-full bg-slate-100 dark:bg-slate-800 flex overflow-hidden">
-                                <div
-                                  className="h-full bg-emerald-500 rounded-l-full transition-all"
-                                  style={{ width: `${gainerPercent}%` }}
-                                />
-                                <div
-                                  className="h-full bg-rose-500 rounded-r-full transition-all"
-                                  style={{ width: `${100 - gainerPercent}%` }}
-                                />
+                            ) : (
+                              <div className="max-w-[260px] mx-auto space-y-1">
+                                <div className="flex items-center justify-between text-[11px] font-mono font-bold">
+                                  <span className="text-emerald-600 dark:text-emerald-400">
+                                    {sec.gainersCount}
+                                  </span>
+                                  <span className="text-rose-600 dark:text-rose-400">
+                                    {sec.losersCount}
+                                  </span>
+                                </div>
+                                <div className="h-2 rounded-full bg-slate-100 dark:bg-slate-800 flex overflow-hidden">
+                                  <div
+                                    className="h-full bg-emerald-500 rounded-l-full transition-all"
+                                    style={{ width: `${gainerPercent}%` }}
+                                  />
+                                  <div
+                                    className="h-full bg-rose-500 rounded-r-full transition-all"
+                                    style={{ width: `${100 - gainerPercent}%` }}
+                                  />
+                                </div>
                               </div>
-                            </div>
+                            )}
                           </td>
 
                           {/* 1D Sector Return */}
                           <td className="py-3 pl-4 text-right">
-                            <span
-                              className={`text-xs font-bold font-tabular px-2 py-0.5 rounded ${
-                                isGain
-                                  ? "bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/40"
-                                  : "bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-800/40"
-                              }`}
-                            >
-                              {isGain ? "+" : ""}
-                              {sec.changePercent.toFixed(2)}%
-                            </span>
+                            {total === 0 ? (
+                              <span className="text-xs font-mono text-slate-400 dark:text-slate-500">
+                                —
+                              </span>
+                            ) : (
+                              <span
+                                className={`text-xs font-bold font-tabular px-2 py-0.5 rounded ${
+                                  isGain
+                                    ? "bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/40"
+                                    : "bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-800/40"
+                                }`}
+                              >
+                                {isGain ? "+" : ""}
+                                {sec.changePercent.toFixed(2)}%
+                              </span>
+                            )}
                           </td>
                         </tr>
                       );

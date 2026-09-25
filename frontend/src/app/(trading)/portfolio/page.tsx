@@ -322,35 +322,86 @@ export default function PortfolioPage() {
   const handleSquareOff = async (pos: Position) => {
     if (!token) return;
     const closeSide = pos.quantity > 0 ? "SELL" : "BUY";
-    await fetch(`${apiUrl}/orders`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        symbol: pos.symbol,
-        side: closeSide,
-        type: "MARKET",
-        product: pos.product,
-        quantity: Math.abs(pos.quantity),
-      }),
-    });
-    void queryClient.invalidateQueries({ queryKey: ["portfolio"] });
-    void queryClient.invalidateQueries({ queryKey: ["wallet"] });
+    try {
+      const res = await fetch(`${apiUrl}/orders`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          symbol: pos.symbol,
+          side: closeSide,
+          type: "MARKET",
+          product: pos.product,
+          quantity: Math.abs(pos.quantity),
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        const errMsg = data.error || `Failed to square off position (${res.status})`;
+        alert(errMsg);
+        return;
+      }
+      void queryClient.invalidateQueries({ queryKey: ["portfolio"] });
+      void queryClient.invalidateQueries({ queryKey: ["wallet"] });
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "Network error squaring off position");
+    }
   };
 
   // Square off all MIS positions
   const handleSquareOffAllMIS = async () => {
     if (!token) return;
-    await fetch(`${apiUrl}/orders/squareoff-mis`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
-    void queryClient.invalidateQueries({ queryKey: ["portfolio"] });
-    void queryClient.invalidateQueries({ queryKey: ["wallet"] });
+    try {
+      const res = await fetch(`${apiUrl}/orders/squareoff-mis`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        const errMsg = data.error || `Failed to square off MIS positions (${res.status})`;
+        alert(errMsg);
+        return;
+      }
+      void queryClient.invalidateQueries({ queryKey: ["portfolio"] });
+      void queryClient.invalidateQueries({ queryKey: ["wallet"] });
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "Network error during bulk square-off");
+    }
+  };
+
+  // Exit CNC Equity holding via genuine market sell order
+  const handleExitHolding = async (holding: HoldingItem) => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${apiUrl}/orders`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          symbol: holding.symbol,
+          side: "SELL",
+          type: "MARKET",
+          product: "CNC",
+          quantity: holding.quantity,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        const errMsg = data.error || `Failed to place exit order (${res.status})`;
+        alert(errMsg);
+        return;
+      }
+      void queryClient.invalidateQueries({ queryKey: ["portfolio"] });
+      void queryClient.invalidateQueries({ queryKey: ["wallet"] });
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "Network error placing exit order");
+    }
   };
 
   // Export CSV summary
@@ -643,10 +694,7 @@ export default function PortfolioPage() {
         {activeTab === "HOLDINGS" && (
           <PortfolioHoldingsTable
             holdings={activeHoldings}
-            onExitHolding={(h) => {
-              // Quick exit simulation
-              alert(`Order placement ticket initiated to exit ${h.quantity} shares of ${h.symbol} at market.`);
-            }}
+            onExitHolding={handleExitHolding}
           />
         )}
 

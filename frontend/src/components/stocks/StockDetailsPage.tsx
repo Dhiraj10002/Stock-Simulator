@@ -479,20 +479,26 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
       symbol: cleanSym,
       exchange: "NSE",
       name: `${cleanSym} Limited`,
-      price: 492.1,
-      change: 2.9,
-      changePercent: 0.59,
+      price: 0,
+      change: 0,
+      changePercent: 0,
       isPositive: true,
+      isQuoteAvailable: false,
     };
 
     // Try WebSocket live quote first, fall back to API quote
     const q = liveWsQuote;
     const liveQuote = q || (apiQuote ? { price_paise: apiQuote.price_paise, change_paise: apiQuote.change_paise, change_percent: apiQuote.change_percent } : undefined);
-    if (!liveQuote || !liveQuote.price_paise) return base;
+    if (!liveQuote || !liveQuote.price_paise) {
+      return {
+        ...base,
+        isQuoteAvailable: false,
+      };
+    }
 
     const price = liveQuote.price_paise / 100;
-    const change = liveQuote.change_paise !== undefined ? liveQuote.change_paise / 100 : +(price - base.price).toFixed(2);
-    const changePercent = liveQuote.change_percent !== undefined ? liveQuote.change_percent : +((change / (price - change || 1)) * 100).toFixed(2);
+    const change = liveQuote.change_paise !== undefined ? liveQuote.change_paise / 100 : 0;
+    const changePercent = liveQuote.change_percent !== undefined ? liveQuote.change_percent : (price > 0 && change !== 0 ? +((change / (price - change || 1)) * 100).toFixed(2) : 0);
     const isPositive = changePercent >= 0;
 
     return {
@@ -501,6 +507,7 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
       change,
       changePercent: +changePercent.toFixed(2),
       isPositive,
+      isQuoteAvailable: true,
     };
   }, [symbolParam, liveWsQuote, apiQuote]);
 
@@ -774,23 +781,6 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
     }
   }, [token, stock, orderModal.action, orderProduct, orderType, limitPrice, orderQty, queryClient]);
 
-  // ---------------------------------------------------------------------------
-  // Dynamic Market Depth — generated from live price with realistic spread
-  // ---------------------------------------------------------------------------
-  const marketDepthRows = useMemo(() => {
-    const p = stock.price;
-    const tick = p > 1000 ? 0.05 : p > 100 ? 0.05 : 0.01;
-    const baseQty = p > 5000 ? 200 : p > 1000 ? 800 : p > 100 ? 1500 : 5000;
-    // Use a pseudo-random seed from price to get consistent-looking variation
-    const seed = Math.floor(p * 100) % 1000;
-    return Array.from({ length: 5 }, (_, i) => ({
-      bidP: +(p - tick * (i + 1)).toFixed(2),
-      bidQ: baseQty + ((seed * (i + 1) * 7) % (baseQty * 3)),
-      askP: +(p + tick * i).toFixed(2),
-      askQ: baseQty + ((seed * (i + 2) * 11) % (baseQty * 3)),
-    }));
-  }, [stock.price]);
-
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans selection:bg-cyan-500 selection:text-white transition-colors duration-150">
       {/* Toast Notification */}
@@ -889,24 +879,30 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
           <div className="flex items-end md:items-center gap-6 justify-between md:justify-end">
             <div className="text-right">
               <div className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-slate-100 font-tabular tracking-tight">
-                ₹{stock.price.toFixed(2)}
+                {stock.price > 0 ? `₹${stock.price.toFixed(2)}` : "₹—"}
               </div>
-              <div
-                className={`text-xs sm:text-sm font-bold font-tabular flex items-center justify-end gap-1 ${
-                  stock.isPositive ? "text-emerald-600" : "text-rose-600"
-                }`}
-              >
-                {stock.isPositive ? <ArrowUpRight className="w-4 h-4" /> : <ArrowDownRight className="w-4 h-4" />}
-                <span>
-                  {stock.isPositive ? "+" : ""}
-                  {stock.change.toFixed(2)} ({stock.changePercent.toFixed(2)}%)
-                </span>
-                <span className="text-[11px] text-slate-500 dark:text-slate-400 font-normal ml-0.5">1D</span>
-                <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/40 px-1.5 py-0.5 rounded flex items-center gap-1 ml-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  Angel One
-                </span>
-              </div>
+              {stock.price > 0 ? (
+                <div
+                  className={`text-xs sm:text-sm font-bold font-tabular flex items-center justify-end gap-1 ${
+                    stock.isPositive ? "text-emerald-600" : "text-rose-600"
+                  }`}
+                >
+                  {stock.isPositive ? <ArrowUpRight className="w-4 h-4" /> : <ArrowDownRight className="w-4 h-4" />}
+                  <span>
+                    {stock.isPositive ? "+" : ""}
+                    {stock.change.toFixed(2)} ({stock.changePercent.toFixed(2)}%)
+                  </span>
+                  <span className="text-[11px] text-slate-500 dark:text-slate-400 font-normal ml-0.5">1D</span>
+                  <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/40 px-1.5 py-0.5 rounded flex items-center gap-1 ml-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    Live Quote
+                  </span>
+                </div>
+              ) : (
+                <div className="text-xs text-amber-600 dark:text-amber-400 flex items-center justify-end gap-1 font-medium mt-1">
+                  <span>Awaiting live market quote...</span>
+                </div>
+              )}
             </div>
 
             {/* Quick Watchlist + Trade Action Buttons */}
@@ -1295,43 +1291,54 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
 
           {/* Right Column: Market Depth (Level 2 Order Book) & Quick Order Box */}
           <div className="space-y-6">
-            {/* Market Depth Level 2 Book */}
+            {/* Market Depth Level 1 Quote */}
             <div className="bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-xs space-y-4">
               <div className="flex items-center justify-between">
                 <h3 className="font-extrabold text-xs text-slate-900 dark:text-slate-100 uppercase tracking-wide flex items-center gap-1.5">
                   <SlidersHorizontal className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
-                  <span>Market Depth (L2 Book)</span>
+                  <span>Market Depth (Top of Book)</span>
                 </h3>
-                <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800/50">
-                  Live Feed
+                <span className="text-[10px] font-semibold text-cyan-600 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-950/60 px-2 py-0.5 rounded border border-cyan-200 dark:border-cyan-800/50">
+                  L1 Feed
                 </span>
               </div>
 
-              {/* Bid vs Ask 5-Row Table */}
-              <div className="space-y-2 text-xs">
-                <div className="grid grid-cols-2 gap-2 text-[10px] font-bold text-slate-500 dark:text-slate-400 pb-1 border-b border-slate-100 dark:border-slate-800">
-                  <div className="flex justify-between">
-                    <span>BID PRICE</span>
-                    <span>ORDERS</span>
+              {/* L1 Top of Book Display */}
+              <div className="space-y-3 text-xs">
+                <div className="grid grid-cols-2 gap-2 font-tabular text-[11px]">
+                  <div className="flex justify-between items-center bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 px-3 py-2 rounded-lg">
+                    <span className="text-slate-500 dark:text-slate-400">LAST TRADED</span>
+                    <span className="font-bold text-slate-900 dark:text-slate-100">
+                      {stock.price > 0 ? `₹${stock.price.toFixed(2)}` : "—"}
+                    </span>
                   </div>
-                  <div className="flex justify-between text-right">
-                    <span>ORDERS</span>
-                    <span>ASK PRICE</span>
+                  <div className="flex justify-between items-center bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 px-3 py-2 rounded-lg">
+                    <span className="text-slate-500 dark:text-slate-400">TICK SIZE</span>
+                    <span className="font-bold text-slate-900 dark:text-slate-100 font-mono">₹0.05</span>
                   </div>
                 </div>
 
-                {marketDepthRows.map((row, idx) => (
-                  <div key={idx} className="grid grid-cols-2 gap-2 font-tabular text-[11px]">
-                    <div className="flex justify-between items-center text-emerald-700 dark:text-emerald-400 bg-emerald-50/60 dark:bg-emerald-950/40 border border-emerald-100/50 dark:border-emerald-900/30 px-2 py-1 rounded">
-                      <span className="font-bold">₹{row.bidP.toFixed(2)}</span>
-                      <span className="text-slate-500 dark:text-slate-400 text-[10px]">{row.bidQ.toLocaleString("en-IN")}</span>
-                    </div>
-                    <div className="flex justify-between items-center text-rose-700 dark:text-rose-400 bg-rose-50/60 dark:bg-rose-950/40 border border-rose-100/50 dark:border-rose-900/30 px-2 py-1 rounded text-right">
-                      <span className="text-slate-500 dark:text-slate-400 text-[10px]">{row.askQ.toLocaleString("en-IN")}</span>
-                      <span className="font-bold">₹{row.askP.toFixed(2)}</span>
-                    </div>
+                <div className="grid grid-cols-2 gap-2 font-tabular text-[11px]">
+                  <div className="flex justify-between items-center bg-emerald-50/60 dark:bg-emerald-950/40 border border-emerald-100/50 dark:border-emerald-900/30 px-3 py-2 rounded-lg">
+                    <span className="text-emerald-700 dark:text-emerald-400 font-medium">DAY LOW</span>
+                    <span className="font-bold text-emerald-800 dark:text-emerald-300">
+                      {profile.todayLow ? `₹${profile.todayLow.toFixed(2)}` : "—"}
+                    </span>
                   </div>
-                ))}
+                  <div className="flex justify-between items-center bg-rose-50/60 dark:bg-rose-950/40 border border-rose-100/50 dark:border-rose-900/30 px-3 py-2 rounded-lg">
+                    <span className="text-rose-700 dark:text-rose-400 font-medium">DAY HIGH</span>
+                    <span className="font-bold text-rose-800 dark:text-rose-300">
+                      {profile.todayHigh ? `₹${profile.todayHigh.toFixed(2)}` : "—"}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="p-2.5 rounded-lg bg-amber-50/60 dark:bg-amber-950/30 border border-amber-200/50 dark:border-amber-900/30 text-[11px] text-amber-800 dark:text-amber-300 flex items-start gap-2">
+                  <Info className="w-4 h-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+                  <span>
+                    Full 5-depth (L2) order book is currently unavailable from upstream feed. Displaying authentic Level-1 Top of Book market data.
+                  </span>
+                </div>
               </div>
             </div>
 
@@ -1587,25 +1594,25 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
                       <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/60 space-y-1">
                         <div className="text-[10px] text-slate-400 font-medium">Resistance 2 (R2)</div>
                         <div className="font-black font-tabular text-rose-600 dark:text-rose-400">
-                          ₹{(stock.price * 1.035).toFixed(2)}
+                          {stock.price > 0 ? `₹${(stock.price * 1.035).toFixed(2)}` : "—"}
                         </div>
                       </div>
                       <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/60 space-y-1">
                         <div className="text-[10px] text-slate-400 font-medium">Resistance 1 (R1)</div>
                         <div className="font-black font-tabular text-rose-500 dark:text-rose-400">
-                          ₹{(stock.price * 1.018).toFixed(2)}
+                          {stock.price > 0 ? `₹${(stock.price * 1.018).toFixed(2)}` : "—"}
                         </div>
                       </div>
                       <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/60 space-y-1">
                         <div className="text-[10px] text-slate-400 font-medium">Support 1 (S1)</div>
                         <div className="font-black font-tabular text-emerald-600 dark:text-emerald-400">
-                          ₹{(stock.price * 0.982).toFixed(2)}
+                          {stock.price > 0 ? `₹${(stock.price * 0.982).toFixed(2)}` : "—"}
                         </div>
                       </div>
                       <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/60 space-y-1">
                         <div className="text-[10px] text-slate-400 font-medium">Stop Loss Guard</div>
                         <div className="font-black font-tabular text-amber-600 dark:text-amber-400">
-                          ₹{(stock.price * 0.97).toFixed(2)}
+                          {stock.price > 0 ? `₹${(stock.price * 0.97).toFixed(2)}` : "—"}
                         </div>
                       </div>
                     </div>
