@@ -2,13 +2,12 @@ package handler
 
 import (
 	"fmt"
-	"math"
 	"net/http"
 	"regexp"
-	"strconv"
 	"strings"
 
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/database"
+	instrumentService "github.com/Dhiraj10002/Stock-Simulator/backend/internal/instrument/service"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/alias"
 	marketService "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/service"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
@@ -145,9 +144,30 @@ func (h *Handler) Search(c *gin.Context) {
 		}
 	}
 
+	if len(instruments) == 0 {
+		var dbCount int64
+		_ = db.Model(&model.Instrument{}).Count(&dbCount).Error
+		if dbCount == 0 {
+			qUpper := strings.ToUpper(query)
+			segUpper := strings.ToUpper(segment)
+			for _, inst := range instrumentService.DefaultCanonicalInstruments {
+				if segUpper != "" && segUpper != "ALL" {
+					if !strings.EqualFold(inst.ExchangeSegment, segUpper) && !strings.EqualFold(inst.InstrumentType, segUpper) {
+						continue
+					}
+				}
+				if strings.Contains(strings.ToUpper(inst.Symbol), qUpper) ||
+					strings.Contains(strings.ToUpper(inst.DisplaySymbol), qUpper) ||
+					strings.Contains(strings.ToUpper(inst.Name), qUpper) {
+					instruments = append(instruments, inst)
+				}
+			}
+		}
+	}
+
 	items := make([]dto.StockResponse, 0, len(instruments))
 	for _, instrument := range instruments {
-		dispName, optType, under := formatKiteDisplayName(instrument.Symbol, instrument.Expiry, instrument.Strike, instrument.OptionType)
+		dispName, optType, _ := formatKiteDisplayName(instrument.Symbol, instrument.Expiry, instrument.Strike, instrument.OptionType)
 		var pricePaise int64
 		var changePct float64
 
@@ -155,30 +175,6 @@ func (h *Handler) Search(c *gin.Context) {
 			if q, err := h.market.CachedQuote(instrument.Symbol); err == nil && q != nil && q.PricePaise > 0 {
 				pricePaise = q.PricePaise
 				changePct = q.ChangePercent
-			} else if under != "" && under != instrument.Symbol {
-				// Derive price from underlying if available in cache
-				if uq, uErr := h.market.CachedQuote(under); uErr == nil && uq != nil && uq.PricePaise > 0 {
-					changePct = uq.ChangePercent
-					if strings.Contains(instrument.Symbol, "FUT") {
-						pricePaise = int64(math.Round(float64(uq.PricePaise) * 1.0035))
-					} else {
-						// Derive approximate option premium from strike and moneyness
-						strikeVal, _ := strconv.ParseFloat(instrument.Strike, 64)
-						if strikeVal > 100000 {
-							strikeVal = strikeVal / 100.0
-						}
-						spotRs := float64(uq.PricePaise) / 100.0
-						if strikeVal <= 0 {
-							strikeVal = spotRs
-						}
-						moneyness := math.Abs(spotRs-strikeVal) / math.Max(1.0, spotRs)
-						premPct := math.Max(0.005, 0.035-moneyness*0.08)
-						pricePaise = int64(math.Round(float64(uq.PricePaise) * premPct))
-						if pricePaise < 50 {
-							pricePaise = 50
-						}
-					}
-				}
 			}
 		}
 

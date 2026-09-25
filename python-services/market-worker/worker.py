@@ -666,6 +666,36 @@ class FeedControl:
                 self._reconnect_requested = False
 
 
+def format_display_symbol(symbol: str, expiry: str, strike: str, option_type: str, name: str) -> str:
+    sym = symbol.strip().upper()
+    if sym.endswith("-EQ"):
+        return sym[:-3]
+    if "FUT" in sym:
+        for m in ("JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"):
+            if m in sym:
+                parts = sym.split(m)
+                under = parts[0].rstrip("0123456789")
+                return f"{under} {m} FUT"
+        return sym
+    if (sym.endswith("CE") or sym.endswith("PE")) and strike and strike != "-1":
+        try:
+            s_val = float(strike)
+            if s_val > 100000:
+                s_val = s_val / 100.0
+            s_fmt = f"{s_val:.0f}"
+        except Exception:
+            s_fmt = strike
+        opt = option_type or ("CE" if sym.endswith("CE") else "PE")
+        under = name or sym.rstrip("0123456789CEPE ")
+        for m in ("JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"):
+            if m in sym:
+                parts = sym.split(m)
+                under = parts[0].rstrip("0123456789")
+                return f"{under} {m} {s_fmt} {opt}"
+        return f"{under} {s_fmt} {opt}"
+    return sym
+
+
 class InstrumentStore:
     def __init__(self, database_url: str, symbols: list[str]) -> None:
         self.database_url = database_url
@@ -730,36 +760,94 @@ class InstrumentStore:
         try:
             import psycopg
             statement = """
-                INSERT INTO instruments (token, symbol, name, underlying_symbol, expiry, strike, option_type, lot_size, instrument_type, exchange_segment, tick_size, created_at, updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
+                INSERT INTO instruments (token, symbol, display_symbol, exchange, name, underlying, underlying_symbol, expiry, strike, option_type, lot_size, instrument_type, exchange_segment, tick_size, active, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, true, NOW(), NOW())
                 ON CONFLICT (token, exchange_segment) DO UPDATE SET
-                    symbol = EXCLUDED.symbol, name = EXCLUDED.name, expiry = EXCLUDED.expiry,
-                    underlying_symbol = EXCLUDED.underlying_symbol,
-                    strike = EXCLUDED.strike, lot_size = EXCLUDED.lot_size,
-                    option_type = EXCLUDED.option_type,
-                    instrument_type = EXCLUDED.instrument_type, tick_size = EXCLUDED.tick_size,
-                    updated_at = NOW()
+                    symbol = EXCLUDED.symbol, display_symbol = EXCLUDED.display_symbol, exchange = EXCLUDED.exchange,
+                    name = EXCLUDED.name, underlying = EXCLUDED.underlying, underlying_symbol = EXCLUDED.underlying_symbol,
+                    expiry = EXCLUDED.expiry, strike = EXCLUDED.strike, lot_size = EXCLUDED.lot_size,
+                    option_type = EXCLUDED.option_type, instrument_type = EXCLUDED.instrument_type,
+                    tick_size = EXCLUDED.tick_size, active = EXCLUDED.active, updated_at = NOW()
             """
             values = []
-            target_names = set(self.symbols)
+            target_names = set(s.upper() for s in self.symbols) | {
+                "NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "SENSEX",
+                "RELIANCE", "TCS", "INFY", "HDFCBANK", "TATAMOTORS", "TMPV",
+                "BHARTIARTL", "SBIN", "ICICIBANK", "KOTAKBANK", "AXISBANK",
+                "BAJFINANCE", "MARUTI", "LT", "ITC", "SUNPHARMA", "TATASTEEL"
+            }
             for row in rows:
                 token, segment = clean(row.get("token")), clean(row.get("exch_seg"))
                 if not token or not segment:
                     continue
+                if segment not in ("NSE", "NFO", "BSE"):
+                    continue
+
                 name = clean(row.get("name")).upper()
                 symbol = clean(row.get("symbol")).upper()
                 underlying = clean(row.get("underlying_symbol")).upper() or name
-                if name not in target_names and symbol not in target_names and underlying not in target_names:
+
+                is_target = name in target_names or symbol in target_names or underlying in target_names
+                is_equity = segment == "NSE" and (symbol.endswith("-EQ") or clean(row.get("instrumenttype")) in ("", "EQ"))
+                is_index = clean(row.get("instrumenttype")) == "AMXIDX" or name in ("NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "SENSEX")
+
+                if not (is_target or is_equity or is_index):
                     continue
+
                 opt_type = clean(row.get("option_type"))
                 if not opt_type and segment == "NFO":
                     if symbol.endswith("CE"):
                         opt_type = "CE"
                     elif symbol.endswith("PE"):
                         opt_type = "PE"
-                values.append((token, symbol, name, underlying, clean(row.get("expiry")),
-                               clean(row.get("strike")), opt_type, integer(row.get("lotsize")), clean(row.get("instrumenttype")),
-                               segment, clean(row.get("tick_size"))))
+
+                strike = clean(row.get("strike"))
+                if strike in ("-1", "-1.000000"):
+                    strike = ""
+
+                lotsize = integer(row.get("lotsize"))
+                if lotsize <= 0:
+                    if underlying == "NIFTY":
+                        lotsize = 25
+                    elif underlying == "BANKNIFTY":
+                        lotsize = 15
+                    elif underlying == "FINNIFTY":
+                        lotsize = 25
+                    elif underlying == "MIDCPNIFTY":
+                        lotsize = 50
+                    elif underlying == "SENSEX":
+                        lotsize = 10
+                    else:
+                        lotsize = 1
+
+                tick_size = clean(row.get("tick_size")) or "0.05"
+                try:
+                    tv = float(tick_size)
+                    if tv >= 1.0:
+                        tick_size = f"{tv / 100.0:.2f}"
+                except Exception:
+                    tick_size = "0.05"
+
+                inst_type = clean(row.get("instrumenttype"))
+                if segment == "NSE":
+                    if is_index:
+                        inst_type = "INDEX"
+                    elif inst_type in ("", "EQ") or symbol.endswith("-EQ"):
+                        inst_type = "EQUITY"
+                elif segment == "BSE":
+                    if is_index:
+                        inst_type = "INDEX"
+                    elif inst_type in ("", "EQ"):
+                        inst_type = "EQUITY"
+
+                disp_sym = format_display_symbol(symbol, clean(row.get("expiry")), strike, opt_type, name)
+
+                values.append((
+                    token, symbol, disp_sym, segment, name, underlying, underlying,
+                    clean(row.get("expiry")), strike, opt_type, lotsize,
+                    inst_type, segment, tick_size
+                ))
+
             if not values:
                 return
             with psycopg.connect(self.database_url, connect_timeout=5) as connection:

@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	instrumentHandler "github.com/Dhiraj10002/Stock-Simulator/backend/internal/instrument/handler"
+	instrumentService "github.com/Dhiraj10002/Stock-Simulator/backend/internal/instrument/service"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/alias"
 	marketDTO "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/dto"
 	marketHandler "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/handler"
@@ -106,6 +107,14 @@ func Setup(ctx context.Context, cfg *config.Config, opts ...SetupOption) *gin.En
 					return true, nil
 				}
 			}
+			for _, inst := range instrumentService.DefaultCanonicalInstruments {
+				if strings.EqualFold(inst.Symbol, clean) || strings.EqualFold(inst.Symbol, clean+"-EQ") || strings.EqualFold(inst.Name, clean) {
+					return true, nil
+				}
+				if canonical != "" && (strings.EqualFold(inst.Symbol, canonical) || strings.EqualFold(inst.Symbol, canonical+"-EQ") || strings.EqualFold(inst.Name, canonical)) {
+					return true, nil
+				}
+			}
 			return false, nil
 		})
 	}
@@ -155,6 +164,7 @@ func Setup(ctx context.Context, cfg *config.Config, opts ...SetupOption) *gin.En
 		api.GET("/fno/option-chain", fno.GetOptionChain)
 		api.GET("/instruments", instruments.List)
 		api.GET("/instruments/:symbol", instruments.GetBySymbol)
+		api.POST("/instruments/sync", instruments.Sync)
 		api.GET("/stocks", stocks.Search)
 		api.GET("/news", news.List)
 

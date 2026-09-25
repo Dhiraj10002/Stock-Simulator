@@ -307,7 +307,7 @@ export default function WatchlistManagerDesk({ token: propToken }: WatchlistMana
         const apiUrl = getApiUrl();
         const res = await fetch(`${apiUrl}/stocks?q=${encodeURIComponent(q)}`);
         const json = await res.json();
-        if (json.success && Array.isArray(json.data) && json.data.length > 0) {
+        if (json.success && Array.isArray(json.data)) {
           const mapped: WatchlistItem[] = json.data.slice(0, 15).map((d: Record<string, unknown>) => {
             const sym = String(d.symbol || "");
             const name = String(d.name || "");
@@ -321,20 +321,10 @@ export default function WatchlistManagerDesk({ token: propToken }: WatchlistMana
           });
           setLiveSearchResults(mapped);
         } else {
-          const localFiltered = POPULAR_SEARCH_PREVIEWS.filter(
-            (item) =>
-              item.symbol.toUpperCase().includes(q.toUpperCase()) ||
-              item.name.toUpperCase().includes(q.toUpperCase())
-          );
-          setLiveSearchResults(localFiltered);
+          setLiveSearchResults([]);
         }
       } catch {
-        const localFiltered = POPULAR_SEARCH_PREVIEWS.filter(
-          (item) =>
-            item.symbol.toUpperCase().includes(q.toUpperCase()) ||
-            item.name.toUpperCase().includes(q.toUpperCase())
-          );
-        setLiveSearchResults(localFiltered);
+        setLiveSearchResults([]);
       } finally {
         setIsSearchingLive(false);
       }

@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/instrument/dto"
@@ -31,6 +33,7 @@ func TestInstrumentHandler(t *testing.T) {
 	r := gin.New()
 	r.GET("/api/v1/instruments", h.List)
 	r.GET("/api/v1/instruments/:symbol", h.GetBySymbol)
+	r.POST("/api/v1/instruments/sync", h.Sync)
 
 	t.Run("List returns canonical instruments with authoritative identity", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/instruments", nil)
@@ -135,6 +138,35 @@ func TestInstrumentHandler(t *testing.T) {
 
 		if w.Code != http.StatusNotFound {
 			t.Fatalf("expected 404, got %d", w.Code)
+		}
+	})
+
+	t.Run("Sync handles file source successfully", func(t *testing.T) {
+		tempDir := t.TempDir()
+		filePath := filepath.Join(tempDir, "scrip.json")
+		content := `[
+			{"token":"2885","symbol":"RELIANCE-EQ","name":"RELIANCE","expiry":"","strike":"-1.000000","lotsize":"1","instrumenttype":"","exch_seg":"NSE","tick_size":"5.000000"}
+		]`
+		if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
+			t.Fatalf("failed writing test scrip file: %v", err)
+		}
+
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/instruments/sync?source="+filePath, nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+		}
+	})
+
+	t.Run("Sync returns error for non-existent file source", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/instruments/sync?source=/tmp/non_existent_scrip_file_123.json", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusInternalServerError {
+			t.Fatalf("expected 500, got %d: %s", w.Code, w.Body.String())
 		}
 	})
 }

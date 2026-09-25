@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/database"
+	instrumentService "github.com/Dhiraj10002/Stock-Simulator/backend/internal/instrument/service"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/alias"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
 	"github.com/google/uuid"
@@ -181,6 +182,18 @@ func (r *OrderRepository) FindInstrument(symbol string) (*model.Instrument, erro
 		err = database.GetDB().Where("UPPER(symbol) = ? OR UPPER(symbol) = ? OR UPPER(name) = ?", a, a+"-EQ", a).First(&instrument).Error
 		if err == nil {
 			return &instrument, nil
+		}
+	}
+
+	// 4. Default canonical instruments fallback (for fresh setups / initial boot)
+	for _, inst := range instrumentService.DefaultCanonicalInstruments {
+		if strings.EqualFold(inst.Symbol, clean) || strings.EqualFold(inst.Symbol, clean+"-EQ") || strings.EqualFold(inst.Name, clean) {
+			cp := inst
+			return &cp, nil
+		}
+		if canonical != "" && (strings.EqualFold(inst.Symbol, canonical) || strings.EqualFold(inst.Symbol, canonical+"-EQ") || strings.EqualFold(inst.Name, canonical)) {
+			cp := inst
+			return &cp, nil
 		}
 	}
 

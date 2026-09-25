@@ -1,16 +1,23 @@
 package service
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"math"
+	"net/http"
+	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/database"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/instrument/dto"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/alias"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // DefaultCanonicalInstruments are the core institutional instruments supported by the platform.
@@ -370,4 +377,313 @@ func (s *Service) filterDefaults(query, exchange, instrumentType, underlying str
 		}
 	}
 	return filtered
+}
+
+// AngelScripItem matches the schema of Angel One OpenAPI scrip master JSON records.
+type AngelScripItem struct {
+	Token          string `json:"token"`
+	Symbol         string `json:"symbol"`
+	Name           string `json:"name"`
+	Expiry         string `json:"expiry"`
+	Strike         string `json:"strike"`
+	LotSize        string `json:"lotsize"`
+	InstrumentType string `json:"instrumenttype"`
+	ExchSeg        string `json:"exch_seg"`
+	TickSize       string `json:"tick_size"`
+}
+
+// SyncStats captures summary metrics from an instrument master synchronization run.
+type SyncStats struct {
+	TotalProcessed int   `json:"total_processed"`
+	TotalUpserted  int   `json:"total_upserted"`
+	TotalSkipped   int   `json:"total_skipped"`
+	DurationMs     int64 `json:"duration_ms"`
+}
+
+// SyncOptions provides filtering and batch size customization for scrip master sync.
+type SyncOptions struct {
+	BatchSize         int
+	TargetSegments    []string
+	TargetUnderlyings []string
+}
+
+// ParseAngelScripItem validates and normalizes an Angel One scrip record into a canonical model.Instrument.
+func ParseAngelScripItem(raw AngelScripItem) (*model.Instrument, bool) {
+	token := strings.TrimSpace(raw.Token)
+	segment := strings.ToUpper(strings.TrimSpace(raw.ExchSeg))
+	if token == "" || segment == "" {
+		return nil, false
+	}
+
+	// Supported exchanges for canonical trading
+	if segment != "NSE" && segment != "NFO" && segment != "BSE" {
+		return nil, false
+	}
+
+	symbol := strings.ToUpper(strings.TrimSpace(raw.Symbol))
+	if symbol == "" {
+		return nil, false
+	}
+
+	name := strings.TrimSpace(raw.Name)
+	underlying := strings.ToUpper(name)
+	if underlying == "" {
+		underlying = strings.TrimSuffix(symbol, "-EQ")
+	}
+
+	expiry := strings.TrimSpace(raw.Expiry)
+
+	// Clean strike price: Angel One often outputs strike in paise (e.g. 2500000.000000) or -1.000000
+	strike := ""
+	if raw.Strike != "" && raw.Strike != "-1" && raw.Strike != "-1.000000" {
+		if val, err := strconv.ParseFloat(raw.Strike, 64); err == nil && val > 0 {
+			if val > 100000 { // Stored in paise
+				val = val / 100.0
+			}
+			strike = fmt.Sprintf("%.2f", val)
+			strike = strings.TrimSuffix(strike, ".00")
+		}
+	}
+
+	// Option Type
+	optType := strings.ToUpper(strings.TrimSpace(raw.InstrumentType))
+	if optType != "CE" && optType != "PE" {
+		if strings.HasSuffix(symbol, "CE") {
+			optType = "CE"
+		} else if strings.HasSuffix(symbol, "PE") {
+			optType = "PE"
+		} else {
+			optType = ""
+		}
+	}
+
+	// Lot Size
+	lotSize, _ := strconv.ParseInt(raw.LotSize, 10, 64)
+	if lotSize <= 0 {
+		switch underlying {
+		case "NIFTY":
+			lotSize = 25
+		case "BANKNIFTY":
+			lotSize = 15
+		case "FINNIFTY":
+			lotSize = 25
+		case "MIDCPNIFTY":
+			lotSize = 50
+		case "SENSEX":
+			lotSize = 10
+		default:
+			lotSize = 1
+		}
+	}
+
+	// Tick Size (Angel One outputs tick_size in paise e.g. 5.000000)
+	tickSize := "0.05"
+	if raw.TickSize != "" {
+		if val, err := strconv.ParseFloat(raw.TickSize, 64); err == nil && val > 0 {
+			if val >= 1.0 {
+				val = val / 100.0
+			}
+			tickSize = fmt.Sprintf("%.2f", val)
+		}
+	}
+
+	// Instrument Type classification
+	rawType := strings.ToUpper(strings.TrimSpace(raw.InstrumentType))
+	instType := rawType
+	if segment == "NSE" {
+		if rawType == "AMXIDX" || underlying == "NIFTY" || underlying == "BANKNIFTY" || underlying == "FINNIFTY" || underlying == "MIDCPNIFTY" {
+			instType = "INDEX"
+		} else if rawType == "" || rawType == "EQ" || strings.HasSuffix(symbol, "-EQ") {
+			instType = "EQUITY"
+		}
+	} else if segment == "BSE" {
+		if rawType == "AMXIDX" || underlying == "SENSEX" {
+			instType = "INDEX"
+		} else if rawType == "" || rawType == "EQ" {
+			instType = "EQUITY"
+		}
+	} else if segment == "NFO" {
+		if instType == "" || instType == "OPTSTK" || instType == "OPTIDX" || instType == "FUTSTK" || instType == "FUTIDX" {
+			if instType == "" {
+				if optType != "" {
+					if underlying == "NIFTY" || underlying == "BANKNIFTY" || underlying == "FINNIFTY" || underlying == "MIDCPNIFTY" {
+						instType = "OPTIDX"
+					} else {
+						instType = "OPTSTK"
+					}
+				} else {
+					if underlying == "NIFTY" || underlying == "BANKNIFTY" || underlying == "FINNIFTY" || underlying == "MIDCPNIFTY" {
+						instType = "FUTIDX"
+					} else {
+						instType = "FUTSTK"
+					}
+				}
+			}
+		}
+	}
+
+	displaySymbol := FormatCanonicalDisplaySymbol(symbol, expiry, strike, optType, name)
+
+	return &model.Instrument{
+		Token:            token,
+		Symbol:           symbol,
+		DisplaySymbol:    displaySymbol,
+		Exchange:         segment,
+		Name:             name,
+		Underlying:       underlying,
+		UnderlyingSymbol: underlying,
+		Expiry:           expiry,
+		Strike:           strike,
+		OptionType:       optType,
+		LotSize:          lotSize,
+		InstrumentType:   instType,
+		ExchangeSegment:  segment,
+		TickSize:         tickSize,
+		Active:           true,
+	}, true
+}
+
+// SyncFromReader streams an Angel One scrip master JSON array and batch upserts into PostgreSQL.
+func (s *Service) SyncFromReader(ctx context.Context, r io.Reader, opts ...SyncOptions) (*SyncStats, error) {
+	start := time.Now()
+	batchSize := 500
+	var targetSegments map[string]bool
+	var targetUnderlyings map[string]bool
+
+	if len(opts) > 0 {
+		if opts[0].BatchSize > 0 {
+			batchSize = opts[0].BatchSize
+		}
+		if len(opts[0].TargetSegments) > 0 {
+			targetSegments = make(map[string]bool)
+			for _, seg := range opts[0].TargetSegments {
+				targetSegments[strings.ToUpper(strings.TrimSpace(seg))] = true
+			}
+		}
+		if len(opts[0].TargetUnderlyings) > 0 {
+			targetUnderlyings = make(map[string]bool)
+			for _, u := range opts[0].TargetUnderlyings {
+				targetUnderlyings[strings.ToUpper(strings.TrimSpace(u))] = true
+			}
+		}
+	}
+
+	dec := json.NewDecoder(r)
+
+	// Consume leading bracket '['
+	t, err := dec.Token()
+	if err != nil {
+		return nil, fmt.Errorf("failed reading json stream opening: %w", err)
+	}
+	if delim, ok := t.(json.Delim); !ok || delim != '[' {
+		return nil, fmt.Errorf("expected json array opening '[' but got %v", t)
+	}
+
+	stats := &SyncStats{}
+	var batch []model.Instrument
+
+	flushBatch := func() error {
+		if len(batch) == 0 {
+			return nil
+		}
+		if s.db != nil {
+			err := s.db.WithContext(ctx).Clauses(clause.OnConflict{
+				Columns: []clause.Column{{Name: "token"}, {Name: "exchange_segment"}},
+				DoUpdates: clause.AssignmentColumns([]string{
+					"symbol", "display_symbol", "exchange", "name", "underlying", "underlying_symbol",
+					"expiry", "strike", "option_type", "lot_size", "instrument_type",
+					"tick_size", "active", "updated_at",
+				}),
+			}).Create(&batch).Error
+			if err != nil {
+				return fmt.Errorf("failed upserting instrument batch: %w", err)
+			}
+		}
+		stats.TotalUpserted += len(batch)
+		batch = batch[:0]
+		return nil
+	}
+
+	for dec.More() {
+		select {
+		case <-ctx.Done():
+			return stats, ctx.Err()
+		default:
+		}
+
+		var raw AngelScripItem
+		if err := dec.Decode(&raw); err != nil {
+			return stats, fmt.Errorf("failed decoding scrip item: %w", err)
+		}
+		stats.TotalProcessed++
+
+		inst, ok := ParseAngelScripItem(raw)
+		if !ok {
+			stats.TotalSkipped++
+			continue
+		}
+
+		if targetSegments != nil && !targetSegments[inst.ExchangeSegment] {
+			stats.TotalSkipped++
+			continue
+		}
+		if targetUnderlyings != nil && !targetUnderlyings[inst.Underlying] && !targetUnderlyings[inst.Symbol] {
+			stats.TotalSkipped++
+			continue
+		}
+
+		batch = append(batch, *inst)
+		if len(batch) >= batchSize {
+			if err := flushBatch(); err != nil {
+				return stats, err
+			}
+		}
+	}
+
+	// Consume closing bracket ']'
+	_, _ = dec.Token()
+
+	if err := flushBatch(); err != nil {
+		return stats, err
+	}
+
+	stats.DurationMs = time.Since(start).Milliseconds()
+	return stats, nil
+}
+
+// SyncFromScripMaster downloads or reads the official Angel One scrip master and syncs to database.
+func (s *Service) SyncFromScripMaster(ctx context.Context, source string, opts ...SyncOptions) (*SyncStats, error) {
+	if source == "" {
+		source = "https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json"
+	}
+
+	if strings.HasPrefix(source, "http://") || strings.HasPrefix(source, "https://") {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, source, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed creating http request: %w", err)
+		}
+		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
+
+		client := &http.Client{Timeout: 90 * time.Second}
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("scrip master download failed from %s: %w", source, err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("scrip master download returned HTTP status %d", resp.StatusCode)
+		}
+
+		return s.SyncFromReader(ctx, resp.Body, opts...)
+	}
+
+	// Local file source
+	f, err := os.Open(source)
+	if err != nil {
+		return nil, fmt.Errorf("failed opening local scrip master file %s: %w", source, err)
+	}
+	defer f.Close()
+
+	return s.SyncFromReader(ctx, f, opts...)
 }

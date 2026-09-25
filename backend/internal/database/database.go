@@ -70,3 +70,8 @@ func Connect(cfg *config.Config) error {
 func GetDB() *gorm.DB {
 	return db
 }
+
+// SetDBForTesting overrides the database connection for unit and integration tests.
+func SetDBForTesting(d *gorm.DB) {
+	db = d
+}

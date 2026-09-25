@@ -1,6 +1,7 @@
 package service
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
@@ -137,5 +138,116 @@ func TestService_List_And_GetBySymbol_DefaultFallback(t *testing.T) {
 	_, err = svc.GetBySymbol("NON_EXISTENT_SYMBOL_XYZ")
 	if err == nil {
 		t.Errorf("expected error for non-existent symbol, got nil")
+	}
+}
+
+func TestParseAngelScripItem(t *testing.T) {
+	// 1. Standard Equity
+	eqRaw := AngelScripItem{
+		Token:          "2885",
+		Symbol:         "RELIANCE-EQ",
+		Name:           "RELIANCE",
+		Expiry:         "",
+		Strike:         "-1.000000",
+		LotSize:        "1",
+		InstrumentType: "",
+		ExchSeg:        "NSE",
+		TickSize:       "5.000000",
+	}
+	eqInst, ok := ParseAngelScripItem(eqRaw)
+	if !ok || eqInst == nil {
+		t.Fatalf("expected valid equity instrument")
+	}
+	if eqInst.Token != "2885" || eqInst.Symbol != "RELIANCE-EQ" || eqInst.DisplaySymbol != "RELIANCE" {
+		t.Errorf("unexpected equity mapping: %+v", eqInst)
+	}
+	if eqInst.TickSize != "0.05" {
+		t.Errorf("expected tick size 0.05, got %s", eqInst.TickSize)
+	}
+	if eqInst.InstrumentType != "EQUITY" {
+		t.Errorf("expected instrument type EQUITY, got %s", eqInst.InstrumentType)
+	}
+
+	// 2. Index AMXIDX
+	idxRaw := AngelScripItem{
+		Token:          "99926000",
+		Symbol:         "NIFTY 50",
+		Name:           "NIFTY",
+		Expiry:         "",
+		Strike:         "-1.000000",
+		LotSize:        "25",
+		InstrumentType: "AMXIDX",
+		ExchSeg:        "NSE",
+		TickSize:       "5.000000",
+	}
+	idxInst, ok := ParseAngelScripItem(idxRaw)
+	if !ok || idxInst == nil {
+		t.Fatalf("expected valid index instrument")
+	}
+	if idxInst.InstrumentType != "INDEX" || idxInst.LotSize != 25 {
+		t.Errorf("unexpected index mapping: %+v", idxInst)
+	}
+
+	// 3. NFO Option with strike in paise
+	optRaw := AngelScripItem{
+		Token:          "45678",
+		Symbol:         "NIFTY24SEP25000CE",
+		Name:           "NIFTY",
+		Expiry:         "24SEP2026",
+		Strike:         "2500000.000000",
+		LotSize:        "25",
+		InstrumentType: "OPTIDX",
+		ExchSeg:        "NFO",
+		TickSize:       "5.000000",
+	}
+	optInst, ok := ParseAngelScripItem(optRaw)
+	if !ok || optInst == nil {
+		t.Fatalf("expected valid option instrument")
+	}
+	if optInst.Strike != "25000" {
+		t.Errorf("expected normalized strike 25000, got %s", optInst.Strike)
+	}
+	if optInst.OptionType != "CE" {
+		t.Errorf("expected option type CE, got %s", optInst.OptionType)
+	}
+	if optInst.InstrumentType != "OPTIDX" {
+		t.Errorf("expected instrument type OPTIDX, got %s", optInst.InstrumentType)
+	}
+
+	// 4. Unsupported commodity segment (MCX)
+	mcxRaw := AngelScripItem{
+		Token:   "123",
+		Symbol:  "GOLD",
+		ExchSeg: "MCX",
+	}
+	_, ok = ParseAngelScripItem(mcxRaw)
+	if ok {
+		t.Errorf("expected MCX commodity to be filtered out of equity/derivative master")
+	}
+}
+
+func TestSyncFromReader(t *testing.T) {
+	mockJSON := `[
+		{"token":"2885","symbol":"RELIANCE-EQ","name":"RELIANCE","expiry":"","strike":"-1.000000","lotsize":"1","instrumenttype":"","exch_seg":"NSE","tick_size":"5.000000"},
+		{"token":"11536","symbol":"TCS-EQ","name":"TCS","expiry":"","strike":"-1.000000","lotsize":"1","instrumenttype":"","exch_seg":"NSE","tick_size":"5.000000"},
+		{"token":"99926000","symbol":"NIFTY 50","name":"NIFTY","expiry":"","strike":"-1.000000","lotsize":"25","instrumenttype":"AMXIDX","exch_seg":"NSE","tick_size":"5.000000"},
+		{"token":"45678","symbol":"NIFTY24SEP25000CE","name":"NIFTY","expiry":"24SEP2026","strike":"2500000.000000","lotsize":"25","instrumenttype":"OPTIDX","exch_seg":"NFO","tick_size":"5.000000"},
+		{"token":"999","symbol":"CRUDEOIL","name":"CRUDEOIL","expiry":"","strike":"-1.000000","lotsize":"100","instrumenttype":"","exch_seg":"MCX","tick_size":"1.000000"}
+	]`
+
+	svc := NewService(nil) // in-memory test without DB writes
+	stats, err := svc.SyncFromReader(t.Context(), strings.NewReader(mockJSON), SyncOptions{BatchSize: 2})
+	if err != nil {
+		t.Fatalf("unexpected error in SyncFromReader: %v", err)
+	}
+
+	if stats.TotalProcessed != 5 {
+		t.Errorf("expected 5 total processed, got %d", stats.TotalProcessed)
+	}
+	if stats.TotalUpserted != 4 {
+		t.Errorf("expected 4 total upserted, got %d", stats.TotalUpserted)
+	}
+	if stats.TotalSkipped != 1 {
+		t.Errorf("expected 1 total skipped (MCX), got %d", stats.TotalSkipped)
 	}
 }

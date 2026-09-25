@@ -74,3 +74,14 @@ func (h *Handler) GetBySymbol(c *gin.Context) {
 
 	response.Success(c, http.StatusOK, "Instrument retrieved successfully", inst)
 }
+
+// Sync handles POST /api/v1/instruments/sync.
+func (h *Handler) Sync(c *gin.Context) {
+	source := strings.TrimSpace(c.Query("source"))
+	stats, err := h.svc.SyncFromScripMaster(c.Request.Context(), source)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, "Failed to synchronize instrument master", err.Error())
+		return
+	}
+	response.Success(c, http.StatusOK, "Instrument master synchronized successfully", stats)
+}
