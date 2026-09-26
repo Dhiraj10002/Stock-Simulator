@@ -1,11 +1,13 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/trade/service"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/pkg/response"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 type TradeHandler struct{ service *service.TradeService }
@@ -25,6 +27,11 @@ func (h *TradeHandler) UpdateJournal(c *gin.Context) {
 	userID := c.GetString("user_id")
 	tradeID := c.Param("uuid")
 
+	if _, err := uuid.Parse(tradeID); err != nil {
+		response.Error(c, http.StatusBadRequest, "Invalid trade UUID", err.Error())
+		return
+	}
+
 	var req struct {
 		Tag   string `json:"tag"`
 		Notes string `json:"notes"`
@@ -35,6 +42,10 @@ func (h *TradeHandler) UpdateJournal(c *gin.Context) {
 	}
 
 	if err := h.service.UpdateJournal(userID, tradeID, req.Tag, req.Notes); err != nil {
+		if errors.Is(err, service.ErrTradeNotFound) || err.Error() == "trade not found or unauthorized" {
+			response.Error(c, http.StatusNotFound, "Trade not found", err.Error())
+			return
+		}
 		response.Error(c, http.StatusInternalServerError, "Failed to update trade journal", err.Error())
 		return
 	}

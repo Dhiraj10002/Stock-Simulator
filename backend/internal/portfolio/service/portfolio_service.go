@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"time"
+	_ "time/tzdata"
 
 	marketDTO "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/dto"
 	marketService "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/service"

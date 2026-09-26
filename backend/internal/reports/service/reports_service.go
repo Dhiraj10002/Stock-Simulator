@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	_ "time/tzdata"
 
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/database"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
@@ -17,20 +18,29 @@ func New() *ReportsService {
 	return &ReportsService{}
 }
 
+func getISTLocation() *time.Location {
+	loc, err := time.LoadLocation("Asia/Kolkata")
+	if err != nil {
+		return time.UTC
+	}
+	return loc
+}
+
 func (s *ReportsService) GetContractNote(userID, dateStr string) (*dto.ContractNoteResponse, error) {
 	userUUID, err := uuid.Parse(userID)
 	if err != nil {
 		return nil, fmt.Errorf("invalid user identity")
 	}
 
-	tradeDate := time.Now().UTC()
+	ist := getISTLocation()
+	tradeDate := time.Now().In(ist)
 	if strings.TrimSpace(dateStr) != "" {
 		if parsed, err := time.Parse("2006-01-02", dateStr); err == nil {
-			tradeDate = parsed
+			tradeDate = time.Date(parsed.Year(), parsed.Month(), parsed.Day(), 0, 0, 0, 0, ist)
 		}
 	}
 
-	startOfDay := time.Date(tradeDate.Year(), tradeDate.Month(), tradeDate.Day(), 0, 0, 0, 0, time.UTC)
+	startOfDay := time.Date(tradeDate.Year(), tradeDate.Month(), tradeDate.Day(), 0, 0, 0, 0, ist)
 	endOfDay := startOfDay.Add(24 * time.Hour)
 
 	db := database.GetDB()
@@ -39,7 +49,7 @@ func (s *ReportsService) GetContractNote(userID, dateStr string) (*dto.ContractN
 
 	if db != nil {
 		_ = db.Where("uuid = ?", userUUID).First(&user).Error
-		_ = db.Where("user_uuid = ? AND executed_at >= ? AND executed_at < ?", userUUID, startOfDay, endOfDay).
+		_ = db.Where("user_uuid = ? AND executed_at >= ? AND executed_at < ?", userUUID, startOfDay.UTC(), endOfDay.UTC()).
 			Order("executed_at ASC").
 			Find(&trades).Error
 	}
@@ -56,10 +66,13 @@ func (s *ReportsService) GetContractNote(userID, dateStr string) (*dto.ContractN
 
 	clientName := user.Name
 	if clientName == "" {
+		clientName = user.Email
+	}
+	if clientName == "" {
 		clientName = "Simulated Client"
 	}
 
-	var items []dto.ContractNoteItem
+	items := make([]dto.ContractNoteItem, 0, len(trades))
 	var totalBuyTurnover int64
 	var totalSellTurnover int64
 	var chargesSummary dto.ChargesBreakdown
@@ -96,7 +109,7 @@ func (s *ReportsService) GetContractNote(userID, dateStr string) (*dto.ContractN
 			GrossTotalPaise:    t.TotalPaise,
 			Charges:            charges,
 			NetObligationPaise: netObligation,
-			ExecutedAt:         t.ExecutedAt.UTC().Format("15:04:05"),
+			ExecutedAt:         t.ExecutedAt.In(ist).Format("15:04:05"),
 		})
 	}
 
@@ -128,27 +141,31 @@ func (s *ReportsService) GetLedgerStatement(userID, fromStr, toStr string) (*dto
 		return nil, fmt.Errorf("invalid user identity")
 	}
 
-	var fromDate, toDate time.Time
-	now := time.Now().UTC()
+	ist := getISTLocation()
+	now := time.Now().In(ist)
 
+	var fromDate, toDate time.Time
 	if strings.TrimSpace(fromStr) != "" {
 		if p, err := time.Parse("2006-01-02", fromStr); err == nil {
-			fromDate = p
+			fromDate = time.Date(p.Year(), p.Month(), p.Day(), 0, 0, 0, 0, ist)
 		}
 	}
 	if fromDate.IsZero() {
-		// Default to start of current month or 30 days prior
-		fromDate = time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+		// Default to start of current month
+		fromDate = time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, ist)
 	}
 
 	if strings.TrimSpace(toStr) != "" {
 		if p, err := time.Parse("2006-01-02", toStr); err == nil {
-			toDate = p.Add(24 * time.Hour) // inclusive
+			toDate = time.Date(p.Year(), p.Month(), p.Day(), 0, 0, 0, 0, ist).Add(24 * time.Hour) // inclusive
 		}
 	}
 	if toDate.IsZero() {
-		toDate = now.Add(24 * time.Hour)
+		toDate = time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, ist).Add(24 * time.Hour)
 	}
+
+	fromDateUTC := fromDate.UTC()
+	toDateUTC := toDate.UTC()
 
 	db := database.GetDB()
 	var wallet model.Wallet
@@ -164,11 +181,11 @@ func (s *ReportsService) GetLedgerStatement(userID, fromStr, toStr string) (*dto
 	var runningBalance int64 = 0
 	var totalDebits int64 = 0
 	var totalCredits int64 = 0
-	var entries []dto.LedgerEntry
+	entries := make([]dto.LedgerEntry, 0)
 
 	for _, t := range txs {
-		isBeforePeriod := t.CreatedAt.Before(fromDate)
-		isInPeriod := (t.CreatedAt.Equal(fromDate) || t.CreatedAt.After(fromDate)) && t.CreatedAt.Before(toDate)
+		isBeforePeriod := t.CreatedAt.Before(fromDateUTC)
+		isInPeriod := (t.CreatedAt.Equal(fromDateUTC) || t.CreatedAt.After(fromDateUTC)) && t.CreatedAt.Before(toDateUTC)
 
 		var debit int64 = 0
 		var credit int64 = 0
@@ -176,11 +193,23 @@ func (s *ReportsService) GetLedgerStatement(userID, fromStr, toStr string) (*dto
 		switch t.Type {
 		case model.WalletTransactionInitialCredit, "CREDIT", "TOP_UP":
 			credit = t.AmountPaise
-			runningBalance += t.AmountPaise
+			if credit < 0 {
+				credit = -credit
+			}
+			runningBalance += credit
 		case model.WalletTransactionReset:
-			credit = t.AmountPaise
-			runningBalance = t.AmountPaise
-		case "DEBIT", "BUY", "ORDER_BUY":
+			if t.BalancePaise > 0 {
+				if t.BalancePaise >= runningBalance {
+					credit = t.BalancePaise - runningBalance
+				} else {
+					debit = runningBalance - t.BalancePaise
+				}
+				runningBalance = t.BalancePaise
+			} else {
+				credit = t.AmountPaise
+				runningBalance = t.AmountPaise
+			}
+		case model.WalletTransactionDebit, "BUY", "ORDER_BUY":
 			debit = t.AmountPaise
 			if debit < 0 {
 				debit = -debit
@@ -192,16 +221,13 @@ func (s *ReportsService) GetLedgerStatement(userID, fromStr, toStr string) (*dto
 				credit = -credit
 			}
 			runningBalance += credit
-		case "RESERVE":
-			// Margin block
-			narration := t.Note
-			if narration == "" {
-				narration = "Margin Blocked for Active Order"
-			}
+		case model.WalletTransactionReserve, model.WalletTransactionRelease:
+			// Margin block/release operations do not alter ledger cash funds.
+			continue
 		default:
 			if t.AmountPaise > 0 {
 				credit = t.AmountPaise
-				runningBalance += t.AmountPaise
+				runningBalance += credit
 			} else if t.AmountPaise < 0 {
 				debit = -t.AmountPaise
 				runningBalance -= debit
@@ -229,7 +255,7 @@ func (s *ReportsService) GetLedgerStatement(userID, fromStr, toStr string) (*dto
 
 			entries = append(entries, dto.LedgerEntry{
 				UUID:         t.UUID.String(),
-				Date:         t.CreatedAt.UTC().Format("2006-01-02 15:04:05"),
+				Date:         t.CreatedAt.In(ist).Format("2006-01-02 15:04:05"),
 				Type:         entryType,
 				Narration:    narration,
 				DebitPaise:   debit,

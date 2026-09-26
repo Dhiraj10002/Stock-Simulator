@@ -1,10 +1,14 @@
 package repository
 
 import (
+	"errors"
+
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/database"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
 	"github.com/google/uuid"
 )
+
+var ErrTradeNotFound = errors.New("trade not found or unauthorized")
 
 type TradeRepository struct{}
 
@@ -17,10 +21,17 @@ func (r *TradeRepository) List(userUUID uuid.UUID) ([]model.Trade, error) {
 }
 
 func (r *TradeRepository) UpdateJournal(tradeUUID, userUUID uuid.UUID, tag, notes string) error {
-	return database.GetDB().Model(&model.Trade{}).
+	res := database.GetDB().Model(&model.Trade{}).
 		Where("uuid = ? AND user_uuid = ?", tradeUUID, userUUID).
 		Updates(map[string]interface{}{
 			"tag":   tag,
 			"notes": notes,
-		}).Error
+		})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrTradeNotFound
+	}
+	return nil
 }

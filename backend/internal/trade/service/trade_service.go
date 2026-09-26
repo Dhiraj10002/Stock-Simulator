@@ -9,6 +9,8 @@ import (
 	"github.com/google/uuid"
 )
 
+var ErrTradeNotFound = repository.ErrTradeNotFound
+
 type TradeService struct{ repo *repository.TradeRepository }
 
 func New() *TradeService { return &TradeService{repo: repository.New()} }

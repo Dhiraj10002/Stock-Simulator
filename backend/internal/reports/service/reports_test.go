@@ -92,6 +92,36 @@ func TestCalculateCharges_FNOOptions(t *testing.T) {
 	}
 }
 
+func TestCalculateCharges_FNOFutures(t *testing.T) {
+	// Buy 50 units (1 lot) of NIFTY FUT at ₹24,000 (Turnover: ₹12,00,000 = 120,000,000 paise)
+	chargesBuy := CalculateCharges("NIFTY24OCTFUT", "BUY", "FNO", 50, 2400000)
+
+	// F&O flat brokerage: ₹20 = 2000 paise
+	if chargesBuy.BrokeragePaise != 2000 {
+		t.Errorf("expected 2000 paise F&O brokerage, got %d", chargesBuy.BrokeragePaise)
+	}
+
+	// Futures STT on Buy should be 0
+	if chargesBuy.SttPaise != 0 {
+		t.Errorf("expected 0 STT on futures buy, got %d", chargesBuy.SttPaise)
+	}
+
+	// Stamp duty on futures buy: 0.002% of 120,000,000 = 2,400 paise (₹24.00)
+	if chargesBuy.StampDutyPaise != 2400 {
+		t.Errorf("expected 2400 paise stamp duty on futures buy, got %d", chargesBuy.StampDutyPaise)
+	}
+
+	// Sell 50 units: STT applies on sell: 0.02% of 120,000,000 = 24,000 paise (₹240)
+	chargesSell := CalculateCharges("NIFTY24OCTFUT", "SELL", "FNO", 50, 2400000)
+	if chargesSell.SttPaise != 24000 {
+		t.Errorf("expected 24000 paise STT on futures sell, got %d", chargesSell.SttPaise)
+	}
+	// Stamp duty on sell is 0
+	if chargesSell.StampDutyPaise != 0 {
+		t.Errorf("expected 0 stamp duty on futures sell, got %d", chargesSell.StampDutyPaise)
+	}
+}
+
 func TestReportsService_GetContractNote_Empty(t *testing.T) {
 	svc := New()
 	userUUID := uuid.NewString()
@@ -109,5 +139,30 @@ func TestReportsService_GetContractNote_Empty(t *testing.T) {
 	}
 	if resp.ContractNoteNumber == "" {
 		t.Errorf("expected non-empty contract note number")
+	}
+	if resp.Items == nil {
+		t.Errorf("expected non-nil items slice, got nil")
+	}
+	if len(resp.Items) != 0 {
+		t.Errorf("expected 0 items, got %d", len(resp.Items))
+	}
+}
+
+func TestReportsService_GetLedgerStatement_ZeroDrift(t *testing.T) {
+	svc := New()
+	userUUID := uuid.NewString()
+
+	// Default query for user with no transactions yet
+	resp, err := svc.GetLedgerStatement(userUUID, "", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if resp.Entries == nil {
+		t.Errorf("expected non-nil entries slice, got nil")
+	}
+	if resp.OpeningBalancePaise+resp.TotalCreditPaise-resp.TotalDebitPaise != resp.ClosingBalancePaise {
+		t.Errorf("balance sheet invariant broken: %d + %d - %d != %d",
+			resp.OpeningBalancePaise, resp.TotalCreditPaise, resp.TotalDebitPaise, resp.ClosingBalancePaise)
 	}
 }
