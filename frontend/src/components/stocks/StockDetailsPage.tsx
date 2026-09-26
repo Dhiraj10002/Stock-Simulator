@@ -2,49 +2,30 @@
 
 import React, { useState, useMemo, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useSearchParams } from "next/navigation";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  TrendingUp,
-  TrendingDown,
   ArrowUpRight,
   ArrowDownRight,
-  Search,
-  Bell,
-  User as UserIcon,
   ChevronRight,
-  Plus,
   Check,
-  Share2,
   SlidersHorizontal,
   Bookmark,
-  Building2,
-  PieChart,
-  BarChart3,
-  Calendar,
-  ShieldCheck,
-  Clock,
-  Briefcase,
-  Layers,
   ArrowLeft,
   X,
   Info,
   Sparkles,
   Newspaper,
   BrainCircuit,
-  ShieldAlert,
   Zap,
   ArrowRight,
-  CandlestickChart,
-  AreaChart,
-  Loader2,
 } from "lucide-react";
-import { formatPaise, formatPercent } from "@/lib/format";
-import { MASTER_STOCKS_CATALOG, WatchlistItem } from "@/components/dashboard/DashboardPage";
+import TradingViewChart from "@/components/trading/TradingViewChart";
+import { MASTER_STOCKS_CATALOG } from "@/components/dashboard/DashboardPage";
 import { useMarketStore, useSymbolQuote, useTargetedSubscription } from "@/stores/market-store";
 import Navbar from "@/components/layout/Navbar";
 import { apiFetch, publicFetch, getAuthToken, ApiError } from "@/lib/api";
-import type { Wallet, Candle, ApiResponse, Quote as QuoteType } from "@/types";
+import type { Wallet, Candle } from "@/types";
 
 interface StockDetailsProps {
   initialSymbol?: string;
@@ -374,15 +355,13 @@ export function getStockNews(symbol: string, name: string): StockNewsItem[] {
 }
 
 export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetailsProps) {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
 
   // Resolve active symbol from URL query or prop
   const symbolParam = (searchParams.get("symbol") || initialSymbol || "ITC").toUpperCase();
 
-  const [activeTimeframe, setActiveTimeframe] = useState<"1D" | "1W" | "1M" | "1Y" | "5Y" | "ALL">("1D");
-  const [chartType, setChartType] = useState<"area" | "candle">("area");
+  const [activeTimeframe, setActiveTimeframe] = useState<string>("1m");
   const [toastMsg, setToastMsg] = useState<string | null>(null);
 
   // Right column tab: AI Mentor vs News (Requested by user: "add this for every stocks")
@@ -429,10 +408,33 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
   // ---------------------------------------------------------------------------
   // REAL DATA: Fetch candle history from backend
   // ---------------------------------------------------------------------------
-  const candleLimit = activeTimeframe === "1D" ? 50 : activeTimeframe === "1W" ? 100 : activeTimeframe === "1M" ? 200 : 300;
-  const { data: rawCandles } = useQuery<Candle[]>({
+  const candleLimit = useMemo(() => {
+    switch (activeTimeframe) {
+      case "1m":
+        return 60;
+      case "5m":
+        return 120;
+      case "15m":
+        return 240;
+      case "1H":
+        return 360;
+      case "1D":
+        return 500;
+      default:
+        return 120;
+    }
+  }, [activeTimeframe]);
+
+  const {
+    data: rawCandles,
+    isLoading: isCandlesLoading,
+    refetch: refetchCandles,
+  } = useQuery<Candle[]>({
     queryKey: ["candle-history", symbolParam, candleLimit],
-    queryFn: () => publicFetch<Candle[]>(`/market/quotes/${encodeURIComponent(symbolParam)}/history?limit=${candleLimit}`),
+    queryFn: () =>
+      publicFetch<Candle[]>(
+        `/market/quotes/${encodeURIComponent(symbolParam)}/history?limit=${candleLimit}`
+      ),
     refetchInterval: 30000,
     staleTime: 15000,
   });
@@ -565,41 +567,6 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
     if (rawCandles && rawCandles.length > 0) return rawCandles;
     return [];
   }, [rawCandles]);
-
-  const chartPoints = useMemo(() => {
-    if (candles.length === 0) return [stock.price];
-    return candles.map((c) => c.close_paise / 100);
-  }, [candles, stock.price]);
-
-  const minChart = Math.min(...chartPoints);
-  const maxChart = Math.max(...chartPoints);
-  const chartRange = maxChart - minChart || 1;
-
-  // SVG coordinates generator for area chart
-  const svgPath = useMemo(() => {
-    if (chartPoints.length === 0) {
-      return { linePath: "", areaPath: "" };
-    }
-    const width = 800;
-    const height = 260;
-    const padding = 20;
-
-    const coords = chartPoints.map((val, idx) => {
-      const x = (idx / (chartPoints.length - 1 || 1)) * (width - padding * 2) + padding;
-      const y = height - padding - ((val - minChart) / chartRange) * (height - padding * 2);
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
-    });
-
-    const linePath = coords.length > 0 ? `M ${coords.join(" L ")}` : "";
-    const areaPath =
-      coords.length > 0
-        ? `M ${coords[0].split(",")[0]},${height - padding} L ${coords.join(" L ")} L ${
-            coords[coords.length - 1].split(",")[0]
-          },${height - padding} Z`
-        : "";
-
-    return { linePath, areaPath };
-  }, [chartPoints, minChart, chartRange]);
 
   // ---------------------------------------------------------------------------
   // Watchlist state — prefer backend API, fall back to localStorage
@@ -946,170 +913,17 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Left 2 Columns: Chart & Performance & Fundamentals */}
           <div className="lg:col-span-2 space-y-6">
-            {/* Interactive Chart Container */}
-            <div className="bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-xs space-y-4">
-              {/* Chart Controls & Timeframe Pills */}
-              <div className="flex items-center justify-between gap-4 flex-wrap pb-3 border-b border-slate-100 dark:border-slate-800">
-                <div className="flex items-center gap-2">
-                  <div className="flex items-center gap-1 bg-slate-50 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
-                    {(["1D", "1W", "1M", "1Y", "5Y", "ALL"] as const).map((tf) => (
-                      <button
-                        key={tf}
-                        onClick={() => setActiveTimeframe(tf)}
-                        className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                          activeTimeframe === tf
-                            ? "bg-white dark:bg-slate-700 text-cyan-700 dark:text-cyan-300 shadow-2xs"
-                            : "text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100"
-                        }`}
-                      >
-                        {tf}
-                      </button>
-                    ))}
-                  </div>
-
-                  {/* Area / Candlestick Toggle */}
-                  <div className="flex items-center gap-0.5 bg-slate-50 dark:bg-slate-800 p-0.5 rounded-lg border border-slate-200 dark:border-slate-700">
-                    <button
-                      onClick={() => setChartType("area")}
-                      className={`p-1.5 rounded-md transition-all cursor-pointer ${
-                        chartType === "area"
-                          ? "bg-white dark:bg-slate-700 text-cyan-600 dark:text-cyan-400 shadow-2xs"
-                          : "text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
-                      }`}
-                      title="Area Chart"
-                    >
-                      <AreaChart className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={() => setChartType("candle")}
-                      className={`p-1.5 rounded-md transition-all cursor-pointer ${
-                        chartType === "candle"
-                          ? "bg-white dark:bg-slate-700 text-cyan-600 dark:text-cyan-400 shadow-2xs"
-                          : "text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
-                      }`}
-                      title="Candlestick Chart"
-                    >
-                      <CandlestickChart className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 hidden sm:block">
-                    Range: <span className="font-tabular font-bold text-slate-800 dark:text-slate-200">₹{minChart.toFixed(2)}</span> -{" "}
-                    <span className="font-tabular font-bold text-slate-800 dark:text-slate-200">₹{maxChart.toFixed(2)}</span>
-                  </div>
-                  {rawCandles && rawCandles.length > 0 && (
-                    <span className="text-[9px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-1.5 py-0.5 rounded border border-emerald-200 dark:border-emerald-800/50">
-                      LIVE DATA
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              {/* Chart Rendering */}
-              <div className="relative h-64 w-full">
-                {candles.length === 0 ? (
-                  <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-400 bg-slate-900/20 rounded-xl border border-dashed border-slate-800">
-                    <BarChart3 className="w-8 h-8 text-slate-500 mb-2 opacity-50" />
-                    <p className="text-sm font-semibold text-slate-300">No Historical Candles Available</p>
-                    <p className="text-xs text-slate-500 mt-0.5">Historical candle data for {stock.symbol} will appear as market data streams in.</p>
-                  </div>
-                ) : (
-                  <svg viewBox="0 0 800 260" className="w-full h-full overflow-visible" preserveAspectRatio="none">
-                    <defs>
-                      <linearGradient id="stockAreaGradient" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#06b6d4" stopOpacity="0.25" />
-                        <stop offset="100%" stopColor="#06b6d4" stopOpacity="0.0" />
-                      </linearGradient>
-                    </defs>
-
-                    {/* Horizontal grid lines */}
-                    <line x1="20" y1="40" x2="780" y2="40" stroke="currentColor" strokeOpacity="0.08" strokeDasharray="3 3" />
-                    <line x1="20" y1="120" x2="780" y2="120" stroke="currentColor" strokeOpacity="0.08" strokeDasharray="3 3" />
-                    <line x1="20" y1="200" x2="780" y2="200" stroke="currentColor" strokeOpacity="0.08" strokeDasharray="3 3" />
-
-                    {chartType === "area" ? (
-                      <>
-                        {/* Gradient Area Fill */}
-                        <path d={svgPath.areaPath} fill="url(#stockAreaGradient)" />
-                        {/* Top Curve Line */}
-                        <path
-                          d={svgPath.linePath}
-                          fill="none"
-                          stroke="#0891b2"
-                          strokeWidth="2.5"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        />
-                      </>
-                    ) : (
-                      /* Candlestick Chart */
-                      <>
-                        {candles.map((c, idx) => {
-                          const width = 800;
-                          const height = 260;
-                          const padding = 20;
-                          const len = candles.length;
-                          const candleWidth = Math.max(2, ((width - padding * 2) / len) * 0.6);
-                          const gap = (width - padding * 2) / len;
-                          const x = padding + idx * gap + gap / 2;
-
-                          const allPrices = candles.flatMap((cc) => [cc.high_paise, cc.low_paise]);
-                          const minP = Math.min(...allPrices);
-                          const maxP = Math.max(...allPrices);
-                          const range = maxP - minP || 1;
-
-                          const yScale = (paise: number) =>
-                            height - padding - ((paise - minP) / range) * (height - padding * 2);
-
-                          const open = c.open_paise;
-                          const close = c.close_paise;
-                          const high = c.high_paise;
-                          const low = c.low_paise;
-                          const isBullish = close >= open;
-                          const color = isBullish ? "#10b981" : "#ef4444";
-
-                          const bodyTop = yScale(Math.max(open, close));
-                          const bodyBottom = yScale(Math.min(open, close));
-                          const bodyHeight = Math.max(1, bodyBottom - bodyTop);
-
-                          return (
-                            <g key={idx}>
-                              {/* Wick (high-low line) */}
-                              <line
-                                x1={x}
-                                y1={yScale(high)}
-                                x2={x}
-                                y2={yScale(low)}
-                                stroke={color}
-                                strokeWidth="1"
-                              />
-                              {/* Body */}
-                              <rect
-                                x={x - candleWidth / 2}
-                                y={bodyTop}
-                                width={candleWidth}
-                                height={bodyHeight}
-                                fill={isBullish ? color : color}
-                                stroke={color}
-                                strokeWidth="0.5"
-                                rx="0.5"
-                              />
-                            </g>
-                          );
-                        })}
-                      </>
-                    )}
-                  </svg>
-                )}
-
-                {/* Live Current Price Badge Overlay */}
-                <div className="absolute top-2 right-2 px-2.5 py-1 rounded-lg bg-cyan-50 dark:bg-cyan-950/60 border border-cyan-200 dark:border-cyan-800/50 text-cyan-700 dark:text-cyan-300 text-xs font-bold font-tabular shadow-2xs">
-                  CMP: ₹{stock.price.toFixed(2)}
-                </div>
-              </div>
-            </div>
+            {/* Interactive Professional TradingView Chart with Live Streaming */}
+            <TradingViewChart
+              symbol={stock.symbol}
+              historicalCandles={candles}
+              liveQuote={liveWsQuote || null}
+              isLoading={isCandlesLoading}
+              onRefresh={() => refetchCandles()}
+              height={400}
+              defaultTimeframe={activeTimeframe}
+              onTimeframeChange={(tf) => setActiveTimeframe(tf)}
+            />
 
             {/* Performance Sliders & Trading Metrics (Groww Style) */}
             <div className="bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-xs space-y-6">
