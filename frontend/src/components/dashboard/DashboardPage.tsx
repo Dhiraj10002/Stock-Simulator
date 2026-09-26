@@ -49,6 +49,11 @@ import {
 import { formatPaise, formatPercent } from "@/lib/format";
 import { apiFetch } from "@/lib/api";
 import type { Wallet, Portfolio, ApiResponse, Candle } from "@/types";
+import IndicesBar from "@/components/dashboard/IndicesBar";
+import MarketStatusBanner from "@/components/dashboard/MarketStatusBanner";
+import MarketMoversCard from "@/components/dashboard/MarketMoversCard";
+import PortfolioSummarySnapshot from "@/components/dashboard/PortfolioSummarySnapshot";
+import AddFundsModal from "@/components/portfolio/AddFundsModal";
 
 // ---------------------------------------------------------------------------
 // TYPES & CATALOG EXPORTS (Kept for compatibility with stock details & routes)
@@ -398,6 +403,7 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
     return "Trader";
   });
   const [resetting, setResetting] = useState(false);
+  const [isAddFundsOpen, setIsAddFundsOpen] = useState(false);
 
   // Kite widget active tab
   type KiteTab = "ipos" | "news" | "economic" | "earnings";
@@ -576,28 +582,7 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
     });
   }, [quotes]);
 
-  const { data: marketMovers } = useQuery<{
-    gainers: { symbol: string; name?: string; price_paise: number; change_paise: number; change_percent: number; volume: number; exchange?: string }[];
-    losers: { symbol: string; name?: string; price_paise: number; change_paise: number; change_percent: number; volume: number; exchange?: string }[];
-    most_traded: { symbol: string; name?: string; price_paise: number; change_paise: number; change_percent: number; volume: number; exchange?: string }[];
-    trending: { symbol: string; name?: string; price_paise: number; change_paise: number; change_percent: number; volume: number; exchange?: string }[];
-  }>({
-    queryKey: ["market-movers-dashboard"],
-    queryFn: async () => {
-      try {
-        const res = await apiFetch<{
-          gainers: { symbol: string; name?: string; price_paise: number; change_paise: number; change_percent: number; volume: number; exchange?: string }[];
-          losers: { symbol: string; name?: string; price_paise: number; change_paise: number; change_percent: number; volume: number; exchange?: string }[];
-          most_traded: { symbol: string; name?: string; price_paise: number; change_paise: number; change_percent: number; volume: number; exchange?: string }[];
-          trending: { symbol: string; name?: string; price_paise: number; change_paise: number; change_percent: number; volume: number; exchange?: string }[];
-        }>("/market/movers?limit=8");
-        return res || { gainers: [], losers: [], most_traded: [], trending: [] };
-      } catch {
-        return { gainers: [], losers: [], most_traded: [], trending: [] };
-      }
-    },
-    refetchInterval: 5000,
-  });
+
 
   const { data: marketBreadth } = useQuery<{
     advances: number;
@@ -626,45 +611,7 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
     refetchInterval: 5000,
   });
 
-  // Top Gainers and Top Losers dynamically sorted by live percentage change
-  // Computed dynamically on backend; falls back safely to live catalog
-  const topGainers = useMemo(() => {
-    if (marketMovers?.gainers && marketMovers.gainers.length > 0) {
-      return marketMovers.gainers.map((g) => ({
-        symbol: g.symbol,
-        name: g.name || g.symbol,
-        exchange: g.exchange || "NSE",
-        price: g.price_paise / 100,
-        change: g.change_paise / 100,
-        changePercent: g.change_percent,
-        isPositive: true,
-        isQuoteAvailable: true,
-      }));
-    }
-    return liveCatalog
-      .filter((s) => s.isQuoteAvailable && s.price > 0 && s.changePercent >= 0)
-      .sort((a, b) => b.changePercent - a.changePercent)
-      .slice(0, 8);
-  }, [marketMovers, liveCatalog]);
 
-  const topLosers = useMemo(() => {
-    if (marketMovers?.losers && marketMovers.losers.length > 0) {
-      return marketMovers.losers.map((l) => ({
-        symbol: l.symbol,
-        name: l.name || l.symbol,
-        exchange: l.exchange || "NSE",
-        price: l.price_paise / 100,
-        change: l.change_paise / 100,
-        changePercent: l.change_percent,
-        isPositive: false,
-        isQuoteAvailable: true,
-      }));
-    }
-    return liveCatalog
-      .filter((s) => s.isQuoteAvailable && s.price > 0 && s.changePercent < 0)
-      .sort((a, b) => a.changePercent - b.changePercent)
-      .slice(0, 8);
-  }, [marketMovers, liveCatalog]);
 
   // Dynamic Trending Sectors calculated from live stock prices
   const dynamicSectors = useMemo(() => {
@@ -843,7 +790,21 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
       />
 
 
-      <main className="flex-1 max-w-[1720px] w-full mx-auto p-3 sm:p-5 lg:p-6">
+      <main className="flex-1 max-w-[1720px] w-full mx-auto p-3 sm:p-5 lg:p-6 space-y-5">
+        {/* Real-time Benchmark Indices Ticker & Authoritative Market Status */}
+        <IndicesBar
+          selectedIndex={indexKey}
+          onSelectIndex={(sym) =>
+            setSelectedIndex(
+              sym === "NIFTY"
+                ? "NIFTY 50"
+                : sym === "SENSEX"
+                ? "SENSEX"
+                : "BANK NIFTY"
+            )
+          }
+        />
+        <MarketStatusBanner />
 
         <div className="flex flex-col lg:flex-row gap-6 items-start">
           {/* ========================================================================= */}
@@ -1099,219 +1060,22 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
           </div>
         </div>
 
-        {/* Top 3 Financial Status Metric Cards (Cleaned up: Removed AI Mentor card) */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          {/* Available Margin */}
-          <div className="p-4 rounded-xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 shadow-xs space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-                <WalletIcon className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
-                Available Margin
-              </span>
-              <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400">
-                Active
-              </span>
-            </div>
-            <div className="text-2xl font-black font-tabular text-slate-900 dark:text-slate-100">
-              {formatPaise(availableBalance)}
-            </div>
-            <div className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center justify-between">
-              <span>Total Capital:</span>
-              <span className="font-semibold text-slate-700 dark:text-slate-300 font-tabular">
-                {formatPaise(cashBalance)}
-              </span>
-            </div>
-          </div>
-
-          {/* Unrealized P&L */}
-          <div className="p-4 rounded-xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 shadow-xs space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-                {isProfit ? (
-                  <TrendingUp className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                ) : (
-                  <TrendingDown className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
-                )}
-                Unrealized P&L
-              </span>
-              <span
-                className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold ${
-                  isProfit
-                    ? "bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400"
-                    : "bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-400"
-                }`}
-              >
-                Open Positions
-              </span>
-            </div>
-            <div
-              className={`text-2xl font-black font-tabular ${
-                isProfit
-                  ? "text-emerald-600 dark:text-emerald-400"
-                  : "text-rose-600 dark:text-rose-400"
-              }`}
-            >
-              {formatPaise(unrealizedPnl)}
-            </div>
-            <div className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center justify-between">
-              <span>Holdings / Positions:</span>
-              <span className="font-semibold text-slate-700 dark:text-slate-300">
-                {openPositions.length} Open
-              </span>
-            </div>
-          </div>
-
-          {/* F&O Chain & Quick Derivatives Access */}
-          <Link
-            href="/options"
-            className="p-4 rounded-xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 hover:border-cyan-500/50 shadow-xs space-y-2 transition-all group cursor-pointer"
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-                <Layers className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
-                F&O Derivatives Hub
-              </span>
-              <ArrowUpRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-cyan-600 dark:group-hover:text-cyan-400 transition-colors" />
-            </div>
-            <div className="text-2xl font-black text-slate-900 dark:text-slate-100">
-              Index & Futures Desk
-            </div>
-            <div className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center justify-between">
-              <span>NIFTY & BANK NIFTY:</span>
-              <span className="font-semibold text-cyan-600 dark:text-cyan-400 group-hover:underline">
-                Open Derivatives Hub →
-              </span>
-            </div>
-          </Link>
-        </div>
+        {/* Authoritative Real-Time Portfolio Summary Snapshot */}
+        <PortfolioSummarySnapshot
+          wallet={wallet}
+          portfolio={portfolio}
+          onReset={handleResetSimulation}
+          onAddFunds={() => setIsAddFundsOpen(true)}
+          isResetting={resetting}
+        />
 
         {/* ========================================================================= */}
-        {/* KITE-STYLE MIDDLE SECTION: Gainers / Losers + IPOs / News / Calendar Desk  */}
+        {/* KITE-STYLE MIDDLE SECTION: Market Movers + IPOs / News / Calendar Desk     */}
         {/* ========================================================================= */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* LEFT: Top Gainers & Top Losers Side-by-Side (7 Cols) */}
-          <div className="lg:col-span-7 grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {/* Top Gainers Box */}
-            <div className="rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 shadow-xs overflow-hidden flex flex-col">
-              <div className="p-3.5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/70 dark:bg-slate-900/80">
-                <div className="flex items-center gap-2">
-                  <span className="font-bold text-xs text-slate-800 dark:text-slate-200">
-                    Top Gainers
-                  </span>
-                  <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 font-semibold">
-                    Nifty 500
-                  </span>
-                </div>
-                <TrendingUp className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-              </div>
-
-              <div className="divide-y divide-slate-100 dark:divide-slate-800/60 flex-1">
-                {topGainers.length > 0 ? (
-                  topGainers.map((stock) => (
-                    <div
-                      key={stock.symbol}
-                      className="p-2.5 px-3 flex items-center justify-between hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors group"
-                    >
-                      <div className="min-w-0">
-                        <Link
-                          href={`/stocks/${stock.symbol}`}
-                          className="font-bold text-xs text-slate-900 dark:text-slate-100 group-hover:text-cyan-600 dark:group-hover:text-cyan-400 transition-colors"
-                        >
-                          {stock.symbol}
-                        </Link>
-                        <div className="text-[10px] uppercase font-mono text-slate-400">
-                          {stock.exchange || "NSE"}
-                        </div>
-                      </div>
-
-                      <div className="text-right">
-                        <div className="text-xs font-semibold font-tabular text-slate-900 dark:text-slate-100">
-                          ₹{stock.price.toFixed(2)}
-                        </div>
-                        <div className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center justify-end gap-0.5">
-                          <span>▲</span>
-                          <span>+{stock.changePercent.toFixed(2)}%</span>
-                        </div>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="p-8 text-center text-xs text-slate-400">
-                    Awaiting live market feed ticks...
-                  </div>
-                )}
-              </div>
-
-              <div className="p-2 border-t border-slate-200 dark:border-slate-800 text-center bg-slate-50/40 dark:bg-slate-900/40">
-                <Link
-                  href="/stocks"
-                  className="text-[11px] font-semibold text-cyan-600 dark:text-cyan-400 hover:underline"
-                >
-                  View all gainers →
-                </Link>
-              </div>
-            </div>
-
-            {/* Top Losers Box */}
-            <div className="rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 shadow-xs overflow-hidden flex flex-col">
-              <div className="p-3.5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/70 dark:bg-slate-900/80">
-                <div className="flex items-center gap-2">
-                  <span className="font-bold text-xs text-slate-800 dark:text-slate-200">
-                    Top Losers
-                  </span>
-                  <span className="text-[10px] px-1.5 py-0.2 rounded bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-400 font-semibold">
-                    Nifty 500
-                  </span>
-                </div>
-                <TrendingDown className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
-              </div>
-
-              <div className="divide-y divide-slate-100 dark:divide-slate-800/60 flex-1">
-                {topLosers.length > 0 ? (
-                  topLosers.map((stock) => (
-                    <div
-                      key={stock.symbol}
-                      className="p-2.5 px-3 flex items-center justify-between hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors group"
-                    >
-                      <div className="min-w-0">
-                        <Link
-                          href={`/stocks/${stock.symbol}`}
-                          className="font-bold text-xs text-slate-900 dark:text-slate-100 group-hover:text-cyan-600 dark:group-hover:text-cyan-400 transition-colors"
-                        >
-                          {stock.symbol}
-                        </Link>
-                        <div className="text-[10px] uppercase font-mono text-slate-400">
-                          {stock.exchange || "NSE"}
-                        </div>
-                      </div>
-
-                      <div className="text-right">
-                        <div className="text-xs font-semibold font-tabular text-slate-900 dark:text-slate-100">
-                          ₹{stock.price.toFixed(2)}
-                        </div>
-                        <div className="text-[11px] font-bold text-rose-600 dark:text-rose-400 flex items-center justify-end gap-0.5">
-                          <span>▼</span>
-                          <span>{stock.changePercent.toFixed(2)}%</span>
-                        </div>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="p-8 text-center text-xs text-slate-400">
-                    Awaiting live market feed ticks...
-                  </div>
-                )}
-              </div>
-
-              <div className="p-2 border-t border-slate-200 dark:border-slate-800 text-center bg-slate-50/40 dark:bg-slate-900/40">
-                <Link
-                  href="/stocks"
-                  className="text-[11px] font-semibold text-cyan-600 dark:text-cyan-400 hover:underline"
-                >
-                  View all losers →
-                </Link>
-              </div>
-            </div>
+          {/* LEFT: Dynamic Market Movers Card (Gainers, Losers, Most Active, Trending) (7 Cols) */}
+          <div className="lg:col-span-7">
+            <MarketMoversCard limit={8} />
           </div>
 
           {/* RIGHT: Kite Circled Widget (IPOs, News, Economic Calendar + Holidays, Earnings + Actions) (5 Cols) */}
@@ -1879,6 +1643,15 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
         </div>
         </div>
       </main>
+
+      <AddFundsModal
+        isOpen={isAddFundsOpen}
+        onClose={() => {
+          setIsAddFundsOpen(false);
+          void refetchWallet();
+        }}
+        currentBalancePaise={availableBalance}
+      />
     </div>
   );
 }
