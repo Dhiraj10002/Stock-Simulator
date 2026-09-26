@@ -25,6 +25,7 @@ import type { TradeCritiqueResponse } from "@/types";
 interface TradeCopilotProps {
   token: string;
   apiUrl: string;
+  initialQuery?: string;
 }
 
 interface ChatMessage {
@@ -90,7 +91,7 @@ Maintain single-trade position sizing below 2% – 5% of total capital (₹20,00
 • **Mandatory Stop-Loss:** Always enter hard Stop-Loss (SL) trigger orders upon order fill rather than relying on mental stops.`,
 };
 
-export default function TradeCopilot({ token, apiUrl }: TradeCopilotProps) {
+export default function TradeCopilot({ token, apiUrl, initialQuery }: TradeCopilotProps) {
   const [question, setQuestion] = useState("");
   const [asking, setAsking] = useState(false);
   const [critique, setCritique] = useState<TradeCritiqueResponse | null>(null);
@@ -103,107 +104,14 @@ export default function TradeCopilot({ token, apiUrl }: TradeCopilotProps) {
       id: "welcome-1",
       role: "copilot",
       content:
-        "👋 Welcome to the **AI Trade Copilot & Institutional Risk Desk**.\n\nI monitor your position sizing, margin leverage, and execution discipline in real time. Ask me anything about risk management, portfolio hedging, MIS square-off rules, or click **Critique My Trading** above to audit your trade history.",
+        "👋 Welcome to the **AI Trade Copilot & Institutional Risk Desk**.\n\nI monitor your position sizing, margin leverage, and execution discipline in real time. Ask me anything about risk management, portfolio hedging, MIS square-off rules, or click **Audit My Trades** above to generate your post-mortem scorecard.",
       timestamp: "10:00 AM",
     },
   ]);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const msgIdRef = useRef(1);
-
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, asking]);
-
-  // Ask Mentor
-  const handleAsk = async (queryText?: string) => {
-    const q = (queryText || question).trim();
-    if (!q || asking) return;
-
-    if (q.toLowerCase().includes("audit") || q.toLowerCase().includes("critique")) {
-      void handleCritique();
-    }
-
-    const currentId = ++msgIdRef.current;
-    const userMsgId = `u-${currentId}`;
-    const timeStr = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-
-    // Append user message immediately
-    setMessages((prev) => [
-      ...prev,
-      { id: userMsgId, role: "user", content: q, timestamp: timeStr },
-    ]);
-    setQuestion("");
-    setAsking(true);
-
-    const qLower = q.toLowerCase();
-    const matchedPrebuilt = Object.keys(PREBUILT_RESPONSES).find((k) => qLower.includes(k));
-
-    if (matchedPrebuilt) {
-      setTimeout(() => {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: `c-${++msgIdRef.current}`,
-            role: "copilot",
-            content: PREBUILT_RESPONSES[matchedPrebuilt],
-            timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-          },
-        ]);
-        setAsking(false);
-      }, 500);
-      return;
-    }
-
-    try {
-      if (!token) {
-        throw new Error("No token");
-      }
-      const res = await fetch(`${apiUrl}/ai/analyze-trade`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ question: q }),
-      });
-      const data = await res.json();
-      const reply =
-        res.ok && data.success && data.data?.answer
-          ? data.data.answer
-          : data.message || "Institutional Mentor analysis complete.";
-
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `c-${++msgIdRef.current}`,
-          role: "copilot",
-          content: reply,
-          timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-        },
-      ]);
-    } catch {
-      // Intelligent fallback
-      const fallbackReply = `💡 **Institutional Copilot Assessment:**
-
-Regarding "${q}":
-• **Risk Principle:** Maintain strict position limits so that adverse gap moves never exceed 1.5% of account margin.
-• **Execution Check:** Verify technical support/resistance levels on higher timeframes (15m and 1h) before committing margin.
-• **Discipline Rule:** If you take two consecutive losses in a session, enforce an automatic 30-minute cooling break to prevent emotional bias.`;
-
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `c-${++msgIdRef.current}`,
-          role: "copilot",
-          content: fallbackReply,
-          timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-        },
-      ]);
-    } finally {
-      setAsking(false);
-    }
-  };
+  const initialQueryHandled = useRef(false);
 
   // Run Trade Post-Mortem Critique
   const handleCritique = async () => {
@@ -241,6 +149,93 @@ Regarding "${q}":
       setCritiquing(false);
     }
   };
+
+  // Ask Mentor
+  const handleAsk = async (queryText?: string) => {
+    const q = (queryText || question).trim();
+    if (!q || asking) return;
+
+    if (q.toLowerCase().includes("audit") || q.toLowerCase().includes("critique")) {
+      void handleCritique();
+    }
+
+    const currentId = ++msgIdRef.current;
+    const userMsgId = `u-${currentId}`;
+    const timeStr = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+    // Append user message immediately
+    setMessages((prev) => [
+      ...prev,
+      { id: userMsgId, role: "user", content: q, timestamp: timeStr },
+    ]);
+    setQuestion("");
+    setAsking(true);
+
+    const qLower = q.toLowerCase();
+    const matchedPrebuilt = Object.keys(PREBUILT_RESPONSES).find((k) => qLower.includes(k));
+
+    // If authenticated, always call backend AI endpoint for live trade-aware analysis
+    if (token) {
+      try {
+        const res = await fetch(`${apiUrl}/ai/analyze-trade`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ question: q }),
+        });
+        const data = await res.json();
+        const reply =
+          res.ok && data.success && data.data?.answer
+            ? data.data.answer
+            : data.message || "Institutional Mentor analysis complete.";
+
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `c-${++msgIdRef.current}`,
+            role: "copilot",
+            content: reply,
+            timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+          },
+        ]);
+        setAsking(false);
+        return;
+      } catch {
+        // Fall back gracefully below
+      }
+    }
+
+    // Guest mode or offline fallback
+    setTimeout(() => {
+      const fallbackReply = matchedPrebuilt
+        ? PREBUILT_RESPONSES[matchedPrebuilt]
+        : `💡 **Institutional Copilot Assessment:**\n\nRegarding "${q}":\n• **Risk Principle:** Maintain strict position limits so that adverse gap moves never exceed 1.5% of account margin.\n• **Execution Check:** Verify technical support/resistance levels on higher timeframes (15m and 1h) before committing margin.\n• **Discipline Rule:** If you take two consecutive losses in a session, enforce an automatic 30-minute cooling break to prevent emotional bias.\n\n*Note: Educational trade simulation critique only; not financial advice.*`;
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `c-${++msgIdRef.current}`,
+          role: "copilot",
+          content: fallbackReply,
+          timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        },
+      ]);
+      setAsking(false);
+    }, 400);
+  };
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, asking]);
+
+  useEffect(() => {
+    if (initialQuery && !initialQueryHandled.current) {
+      initialQueryHandled.current = true;
+      void handleAsk(initialQuery);
+    }
+  }, [initialQuery]);
 
   const handleClearThread = () => {
     setMessages([
@@ -598,6 +593,19 @@ Regarding "${q}":
             <span>{asking ? "Thinking…" : "Send"}</span>
           </button>
         </form>
+
+        {/* Institutional Educational Compliance Disclaimer */}
+        <div className="px-4 py-2 bg-slate-100/70 dark:bg-slate-900/60 border-t border-slate-200 dark:border-slate-800/80 flex items-center justify-between gap-2 text-[10px] text-slate-500 dark:text-slate-400">
+          <div className="flex items-center gap-1.5">
+            <ShieldCheck className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400 shrink-0" />
+            <span>
+              <strong>Educational Simulator Mentor:</strong> Analysis and trade audits are strictly for educational practice. Does not provide SEBI-registered financial advice, stock recommendations, or return guarantees.
+            </span>
+          </div>
+          <span className="font-mono text-[9px] px-1.5 py-0.5 rounded bg-slate-200/60 dark:bg-slate-800 text-slate-600 dark:text-slate-300 shrink-0">
+            Paper Trading Only
+          </span>
+        </div>
       </div>
     </div>
   );

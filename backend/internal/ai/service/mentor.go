@@ -59,50 +59,44 @@ func New(cfg *config.Config) *MentorService {
 }
 
 func (s *MentorService) Analyze(ctx context.Context, userID, question string) (string, error) {
+	uCtx := s.fetchUserAccountContext(userID)
 	if strings.TrimSpace(s.apiKey) == "" {
-		return s.generateRuleBasedAnswerWithContext(userID, question), nil
+		return s.generateRuleBasedAnswerWithContext(userID, question, uCtx), nil
 	}
-	contextSummary := "No account context was available."
-	if userUUID, err := uuid.Parse(userID); err == nil {
-		var positions []model.Position
-		var orders []model.Order
-		if db := database.GetDB(); db != nil {
-			_ = db.Where("user_uuid = ? AND quantity <> 0", userUUID).Order("symbol ASC").Limit(20).Find(&positions).Error
-			_ = db.Where("user_uuid = ?", userUUID).Order("created_at DESC").Limit(10).Find(&orders).Error
-		}
-		contextSummary = fmt.Sprintf("Open simulator positions: %v. Recent simulator orders: %v.", positions, orders)
-	}
+
 	payload := geminiRequest{
-		SystemInstruction: content("You are an educational mentor inside an institutional stock simulator. Explain concepts, risks, and trade mechanics clearly. Never promise returns, predict prices with certainty, or provide personalised financial advice. State that the response is educational, not financial advice."),
-		Contents:          []geminiContent{{Role: "user", Parts: content("Account context: " + contextSummary + "\n\nQuestion: " + question).Parts}},
+		SystemInstruction: content("You are the Trade-Aware AI Mentor inside an institutional stock simulator for Indian financial markets (NSE/BSE). Explain trading concepts, market mechanics, order types, and risk management clearly. Contextualize answers using the user's active holdings, margin utilization, and recent orders when applicable. Never promise returns, predict future prices with certainty, or provide SEBI-registered financial advice. Emphasize disciplined position sizing (1-2% risk per trade), risk-reward asymmetry, hard stop-losses, and capital preservation. Always end with a brief reminder that this is educational simulator analysis, not financial advice."),
+		Contents: []geminiContent{
+			{Role: "user", Parts: content(fmt.Sprintf("%s\n\nTrader's Question:\n%s", uCtx.FullContextString, question)).Parts},
+		},
 	}
 	payload.GenerationConfig.MaxOutputTokens = 700
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return "", err
+		return s.generateRuleBasedAnswerWithContext(userID, question, uCtx), nil
 	}
 	url := fmt.Sprintf(geminiGenerateContentURL, s.model)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
-		return "", err
+		return s.generateRuleBasedAnswerWithContext(userID, question, uCtx), nil
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("x-goog-api-key", s.apiKey)
 	response, err := s.client.Do(req)
 	if err != nil {
-		return s.generateRuleBasedAnswerWithContext(userID, question), nil
+		return s.generateRuleBasedAnswerWithContext(userID, question, uCtx), nil
 	}
 	defer response.Body.Close()
 	responseBody, err := io.ReadAll(io.LimitReader(response.Body, 1<<20))
 	if err != nil {
-		return s.generateRuleBasedAnswerWithContext(userID, question), nil
+		return s.generateRuleBasedAnswerWithContext(userID, question, uCtx), nil
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return s.generateRuleBasedAnswerWithContext(userID, question), nil
+		return s.generateRuleBasedAnswerWithContext(userID, question, uCtx), nil
 	}
 	var result geminiResponse
 	if err := json.Unmarshal(responseBody, &result); err != nil {
-		return s.generateRuleBasedAnswerWithContext(userID, question), nil
+		return s.generateRuleBasedAnswerWithContext(userID, question, uCtx), nil
 	}
 	for _, candidate := range result.Candidates {
 		for _, part := range candidate.Content.Parts {
@@ -111,7 +105,7 @@ func (s *MentorService) Analyze(ctx context.Context, userID, question string) (s
 			}
 		}
 	}
-	return s.generateRuleBasedAnswerWithContext(userID, question), nil
+	return s.generateRuleBasedAnswerWithContext(userID, question, uCtx), nil
 }
 
 func (s *MentorService) PreTradeCheck(ctx context.Context, userID string, req dto.PreTradeCheckRequest) (*dto.PreTradeCheckResponse, error) {
@@ -569,8 +563,15 @@ func (s *MentorService) Critique(ctx context.Context, userID string) (*dto.Trade
 
 	// If Gemini API is available, optionally synthesize an executive narrative
 	if strings.TrimSpace(s.apiKey) != "" {
-		prompt := fmt.Sprintf("Act as an institutional risk officer. Evaluate this simulated trader: Grade: %s, Discipline Score: %d/100 (%s). Win Rate: %.1f%%. Revenge Trading: %t. Concentration: %s (%s). Leverage Risk: %s. Limit Order Usage: %.0f%% across %d trades. Provide a concise 2-paragraph professional executive critique with actionable recommendations.",
-			grade, score, riskRating, winRate, revengeDetected, concentrationRisk, maxSymbol, leverageRisk, limitUsagePct, totalTrades)
+		uCtx := s.fetchUserAccountContext(userID)
+		prompt := fmt.Sprintf("Act as an institutional risk officer. Evaluate this simulated trader:\n"+
+			"%s\n"+
+			"Trader Grade: %s (Discipline Score: %d/100, Rating: %s)\n"+
+			"Win Rate: %.1f%% across %d evaluated trades (Realized P&L: ₹%.2f)\n"+
+			"Behavioral Flags: Revenge Trading Detected: %t, Concentration Risk: %s (%s), Margin Leverage Risk: %s, Limit Order Discipline: %.0f%%\n"+
+			"Provide a concise 2-to-3 paragraph professional executive critique with actionable recommendations for risk mitigation. Explicitly state that this is an educational simulation critique and not financial advice.",
+			uCtx.FullContextString, grade, score, riskRating, winRate, totalTrades, float64(totalRealizedPnlPaise)/100.0,
+			revengeDetected, concentrationRisk, maxSymbol, leverageRisk, limitUsagePct)
 		llmCritique, err := s.callGemini(ctx, prompt)
 		if err == nil && strings.TrimSpace(llmCritique) != "" {
 			critiqueText = llmCritique
@@ -587,10 +588,137 @@ func (s *MentorService) Critique(ctx context.Context, userID string) (*dto.Trade
 	}, nil
 }
 
+type UserAccountContext struct {
+	AvailableBalancePaise int64
+	BlockedPaise          int64
+	CashBalancePaise      int64
+	MarginUtilizationPct  float64
+	Positions             []model.Position
+	RecentOrders          []model.Order
+	TopSymbol             string
+	ConcentrationRatio    float64
+	FullContextString     string
+}
+
+func (s *MentorService) fetchUserAccountContext(userID string) UserAccountContext {
+	ctx := UserAccountContext{
+		AvailableBalancePaise: 100000000, // ₹10,00,000 starting cash
+		CashBalancePaise:      100000000,
+	}
+
+	userUUID, err := uuid.Parse(userID)
+	if err != nil {
+		ctx.FullContextString = "Account Context: Guest/unauthenticated simulator profile with default ₹10,00,000.00 virtual capital."
+		return ctx
+	}
+
+	db := database.GetDB()
+	if db == nil {
+		ctx.FullContextString = "Account Context: Simulator database offline. Default ₹10,00,000.00 cash balance active."
+		return ctx
+	}
+
+	var wallet model.Wallet
+	if err := db.Where("user_uuid = ?", userUUID).First(&wallet).Error; err == nil {
+		ctx.CashBalancePaise = wallet.CashBalancePaise
+		ctx.BlockedPaise = wallet.BlockedPaise
+		ctx.AvailableBalancePaise = wallet.AvailableBalancePaise()
+		if wallet.CashBalancePaise > 0 {
+			ctx.MarginUtilizationPct = (float64(wallet.BlockedPaise) / float64(wallet.CashBalancePaise)) * 100.0
+		}
+	}
+
+	var positions []model.Position
+	if err := db.Where("user_uuid = ? AND quantity <> 0", userUUID).Order("symbol ASC").Limit(20).Find(&positions).Error; err == nil {
+		ctx.Positions = positions
+	}
+
+	var orders []model.Order
+	if err := db.Where("user_uuid = ?", userUUID).Order("created_at DESC").Limit(10).Find(&orders).Error; err == nil {
+		ctx.RecentOrders = orders
+	}
+
+	// Calculate top symbol concentration
+	var totalVal int64 = 0
+	var maxVal int64 = 0
+	for _, p := range positions {
+		v := p.CurrentValuePaise()
+		if v == 0 {
+			v = p.AveragePricePaise * mathAbs(p.Quantity)
+		} else {
+			v = mathAbs(v)
+		}
+		totalVal += v
+		if v > maxVal {
+			maxVal = v
+			ctx.TopSymbol = p.Symbol
+		}
+	}
+	if totalVal > 0 {
+		ctx.ConcentrationRatio = (float64(maxVal) / float64(totalVal)) * 100.0
+	}
+
+	// Build human-readable structured context summary for LLM prompt and rule-based engine
+	var sb strings.Builder
+	sb.WriteString("ACCOUNT PORTFOLIO & RISK CONTEXT:\n")
+	sb.WriteString(fmt.Sprintf("- Available Margin: ₹%.2f | Blocked Margin: ₹%.2f (%.1f%% Margin Utilization)\n",
+		float64(ctx.AvailableBalancePaise)/100.0, float64(ctx.BlockedPaise)/100.0, ctx.MarginUtilizationPct))
+
+	if len(positions) == 0 {
+		sb.WriteString("- Open Positions (0): No active simulator positions (portfolio is 100% liquid cash).\n")
+	} else {
+		sb.WriteString(fmt.Sprintf("- Open Positions (%d):\n", len(positions)))
+		for i, p := range positions {
+			if i >= 6 {
+				sb.WriteString(fmt.Sprintf("  ... and %d more open positions\n", len(positions)-6))
+				break
+			}
+			side := "LONG"
+			if p.Quantity < 0 {
+				side = "SHORT"
+			}
+			unrealizedPnl := p.UnrealizedPnlPaise()
+			pnlSign := "+"
+			if unrealizedPnl < 0 {
+				pnlSign = ""
+			}
+			sb.WriteString(fmt.Sprintf("  * %s: %s %d Qty (%s) | Avg: ₹%.2f | P&L: %s₹%.2f\n",
+				p.Symbol, side, mathAbs(p.Quantity), p.Product, float64(p.AveragePricePaise)/100.0, pnlSign, float64(unrealizedPnl)/100.0))
+		}
+	}
+
+	if len(orders) == 0 {
+		sb.WriteString("- Recent Orders (0): No simulator orders placed yet.\n")
+	} else {
+		sb.WriteString(fmt.Sprintf("- Recent Orders (%d evaluated):\n", len(orders)))
+		for i, o := range orders {
+			if i >= 5 {
+				break
+			}
+			sb.WriteString(fmt.Sprintf("  * %s %s %d Qty @ ₹%.2f [%s - %s]\n",
+				o.Side, o.Symbol, o.Quantity, float64(o.PricePaise)/100.0, o.Type, o.Status))
+		}
+	}
+
+	if ctx.TopSymbol != "" && ctx.ConcentrationRatio > 0 {
+		sb.WriteString(fmt.Sprintf("- Concentration Risk: %.1f%% in %s\n", ctx.ConcentrationRatio, ctx.TopSymbol))
+	}
+
+	ctx.FullContextString = sb.String()
+	return ctx
+}
+
 func (s *MentorService) buildRuleBasedCritique(score int, rating, grade string, metrics dto.CritiqueMetrics, topSymbol string) string {
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("📊 **Institutional Trade Post-Mortem Assessment**\n\n"))
 	b.WriteString(fmt.Sprintf("**Trader Discipline Grade: %s — %s (%d / 100)**\n\n", grade, rating, score))
+
+	if metrics.TotalTradesEvaluated == 0 {
+		b.WriteString("✅ **Clean Trading Slate:** No simulated trades recorded yet. Capital is 100% liquid (₹10,00,000.00).\n\n")
+		b.WriteString("💡 **Institutional Onboarding Guidance:** Before entering your first position, establish a hard stop-loss trigger order and risk no more than 1–2% of account equity per trade.\n\n")
+		b.WriteString("*Disclaimer: Educational trade simulation critique only; not financial advice.*")
+		return b.String()
+	}
 
 	if metrics.RevengeTradingDetected {
 		b.WriteString("⚠️ **Impulse Warning:** High-frequency clustering of orders was detected within narrow timeframes. Systematic traders pause after losing trades rather than re-entering impulsively.\n\n")
@@ -612,62 +740,62 @@ func (s *MentorService) buildRuleBasedCritique(score int, rating, grade string, 
 		b.WriteString(fmt.Sprintf("🎯 **Win Rate:** %.1f%% realized win rate aligns with profitable trading setups.\n\n", metrics.WinRate))
 	}
 
-	b.WriteString("Remember: Consistent profitability is driven by loss prevention, hard stops, and risk-reward asymmetry.")
+	b.WriteString("Remember: Consistent profitability is driven by loss prevention, hard stops, and risk-reward asymmetry.\n\n")
+	b.WriteString("*Disclaimer: Educational trade simulation critique only; not SEBI-registered financial advice.*")
 	return b.String()
 }
 
 func (s *MentorService) generateRuleBasedAnswer(question string) string {
-	return s.generateRuleBasedAnswerWithContext("", question)
+	return s.generateRuleBasedAnswerWithContext("", question, s.fetchUserAccountContext(""))
 }
 
-func (s *MentorService) generateRuleBasedAnswerWithContext(userID, question string) string {
+func (s *MentorService) generateRuleBasedAnswerWithContext(userID, question string, uCtx UserAccountContext) string {
 	q := strings.ToLower(question)
 
-	// Contextual portfolio snapshot if userID is available
-	var userContextNote string
-	if userID != "" {
-		if uUUID, err := uuid.Parse(userID); err == nil && database.GetDB() != nil {
-			var wallet model.Wallet
-			var pos []model.Position
-			_ = database.GetDB().Where("user_uuid = ?", uUUID).First(&wallet).Error
-			_ = database.GetDB().Where("user_uuid = ? AND quantity <> 0", uUUID).Find(&pos).Error
+	userContextNote := fmt.Sprintf("\n\n📌 **Your Live Account Context:**\n- Available Balance: ₹%.2f\n- Blocked Margin: ₹%.2f (%.1f%% Margin Utilization)\n- Open Positions: %d contracts/scrips",
+		float64(uCtx.AvailableBalancePaise)/100.0, float64(uCtx.BlockedPaise)/100.0, uCtx.MarginUtilizationPct, len(uCtx.Positions))
 
-			availRupees := float64(wallet.AvailableBalancePaise()) / 100.0
-			blockedRupees := float64(wallet.BlockedPaise) / 100.0
-			userContextNote = fmt.Sprintf("\n\n📌 **Your Live Account Context:**\n- Available Balance: ₹%.2f\n- Blocked Margin: ₹%.2f\n- Open Positions: %d contracts/scrips",
-				availRupees, blockedRupees, len(pos))
-		}
-	}
+	complianceDisclaimer := "\n\n*Educational Notice: This analysis is generated for simulator educational guidance only and does not constitute SEBI-registered financial advice or price predictions.*"
 
-	if strings.Contains(q, "risk") || strings.Contains(q, "drawdown") || strings.Contains(q, "portfolio") || strings.Contains(q, "exposure") {
-		return fmt.Sprintf("🛡️ **Institutional Portfolio Risk Diagnostic:**\n\n1. **Capital Allocation:** Keep individual position sizing bounded below 15–20%% of total account equity to avoid concentration blow-ups.\n2. **Margin Utilization Guardrail:** Maintain at least a 30%% cash cushion in available balance to absorb market gap-downs and margin spikes.\n3. **Stop-Loss Discipline:** Always specify hard stop-loss trigger levels (`SL` / `SL-M`) rather than relying on manual exits during volatile sessions.%s", userContextNote)
-	}
 	if strings.Contains(q, "hedge") || strings.Contains(q, "hedging") || strings.Contains(q, "protective put") {
-		return fmt.Sprintf("🛡️ **Hedging Framework & Risk Mitigation:**\n\n1. **Protective Puts:** If holding long delivery (CNC) equities, purchasing Out-Of-The-Money (OTM) Put options (`PE`) on `NIFTY` or the underlying stock caps downward portfolio losses.\n2. **Covered Calls:** Writing OTM Call options (`CE`) against existing long delivery shares generates consistent premium income in sideways or mildly bullish markets.\n3. **Delta Neutrality:** Balancing positive equity delta with negative option delta shields your account against unexpected index swings.%s", userContextNote)
+		var specificHedge string
+		if uCtx.TopSymbol != "" {
+			specificHedge = fmt.Sprintf("\n4. **Your Portfolio Application:** To hedge your `%s` position, buying Out-Of-The-Money (OTM) Put options on the stock or NIFTY provides asymmetric downside insulation without liquidating long equity.", uCtx.TopSymbol)
+		}
+		return fmt.Sprintf("🛡️ **Hedging Framework & Risk Mitigation:**\n\n1. **Protective Puts:** If holding long delivery (CNC) equities, purchasing Out-Of-The-Money (OTM) Put options (`PE`) on `NIFTY` or the underlying stock caps downward portfolio losses.\n2. **Covered Calls:** Writing OTM Call options (`CE`) against existing long delivery shares generates consistent premium income in sideways or mildly bullish markets.\n3. **Delta Neutrality:** Balancing positive equity delta with negative option delta shields your account against unexpected index swings.%s%s%s", specificHedge, userContextNote, complianceDisclaimer)
+	}
+	if strings.Contains(q, "risk") || strings.Contains(q, "drawdown") || strings.Contains(q, "portfolio") || strings.Contains(q, "exposure") {
+		var positionNote string
+		if len(uCtx.Positions) > 0 {
+			positionNote = fmt.Sprintf("\n4. **Current Exposure:** You have %d active position(s) with highest concentration in `%s` (%.1f%%). Verify that your stop-loss trigger levels (`SL`/`SL-M`) are set.", len(uCtx.Positions), uCtx.TopSymbol, uCtx.ConcentrationRatio)
+		} else {
+			positionNote = "\n4. **Current Exposure:** You hold zero active market positions; virtual capital is 100% liquid and unexposed to overnight gap risk."
+		}
+		return fmt.Sprintf("🛡️ **Institutional Portfolio Risk Diagnostic:**\n\n1. **Capital Allocation:** Keep individual position sizing bounded below 15–20%% of total account equity to avoid concentration blow-ups.\n2. **Margin Utilization Guardrail:** Maintain at least a 30%% cash cushion in available balance to absorb market gap-downs and margin spikes.\n3. **Stop-Loss Discipline:** Always specify hard stop-loss trigger levels (`SL` / `SL-M`) rather than relying on manual exits during volatile sessions.%s%s%s", positionNote, userContextNote, complianceDisclaimer)
 	}
 	if strings.Contains(q, "news") || strings.Contains(q, "headline") || strings.Contains(q, "update") || strings.Contains(q, "market today") {
-		return "📰 **Market Pulse & Short News:**\n\n1. **Benchmark Indices:** Markets closed the daily session with key leaders (Reliance, TCS, HDFC Bank) defending support zones.\n2. **Sectoral Breadth:** High liquidity in large-cap equities; derivatives expiries driving open interest shifts.\n3. **Trading Discipline:** During market-closed hours (after 15:30 IST), systematic traders review day journals, verify margin utilization, and prepare setups for the 09:15 opening bell.\n\n*Tip: Switch to the 'Market News' tab below for curated real-time business wire articles!*"
+		return "📰 **Market Pulse & Short News:**\n\n1. **Benchmark Indices:** Markets closed the daily session with key leaders (Reliance, TCS, HDFC Bank) defending support zones.\n2. **Sectoral Breadth:** High liquidity in large-cap equities; derivatives expiries driving open interest shifts.\n3. **Trading Discipline:** During market-closed hours (after 15:30 IST), systematic traders review day journals, verify margin utilization, and prepare setups for the 09:15 opening bell.\n\n*Tip: Switch to the 'Market News' tab or visit `/news` for curated real-time business wire articles!*" + complianceDisclaimer
 	}
 	if strings.Contains(q, "mis") || strings.Contains(q, "intraday") || strings.Contains(q, "square") {
-		return "📘 **MIS (Margin Intraday Square-off) Rules:**\n\n1. **Leverage:** MIS offers up to 5x leverage (20% margin required).\n2. **Mandatory Cut-off:** All open MIS positions are automatically squared off by the server at 15:20 IST.\n3. **Risk:** Unhedged intraday leverage amplifies both gains and losses. Ensure stop-loss orders are active before 15:00 IST."
+		return "📘 **MIS (Margin Intraday Square-off) Rules:**\n\n1. **Leverage:** MIS offers up to 5x leverage (20% margin required).\n2. **Mandatory Cut-off:** All open MIS positions are automatically squared off by the server at 15:20 IST.\n3. **Risk:** Unhedged intraday leverage amplifies both gains and losses. Ensure stop-loss orders are active before 15:00 IST." + complianceDisclaimer
 	}
 	if strings.Contains(q, "greeks") || strings.Contains(q, "black-scholes") || strings.Contains(q, "delta") || strings.Contains(q, "theta") || strings.Contains(q, "vega") {
-		return "📐 **Black-Scholes Option Greeks Essentials:**\n\n1. **Delta (Δ):** Rate of change of option price per ₹1 move in spot (Calls: 0 to +1, Puts: -1 to 0).\n2. **Theta (Θ):** Daily time decay in ₹/day. Accelerates exponentially in the final 7 days before Thursday expiry.\n3. **Gamma (Γ):** Rate of change of Delta. Highest for At-The-Money (ATM) options.\n4. **Vega (ν):** Sensitivity to a 1% shift in Implied Volatility (IV).\n\n*Tip: Open the 'Option Chain' in the header to view live Black-Scholes Greeks calculated by our engine!*"
+		return "📐 **Black-Scholes Option Greeks Essentials:**\n\n1. **Delta (Δ):** Rate of change of option price per ₹1 move in spot (Calls: 0 to +1, Puts: -1 to 0).\n2. **Theta (Θ):** Daily time decay in ₹/day. Accelerates exponentially in the final 7 days before Thursday expiry.\n3. **Gamma (Γ):** Rate of change of Delta. Highest for At-The-Money (ATM) options.\n4. **Vega (ν):** Sensitivity to a 1% shift in Implied Volatility (IV).\n\n*Tip: Open the 'Option Chain' in the header to view live Black-Scholes Greeks calculated by our engine!*" + complianceDisclaimer
 	}
 	if strings.Contains(q, "fno") || strings.Contains(q, "derivative") || strings.Contains(q, "option") || strings.Contains(q, "future") || strings.Contains(q, "expiry") {
-		return "📘 **F&O (Futures & Options) Mechanics:**\n\n1. **Lot Sizes:** NSE index contracts trade in standard lot multiples (e.g. NIFTY 50 units, BANKNIFTY 15 units).\n2. **Cash Settlement:** In this simulator, expiring options settle in cash against final underlying spot price at 15:30 IST on Thursdays.\n3. **Intrinsic Value:** ITM (In-The-Money) options payout intrinsic value automatically into your virtual wallet."
+		return "📘 **F&O (Futures & Options) Mechanics:**\n\n1. **Lot Sizes:** NSE index contracts trade in standard lot multiples (e.g. NIFTY 50 units, BANKNIFTY 15 units).\n2. **Cash Settlement:** In this simulator, expiring options settle in cash against final underlying spot price at 15:30 IST on Thursdays.\n3. **Intrinsic Value:** ITM (In-The-Money) options payout intrinsic value automatically into your virtual wallet." + complianceDisclaimer
 	}
 	if strings.Contains(q, "margin") || strings.Contains(q, "leverage") || strings.Contains(q, "balance") {
-		return fmt.Sprintf("📘 **Virtual Margin & Capital Management:**\n\n1. **Available Balance:** Cash available for placing new trades.\n2. **Blocked Margin:** Funds locked to guarantee open positions or active limit orders.\n3. **Golden Rule:** Never commit more than 50%% of your total wallet to active intraday margin to absorb sudden gap-downs.%s", userContextNote)
+		return fmt.Sprintf("📘 **Virtual Margin & Capital Management:**\n\n1. **Available Balance:** Cash available for placing new trades.\n2. **Blocked Margin:** Funds locked to guarantee open positions or active limit orders.\n3. **Golden Rule:** Never commit more than 50%% of your total wallet to active intraday margin to absorb sudden gap-downs.%s%s", userContextNote, complianceDisclaimer)
 	}
 	if strings.Contains(q, "cnc") || strings.Contains(q, "delivery") || strings.Contains(q, "holding") {
-		return "📘 **CNC (Cash-and-Carry / Delivery) Rules:**\n\n1. **100% Margin:** CNC requires full 100% cash upfront (no leverage).\n2. **Short-Selling Forbidden:** Delivery short-selling is strictly rejected by the exchange; you can only sell shares you currently hold in your portfolio.\n3. **Holding Period:** CNC positions carry forward indefinitely without overnight auto-squareoff."
+		return "📘 **CNC (Cash-and-Carry / Delivery) Rules:**\n\n1. **100% Margin:** CNC requires full 100% cash upfront (no leverage).\n2. **Short-Selling Forbidden:** Delivery short-selling is strictly rejected by the exchange; you can only sell shares you currently hold in your portfolio.\n3. **Holding Period:** CNC positions carry forward indefinitely without overnight auto-squareoff." + complianceDisclaimer
 	}
 	if strings.Contains(q, "revenge") || strings.Contains(q, "discipline") || strings.Contains(q, "psychology") || strings.Contains(q, "emotion") {
-		return "🧠 **Trading Psychology & Behavioral Guardrails:**\n\n1. **Revenge Trading Trap:** Placing rapid trades immediately following a loss leads to compounding drawdowns. Take a mandatory 15-minute cool-off after any stop-out.\n2. **Loss Aversion:** Amateurs hold losers hoping for break-even while prematurely selling winners. Define your exit rules before entering the position.\n3. **Trade Journaling:** Review your trades using the 'AI Copilot Critique' to track discipline score and habit flags."
+		return "🧠 **Trading Psychology & Behavioral Guardrails:**\n\n1. **Revenge Trading Trap:** Placing rapid trades immediately following a loss leads to compounding drawdowns. Take a mandatory 15-minute cool-off after any stop-out.\n2. **Loss Aversion:** Amateurs hold losers hoping for break-even while prematurely selling winners. Define your exit rules before entering the position.\n3. **Trade Journaling:** Review your trades using the 'AI Copilot Critique' to track discipline score and habit flags." + complianceDisclaimer
 	}
 
-	return fmt.Sprintf("📘 **Educational Simulator Copilot:**\n\nDisciplined trading requires three pillars:\n1. **Predefined Risk:** Risk no more than 1–2%% of total account balance per trade.\n2. **Execution Timing:** Trade during high-liquidity market hours (09:30–11:30 and 13:30–15:00 IST).\n3. **Journaling:** Track your setups, win rates, and emotional states to refine your edge over time.%s", userContextNote)
+	return fmt.Sprintf("📘 **Educational Simulator Copilot:**\n\nDisciplined trading requires three pillars:\n1. **Predefined Risk:** Risk no more than 1–2%% of total account balance per trade.\n2. **Execution Timing:** Trade during high-liquidity market hours (09:30–11:30 and 13:30–15:00 IST).\n3. **Journaling:** Track your setups, win rates, and emotional states to refine your edge over time.%s%s", userContextNote, complianceDisclaimer)
 }
 
 func (s *MentorService) callGemini(ctx context.Context, prompt string) (string, error) {

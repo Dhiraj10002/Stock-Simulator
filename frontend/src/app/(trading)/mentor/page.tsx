@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, Suspense } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import Navbar from "@/components/layout/Navbar";
 import {
@@ -22,7 +23,9 @@ import { formatPaise } from "@/lib/format";
 import { API_URL } from "@/lib/api";
 import type { Wallet, Portfolio, ApiResponse } from "@/types";
 
-export default function MentorPage() {
+function MentorContent() {
+  const searchParams = useSearchParams();
+  const initialQuery = searchParams.get("query") || undefined;
   const [activeTab, setActiveTab] = useState<"copilot" | "risklab">("copilot");
   const [token] = useState<string>(() => {
     if (typeof window !== "undefined") {
@@ -282,7 +285,7 @@ export default function MentorPage() {
         {/* Tab Content Panel */}
         <div className="bg-white dark:bg-slate-900/80 border border-slate-200/90 dark:border-slate-800 rounded-3xl shadow-xl shadow-slate-200/50 dark:shadow-slate-950/60 p-4 sm:p-6 transition-all">
           {activeTab === "copilot" && (
-            <TradeCopilot token={token} apiUrl={apiUrl} />
+            <TradeCopilot token={token} apiUrl={apiUrl} initialQuery={initialQuery} />
           )}
 
           {activeTab === "risklab" && (
@@ -291,5 +294,19 @@ export default function MentorPage() {
         </div>
       </main>
     </div>
+  );
+}
+
+export default function MentorPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center text-slate-400 text-xs font-mono">
+          Loading Trade-Aware AI Mentor…
+        </div>
+      }
+    >
+      <MentorContent />
+    </Suspense>
   );
 }

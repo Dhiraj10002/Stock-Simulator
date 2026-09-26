@@ -210,3 +210,136 @@ func TestMentorService_PreTradeCheck(t *testing.T) {
 		t.Errorf("expected wishful thinking bias warning, got warnings: %v", resCB.Warnings)
 	}
 }
+
+func TestMentorService_AccountContextAndEducationalDisclaimers(t *testing.T) {
+	cfg := &config.Config{
+		GeminiAPIKey: "",
+		GeminiModel:  "gemini-2.0-flash",
+	}
+	svc := New(cfg)
+
+	// Test educational disclaimer and live account context on portfolio risk query
+	ans, err := svc.Analyze(context.Background(), "31372e69-2088-45d8-a2d8-8607a58e3685", "How do I manage my portfolio risk and open positions?")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	expectedElements := []string{
+		"Institutional Portfolio Risk Diagnostic",
+		"Live Account Context",
+		"Available Balance",
+		"Blocked Margin",
+		"Educational Notice:",
+		"simulator educational guidance only",
+	}
+
+	for _, elem := range expectedElements {
+		if !strings.Contains(ans, elem) {
+			t.Errorf("expected response to contain %q, got:\n%s", elem, ans)
+		}
+	}
+
+	// Test hedging query with context
+	ansHedge, err := svc.Analyze(context.Background(), "31372e69-2088-45d8-a2d8-8607a58e3685", "How can I hedge my exposure?")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(ansHedge, "Hedging Framework & Risk Mitigation") {
+		t.Errorf("expected hedging response, got:\n%s", ansHedge)
+	}
+	if !strings.Contains(ansHedge, "Educational Notice:") {
+		t.Errorf("expected educational notice in hedge response, got:\n%s", ansHedge)
+	}
+}
+
+func TestMentorService_Critique_ZeroTradesCleanSlate(t *testing.T) {
+	cfg := &config.Config{
+		GeminiAPIKey: "",
+		GeminiModel:  "gemini-2.0-flash",
+	}
+	svc := New(cfg)
+
+	metrics := dto.CritiqueMetrics{
+		WinRate:                66.7,
+		ConcentrationRisk:      "LOW",
+		LeverageRisk:           "SAFE",
+		RevengeTradingDetected: false,
+		LimitOrderUsagePct:     0.0,
+		TotalTradesEvaluated:   0,
+		RealizedPnlPaise:       0,
+	}
+
+	critique := svc.buildRuleBasedCritique(100, "EXCELLENT", "A+", metrics, "")
+	if !strings.Contains(critique, "Clean Trading Slate") {
+		t.Errorf("expected clean trading slate onboarding critique for 0 trades, got:\n%s", critique)
+	}
+	if !strings.Contains(critique, "Trader Discipline Grade: A+ — EXCELLENT (100 / 100)") {
+		t.Errorf("expected A+ grade for clean slate, got:\n%s", critique)
+	}
+	if !strings.Contains(critique, "Disclaimer: Educational trade simulation critique only") {
+		t.Errorf("expected educational disclaimer in critique, got:\n%s", critique)
+	}
+}
+
+func TestMentorService_PreTradeCheck_DirectionalErrors(t *testing.T) {
+	cfg := &config.Config{
+		GeminiAPIKey: "",
+		GeminiModel:  "gemini-2.0-flash",
+	}
+	svc := New(cfg)
+
+	// BUY order where Stop-Loss is ABOVE price (invalid direction)
+	req := dto.PreTradeCheckRequest{
+		Symbol:        "TCS",
+		Side:          "BUY",
+		Product:       "INTRADAY",
+		Type:          "LIMIT",
+		Quantity:      10,
+		PricePaise:    400000, // ₹4,000.00
+		StopLossPaise: 420000, // ₹4,200.00 (higher than entry -> error!)
+		TargetPaise:   380000, // ₹3,800.00 (lower than entry -> error!)
+	}
+
+	res, err := svc.PreTradeCheck(context.Background(), "31372e69-2088-45d8-a2d8-8607a58e3685", req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	hasInvalidSL := false
+	hasInvalidTarget := false
+	for _, w := range res.Warnings {
+		if strings.Contains(w, "Invalid Stop-Loss Order") {
+			hasInvalidSL = true
+		}
+		if strings.Contains(w, "Invalid Target Order") {
+			hasInvalidTarget = true
+		}
+	}
+
+	if !hasInvalidSL {
+		t.Errorf("expected warning about invalid stop-loss direction, got: %v", res.Warnings)
+	}
+	if !hasInvalidTarget {
+		t.Errorf("expected warning about invalid target direction, got: %v", res.Warnings)
+	}
+}
+
+func TestMentorService_FallbackOnInvalidApiKey(t *testing.T) {
+	// Provide a fake/unreachable API key to verify it doesn't crash or error out,
+	// but gracefully falls back to the rule-based trade-aware engine
+	cfg := &config.Config{
+		GeminiAPIKey: "AIzaSyFakeKeyThatFails400Or403",
+		GeminiModel:  "gemini-2.0-flash",
+	}
+	svc := New(cfg)
+
+	ans, err := svc.Analyze(context.Background(), "31372e69-2088-45d8-a2d8-8607a58e3685", "What happens during 15:20 MIS square-off?")
+	if err != nil {
+		t.Fatalf("expected graceful fallback, got error: %v", err)
+	}
+
+	if !strings.Contains(ans, "MIS (Margin Intraday Square-off) Rules") {
+		t.Errorf("expected rule-based fallback response, got:\n%s", ans)
+	}
+}
+
