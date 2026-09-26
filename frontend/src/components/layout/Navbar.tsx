@@ -25,6 +25,7 @@ import {
   AlertTriangle,
   ShieldAlert,
   Terminal,
+  Newspaper,
 } from "lucide-react";
 import { formatPaise, getIndianMarketStatus } from "@/lib/format";
 import { useMarketStore, useSymbolQuote } from "@/stores/market-store";
@@ -48,6 +49,7 @@ const NAV_LINKS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/terminal", label: "Terminal", icon: Terminal },
   { href: "/stocks", label: "Stocks", icon: TrendingUp },
+  { href: "/news", label: "News", icon: Newspaper },
   { href: "/options", label: "F&O Hub", icon: Layers },
   { href: "/portfolio", label: "Portfolio", icon: PieChart },
   { href: "/orders", label: "Orders", icon: ClipboardList },

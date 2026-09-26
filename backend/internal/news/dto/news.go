@@ -8,4 +8,5 @@ type ArticleResponse struct {
 	Sentiment   string   `json:"sentiment"`
 	Score       int      `json:"score"`
 	Symbols     []string `json:"symbols"`
+	Sectors     []string `json:"sectors,omitempty"`
 }

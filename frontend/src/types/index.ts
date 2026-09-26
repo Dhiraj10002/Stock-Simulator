@@ -99,6 +99,7 @@ export type Article = {
   sentiment: "POSITIVE" | "NEUTRAL" | "NEGATIVE";
   score: number;
   symbols: string[];
+  sectors?: string[];
 };
 
 export type DepthItem = {

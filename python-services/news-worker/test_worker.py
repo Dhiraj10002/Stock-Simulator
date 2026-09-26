@@ -71,6 +71,32 @@ class NewsWorkerAliasTest(unittest.TestCase):
         self.assertEqual(label, "NEGATIVE")
         self.assertLess(score, 0)
 
+        label, score = worker.sentiment("Market trade volume remains steady ahead of holidays")
+        self.assertEqual(label, "NEUTRAL")
+        self.assertEqual(score, 0)
+
+    def test_matching_sectors(self):
+        sectors = worker.matching_sectors("RBI repo rate hike affects commercial vehicle lending and tech outsourcing")
+        self.assertIn("BANKING", sectors)
+        self.assertIn("AUTO", sectors)
+        self.assertIn("IT", sectors)
+
+    def test_fetch_all_feeds_deduplication(self):
+        worker.fetch_items = MagicMock(side_effect=[
+            [
+                {"title": "Headline 1", "url": "https://example.com/1", "sentiment": "POSITIVE"},
+                {"title": "Duplicate", "url": "https://example.com/common", "sentiment": "NEUTRAL"},
+            ],
+            [
+                {"title": "Headline 2", "url": "https://example.com/2", "sentiment": "NEGATIVE"},
+                {"title": "Duplicate Copy", "url": "https://example.com/common", "sentiment": "NEUTRAL"},
+            ],
+        ])
+        results = worker.fetch_all_feeds(["https://feed1.rss", "https://feed2.rss"])
+        self.assertEqual(len(results), 3)
+        urls = [r["url"] for r in results]
+        self.assertEqual(urls, ["https://example.com/1", "https://example.com/common", "https://example.com/2"])
+
 
 if __name__ == "__main__":
     unittest.main()

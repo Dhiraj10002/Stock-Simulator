@@ -20,13 +20,14 @@ import {
   Zap,
   ArrowRight,
   Terminal,
+  ExternalLink,
 } from "lucide-react";
 import TradingViewChart from "@/components/trading/TradingViewChart";
 import { MASTER_STOCKS_CATALOG } from "@/components/dashboard/DashboardPage";
 import { useMarketStore, useSymbolQuote, useTargetedSubscription } from "@/stores/market-store";
 import Navbar from "@/components/layout/Navbar";
 import { apiFetch, publicFetch, getAuthToken, ApiError } from "@/lib/api";
-import type { Wallet, Candle } from "@/types";
+import type { Wallet, Candle, Article } from "@/types";
 
 interface StockDetailsProps {
   initialSymbol?: string;
@@ -472,6 +473,17 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
     queryKey: ["watchlist", token],
     queryFn: () => apiFetch<WatchlistApiItem[]>("/watchlist"),
     enabled: !!token,
+  });
+
+  // Dynamic news feed for the active stock
+  const { data: liveSymbolNews = [] } = useQuery<Article[]>({
+    queryKey: ["stock-news", symbolParam],
+    queryFn: () =>
+      publicFetch<Article[]>(
+        `/news?symbol=${encodeURIComponent(symbolParam)}&limit=10`
+      ),
+    staleTime: 30000,
+    refetchInterval: 60000,
   });
 
   // Find stock in catalog and merge with authentic live Angel One quote
@@ -1474,43 +1486,91 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
                 <div className="p-4 sm:p-5 space-y-3">
                   <div className="flex items-center justify-between pb-1 border-b border-slate-100 dark:border-slate-800 text-[11px] text-slate-400">
                     <span>Recent Disclosures & Catalysts</span>
-                    <span className="font-mono">Live Sync</span>
+                    <Link
+                      href="/news"
+                      className="font-mono text-cyan-600 dark:text-cyan-400 hover:underline flex items-center gap-1 font-bold"
+                    >
+                      <span>Full News Desk</span>
+                      <ChevronRight className="w-3 h-3" />
+                    </Link>
                   </div>
 
                   <div className="divide-y divide-slate-100 dark:divide-slate-800/70 space-y-2.5">
-                    {getStockNews(stock.symbol, stock.name).map((news, idx) => (
-                      <div key={idx} className="pt-2.5 first:pt-0 space-y-1 group">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-[10px] font-bold text-cyan-700 dark:text-cyan-400">
-                            {news.source}
-                          </span>
-                          <div className="flex items-center gap-1.5">
-                            <span
-                              className={`px-1.5 py-0.2 rounded text-[9px] font-bold uppercase ${
-                                news.sentiment === "POSITIVE"
-                                  ? "bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-400"
-                                  : news.sentiment === "NEGATIVE"
-                                  ? "bg-rose-100 dark:bg-rose-950/80 text-rose-700 dark:text-rose-400"
-                                  : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400"
-                              }`}
-                            >
-                              {news.sentiment}
-                            </span>
-                            <span className="text-[10px] text-slate-400 font-mono">
-                              {news.timeAgo}
-                            </span>
+                    {liveSymbolNews.length > 0 ? (
+                      liveSymbolNews.map((article, idx) => {
+                        const isPositive = article.sentiment === "POSITIVE";
+                        const isNegative = article.sentiment === "NEGATIVE";
+
+                        return (
+                          <div key={idx} className="pt-2.5 first:pt-0 space-y-1 group">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-[10px] font-bold text-cyan-700 dark:text-cyan-400">
+                                {article.source}
+                              </span>
+                              <div className="flex items-center gap-1.5">
+                                <span
+                                  className={`px-1.5 py-0.2 rounded text-[9px] font-bold uppercase ${
+                                    isPositive
+                                      ? "bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-400"
+                                      : isNegative
+                                      ? "bg-rose-100 dark:bg-rose-950/80 text-rose-700 dark:text-rose-400"
+                                      : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400"
+                                  }`}
+                                >
+                                  {article.sentiment}
+                                </span>
+                              </div>
+                            </div>
+
+                            <h4 className="text-xs font-bold text-slate-900 dark:text-slate-100 leading-snug group-hover:text-cyan-600 dark:group-hover:text-cyan-400 transition-colors">
+                              <a
+                                href={article.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 hover:underline"
+                              >
+                                <span>{article.title}</span>
+                                <ExternalLink className="w-3 h-3 opacity-60 group-hover:opacity-100" />
+                              </a>
+                            </h4>
                           </div>
+                        );
+                      })
+                    ) : (
+                      getStockNews(stock.symbol, stock.name).map((news, idx) => (
+                        <div key={idx} className="pt-2.5 first:pt-0 space-y-1 group">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[10px] font-bold text-cyan-700 dark:text-cyan-400">
+                              {news.source}
+                            </span>
+                            <div className="flex items-center gap-1.5">
+                              <span
+                                className={`px-1.5 py-0.2 rounded text-[9px] font-bold uppercase ${
+                                  news.sentiment === "POSITIVE"
+                                    ? "bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-400"
+                                    : news.sentiment === "NEGATIVE"
+                                    ? "bg-rose-100 dark:bg-rose-950/80 text-rose-700 dark:text-rose-400"
+                                    : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400"
+                                }`}
+                              >
+                                {news.sentiment}
+                              </span>
+                              <span className="text-[10px] text-slate-400 font-mono">
+                                {news.timeAgo}
+                              </span>
+                            </div>
+                          </div>
+
+                          <h4 className="text-xs font-bold text-slate-900 dark:text-slate-100 leading-snug group-hover:text-cyan-600 dark:group-hover:text-cyan-400 transition-colors">
+                            {news.title}
+                          </h4>
+
+                          <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed">
+                            {news.summary}
+                          </p>
                         </div>
-
-                        <h4 className="text-xs font-bold text-slate-900 dark:text-slate-100 leading-snug group-hover:text-cyan-600 dark:group-hover:text-cyan-400 transition-colors">
-                          {news.title}
-                        </h4>
-
-                        <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed">
-                          {news.summary}
-                        </p>
-                      </div>
-                    ))}
+                      ))
+                    )}
                   </div>
 
                   <div className="pt-2 border-t border-slate-100 dark:border-slate-800 text-center">

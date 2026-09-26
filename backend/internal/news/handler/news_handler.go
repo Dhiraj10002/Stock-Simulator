@@ -32,7 +32,9 @@ func (h *NewsHandler) List(c *gin.Context) {
 		}
 		limit = parsed
 	}
-	articles, err := h.service.List(c.Query("symbol"), limit)
+	symbol := c.Query("symbol")
+	sentiment := c.Query("sentiment")
+	articles, err := h.service.ListWithFilters(symbol, sentiment, limit)
 	if err != nil {
 		if errors.Is(err, cache.ErrUnavailable) {
 			response.Error(c, http.StatusServiceUnavailable, "News temporarily unavailable", nil)

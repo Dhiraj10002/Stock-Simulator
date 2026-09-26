@@ -11,12 +11,18 @@ import redis
 POSITIVE = {
     "gain", "gains", "growth", "profit", "profits", "surge", "surges", "rally",
     "rallies", "beat", "strong", "upgrade", "bullish", "record", "recovery", "wins",
-    "breakout", "dividend", "expansion", "soars", "highs", "outperforms"
+    "breakout", "dividend", "expansion", "soars", "highs", "outperforms",
+    "jump", "jumps", "boost", "boosts", "soar", "rise", "rises", "climb", "climbs",
+    "revenue", "positive", "uptrend", "promising", "inflow", "inflows", "bull",
+    "turnaround", "robust", "green", "multifold"
 }
 NEGATIVE = {
     "loss", "losses", "fall", "falls", "drop", "drops", "decline", "declines",
     "weak", "downgrade", "bearish", "risk", "crisis", "fraud", "penalty", "miss",
-    "misses", "plunge", "plunges", "slump", "investigation", "default", "selloff"
+    "misses", "plunge", "plunges", "slump", "investigation", "default", "selloff",
+    "tumbles", "tumble", "crash", "crashes", "probe", "outflow", "outflows",
+    "debt", "scam", "bear", "warning", "warns", "slumps", "downturn", "slides",
+    "red", "ban", "fine", "breach"
 }
 
 DEFAULT_KEYWORD_ALIASES: dict[str, list[str]] = {
@@ -24,11 +30,25 @@ DEFAULT_KEYWORD_ALIASES: dict[str, list[str]] = {
     "TCS": ["TCS", "TATA CONSULTANCY", "TATA SONS"],
     "INFY": ["INFOSYS", "INFY", "SALIL PAREKH"],
     "HDFCBANK": ["HDFC", "HDFCBANK", "HDFC BANK"],
+    "ICICIBANK": ["ICICI", "ICICIBANK", "ICICI BANK"],
+    "SBIN": ["SBI", "SBIN", "STATE BANK OF INDIA"],
+    "BHARTIARTL": ["BHARTI", "AIRTEL", "BHARTIARTL"],
+    "ITC": ["ITC", "ITC LTD"],
+    "LT": ["LARSEN", "L&T", "LARSEN & TOUBRO"],
     "NIFTY": ["NIFTY", "NIFTY50", "NIFTY 50", "BENCHMARK INDEX"],
     "BANKNIFTY": ["BANK NIFTY", "BANKNIFTY", "BANKING INDEX"],
     "TMPV": ["TATAMOTORS", "TATA MOTORS", "TMPV"],
     "ETERNAL": ["ZOMATO", "ETERNAL", "BLINKIT"],
     "PRAJIND": ["PRAJIND", "PRAJ INDUSTRIES"],
+    "BAJFINANCE": ["BAJAJ FINANCE", "BAJFINANCE", "BAJAJ FINSERV"],
+    "ADANIENT": ["ADANI", "ADANI ENTERPRISES", "ADANIENT"],
+    "SUNPHARMA": ["SUN PHARMA", "SUNPHARMA", "DILIP SHANGHVI"],
+    "TRENT": ["TRENT", "WESTSIDE", "ZUDIO"],
+    "MARUTI": ["MARUTI", "MARUTI SUZUKI"],
+    "AXISBANK": ["AXIS BANK", "AXISBANK"],
+    "KOTAKBANK": ["KOTAK", "KOTAK BANK", "KOTAK MAHINDRA"],
+    "WIPRO": ["WIPRO"],
+    "HCLTECH": ["HCL TECH", "HCLTECH", "HCL TECHNOLOGIES"],
 }
 
 DEFAULT_CANONICAL_ALIASES: dict[str, str] = {
@@ -141,6 +161,9 @@ SECTOR_KEYWORDS = {
     "IT": ["TECH", "SOFTWARE", "IT", "CLOUD", "AI", "OUTSOURCING", "DIGITAL"],
     "ENERGY": ["OIL", "PETROL", "CRUDE", "GAS", "REFINERY", "POWER", "RENEWABLE"],
     "MACRO": ["INFLATION", "GDP", "DEFICIT", "RUPEE", "FISCAL", "BUDGET", "FED"],
+    "AUTO": ["AUTO", "VEHICLE", "EV", "CAR", "COMMERCIAL VEHICLE", "TRUCK"],
+    "PHARMA": ["PHARMA", "DRUG", "HEALTHCARE", "VACCINE", "FDA", "CLINICAL"],
+    "METALS": ["STEEL", "ALUMINIUM", "COPPER", "MINING", "IRON"],
 }
 
 
@@ -174,9 +197,15 @@ def matching_sectors(title: str) -> list[str]:
     return sectors
 
 
-
 def fetch_items(rss_url: str) -> list[dict]:
-    with urllib.request.urlopen(rss_url, timeout=15) as response:
+    req = urllib.request.Request(
+        rss_url,
+        headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "application/rss+xml, application/xml, text/xml, */*",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=15) as response:
         root = element_tree.fromstring(response.read())
     items = []
     for item in root.findall("./channel/item")[:30]:
@@ -199,6 +228,24 @@ def fetch_items(rss_url: str) -> list[dict]:
     return items
 
 
+def fetch_all_feeds(rss_urls: list[str]) -> list[dict]:
+    aggregated = []
+    seen_urls = set()
+    for url in rss_urls:
+        url = url.strip()
+        if not url:
+            continue
+        try:
+            items = fetch_items(url)
+            for it in items:
+                if it["url"] not in seen_urls:
+                    seen_urls.add(it["url"])
+                    aggregated.append(it)
+        except Exception as e:
+            print(f"news worker: warning fetching feed {url}: {e}", flush=True)
+    return aggregated
+
+
 def store(client: redis.Redis, items: list[dict], items_ttl: int, seen_ttl: int, max_items: int) -> None:
     with client.pipeline() as pipe:
         for item in items:
@@ -213,20 +260,27 @@ def store(client: redis.Redis, items: list[dict], items_ttl: int, seen_ttl: int,
 def main() -> None:
     client = redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"), decode_responses=True,
                             socket_connect_timeout=5, socket_timeout=5, health_check_interval=30)
-    rss_url = os.getenv("NEWS_RSS_URL", "https://news.google.com/rss/search?q=Indian+stock+market&hl=en-IN&gl=IN&ceid=IN:en")
+    raw_urls = os.getenv(
+        "NEWS_RSS_URLS",
+        os.getenv("NEWS_RSS_URL", "https://news.google.com/rss/search?q=Indian+stock+market&hl=en-IN&gl=IN&ceid=IN:en")
+    )
+    rss_urls = [u.strip() for u in raw_urls.split(",") if u.strip()]
     interval = max(60, int(os.getenv("NEWS_POLL_INTERVAL_SECONDS", "600")))
     items_ttl = int(os.getenv("NEWS_TTL_SECONDS", "604800"))
     seen_ttl = int(os.getenv("NEWS_SEEN_TTL_SECONDS", "604800"))
     max_items = int(os.getenv("NEWS_MAX_ITEMS", "200"))
 
-    print(f"news worker: started polling {rss_url} every {interval}s", flush=True)
+    print(f"news worker: started polling {len(rss_urls)} feed(s) every {interval}s", flush=True)
     load_symbol_aliases(client)
     while True:
         try:
             load_symbol_aliases(client)
-            items = fetch_items(rss_url)
-            store(client, items, items_ttl, seen_ttl, max_items)
-            print(f"news worker: processed {len(items)} items", flush=True)
+            items = fetch_all_feeds(rss_urls)
+            if items:
+                store(client, items, items_ttl, seen_ttl, max_items)
+                print(f"news worker: processed {len(items)} items", flush=True)
+            else:
+                print("news worker: no items fetched in current cycle", flush=True)
         except Exception as error:
             print(f"news worker error: {error}", flush=True)
         time.sleep(interval)
