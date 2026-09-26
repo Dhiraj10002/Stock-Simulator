@@ -84,7 +84,7 @@ func getLifecycleTestDB(t *testing.T) *gorm.DB {
 func getLifecycleTestRedis(t *testing.T) *redis.Client {
 	redisURL := os.Getenv("TEST_REDIS_URL")
 	if redisURL == "" {
-		redisURL = "redis://localhost:6380/0"
+		redisURL = "redis://127.0.0.1:6380/0"
 	}
 	rClient, err := cache.NewRedisClient(redisURL, 2*time.Second)
 	if err != nil {

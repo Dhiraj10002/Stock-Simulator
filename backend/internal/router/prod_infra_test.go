@@ -35,7 +35,7 @@ func TestProdInfra_HTTPS_Headers(t *testing.T) {
 		AppEnv:             "production",
 		CORSAllowedOrigins: "https://stock-simulator.vercel.app",
 		JWTSecret:          "prod-test-secret-32-bytes-minimum-size!!",
-		RedisURL:           "redis://localhost:6380/0",
+		RedisURL:           "redis://127.0.0.1:6380/0",
 	}
 
 	r := Setup(context.Background(), cfg)
@@ -71,7 +71,7 @@ func TestProdInfra_CORS_Preflight_And_Restrictions(t *testing.T) {
 		AppEnv:             "production",
 		CORSAllowedOrigins: allowedOrigins,
 		JWTSecret:          "prod-test-secret-32-bytes-minimum-size!!",
-		RedisURL:           "redis://localhost:6380/0",
+		RedisURL:           "redis://127.0.0.1:6380/0",
 	}
 
 	r := Setup(context.Background(), cfg)
@@ -149,7 +149,7 @@ func TestProdInfra_WSS_Upgrade_And_Security(t *testing.T) {
 		AppEnv:             "production",
 		CORSAllowedOrigins: allowedOrigin,
 		JWTSecret:          "prod-test-secret-32-bytes-minimum-size!!",
-		RedisURL:           "redis://localhost:6380/0",
+		RedisURL:           "redis://127.0.0.1:6380/0",
 	}
 
 	r := Setup(context.Background(), cfg)
@@ -313,7 +313,7 @@ func TestProdInfra_Health_And_Readiness_Endpoints(t *testing.T) {
 		AppEnv:             "production",
 		CORSAllowedOrigins: "*",
 		JWTSecret:          "test-secret",
-		RedisURL:           "redis://localhost:6380/0",
+		RedisURL:           "redis://127.0.0.1:6380/0",
 	}
 	r := Setup(context.Background(), cfg)
 
@@ -468,7 +468,7 @@ func TestProdInfra_BackendRestart_StateRecovery(t *testing.T) {
 	rebootCtx, cancelReboot := context.WithCancel(context.Background())
 	defer cancelReboot()
 
-	mHandler, err := marketHandler.New("redis://localhost:6380/0", 2*time.Second)
+	mHandler, err := marketHandler.New("redis://127.0.0.1:6380/0", 2*time.Second)
 	if err != nil {
 		t.Fatalf("failed to create market handler during reboot: %v", err)
 	}
@@ -476,7 +476,7 @@ func TestProdInfra_BackendRestart_StateRecovery(t *testing.T) {
 		AppEnv:             "production",
 		CORSAllowedOrigins: "*",
 		JWTSecret:          "test-secret",
-		RedisURL:           "redis://localhost:6380/0",
+		RedisURL:           "redis://127.0.0.1:6380/0",
 	}
 
 	rebootedOrdersHandler := orderHandler.New(mHandler.Service(), cfg)
@@ -536,7 +536,7 @@ func TestProdInfra_BackendRestart_StateRecovery(t *testing.T) {
 // Test 7: Redis Reconnection & PubSub Resiliency
 // -----------------------------------------------------------------------------
 func TestProdInfra_Redis_Reconnect_And_PubSub(t *testing.T) {
-	mHandler, err := marketHandler.New("redis://localhost:6380/0", 2*time.Second)
+	mHandler, err := marketHandler.New("redis://127.0.0.1:6380/0", 2*time.Second)
 	if err != nil {
 		t.Skipf("Redis not available on 6380: %v", err)
 		return

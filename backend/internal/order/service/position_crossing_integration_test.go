@@ -23,7 +23,7 @@ var (
 func getTestDB(t *testing.T) *gorm.DB {
 	databaseURL := os.Getenv("TEST_DATABASE_URL")
 	if databaseURL == "" {
-		databaseURL = "postgresql://postgres:postgres@localhost:5433/testdb?sslmode=disable"
+		databaseURL = "postgresql://postgres:postgres@127.0.0.1:5433/testdb?sslmode=disable"
 	}
 	testDBOnce.Do(func() {
 		if err := database.Connect(&config.Config{DatabaseURL: databaseURL}); err != nil {
