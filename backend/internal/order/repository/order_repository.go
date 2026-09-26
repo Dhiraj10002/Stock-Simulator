@@ -228,13 +228,56 @@ func (r *OrderRepository) TriggerOrder(orderUUID uuid.UUID, newStatus string) er
 		Update("status", newStatus).Error
 }
 
-// Reject marks a newly-created market order as rejected when its immediate
-// settlement fails. It never releases funds: market orders have no reservation.
+// Reject marks an order as rejected and releases any reserved funds atomically,
+// ensuring zero orphaned reservations even if a reserved order is rejected.
 func (r *OrderRepository) Reject(userUUID, orderUUID uuid.UUID) error {
-	return database.GetDB().
-		Model(&model.Order{}).
-		Where("uuid = ? AND user_uuid = ? AND status IN ? AND reserved_paise = 0", orderUUID, userUUID, []string{model.OrderStatusPending, model.OrderStatusOpen, model.OrderStatusTriggerPending}).
-		Update("status", model.OrderStatusRejected).Error
+	return database.GetDB().Transaction(func(tx *gorm.DB) error {
+		var wallet model.Wallet
+		if err := tx.
+			Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("user_uuid = ?", userUUID).
+			First(&wallet).Error; err != nil {
+			return err
+		}
+
+		var order model.Order
+		if err := tx.
+			Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("uuid = ? AND user_uuid = ?", orderUUID, userUUID).
+			First(&order).Error; err != nil {
+			return err
+		}
+
+		if order.Status != model.OrderStatusPending &&
+			order.Status != model.OrderStatusOpen &&
+			order.Status != model.OrderStatusTriggerPending {
+			return gorm.ErrInvalidData
+		}
+
+		if order.ReservedPaise > 0 {
+			if wallet.BlockedPaise >= order.ReservedPaise {
+				wallet.BlockedPaise -= order.ReservedPaise
+				if err := tx.Save(&wallet).Error; err != nil {
+					return err
+				}
+
+				if err := tx.Create(&model.WalletTransaction{
+					WalletUUID:   wallet.UUID,
+					Type:         model.WalletTransactionRelease,
+					AmountPaise:  order.ReservedPaise,
+					BalancePaise: wallet.CashBalancePaise,
+					BlockedPaise: wallet.BlockedPaise,
+					Note:         "Rejected order funds released",
+				}).Error; err != nil {
+					return err
+				}
+			}
+			order.ReservedPaise = 0
+		}
+
+		order.Status = model.OrderStatusRejected
+		return tx.Save(&order).Error
+	})
 }
 
 func (r *OrderRepository) Cancel(userUUID, orderUUID uuid.UUID) error {

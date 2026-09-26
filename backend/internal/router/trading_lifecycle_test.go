@@ -44,11 +44,11 @@ type lifecycleTestEnv struct {
 func getLifecycleTestDB(t *testing.T) *gorm.DB {
 	dbURL := os.Getenv("TEST_DATABASE_URL")
 	if dbURL == "" {
-		dbURL = "postgres://postgres:postgres@localhost:5433/testdb?sslmode=disable"
+		dbURL = "postgres://postgres:postgres@127.0.0.1:5433/testdb?sslmode=disable"
 	}
-	conn, err := net.DialTimeout("tcp", "localhost:5433", 50*time.Millisecond)
+	conn, err := net.DialTimeout("tcp", "127.0.0.1:5433", 50*time.Millisecond)
 	if err != nil {
-		t.Skipf("PostgreSQL not accessible at localhost:5433 (%v); skipping lifecycle integration test", err)
+		t.Skipf("PostgreSQL not accessible at 127.0.0.1:5433 (%v); skipping lifecycle integration test", err)
 		return nil
 	}
 	_ = conn.Close()

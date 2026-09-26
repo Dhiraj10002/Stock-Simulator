@@ -10,6 +10,7 @@ import (
 
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/cache"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/config"
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/alias"
 	marketDTO "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/dto"
 	marketService "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/service"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
@@ -76,6 +77,11 @@ func setRedisQuote(ctx context.Context, client *redis.Client, symbol string, pri
 
 func deleteRedisQuote(ctx context.Context, client *redis.Client, symbol string) {
 	_ = client.Del(ctx, "market:quote:"+symbol).Err()
+	_ = client.Del(ctx, "market:quote:"+symbol+"-EQ").Err()
+	if c := alias.ResolveCanonicalSymbol(symbol); c != "" && c != symbol {
+		_ = client.Del(ctx, "market:quote:"+c).Err()
+		_ = client.Del(ctx, "market:quote:"+c+"-EQ").Err()
+	}
 }
 
 // TestIntegration_RedisToOrderSettlement_AuthoritativeLiveQuote proves that a valid
