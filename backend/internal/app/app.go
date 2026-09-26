@@ -80,6 +80,10 @@ func (a *App) RunWithContext(ctx context.Context) error {
 			_ = database.GetDB().AutoMigrate(&model.Trade{})
 			logger.Info("Auto-migrated Trade model (Tag & Notes columns)")
 		}
+		if !database.GetDB().Migrator().HasColumn(&model.RefreshSession{}, "JTI") {
+			_ = database.GetDB().AutoMigrate(&model.RefreshSession{})
+			logger.Info("Auto-migrated RefreshSession model (JTI column)")
+		}
 	}
 
 	// Setup Router with worker context

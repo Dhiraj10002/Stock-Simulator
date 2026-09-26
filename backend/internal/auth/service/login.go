@@ -44,9 +44,15 @@ func (s *AuthService) Login(req dto.LoginRequest) (*dto.LoginResponse, error) {
 		return nil, err
 	}
 
+	refreshClaims, err := token.Parse(s.cfg.JWTSecret, refreshToken)
+	if err != nil {
+		return nil, err
+	}
+
 	if err := s.repo.CreateRefreshSession(&model.RefreshSession{
 		UserUUID:  user.UUID,
 		TokenHash: hashToken(refreshToken),
+		JTI:       refreshClaims.ID,
 		ExpiresAt: time.Now().Add(7 * 24 * time.Hour),
 	}); err != nil {
 		return nil, err

@@ -71,6 +71,19 @@ func (r *AuthRepository) FindActiveRefreshSession(tokenHash string) (*model.Refr
 	return &session, err
 }
 
+func (r *AuthRepository) FindByTokenHash(tokenHash string) (*model.RefreshSession, error) {
+	var session model.RefreshSession
+	err := database.GetDB().Where("token_hash = ?", tokenHash).First(&session).Error
+	return &session, err
+}
+
+func (r *AuthRepository) RevokeAllUserSessions(userUUID uuid.UUID) error {
+	now := time.Now()
+	return database.GetDB().Model(&model.RefreshSession{}).
+		Where("user_uuid = ? AND revoked_at IS NULL", userUUID).
+		Update("revoked_at", &now).Error
+}
+
 func (r *AuthRepository) RevokeRefreshSession(tokenHash string) error {
 	now := time.Now()
 	result := database.GetDB().Model(&model.RefreshSession{}).
