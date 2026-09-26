@@ -42,9 +42,9 @@ func TestTradeService_UpdateJournal_And_List(t *testing.T) {
 	}
 
 	userA := model.User{
-		Email:        fmt.Sprintf("trader_a_%d@example.com", time.Now().UnixNano()),
+		Email:    fmt.Sprintf("trader_a_%d@example.com", time.Now().UnixNano()),
 		Password: "dummyhash",
-		Name:         "Trader Alpha",
+		Name:     "Trader Alpha",
 	}
 	if err := db.Create(&userA).Error; err != nil {
 		t.Fatalf("failed to create test user: %v", err)
@@ -52,9 +52,9 @@ func TestTradeService_UpdateJournal_And_List(t *testing.T) {
 	defer db.Delete(&userA)
 
 	userB := model.User{
-		Email:        fmt.Sprintf("trader_b_%d@example.com", time.Now().UnixNano()),
+		Email:    fmt.Sprintf("trader_b_%d@example.com", time.Now().UnixNano()),
 		Password: "dummyhash",
-		Name:         "Trader Beta",
+		Name:     "Trader Beta",
 	}
 	if err := db.Create(&userB).Error; err != nil {
 		t.Fatalf("failed to create test user B: %v", err)

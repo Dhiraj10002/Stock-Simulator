@@ -32,6 +32,7 @@ func (h *Handler) List(c *gin.Context) {
 	}
 	response.Success(c, http.StatusOK, "Watchlist retrieved", items)
 }
+
 const MaxWatchlistItems = 50
 
 func isCanonicalSymbol(symbol string) bool {

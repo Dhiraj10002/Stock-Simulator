@@ -342,4 +342,3 @@ func TestMentorService_FallbackOnInvalidApiKey(t *testing.T) {
 		t.Errorf("expected rule-based fallback response, got:\n%s", ans)
 	}
 }
-

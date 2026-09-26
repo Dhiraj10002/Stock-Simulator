@@ -341,12 +341,12 @@ func TestPortfolioService_FNO_PositionsRepricingAndQuoteStates(t *testing.T) {
 		}
 
 		expectedPnl := map[string]int64{
-			"NIFTY 25000 CE":    125000,  // Long CE: (150-100)*25 = +125,000
-			"NIFTY 25200 CE":    50000,   // Short CE: (80-60)*25 = +50,000
-			"NIFTY 24800 PE":    -75000,  // Long PE: (60-90)*25 = -75,000
-			"NIFTY 24500 PE":    -25000,  // Short PE: (60-70)*25 = -25,000
-			"NIFTY24SEPFUT":     500000,  // Long Future: (25200-25000)*25 = +500,000
-			"BANKNIFTY24SEPFUT": 750000,  // Short Future: (52000-51500)*15 = +750,000
+			"NIFTY 25000 CE":    125000, // Long CE: (150-100)*25 = +125,000
+			"NIFTY 25200 CE":    50000,  // Short CE: (80-60)*25 = +50,000
+			"NIFTY 24800 PE":    -75000, // Long PE: (60-90)*25 = -75,000
+			"NIFTY 24500 PE":    -25000, // Short PE: (60-70)*25 = -25,000
+			"NIFTY24SEPFUT":     500000, // Long Future: (25200-25000)*25 = +500,000
+			"BANKNIFTY24SEPFUT": 750000, // Short Future: (52000-51500)*15 = +750,000
 		}
 
 		totalExpectedUnrealized := int64(125000 + 50000 - 75000 - 25000 + 500000 + 750000) // 1,325,000 paise (+₹13,250)
@@ -452,4 +452,3 @@ func TestPortfolioService_FNO_PositionsRepricingAndQuoteStates(t *testing.T) {
 		}
 	})
 }
-

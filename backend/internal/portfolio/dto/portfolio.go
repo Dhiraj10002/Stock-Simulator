@@ -28,4 +28,3 @@ type PortfolioResponse struct {
 	TotalPnlPaise      int64              `json:"total_pnl_paise"`
 	ValuationStatus    string             `json:"valuation_status,omitempty"` // "REALTIME", "STALE", "DEGRADED"
 }
-

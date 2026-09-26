@@ -33,8 +33,14 @@ import (
 	walletHandler "github.com/Dhiraj10002/Stock-Simulator/backend/internal/wallet/handler"
 	watchlistHandler "github.com/Dhiraj10002/Stock-Simulator/backend/internal/watchlist/handler"
 
+	_ "embed"
+	"net/http"
+
 	"github.com/gin-gonic/gin"
 )
+
+//go:embed openapi.yaml
+var openAPISpec []byte
 
 type SetupOption func(*setupOptions)
 
@@ -155,10 +161,16 @@ func Setup(ctx context.Context, cfg *config.Config, opts ...SetupOption) *gin.En
 	}
 	r.GET("/health", healthHandler.Health)
 	r.GET("/ready", healthHandler.Readiness)
+	r.GET("/openapi.yaml", func(c *gin.Context) {
+		c.Data(http.StatusOK, "application/yaml; charset=utf-8", openAPISpec)
+	})
 	r.GET("/ws/market", marketWS.Serve)
 	{
 		api.GET("/health", healthHandler.Health)
 		api.GET("/ready", healthHandler.Readiness)
+		api.GET("/openapi.yaml", func(c *gin.Context) {
+			c.Data(http.StatusOK, "application/yaml; charset=utf-8", openAPISpec)
+		})
 		api.GET("/market/status", market.Status)
 		api.GET("/market/quotes/:symbol", market.Quote)
 		api.GET("/market/quotes/:symbol/history", market.History)

@@ -245,12 +245,12 @@ Open `http://localhost:3000` to access the trading interface.
 # Market Data Streamer
 cd python-services/market-worker
 pip install -r requirements.txt
-python main.py
+python worker.py
 
 # News Sentiment Worker
 cd ../news-worker
 pip install -r requirements.txt
-python main.py
+python worker.py
 ```
 
 ---
@@ -273,7 +273,7 @@ docker compose --profile local up --build
 
 ## 🧪 Testing & Verification
 
-The backend includes a comprehensive suite of unit tests, concurrent stress tests, and integration tests validated against PostgreSQL:
+The platform includes a comprehensive suite of unit tests, concurrent stress tests, and integration tests validated against PostgreSQL and Redis:
 
 ```bash
 # Run all backend unit & integration tests
@@ -285,14 +285,29 @@ go vet ./...
 
 # Verify code formatting
 test -z "$(gofmt -l .)" && echo "Code formatting is clean!"
+
+# Run frontend tests & TypeScript checks
+cd ../frontend
+npm test
+npx tsc --noEmit
+npm run lint
+
+# Run Python worker test suites
+cd ../python-services/market-worker
+python3 -m unittest discover -v -p 'test_*.py'
+cd ../news-worker
+python3 -m unittest discover -v -p 'test_*.py'
 ```
 
 ### Key Test Suites
 - `calendar_test.go`: 09:15–15:30 IST session boundary, weekend, and holiday rejection.
 - `concurrency_integration_test.go`: Multi-threaded simultaneous orders validating deadlock-free locking.
+- `concurrency_failure_stress_test.go`: 15 attack vectors including concurrent order creation vs wallet reset, Redis disconnection recovery, and upstream provider outage handling.
+- `security_hardening_test.go`: Transactional refresh token rotation with JTI tracking, token reuse detection, strict CORS allowlist, Redis token bucket rate limiting, and zero sensitive field leakage.
 - `position_crossing_integration_test.go`: Long-to-short and short-to-long net position reversals across zero.
 - `mis_squareoff_test.go`: 15:20 order cancellations and 15:20–15:30 retry loop auto-squareoff.
 - `fno_expiry_integration_test.go`: 15:30 IST derivatives expiry cash settlement and intrinsic value calculations.
+- `app_test.go`: Graceful `SIGINT`/`SIGTERM` server shutdown with background worker context propagation.
 - `app_test.go`: Graceful `SIGINT`/`SIGTERM` server shutdown with background worker context propagation.
 
 ---
@@ -365,7 +380,7 @@ TLS reverse proxy templates with automatic Let's Encrypt certificates are provid
 
 ## 📖 Documentation & Specifications
 
-- **[OpenAPI 3.0 Specification](file:///home/dhiraj/personal/Stock-Simulator/docs/api/openapi.yaml)**: Comprehensive interactive REST API & WebSocket documentation.
+- **[OpenAPI 3.0 Specification](docs/api/openapi.yaml)**: Comprehensive interactive REST API & WebSocket documentation covering all 42 platform endpoints (also served live at `/api/v1/openapi.yaml`).
 - **[Database Schema & Ledger Architecture](file:///home/dhiraj/personal/Stock-Simulator/docs/database/schema.md)**: Tables, columns, indexes, constraints, and state machine diagrams.
 - **[Cache Policy](file:///home/dhiraj/personal/Stock-Simulator/docs/cache-policy.md)**: Redis quote caching, expiry policies, and pub/sub channels.
 - **[Production Deployment Guide](file:///home/dhiraj/personal/Stock-Simulator/docs/deployment.md)**: Container orchestration, healthcheck probes, and security hardening.

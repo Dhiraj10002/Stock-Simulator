@@ -213,4 +213,3 @@ func (h *Handler) Breadth(c *gin.Context) {
 	}
 	response.Success(c, http.StatusOK, "Market breadth retrieved successfully", breadth)
 }
-

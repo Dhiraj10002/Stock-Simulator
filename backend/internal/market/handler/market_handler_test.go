@@ -215,4 +215,3 @@ func TestMarketHandler_ErrorSemantics(t *testing.T) {
 		}
 	})
 }
-

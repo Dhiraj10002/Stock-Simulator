@@ -204,4 +204,3 @@ func TestSlowClientDropLogic(t *testing.T) {
 		t.Fatalf("expected cancel() to be invoked on slow client overflow")
 	}
 }
-

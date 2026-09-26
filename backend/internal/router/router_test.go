@@ -83,3 +83,26 @@ func TestWorkerContextCancellation(t *testing.T) {
 		t.Fatal("worker context cancellation timed out")
 	}
 }
+
+func TestOpenAPISpecServing(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	r := Setup(ctx, &config.Config{CORSAllowedOrigins: "http://localhost:3000"})
+
+	for _, path := range []string{"/openapi.yaml", "/api/v1/openapi.yaml"} {
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected HTTP 200 for %s, got: %d", path, w.Code)
+		}
+		contentType := w.Header().Get("Content-Type")
+		if !strings.Contains(contentType, "application/yaml") {
+			t.Fatalf("expected Content-Type containing application/yaml, got: %s", contentType)
+		}
+		if !strings.Contains(w.Body.String(), "openapi: 3.0.3") {
+			t.Fatalf("expected body to contain openapi: 3.0.3, got: %s", w.Body.String()[:100])
+		}
+	}
+}

@@ -89,7 +89,7 @@ func TestPhase10_PortfolioValuation_BalanceSheetEquality(t *testing.T) {
 	currentWallet := fetchWallet(t, env, token)
 
 	expectedUnrealized := int64(20) * (newMarketPrice - buyPrice) // 20 * 20,000 = 400,000 paise (+₹4,000)
-	expectedCurrentVal := int64(20) * newMarketPrice             // 20 * 320,000 = 6,400,000 paise (₹64,000)
+	expectedCurrentVal := int64(20) * newMarketPrice              // 20 * 320,000 = 6,400,000 paise (₹64,000)
 
 	if portfolio.InvestedValuePaise != expectedInvested {
 		t.Errorf("expected portfolio invested value %d, got %d", expectedInvested, portfolio.InvestedValuePaise)
@@ -131,7 +131,7 @@ func TestPhase10_ContractNote_StatutoryCharges(t *testing.T) {
 	env.setQuote(symbol, pricePaise)
 
 	orderReq := orderDTO.CreateOrderRequest{
-		Symbol:   symbol,
+		Symbol:     symbol,
 		Side:       model.OrderSideBuy,
 		Type:       model.OrderTypeLimit,
 		PricePaise: pricePaise,

@@ -2,14 +2,43 @@ name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
+    branches: [main]
 
 jobs:
   backend:
+    name: Go Backend & Integration Tests
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: testdb
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6380:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     defaults:
       run:
         working-directory: backend
+    env:
+      TEST_DATABASE_URL: "postgresql://postgres:postgres@localhost:5433/testdb?sslmode=disable"
+      TEST_REDIS_URL: "redis://localhost:6380/0"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -25,13 +54,14 @@ jobs:
             exit 1
           fi
 
-      - name: Vet
+      - name: Go Vet
         run: go vet ./...
 
-      - name: Test
-        run: go test ./...
+      - name: Run Backend Tests
+        run: go test -v -count=1 ./...
 
   python-workers:
+    name: Python Workers
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -39,16 +69,24 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install market-worker dependencies
+      - name: Install Market Worker Dependencies
         working-directory: python-services/market-worker
-        run: |
-          pip install -r requirements.txt 2>/dev/null || true
+        run: pip install -r requirements.txt
 
-      - name: Test market-worker
+      - name: Test Market Worker
         working-directory: python-services/market-worker
         run: python3 -m unittest discover -v -p 'test_*.py'
 
+      - name: Install News Worker Dependencies
+        working-directory: python-services/news-worker
+        run: pip install -r requirements.txt
+
+      - name: Test News Worker
+        working-directory: python-services/news-worker
+        run: python3 -m unittest discover -v -p 'test_*.py'
+
   frontend:
+    name: Next.js Frontend Quality Gate
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -60,10 +98,18 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-      - run: npm ci
 
-      - name: TypeScript type check
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Run ESLint
+        run: npm run lint
+
+      - name: TypeScript Type Check
         run: npx tsc --noEmit
 
-      - name: Build
+      - name: Run Unit Tests
+        run: npm test
+
+      - name: Production Build
         run: npm run build

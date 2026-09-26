@@ -1136,4 +1136,3 @@ func TestAttack_UpstreamMarketProviderDisconnectAndRecovery(t *testing.T) {
 		t.Fatalf("expected successful quote execution after upstream recovery, got: %v, quote: %+v", err, qRecovered)
 	}
 }
-
