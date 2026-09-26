@@ -181,16 +181,32 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
         const ws = new WebSocket(wsUrl);
         wsRef.current = ws;
 
+        let pingTimer: NodeJS.Timeout | null = null;
+
         ws.onopen = () => {
           if (!isSubscribed) return;
           setConnectionState("connected");
           subscribedSymbolsRef.current.clear();
           syncSubscriptions();
+
+          // Application-level heartbeat ping every 30 seconds to prevent proxy timeouts
+          pingTimer = setInterval(() => {
+            if (ws.readyState === WebSocket.OPEN) {
+              try {
+                ws.send(JSON.stringify({ action: "ping" }));
+              } catch {
+                // Ignore send error; onclose will handle reconnect
+              }
+            }
+          }, 30000);
         };
 
         ws.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data);
+            if (data.type === "pong") {
+              return;
+            }
             if (data.type === "feed_status") {
               const fs = data.feed_status || data;
               setFeedStatus({
@@ -222,6 +238,7 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
         };
 
         ws.onclose = () => {
+          if (pingTimer) clearInterval(pingTimer);
           setConnectionState("disconnected");
           subscribedSymbolsRef.current.clear();
           if (isSubscribed) {

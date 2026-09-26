@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 func TestCheckOrigin_Production_Allowed(t *testing.T) {
@@ -139,6 +140,68 @@ func TestSortedSymbols(t *testing.T) {
 func TestMaxSubscriptionsPerClient(t *testing.T) {
 	if MaxSubscriptionsPerClient != 100 {
 		t.Errorf("expected MaxSubscriptionsPerClient to be 100, got %d", MaxSubscriptionsPerClient)
+	}
+}
+
+func TestWebSocketHardeningConstants(t *testing.T) {
+	if WriteWait != 10*time.Second {
+		t.Errorf("expected WriteWait to be 10s, got %v", WriteWait)
+	}
+	if PongWait != 60*time.Second {
+		t.Errorf("expected PongWait to be 60s, got %v", PongWait)
+	}
+	if PingPeriod >= PongWait {
+		t.Errorf("PingPeriod (%v) must be strictly less than PongWait (%v)", PingPeriod, PongWait)
+	}
+	if MaxMessageSize != 4096 {
+		t.Errorf("expected MaxMessageSize to be 4096, got %d", MaxMessageSize)
+	}
+	if SendBufferSize != 256 {
+		t.Errorf("expected SendBufferSize to be 256, got %d", SendBufferSize)
+	}
+}
+
+func TestSlowClientDropLogic(t *testing.T) {
+	client := &clientConn{
+		send:     make(chan event, SendBufferSize),
+		reqID:    "test-req-id",
+		clientIP: "127.0.0.1",
+	}
+
+	cancelled := false
+	cancel := func() {
+		cancelled = true
+	}
+
+	enqueueEvent := func(ev event) bool {
+		select {
+		case client.send <- ev:
+			return true
+		default:
+			cancel()
+			return false
+		}
+	}
+
+	// Fill the buffer completely up to SendBufferSize
+	for i := 0; i < SendBufferSize; i++ {
+		ok := enqueueEvent(event{Type: "quote"})
+		if !ok {
+			t.Fatalf("expected enqueueEvent to succeed for buffer slot %d, but failed", i)
+		}
+	}
+
+	if cancelled {
+		t.Fatalf("expected client not to be cancelled when buffer is not yet full")
+	}
+
+	// 257th message: buffer is full! Slow client detection must trigger
+	ok := enqueueEvent(event{Type: "quote"})
+	if ok {
+		t.Fatalf("expected enqueueEvent to return false when buffer is full, but returned true")
+	}
+	if !cancelled {
+		t.Fatalf("expected cancel() to be invoked on slow client overflow")
 	}
 }
 

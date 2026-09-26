@@ -19,6 +19,27 @@ import (
 	"go.uber.org/zap"
 )
 
+const (
+	// WriteWait is the maximum duration allowed to write a message to the peer.
+	WriteWait = 10 * time.Second
+
+	// PongWait is the maximum duration allowed to read the next pong message from the peer.
+	PongWait = 60 * time.Second
+
+	// PingPeriod is the interval between pings sent to the peer. Must be less than PongWait.
+	PingPeriod = (PongWait * 9) / 10
+
+	// MaxMessageSize is the maximum size in bytes of an incoming command message.
+	MaxMessageSize = 4096
+
+	// SendBufferSize is the bounded channel buffer size for outgoing messages.
+	// If a client's buffer exceeds this (e.g. stalled TCP/slow consumer), the client is dropped.
+	SendBufferSize = 256
+
+	// MaxSubscriptionsPerClient defines the ceiling of active symbol subscriptions per connection.
+	MaxSubscriptionsPerClient = 100
+)
+
 type Handler struct {
 	market   *marketService.Service
 	upgrader ws.Upgrader
@@ -37,9 +58,12 @@ type event struct {
 	Message    string                        `json:"message,omitempty"`
 }
 
-// MaxSubscriptionsPerClient defines the hard ceiling of active symbol subscriptions per connection
-// to prevent denial-of-service via huge unbounded subscription lists.
-const MaxSubscriptionsPerClient = 100
+type clientConn struct {
+	conn     *ws.Conn
+	send     chan event
+	reqID    string
+	clientIP string
+}
 
 // New creates a new WebSocket Handler with origin restrictions.
 // In production (isProd=true), origins are strictly checked against allowedOrigins.
@@ -125,7 +149,6 @@ func (h *Handler) Serve(c *gin.Context) {
 		return
 	}
 	defer conn.Close()
-	conn.SetReadLimit(4096)
 
 	reqID := c.GetString("request_id")
 	if reqID == "" {
@@ -137,8 +160,36 @@ func (h *Handler) Serve(c *gin.Context) {
 
 	ctx, cancel := context.WithCancel(c.Request.Context())
 	defer cancel()
-	pubsub := h.market.SubscribeQuotes(ctx)
-	defer pubsub.Close()
+
+	client := &clientConn{
+		conn:     conn,
+		send:     make(chan event, SendBufferSize),
+		reqID:    reqID,
+		clientIP: c.ClientIP(),
+	}
+
+	commands := make(chan command, 16)
+
+	// Start separate read and write pumps to decouple network I/O from Redis message processing
+	go h.readPump(ctx, cancel, client, commands)
+	go h.writePump(ctx, cancel, client)
+
+	// Helper for bounded non-blocking event queuing.
+	// If a client is slow and the bounded SendBufferSize is exceeded, the client is dropped
+	// immediately to prevent blocking Redis Pub/Sub or other users.
+	enqueueEvent := func(ev event) bool {
+		select {
+		case client.send <- ev:
+			return true
+		default:
+			logger.Warn("websocket: slow client detected, send buffer full; dropping client to protect server",
+				logger.RequestID(client.reqID),
+				zap.String("client_ip", client.clientIP),
+			)
+			cancel()
+			return false
+		}
+	}
 
 	// Send initial authoritative feed status immediately upon connection
 	if feedStatus, err := h.market.FeedStatus(ctx); err == nil && feedStatus != nil {
@@ -148,32 +199,43 @@ func (h *Handler) Serve(c *gin.Context) {
 			logger.MarketEventID(eventID),
 			logger.FeedState(feedStatus.FeedState),
 			logger.LastTick(feedStatus.LastTick),
-			zap.String("client_ip", c.ClientIP()),
+			zap.String("client_ip", client.clientIP),
 		)
-		_ = conn.WriteJSON(event{Type: "feed_status", FeedStatus: feedStatus})
+		if !enqueueEvent(event{Type: "feed_status", FeedStatus: feedStatus}) {
+			return
+		}
 	}
 
-	commands := make(chan command)
-	done := make(chan struct{})
-	go h.readCommands(conn, commands, done)
+	pubsub := h.market.SubscribeQuotes(ctx)
+	defer pubsub.Close()
 
 	subscribed := make(map[string]struct{})
 	for {
 		select {
-		case <-done:
+		case <-ctx.Done():
 			return
-		case cmd := <-commands:
-			symbols := normalizeSymbols(cmd.Symbols)
-			eventID := fmt.Sprintf("mkt_cmd_%d_%s", time.Now().UnixNano(), uuid.NewString()[:8])
-			logger.Info("websocket subscription command processed",
-				logger.RequestID(reqID),
-				logger.MarketEventID(eventID),
-				zap.String("action", cmd.Action),
-				zap.Strings("symbols", symbols),
-				zap.String("client_ip", c.ClientIP()),
-			)
-			switch strings.ToLower(cmd.Action) {
+		case cmd, ok := <-commands:
+			if !ok {
+				return
+			}
+			action := strings.ToLower(strings.TrimSpace(cmd.Action))
+			switch action {
+			case "ping":
+				// Application-level heartbeat support: refresh deadline & echo pong
+				_ = client.conn.SetReadDeadline(time.Now().Add(PongWait))
+				if !enqueueEvent(event{Type: "pong"}) {
+					return
+				}
 			case "subscribe":
+				symbols := normalizeSymbols(cmd.Symbols)
+				eventID := fmt.Sprintf("mkt_cmd_%d_%s", time.Now().UnixNano(), uuid.NewString()[:8])
+				logger.Info("websocket subscription command processed",
+					logger.RequestID(reqID),
+					logger.MarketEventID(eventID),
+					zap.String("action", cmd.Action),
+					zap.Strings("symbols", symbols),
+					zap.String("client_ip", client.clientIP),
+				)
 				excess := false
 				for _, symbol := range symbols {
 					if _, exists := subscribed[symbol]; !exists && len(subscribed) >= MaxSubscriptionsPerClient {
@@ -182,20 +244,34 @@ func (h *Handler) Serve(c *gin.Context) {
 					}
 					subscribed[symbol] = struct{}{}
 					if q, err := h.market.CurrentQuote(symbol); err == nil && q != nil {
-						_ = conn.WriteJSON(event{Type: "quote", Quote: q})
+						if !enqueueEvent(event{Type: "quote", Quote: q}) {
+							return
+						}
 					}
 				}
 				if excess {
-					_ = conn.WriteJSON(event{Type: "error", Message: fmt.Sprintf("subscription limit of %d symbols exceeded; excess symbols ignored", MaxSubscriptionsPerClient)})
+					if !enqueueEvent(event{
+						Type:    "error",
+						Message: fmt.Sprintf("subscription limit of %d symbols exceeded; excess symbols ignored", MaxSubscriptionsPerClient),
+					}) {
+						return
+					}
 				}
-				_ = conn.WriteJSON(event{Type: "subscribed", Symbols: sortedSymbols(subscribed)})
+				if !enqueueEvent(event{Type: "subscribed", Symbols: sortedSymbols(subscribed)}) {
+					return
+				}
 			case "unsubscribe":
+				symbols := normalizeSymbols(cmd.Symbols)
 				for _, symbol := range symbols {
 					delete(subscribed, symbol)
 				}
-				_ = conn.WriteJSON(event{Type: "unsubscribed", Symbols: sortedSymbols(subscribed)})
+				if !enqueueEvent(event{Type: "unsubscribed", Symbols: sortedSymbols(subscribed)}) {
+					return
+				}
 			default:
-				_ = conn.WriteJSON(event{Type: "error", Message: "action must be subscribe or unsubscribe"})
+				if !enqueueEvent(event{Type: "error", Message: "action must be subscribe, unsubscribe, or ping"}) {
+					return
+				}
 			}
 		case message, ok := <-pubsub.Channel():
 			if !ok {
@@ -215,7 +291,7 @@ func (h *Handler) Serve(c *gin.Context) {
 						logger.FeedState(fs.FeedState),
 						logger.LastTick(fs.LastTick),
 					)
-					if err := conn.WriteJSON(event{Type: "feed_status", FeedStatus: &fs}); err != nil {
+					if !enqueueEvent(event{Type: "feed_status", FeedStatus: &fs}) {
 						return
 					}
 				}
@@ -229,21 +305,70 @@ func (h *Handler) Serve(c *gin.Context) {
 			if _, ok := subscribed[strings.ToUpper(quote.Symbol)]; !ok {
 				continue
 			}
-			if err := conn.WriteJSON(event{Type: "quote", Quote: &quote}); err != nil {
+			if !enqueueEvent(event{Type: "quote", Quote: &quote}) {
 				return
 			}
 		}
 	}
 }
 
-func (h *Handler) readCommands(conn *ws.Conn, commands chan<- command, done chan<- struct{}) {
-	defer close(done)
+// readPump pumps messages from the websocket connection to the commands channel.
+// Enforces MaxMessageSize, PongWait read deadline, and ping/pong heartbeats.
+func (h *Handler) readPump(ctx context.Context, cancel context.CancelFunc, client *clientConn, commands chan<- command) {
+	defer func() {
+		cancel()
+	}()
+
+	client.conn.SetReadLimit(MaxMessageSize)
+	_ = client.conn.SetReadDeadline(time.Now().Add(PongWait))
+	client.conn.SetPongHandler(func(string) error {
+		_ = client.conn.SetReadDeadline(time.Now().Add(PongWait))
+		return nil
+	})
+
 	for {
 		var cmd command
-		if err := conn.ReadJSON(&cmd); err != nil {
+		if err := client.conn.ReadJSON(&cmd); err != nil {
 			return
 		}
-		commands <- cmd
+		select {
+		case <-ctx.Done():
+			return
+		case commands <- cmd:
+		}
+	}
+}
+
+// writePump pumps messages from the client.send channel to the websocket connection.
+// Enforces WriteWait deadline for every write, and periodically sends PingMessage frames.
+func (h *Handler) writePump(ctx context.Context, cancel context.CancelFunc, client *clientConn) {
+	ticker := time.NewTicker(PingPeriod)
+	defer func() {
+		ticker.Stop()
+		cancel()
+	}()
+
+	for {
+		select {
+		case <-ctx.Done():
+			_ = client.conn.SetWriteDeadline(time.Now().Add(WriteWait))
+			_ = client.conn.WriteMessage(ws.CloseMessage, ws.FormatCloseMessage(ws.CloseNormalClosure, "server shutdown or connection closed"))
+			return
+		case <-ticker.C:
+			_ = client.conn.SetWriteDeadline(time.Now().Add(WriteWait))
+			if err := client.conn.WriteMessage(ws.PingMessage, nil); err != nil {
+				return
+			}
+		case ev, ok := <-client.send:
+			_ = client.conn.SetWriteDeadline(time.Now().Add(WriteWait))
+			if !ok {
+				_ = client.conn.WriteMessage(ws.CloseMessage, ws.FormatCloseMessage(ws.CloseNormalClosure, ""))
+				return
+			}
+			if err := client.conn.WriteJSON(ev); err != nil {
+				return
+			}
+		}
 	}
 }
 
