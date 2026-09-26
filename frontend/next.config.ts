@@ -6,13 +6,8 @@ const nextConfig: NextConfig = {
   async redirects() {
     return [
       {
-        source: "/terminal",
-        destination: "/stocks",
-        permanent: false,
-      },
-      {
         source: "/trade",
-        destination: "/stocks",
+        destination: "/terminal",
         permanent: false,
       },
     ];

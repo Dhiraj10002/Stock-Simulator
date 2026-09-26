@@ -30,19 +30,25 @@ interface ShortcutCategory {
 
 const SHORTCUT_CATEGORIES: ShortcutCategory[] = [
   {
-    category: "Execution & Orders",
+    category: "Terminal Order Execution",
     items: [
       {
         keys: ["B"],
-        description: "Prime BUY order for active symbol",
+        description: "Open / Focus BUY ticket for active counter",
         icon: TrendingUp,
         badgeColor: "bg-emerald-950/60 text-emerald-400 border-emerald-500/30",
       },
       {
         keys: ["S"],
-        description: "Prime SELL order for active symbol",
+        description: "Open / Focus SELL ticket for active counter",
         icon: TrendingDown,
         badgeColor: "bg-rose-950/60 text-rose-400 border-rose-500/30",
+      },
+      {
+        keys: ["C", "Esc"],
+        description: "Cancel order / close modal / reset ticket",
+        icon: X,
+        badgeColor: "bg-slate-800 text-slate-300 border-slate-700",
       },
       {
         keys: ["Enter"],
@@ -50,17 +56,17 @@ const SHORTCUT_CATEGORIES: ShortcutCategory[] = [
         icon: CheckCircle2,
         badgeColor: "bg-cyan-950/60 text-cyan-300 border-cyan-500/30",
       },
-      {
-        keys: ["Esc"],
-        description: "Close active modal / cancel confirmation",
-        icon: X,
-        badgeColor: "bg-slate-800 text-slate-300 border-slate-700",
-      },
     ],
   },
   {
-    category: "Analysis & Desk Modals",
+    category: "Chart Timeframes & Analysis",
     items: [
+      {
+        keys: ["1", "–", "5"],
+        description: "Switch timeframe (1m, 5m, 15m, 1H, 1D)",
+        icon: BarChart2,
+        badgeColor: "bg-blue-950/60 text-blue-300 border-blue-500/30",
+      },
       {
         keys: ["O"],
         description: "Toggle F&O Option Chain & Greeks",
@@ -69,15 +75,9 @@ const SHORTCUT_CATEGORIES: ShortcutCategory[] = [
       },
       {
         keys: ["P"],
-        description: "Toggle Performance Analytics & P&L Calendar",
+        description: "Toggle Performance Analytics & Calendar",
         icon: BarChart2,
         badgeColor: "bg-purple-950/60 text-purple-300 border-purple-500/30",
-      },
-      {
-        keys: ["L"],
-        description: "Toggle Double-Entry Ledger Statement",
-        icon: FileText,
-        badgeColor: "bg-indigo-950/60 text-indigo-300 border-indigo-500/30",
       },
       {
         keys: ["Ctrl", "K"],
@@ -88,8 +88,20 @@ const SHORTCUT_CATEGORIES: ShortcutCategory[] = [
     ],
   },
   {
-    category: "Watchlist & Navigation",
+    category: "Terminal Desk & Navigation",
     items: [
+      {
+        keys: ["Shift", "P"],
+        description: "Focus Open Positions table in bottom drawer",
+        icon: SlidersHorizontal,
+        badgeColor: "bg-indigo-950/60 text-indigo-300 border-indigo-500/30",
+      },
+      {
+        keys: ["Shift", "O"],
+        description: "Focus Pending Orders table in bottom drawer",
+        icon: CheckCircle2,
+        badgeColor: "bg-indigo-950/60 text-indigo-300 border-indigo-500/30",
+      },
       {
         keys: ["↑", "↓"],
         description: "Cycle next / previous counter in watchlist",

@@ -19,6 +19,7 @@ import {
   BrainCircuit,
   Zap,
   ArrowRight,
+  Terminal,
 } from "lucide-react";
 import TradingViewChart from "@/components/trading/TradingViewChart";
 import { MASTER_STOCKS_CATALOG } from "@/components/dashboard/DashboardPage";
@@ -878,6 +879,15 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
 
             {/* Quick Watchlist + Trade Action Buttons */}
             <div className="flex items-center gap-2">
+              <Link
+                href={`/terminal?symbol=${encodeURIComponent(stock.symbol)}`}
+                className="p-2.5 rounded-xl border border-cyan-500/30 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-600 dark:text-cyan-400 transition-all text-xs font-bold flex items-center gap-1.5 shadow-xs"
+                title="Open in Institutional Pro Trading Terminal"
+              >
+                <Terminal className="w-4 h-4" />
+                <span className="hidden sm:inline">Pro Terminal</span>
+              </Link>
+
               <button
                 onClick={handleToggleWatchlist}
                 className={`p-2.5 rounded-xl border transition-all text-xs font-bold flex items-center gap-1.5 ${
@@ -893,14 +903,14 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
 
               <button
                 onClick={() => setOrderModal({ isOpen: true, action: "BUY" })}
-                className="px-6 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-extrabold text-sm shadow-md shadow-cyan-600/20 transition-all hover:scale-[1.02]"
+                className="px-6 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-extrabold text-sm shadow-md shadow-cyan-600/20 transition-all hover:scale-[1.02] cursor-pointer"
               >
                 BUY
               </button>
 
               <button
                 onClick={() => setOrderModal({ isOpen: true, action: "SELL" })}
-                className="px-6 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-extrabold text-sm shadow-md shadow-rose-600/20 transition-all hover:scale-[1.02]"
+                className="px-6 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-extrabold text-sm shadow-md shadow-rose-600/20 transition-all hover:scale-[1.02] cursor-pointer"
               >
                 SELL
               </button>
