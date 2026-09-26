@@ -29,6 +29,11 @@ api.<your-oracle-domain>.com {
         reverse_proxy backend:8080
     }
 
+    # OpenAPI Specification for API exploration
+    handle /openapi.yaml {
+        reverse_proxy backend:8080
+    }
+
     log {
         output stdout
         format console
