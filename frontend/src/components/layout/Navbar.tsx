@@ -35,6 +35,7 @@ import { useTheme } from "@/providers/theme-provider";
 import { useRiskOverview } from "@/hooks/useRiskOverview";
 import { API_URL } from "@/lib/api";
 import ResetSimulationModal from "@/components/modals/ResetSimulationModal";
+import FeedStatusBanner from "@/components/layout/FeedStatusBanner";
 
 interface NavbarProps {
   cashBalancePaise?: number;
@@ -158,6 +159,9 @@ export default function Navbar({
   return (
     <>
       <header className="border-b border-slate-200 dark:border-white/[0.08] bg-white/90 dark:bg-[#06080e]/85 backdrop-blur-xl sticky top-0 z-40 transition-colors duration-150 relative">
+      {/* Authoritative Market & Feed Status Announcement Banner */}
+      <FeedStatusBanner />
+
       {/* Specular gradient flare line */}
       <div className="h-[1px] w-full bg-gradient-to-r from-transparent via-cyan-500/35 dark:via-cyan-500/30 to-transparent absolute -bottom-[1px] left-0 pointer-events-none" />
 

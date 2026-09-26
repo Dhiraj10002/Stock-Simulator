@@ -32,6 +32,8 @@ import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { formatPaise, formatPercent } from "@/lib/format";
 import { apiFetch, publicFetch, getAuthToken } from "@/lib/api";
 import { resolveCanonicalSymbol } from "@/lib/alias";
+import { getAuthoritativeFeedStatus } from "@/lib/feedStatus";
+import FeedStatusBanner from "@/components/layout/FeedStatusBanner";
 import type { Candle, Wallet, Position, Order, Trade } from "@/types";
 
 // Static catalog tabs for the Watchlist panel
@@ -112,7 +114,15 @@ export default function TradingTerminalDesk() {
   // Active Symbol Live Quote & Feed State
   const liveQuote = useSymbolQuote(selectedSymbol);
   const feedStatus = useMarketStore((s) => s.feedStatus);
+  const serverMarketStatus = useMarketStore((s) => s.marketStatus);
+  const connectionState = useMarketStore((s) => s.connectionState);
   const quotesMap = useMarketStore((s) => s.quotes);
+
+  const authoritativeStatus = getAuthoritativeFeedStatus(
+    feedStatus,
+    serverMarketStatus,
+    connectionState
+  );
 
   // Pre-populate limit price from live quote if empty or on symbol change
   useEffect(() => {
@@ -533,12 +543,24 @@ export default function TradingTerminalDesk() {
 
   return (
     <div className="flex flex-col h-[calc(100vh-3.5rem)] bg-slate-950 text-slate-100 select-none overflow-hidden font-sans">
+      {/* Authoritative Market & Feed Status Announcement Banner */}
+      <FeedStatusBanner />
+
       {/* -------------------------------------------------------------------- */}
       {/* 1. TOP SUBHEADER / TICKER BAR */}
       {/* -------------------------------------------------------------------- */}
       <div className="h-12 border-b border-slate-800/80 bg-slate-900/90 px-4 flex items-center justify-between shrink-0 gap-4">
         {/* Symbol Info & Price */}
         <div className="flex items-center gap-3 min-w-0">
+          <Link
+            href="/"
+            className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/60 text-slate-300 hover:text-white transition-all text-xs font-semibold mr-1"
+            title="Return to Main Dashboard"
+          >
+            <span className="font-black font-mono text-cyan-400">SS</span>
+            <span className="hidden sm:inline text-[11px] text-slate-400">Desk</span>
+          </Link>
+
           <div className="flex items-center gap-2">
             <span className="font-mono text-sm font-black tracking-wider text-cyan-400">
               {selectedSymbol}
@@ -621,20 +643,22 @@ export default function TradingTerminalDesk() {
             ))}
           </div>
 
-          {/* Live Feed Status Pill */}
-          <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-slate-950 border border-slate-800 text-[11px] font-mono text-slate-300">
+          {/* Authoritative Market & Feed Status Pill */}
+          <div
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-[11px] font-mono transition-colors shadow-xs ${authoritativeStatus.pillClasses}`}
+            title={authoritativeStatus.tooltip}
+          >
             <span
-              className={`w-2 h-2 rounded-full animate-pulse ${
-                feedStatus.feedState === "LIVE"
-                  ? "bg-emerald-400"
-                  : feedStatus.feedState === "FALLBACK"
-                  ? "bg-amber-400"
-                  : "bg-cyan-400"
-              }`}
+              className={`w-2 h-2 rounded-full ${authoritativeStatus.dotClasses}`}
             />
-            <span className="hidden md:inline uppercase text-[10px] text-slate-400 font-bold">
-              {feedStatus.feedProvider === "angel_one" ? "Angel One Live" : "Synthetic Tick"}
+            <span className="hidden sm:inline font-bold tracking-wider text-[10px] uppercase">
+              {authoritativeStatus.bannerTitle}
             </span>
+            {authoritativeStatus.subText && (
+              <span className="hidden lg:inline text-[9px] opacity-75 font-mono border-l border-current/25 pl-1.5">
+                {authoritativeStatus.subText}
+              </span>
+            )}
           </div>
 
           {/* Keyboard Cheatsheet Button */}
