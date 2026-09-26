@@ -321,17 +321,17 @@ graph TD
 Prove and harden the complete live F&O path:
 $$\text{Angel One / Redis} \longrightarrow \text{Go CurrentQuote()} \longrightarrow \text{F\&O Valuation} \longrightarrow \text{P\&L Calculation} \longrightarrow \text{Frontend Display}$$
 
-### 4.2 Phase 1 Checklist
-- [ ] **Audit & Refactor `PortfolioService.Get()`:**
+### 4.2 Phase 1 Checklist (Completed & Verified)
+- [x] **Audit & Refactor `PortfolioService.Get()`:**
   - Replace silent fallback to `position.AveragePricePaise` when quotes are missing with explicit quote status (`is_quote_available: false`).
   - Calculate unrealized P&L only when a valid, positive quote exists.
-- [ ] **Verify Canonical Identity Resolution:**
+- [x] **Verify Canonical Identity Resolution:**
   - Validate that `product.ParseSyntheticFNOContract()` and `product.StandardContractSpecs` match official instrument specifications.
-- [ ] **Validate Redis Quote Read-Only Invariant:**
+- [x] **Validate Redis Quote Read-Only Invariant:**
   - Confirm `CurrentQuote()` never writes or seeds prices into Redis.
-- [ ] **Run F&O P&L Correctness Suite:**
+- [x] **Run F&O P&L Correctness Suite:**
   - Execute `backend/internal/order/service/fno_correctness_test.go` and `portfolio_service_test.go`.
-- [ ] **Frontend Stale/Unavailable Quote Indication:**
+- [x] **Frontend Stale/Unavailable Quote Indication:**
   - Check `frontend/src/app/(trading)/portfolio/page.tsx` and ensure positions with missing quotes show an "Unavailable" badge rather than ₹0.00 P&L.
-- [ ] **Generate Phase 1 Completion Report:**
+- [x] **Generate Phase 1 Completion Report:**
   - Fill out Section 39 template with test logs and runtime verification.
