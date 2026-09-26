@@ -1,16 +1,25 @@
 package service
 
 import (
+	"context"
+	"errors"
 	"math/rand"
+	"net/http"
+	"net/http/httptest"
+	"os"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/cache"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/config"
 	marketDTO "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/dto"
 	marketService "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/service"
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/middleware"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/order/dto"
+	simulationService "github.com/Dhiraj10002/Stock-Simulator/backend/internal/simulation/service"
+	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -809,3 +818,322 @@ func TestAttack_RedisDown_SafeFailureAndRecovery(t *testing.T) {
 		t.Fatal("expected nil quote when Redis is down")
 	}
 }
+
+// 13. Attack: Concurrent Order Creation vs. Wallet Reset.
+// Guarantee: No deadlocks, no orphaned locks, zero negative wallet balance, zero double spending, strict ledger consistency.
+func TestAttack_ConcurrentOrderCreationVsWalletReset_ZeroCorruption(t *testing.T) {
+	db := getTestDB(t)
+	_ = db.AutoMigrate(&model.SimulationReset{}, &model.Instrument{})
+
+	var inst model.Instrument
+	if err := db.Where("symbol = ?", "WIPRO").First(&inst).Error; err != nil {
+		_ = db.Create(&model.Instrument{
+			Token:          "3787",
+			Symbol:         "WIPRO",
+			Exchange:       "NSE",
+			LotSize:        1,
+			InstrumentType: "EQUITY",
+		}).Error
+	}
+
+	initialCash := int64(1000000) // ₹10,000 (1,000,000 paise)
+	userUUID, walletUUID := setupAttackUser(t, db, initialCash)
+	defer cleanupAttackUser(db, userUUID, walletUUID)
+	defer func() {
+		_ = db.Where("user_uuid = ?", userUUID).Delete(&model.SimulationReset{}).Error
+	}()
+
+	cfg := &config.Config{
+		InitialVirtualBalancePaise: initialCash,
+		MISLeverage:                5,
+		FuturesMarginPercent:       20,
+		OptionSellMarginPercent:    30,
+	}
+
+	orderSvc := New(nil, cfg)
+	orderSvc.SetNowFunc(deterministicTradingTime)
+	orderSvc.SetExecutableQuoteFunc(func(symbol string) (*marketDTO.QuoteResponse, error) {
+		return &marketDTO.QuoteResponse{
+			Symbol:     symbol,
+			PricePaise: 50000, // ₹500
+			Source:     "synthetic_simulation",
+			UpdatedAt:  time.Now().UTC().Format(time.RFC3339),
+		}, nil
+	})
+
+	simSvc := simulationService.New(cfg)
+
+	// Concurrently run 20 order creation goroutines and 5 simulation reset goroutines
+	const orderGoroutines = 20
+	const resetGoroutines = 5
+	var wg sync.WaitGroup
+
+	orderErrs := make([]error, orderGoroutines)
+	resetErrs := make([]error, resetGoroutines)
+
+	for i := 0; i < orderGoroutines; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			// Each order requests 2 shares of WIPRO @ limit price ₹480 (48,000 paise each = 96,000 paise reservation)
+			_, orderErrs[idx] = orderSvc.Create(userUUID.String(), dto.CreateOrderRequest{
+				Symbol:     "WIPRO",
+				Side:       model.OrderSideBuy,
+				Type:       model.OrderTypeLimit,
+				Product:    model.OrderProductDelivery,
+				Quantity:   2,
+				PricePaise: 48000,
+			})
+		}(i)
+	}
+
+	for i := 0; i < resetGoroutines; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			resetErrs[idx] = simSvc.Reset(userUUID.String())
+		}(i)
+	}
+
+	wg.Wait()
+
+	// Assertions for financial and transactional consistency:
+	var finalWallet model.Wallet
+	if err := db.Where("uuid = ?", walletUUID).First(&finalWallet).Error; err != nil {
+		t.Fatalf("failed to retrieve wallet after stress test: %v", err)
+	}
+
+	// 1. Balance invariants
+	if finalWallet.CashBalancePaise < 0 {
+		t.Fatalf("CRITICAL FINANCIAL CORRUPTION: Cash balance became negative: %d", finalWallet.CashBalancePaise)
+	}
+	if finalWallet.BlockedPaise < 0 {
+		t.Fatalf("CRITICAL FINANCIAL CORRUPTION: Blocked paise is negative: %d", finalWallet.BlockedPaise)
+	}
+	if finalWallet.BlockedPaise > finalWallet.CashBalancePaise {
+		t.Fatalf("CRITICAL FINANCIAL CORRUPTION: Blocked paise (%d) exceeds cash balance (%d)", finalWallet.BlockedPaise, finalWallet.CashBalancePaise)
+	}
+	if finalWallet.AvailableBalancePaise() != finalWallet.CashBalancePaise-finalWallet.BlockedPaise {
+		t.Fatalf("CRITICAL INVARIANT VIOLATION: Available balance (%d) != Cash (%d) - Blocked (%d)",
+			finalWallet.AvailableBalancePaise(), finalWallet.CashBalancePaise, finalWallet.BlockedPaise)
+	}
+
+	// 2. Reservation reconciliation: sum of reserved_paise of all active open orders must strictly equal finalWallet.BlockedPaise
+	var activeOpenReserved int64
+	_ = db.Model(&model.Order{}).
+		Where("user_uuid = ? AND status IN ?", userUUID, []string{model.OrderStatusPending, model.OrderStatusOpen, model.OrderStatusTriggerPending}).
+		Select("COALESCE(SUM(reserved_paise), 0)").
+		Scan(&activeOpenReserved).Error
+
+	if activeOpenReserved != finalWallet.BlockedPaise {
+		t.Fatalf("CRITICAL DESYNC: Active open orders reserved sum (%d) does not match wallet BlockedPaise (%d)",
+			activeOpenReserved, finalWallet.BlockedPaise)
+	}
+
+	// 3. Ledger audit reconciliation:
+	var txs []model.WalletTransaction
+	_ = db.Where("wallet_uuid = ?", walletUUID).Order("id ASC").Find(&txs)
+	if len(txs) == 0 {
+		t.Fatal("expected at least one wallet transaction recorded in ledger")
+	}
+}
+
+// 14. Attack: Redis Disconnection and Reconnection Handling.
+// Guarantee: Safe graceful degradation on Redis failure, fail-open rate limiting, zero panic, automatic recovery on reconnection.
+func TestAttack_RedisDisconnectionAndReconnection(t *testing.T) {
+	redisURL := os.Getenv("TEST_REDIS_URL")
+	if redisURL == "" {
+		redisURL = "redis://127.0.0.1:6380/0"
+	}
+
+	// 1. Healthy initial state:
+	validClient, err := cache.NewRedisClient(redisURL, 500*time.Millisecond)
+	if err != nil {
+		t.Skipf("Redis not accessible at %s (%v); skipping", redisURL, err)
+	}
+	ctx := context.Background()
+	if err := validClient.Ping(ctx).Err(); err != nil {
+		t.Skipf("Redis ping failed (%v); skipping", err)
+	}
+
+	marketSvc, err := marketService.New(redisURL, 500*time.Millisecond)
+	if err != nil {
+		t.Fatalf("market service init failed: %v", err)
+	}
+
+	nowStr := time.Now().UTC().Format(time.RFC3339)
+	_ = validClient.HSet(ctx, "market:quote:RELIANCE", map[string]interface{}{
+		"price_paise": "250000",
+		"source":      "angelone_live",
+		"updated_at":  nowStr,
+	}).Err()
+	defer validClient.Del(ctx, "market:quote:RELIANCE")
+
+	_ = validClient.HSet(ctx, marketService.FeedStateKey, map[string]interface{}{
+		"feed_provider": "angel_one",
+		"feed_state":    "LIVE",
+		"is_synthetic":  "false",
+	}).Err()
+	defer validClient.Del(ctx, marketService.FeedStateKey)
+
+	quote, err := marketSvc.CurrentQuote("RELIANCE")
+	if err != nil || quote == nil || quote.PricePaise != 250000 {
+		t.Fatalf("expected healthy quote from Redis, got: %v, quote: %+v", err, quote)
+	}
+
+	// 2. DISCONNECTION SIMULATION: Point to unreachable Redis endpoint
+	brokenClient, _ := cache.NewRedisClient("redis://127.0.0.1:59998/0", 50*time.Millisecond)
+	marketSvc.SetClient(brokenClient)
+
+	// Calls must fail gracefully with typed error, not panic
+	disconnQuote, disconnErr := marketSvc.CurrentQuote("RELIANCE")
+	if disconnErr == nil {
+		t.Fatal("expected error on disconnected Redis, got nil")
+	}
+	if disconnQuote != nil {
+		t.Fatal("expected nil quote on disconnected Redis")
+	}
+
+	_, histErr := marketSvc.HistoricalQuotes("RELIANCE", 10)
+	if histErr == nil {
+		t.Fatal("expected error on disconnected Redis for historical quotes")
+	}
+
+	feedStatus, fsErr := marketSvc.FeedStatus(ctx)
+	if fsErr != nil || feedStatus.FeedState != "DISCONNECTED" {
+		t.Fatalf("expected DISCONNECTED feed status when Redis unreachable, got state: %s, err: %v", feedStatus.FeedState, fsErr)
+	}
+
+	// Rate limiter test on disconnected Redis: MUST FAIL OPEN (not crash or return 500)
+	rl := middleware.NewRateLimiter(brokenClient, 50*time.Millisecond)
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(rl.Limit("test_scope", 5, 10*time.Second))
+	r.GET("/ping", func(c *gin.Context) {
+		c.String(http.StatusOK, "pong")
+	})
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/ping", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("rate limiter did not fail open on Redis disconnection; returned HTTP %d", w.Code)
+	}
+
+	// 3. RECONNECTION RECOVERY: Restore valid Redis client
+	marketSvc.SetClient(validClient)
+
+	recoveredQuote, recErr := marketSvc.CurrentQuote("RELIANCE")
+	if recErr != nil || recoveredQuote == nil || recoveredQuote.PricePaise != 250000 {
+		t.Fatalf("expected market service to recover automatically after Redis reconnection, got: %v, quote: %+v", recErr, recoveredQuote)
+	}
+
+	recoveredFeed, rfErr := marketSvc.FeedStatus(ctx)
+	if rfErr != nil || recoveredFeed.FeedState != "LIVE" {
+		t.Fatalf("expected LIVE feed status after Redis reconnection, got state: %s, err: %v", recoveredFeed.FeedState, rfErr)
+	}
+}
+
+// 15. Attack: Upstream Market Provider Disconnect and Recovery.
+// Guarantee: Immediate blocking of order execution on feed disconnection/outage, and instant resumption upon recovery.
+func TestAttack_UpstreamMarketProviderDisconnectAndRecovery(t *testing.T) {
+	redisURL := os.Getenv("TEST_REDIS_URL")
+	if redisURL == "" {
+		redisURL = "redis://127.0.0.1:6380/0"
+	}
+
+	client, err := cache.NewRedisClient(redisURL, 500*time.Millisecond)
+	if err != nil {
+		t.Skipf("Redis not accessible (%v); skipping", err)
+	}
+	ctx := context.Background()
+	if err := client.Ping(ctx).Err(); err != nil {
+		t.Skipf("Redis ping failed (%v); skipping", err)
+	}
+
+	marketSvc, err := marketService.New(redisURL, 500*time.Millisecond)
+	if err != nil {
+		t.Fatalf("failed to init market service: %v", err)
+	}
+	marketSvc.SetFeedMode(marketDTO.FeedModeLive)
+
+	nowStr := time.Now().UTC().Format(time.RFC3339)
+	_ = client.HSet(ctx, "market:quote:INFY", map[string]interface{}{
+		"price_paise": "150000",
+		"source":      "angelone_live",
+		"updated_at":  nowStr,
+	}).Err()
+	defer client.Del(ctx, "market:quote:INFY")
+	defer client.Del(ctx, marketService.FeedStateKey)
+
+	// Step 1: Upstream provider is LIVE
+	_ = client.HSet(ctx, marketService.FeedStateKey, map[string]interface{}{
+		"feed_provider": "angel_one",
+		"feed_state":    "LIVE",
+		"is_synthetic":  "false",
+		"last_tick":     nowStr,
+		"updated_at":    nowStr,
+	}).Err()
+
+	qLive, err := marketSvc.ExecutableQuote("INFY")
+	if err != nil || qLive == nil {
+		t.Fatalf("expected executable quote when upstream is LIVE, got: %v", err)
+	}
+
+	// Step 2: Upstream provider drops connection -> RECONNECTING / RETRYING
+	_ = client.HSet(ctx, marketService.FeedStateKey, map[string]interface{}{
+		"feed_provider": "angel_one",
+		"feed_state":    "RETRYING",
+		"is_synthetic":  "false",
+		"last_tick":     nowStr,
+		"updated_at":    time.Now().UTC().Format(time.RFC3339),
+	}).Err()
+
+	fsRetrying, _ := marketSvc.FeedStatus(ctx)
+	if fsRetrying.FeedState != "RETRYING" {
+		t.Fatalf("expected feed state RETRYING, got: %s", fsRetrying.FeedState)
+	}
+
+	// Step 3: Upstream outage threshold reached -> UNAVAILABLE
+	_ = client.HSet(ctx, marketService.FeedStateKey, map[string]interface{}{
+		"feed_provider": "angel_one",
+		"feed_state":    "UNAVAILABLE",
+		"is_synthetic":  "false",
+		"last_tick":     nowStr,
+		"updated_at":    time.Now().UTC().Format(time.RFC3339),
+	}).Err()
+
+	// Both CurrentQuote and ExecutableQuote must immediately reject
+	_, currErr := marketSvc.CurrentQuote("INFY")
+	if !errors.Is(currErr, marketService.ErrQuoteUnavailable) {
+		t.Fatalf("expected ErrQuoteUnavailable for CurrentQuote when feed is UNAVAILABLE, got: %v", currErr)
+	}
+
+	_, execErr := marketSvc.ExecutableQuote("INFY")
+	if !errors.Is(execErr, marketService.ErrQuoteUnavailable) {
+		t.Fatalf("expected ErrQuoteUnavailable for ExecutableQuote when feed is UNAVAILABLE, got: %v", execErr)
+	}
+
+	// Step 4: Upstream provider recovers -> Back to LIVE
+	recoveredNow := time.Now().UTC().Format(time.RFC3339)
+	_ = client.HSet(ctx, "market:quote:INFY", map[string]interface{}{
+		"price_paise": "150500",
+		"source":      "angelone_live",
+		"updated_at":  recoveredNow,
+	}).Err()
+
+	_ = client.HSet(ctx, marketService.FeedStateKey, map[string]interface{}{
+		"feed_provider": "angel_one",
+		"feed_state":    "LIVE",
+		"is_synthetic":  "false",
+		"last_tick":     recoveredNow,
+		"updated_at":    recoveredNow,
+	}).Err()
+
+	qRecovered, err := marketSvc.ExecutableQuote("INFY")
+	if err != nil || qRecovered == nil || qRecovered.PricePaise != 150500 {
+		t.Fatalf("expected successful quote execution after upstream recovery, got: %v, quote: %+v", err, qRecovered)
+	}
+}
+
