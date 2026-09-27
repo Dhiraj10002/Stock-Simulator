@@ -128,10 +128,12 @@ graph TD
 3. **Portfolio Exit Flow:** Verified that clicking **Sell / Exit** or **Square Off** in `/portfolio` opens the order ticket to close the position directly without routing to any terminal.
 4. **Search Flow:** Verified that searching an instrument via `Ctrl+K` allows instant navigation, opens `FnoOrderModal` for F&O contracts, and routes equities directly to `/stocks/[symbol]?action=buy|sell`.
 
-### Step C: Market-Truth & Anti-Fabrication Audit
-1. Audit quote resolution pipeline: `Angel One / Python Worker` $\rightarrow$ `Redis (market:quote:<symbol>)` $\rightarrow$ `Go CurrentQuote()` $\rightarrow$ `WebSocket / HTTP` $\rightarrow$ `Frontend`.
-2. Confirm fail-closed behavior: if a quote is missing or older than 120s, return `is_quote_available: false` and `quote_status: "UNAVAILABLE"` or `"STALE"`.
-3. Confirm frontend components display `UNAVAILABLE` or `—` instead of ₹0.00.
+### Step C: Market-Truth & Anti-Fabrication Audit ✅ Completed
+1. **Quote Resolution Pipeline Audit:** Verified end-to-end pipeline: `Angel One / Python Worker` $\rightarrow$ `Redis (market:quote:<symbol>)` $\rightarrow$ `Go CurrentQuote()` $\rightarrow$ `WebSocket / HTTP` $\rightarrow$ `Frontend`.
+2. **Fail-Closed & Read-Only Redis Authority:** Verified `CurrentQuote()` is strictly read-only and never writes/seeds quotes into Redis. Missing quotes return `ErrQuoteNotFound`, stale quotes (>120s) return `ErrQuoteStale`, and seeded quotes are rejected in production flow.
+3. **Automated Verification:** Added dynamic Redis URL fallback in `backend/internal/market/service/redis_test.go` and verified 100% pass of `TestCurrentQuote_RedisOnlyArchitecture` and `TestCurrentQuote_Phase2_ExplicitFeedModes`.
+4. **Portfolio Staleness Handling:** Verified `PortfolioService.Get()` sets `is_quote_available: false`, `quote_status: "UNAVAILABLE"` or `"STALE"`, and degrades valuation status rather than silently falling back to purchase price.
+5. **Frontend Anti-Fabrication Enforcement:** Verified `StockDetailsPage.tsx` renders `UNAVAILABLE` or `—` instead of ₹0.00 and blocks Market order placement when quote is missing/unavailable.
 
 ### Step D: F&O Option Chain Production Cleanup
 1. Inspect `backend/internal/fno/service/option_chain_service.go`.

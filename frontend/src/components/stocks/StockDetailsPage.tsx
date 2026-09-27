@@ -725,6 +725,11 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
       // Map frontend product types to backend enum
       const productMap: Record<string, string> = { CNC: "DELIVERY", MIS: "INTRADAY" };
       const isMarket = orderType === "MARKET";
+      if (isMarket && (!stock.price || stock.price <= 0)) {
+        setOrderFeedback("✗ Market quote is currently unavailable. Place a Limit order or wait for live feed.");
+        setTimeout(() => setOrderFeedback(null), 4000);
+        return;
+      }
       const effectiveLimitPrice = limitPrice > 0 ? limitPrice : stock.price;
       const orderPayload = {
         symbol: stock.symbol,
@@ -1605,7 +1610,9 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
                   </span>
                   <span>{stock.name}</span>
                 </h3>
-                <span className="text-xs text-slate-500 dark:text-slate-400">NSE • ₹{stock.price.toFixed(2)}</span>
+                <span className="text-xs text-slate-500 dark:text-slate-400">
+                  NSE • {stock.price > 0 ? `₹${stock.price.toFixed(2)}` : "UNAVAILABLE"}
+                </span>
               </div>
               <button
                 onClick={() => setOrderModal((prev) => ({ ...prev, isOpen: false }))}

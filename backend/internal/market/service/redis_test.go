@@ -620,6 +620,27 @@ func TestService_InstrumentFinderValidation(t *testing.T) {
 	})
 }
 
+func getTestRedis(t *testing.T) *Service {
+	t.Helper()
+	urls := []string{
+		os.Getenv("TEST_REDIS_URL"),
+		os.Getenv("REDIS_URL"),
+		"redis://localhost:6380/0",
+		"redis://localhost:6379/0",
+	}
+	for _, u := range urls {
+		if u == "" {
+			continue
+		}
+		svc, err := New(u, time.Second)
+		if err == nil && svc.Client() != nil && svc.Client().Ping(t.Context()).Err() == nil {
+			return svc
+		}
+	}
+	t.Skip("skipping test: Redis not reachable on configured URLs (checked 6380 and 6379)")
+	return nil
+}
+
 func TestCurrentQuote_RedisOnlyArchitecture(t *testing.T) {
 	// 1. Worker mock server that counts incoming HTTP requests
 	workerCalls := 0
@@ -635,10 +656,7 @@ func TestCurrentQuote_RedisOnlyArchitecture(t *testing.T) {
 	}))
 	defer mockWorker.Close()
 
-	svc, err := New("redis://localhost:6379/0", time.Second)
-	if err != nil || svc.Client() == nil || svc.Client().Ping(t.Context()).Err() != nil {
-		t.Skip("skipping test: Redis not reachable on localhost:6379")
-	}
+	svc := getTestRedis(t)
 	svc.SetWorkerURL(mockWorker.URL)
 	ctx := t.Context()
 	client := svc.Client()
@@ -733,10 +751,7 @@ func TestCurrentQuote_RedisOnlyArchitecture(t *testing.T) {
 }
 
 func TestCurrentQuote_Phase2_ExplicitFeedModes(t *testing.T) {
-	svc, err := New("redis://localhost:6379/0", time.Second)
-	if err != nil || svc.Client() == nil || svc.Client().Ping(t.Context()).Err() != nil {
-		t.Skip("skipping test: Redis not reachable on localhost:6379")
-	}
+	svc := getTestRedis(t)
 	ctx := t.Context()
 	client := svc.Client()
 
