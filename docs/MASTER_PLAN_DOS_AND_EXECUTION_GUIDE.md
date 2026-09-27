@@ -2,6 +2,7 @@
 
 > **Authoritative Reference & Source of Truth**  
 > **Repository:** `Dhiraj10002/Stock-Simulator`  
+> **Branch:** `main`  
 > **Consolidated Target:** Indian Market Paper-Trading Platform (NSE / BSE / NFO)  
 > **Guiding Principle:** *Never make fake market data look real. If real data is unavailable, expose that it is unavailable.*
 
@@ -10,328 +11,180 @@
 ## 1. Executive Analysis & Repository Review
 
 ### 1.1 Master Plan vs. Existing Codebase Audit
-A thorough audit of the repository (`git log`, `backend`, `python-services`, `frontend`, `docs`) reveals that the project is significantly advanced and has already addressed several major architectural risks:
+A thorough audit of the repository (`git log`, `backend`, `python-services`, `frontend`, `docs`) confirms that all initial 20 phases have been implemented and committed:
+- **Commits `e690e73` through `863c7eb`:** Completed core phases including integer paise accounting, portfolio valuation, trading view charts, news desk, AI trading mentor, security hardening (transactional JTI token rotation, Redis token bucket rate limiting, CORS), concurrency/failure stress testing (15 vectors), CI/CD hardening, live OpenAPI 3.0 specification serving, deployment verification, and authoritative Groww/Kite-inspired UI/UX banners.
+- **Commit `a362c7d`:** Formally audited and marked the initial Phase 1 kickoff checklist as completed and verified.
 
-1. **Architecture Preserved:**
-   - **Backend:** Go (Gin, GORM, gorilla/websocket) handles authentication, order lifecycle, execution matching, wallet transactions, and risk controls.
-   - **Database & Cache:** PostgreSQL (Neon) stores permanent business truth (users, orders, trades, positions, ledger, refresh sessions); Redis (Upstash) serves as the authoritative live quote and candle store.
-   - **Market Worker:** Python worker (`python-services/market-worker/worker.py`) interfaces with Angel One SmartAPI / SmartWebSocketV2, normalizes incoming ticks, generates 1-minute OHLC candles, updates Redis hashes (`market:quote:<symbol>`), feeds list history (`market:history:<symbol>`), and publishes updates to `market:updates`.
-   - **Frontend:** Next.js (TypeScript, Tailwind CSS, lightweight-charts, Zustand, TanStack Query). The monolithic `trading-terminal.tsx` has been modularized into domain-driven pages (`/trade`, `/portfolio`, `/orders`, `/watchlist`, `/analytics`, `/mentor`, `/options`).
-
-2. **Recent Implementations Already in Codebase:**
-   - **Feed Modes & Taxonomy:** `backend/internal/market/dto/taxonomy.go` defines explicit `FeedMode` (`LIVE`, `SYNTHETIC`, `UNAVAILABLE`) and `QuoteSource` (`angelone_live`, `synthetic_gbm`, `fno_engine`, `seed`, `unavailable`).
-   - **Redis Quote Authority:** `backend/internal/market/service/redis.go` reads directly from Redis, enforces freshness (< 2 minutes), blocks seeded quotes in production flow, checks feed availability, and avoids read-time generation.
-   - **Contract Specifications & Validation:** `backend/internal/product/contract_spec.go` implements standard Indian exchange lot sizes (NIFTY 25, BANKNIFTY 15, FINNIFTY 25, etc.) and tick sizes (5 paise = ₹0.05).
-   - **F&O Correctness & Margin Rules:** `backend/internal/order/service/fno_correctness_test.go` and `backend/internal/product/` enforce 6 trading directions (CE Buy/Sell, PE Buy/Sell, Future Buy/Sell) and settlement intrinsic calculations.
-   - **Observability & Logging Sanitizer:** `backend/pkg/logger/sanitizer.go` and `python-services/market-worker/worker.py` redact JWTs, Bearer tokens, and private API keys from logs.
-
-3. **Critical Identified Gaps to Guard Against:**
-   - **Portfolio Silent Fallback:** In `backend/internal/portfolio/service/portfolio_service.go`, when a live quote is missing, it currently falls back to `position.CurrentPricePaise` or `position.AveragePricePaise` (cost basis), effectively resetting unrealized P&L to zero instead of reporting an explicit `unavailable` or `stale` quote status.
-   - **Frontend Placeholder Handling:** The UI components must consistently show badge indicators (`UNAVAILABLE`, `STALE`, `MARKET CLOSED`) rather than rendering `₹0.00` or neutral zeroes when feeds are disconnected.
-   - **Provider Verification & Credentials:** When live Angel One credentials are absent, the system must clearly report that live-provider ingestion is blocked/disconnected, rather than simulating ticks under the label `angelone_live`.
+### 1.2 Current State: Post-Phase-20 Product Refinement
+The repository is now in an active **post-Phase-20 refinement and verification state**, not a greenfield starting point. We do not restart the 20 phases from scratch. Instead, we address key architectural and product feedback:
+1. **Product UX Decision: Removal of Dedicated `/terminal` Experience:**
+   - The monolithic `/terminal` route (dense 3-column trading desk with embedded watchlist, chart, ticket, and bottom drawer) is redundant and complicates the user experience.
+   - The application already features clean, direct contextual trading flows:
+     - **Stocks:** `/stocks` $\rightarrow$ `/stocks/[symbol]` $\rightarrow$ Direct BUY / SELL $\rightarrow$ Order Confirmation Modal.
+     - **F&O:** `/options` (F&O Hub & Option Chain) $\rightarrow$ Direct BUY / SELL $\rightarrow$ FnoOrderModal.
+     - **Portfolio:** `/portfolio` $\rightarrow$ Open Positions $\rightarrow$ Buy More / Sell / Exit / Square Off.
+     - **Search:** Global `Ctrl+K` $\rightarrow$ Instant BUY / SELL.
+   - Removing the `/terminal` route simplifies navigation and places trading directly where users analyze instruments.
+2. **Preservation of Shared Trading Infrastructure:**
+   - Removing the `/terminal` route must **NOT** remove or weaken any backend trading engines, WebSocket servers, execution services, portfolio repricing, F&O valuation, order modals, charting (`TradingViewChart`), or active symbol tracking (`useTradingStore`).
+3. **Market Data Truth & Isolation of Simulation Fallbacks:**
+   - Eliminate hidden or silent simulation fallbacks in production paths (such as `buildSimulationChain` in `backend/internal/fno/service/option_chain_service.go` when in LIVE mode).
+   - Ensure `LIVE` mode fails closed (`UNAVAILABLE` / `DISCONNECTED`) with zero fabricated prices.
+   - Ensure `SYNTHETIC` mode is explicitly identified and segregated.
 
 ---
 
 ## 2. Definitive List of DO's (and DO NOT's)
 
-### 2.1 Architecture & Infrastructure
-- [x] **DO** preserve the existing architecture: Next.js frontend $\rightarrow$ Go Gin backend $\rightarrow$ Neon PostgreSQL (durable truth) & Upstash Redis (live quotes) $\leftarrow$ Python workers (Angel One / RSS News).
-- [x] **DO** keep the development / deployment split: local dev on laptop connecting to Dev Neon + Dev Upstash; production on Oracle VM (Go + Python) + Vercel (Next.js) connecting to Prod Neon + Prod Upstash.
-- [x] **DO** fail closed: if production environment variables (`NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_WS_URL`, `DATABASE_URL`, `REDIS_URL`) are missing or misconfigured, abort startup immediately with a clear error.
-- [ ] **DO NOT** introduce local PostgreSQL or Redis as required local infrastructure.
-- [ ] **DO NOT** add paid infrastructure or services without prior verification and explicit approval.
-- [ ] **DO NOT** route production browser requests to `window.location.origin/api/v1` if that could route to Vercel instead of the Go backend.
+### 2.1 Post-Phase-20 Terminal Removal & Information Architecture
+- [x] **DO** remove the dedicated `/terminal` route (`frontend/src/app/(trading)/terminal/page.tsx`) and the redundant 1,500-line desk component (`TradingTerminalDesk.tsx`).
+- [x] **DO** remove `/terminal` from the primary navigation bar in [`frontend/src/components/layout/Navbar.tsx`](file:///home/dhiraj/personal/Stock-Simulator/frontend/src/components/layout/Navbar.tsx).
+- [x] **DO** replace all "Pro Terminal" and "Launch Terminal" links in [`StockDetailsPage.tsx`](file:///home/dhiraj/personal/Stock-Simulator/frontend/src/components/stocks/StockDetailsPage.tsx) and [`NewsDeskPage.tsx`](file:///home/dhiraj/personal/Stock-Simulator/frontend/src/components/news/NewsDeskPage.tsx) with direct instrument navigation and direct BUY / SELL actions.
+- [x] **DO** clean up [`ShortcutsModal.tsx`](file:///home/dhiraj/personal/Stock-Simulator/frontend/src/components/layout/ShortcutsModal.tsx) to display platform-wide, non-conflicting keyboard shortcuts (Global Search `Ctrl+K`, Chart Timeframes `1-5`, Help `?`, Modal Close `Esc`).
+- [x] **DO** preserve all shared trading and market infrastructure:
+  - [`useTradingStore`](file:///home/dhiraj/personal/Stock-Simulator/frontend/src/stores/trading-store.ts) (active symbol selection across pages).
+  - [`TradingViewChart`](file:///home/dhiraj/personal/Stock-Simulator/frontend/src/components/trading/TradingViewChart.tsx) (lightweight-charts canvas engine).
+  - [`OrderConfirmationModal`](file:///home/dhiraj/personal/Stock-Simulator/frontend/src/components/orders/OrderConfirmationModal.tsx) (equity order execution ticket).
+  - [`FnoOrderModal`](file:///home/dhiraj/personal/Stock-Simulator/frontend/src/components/trading/FnoOrderModal.tsx) (derivatives order ticket).
+  - [`OptionChainDesk`](file:///home/dhiraj/personal/Stock-Simulator/frontend/src/components/trading/OptionChainDesk.tsx) (options chain matrix).
+  - [`useMarketStore`](file:///home/dhiraj/personal/Stock-Simulator/frontend/src/stores/market-store.ts) & [`useTargetedSubscription`](file:///home/dhiraj/personal/Stock-Simulator/frontend/src/stores/market-store.ts).
+- [ ] **DO NOT** create a "mini-terminal", "compact-terminal", "side-terminal", or "floating desk" to replace `/terminal`. Keep trading contextual.
+- [ ] **DO NOT** introduce global single-letter trading hotkeys (`B`, `S`) on general pages where they could accidentally trigger orders during normal navigation.
+- [ ] **DO NOT** delete any backend trading API, matching engine code, or WebSocket pub/sub channels.
 
-### 2.2 Market Truth & Feed Provenance
-- [x] **DO** enforce strict, explicit Feed Modes: `LIVE`, `SYNTHETIC`, `UNAVAILABLE`.
+### 2.2 Direct Contextual Order Execution
+- [x] **DO** make **Stock Details** (`/stocks/[symbol]`) the primary equity trading surface: prominent live quote, interactive chart, fundamentals, and instant **BUY** and **SELL** buttons launching [`OrderConfirmationModal`](file:///home/dhiraj/personal/Stock-Simulator/frontend/src/components/orders/OrderConfirmationModal.tsx).
+- [x] **DO** make **F&O Hub** (`/options`) the primary derivatives trading surface: underlying selection, expiry dropdown, full strike ladder with CE/PE Greeks, and direct **BUY** and **SELL** buttons launching [`FnoOrderModal`](file:///home/dhiraj/personal/Stock-Simulator/frontend/src/components/trading/FnoOrderModal.tsx).
+- [x] **DO** make **Portfolio** (`/portfolio`) the primary position management surface: clear holdings and open positions tables with direct **Buy More**, **Sell / Exit**, and **Square Off** buttons.
+- [x] **DO** keep the **Search Modal** (`Ctrl+K`) equipped with direct BUY / SELL shortcuts for quick execution.
+- [x] **DO** enforce server-authoritative fill prices:
+  - For `MARKET` orders: frontend sends `price_paise: 0`; backend fetches authoritative live price from Redis at the exact time of fill.
+  - For `LIMIT` orders: frontend sends the user's limit condition; backend validates executable price condition against authoritative market state before executing.
+- [ ] **DO NOT** allow client-side price inputs to dictate market execution fills.
+
+### 2.3 Market Truth & Feed Provenance
+- [x] **DO** strictly enforce explicit Feed Modes: `LIVE`, `SYNTHETIC`, `UNAVAILABLE`.
 - [x] **DO** enforce standard Quote Source taxonomy:
-  - `angelone_live`: Real provider tick.
-  - `synthetic_gbm`: Explicit simulation/test mode only.
-  - `fno_engine`: Deliberate internal F&O valuation engine only; never labeled as provider live data.
-  - `seed`: Development/test fixtures only.
+  - `angelone_live`: Real exchange tick ingested via Angel One WebSocket.
+  - `synthetic_gbm`: Explicit simulation / paper practice mode only.
+  - `fno_engine`: Internal Black-Scholes valuation engine only; never presented as provider live tick.
+  - `seed`: Development fixtures only.
   - `unavailable`: No valid quote available.
-- [x] **DO** ensure `LIVE` mode fails closed: if Angel One or Redis fails, feed status transitions to `UNAVAILABLE` or `DISCONNECTED`.
-- [ ] **DO NOT** silently fall back from `LIVE` to `SYNTHETIC`.
-- [ ] **DO NOT** hide missing market data behind random numbers, simulated GBM, fake candles, or static percentages in production flows.
-- [ ] **DO NOT** represent missing market data as `price = 0`. Use explicit error states (`QUOTE_NOT_FOUND`, `QUOTE_STALE`, `MARKET_UNAVAILABLE`).
+- [x] **DO** audit and refactor [`option_chain_service.go`](file:///home/dhiraj/personal/Stock-Simulator/backend/internal/fno/service/option_chain_service.go):
+  - In `LIVE` mode: fetch real contract tokens and live quotes from Redis; if missing, return `quote_status: "UNAVAILABLE"` with zero fake prices.
+  - `buildSimulationChain()` must ONLY execute when the platform or feed is explicitly configured in `SYNTHETIC` mode.
+- [x] **DO** verify that Python market worker simulation fallbacks (`benchmark_fallback`, `simulated_deriv`, `synthetic_gbm`) cannot activate accidentally in production `LIVE` mode.
+- [x] **DO** ensure missing market quotes are rendered as `—`, `Unavailable`, or `Awaiting Quote`, never silent `₹0.00` or neutral zero percentages.
+- [ ] **DO NOT** silently fall back from `LIVE` to `SYNTHETIC` upon upstream provider failure. Fail closed to `UNAVAILABLE` or `DISCONNECTED`.
+- [ ] **DO NOT** confuse visual UI randomness (e.g. ambient background canvas particles) with business market mock data. Isolate animation effects from financial logic.
 
-### 2.3 Redis as Authoritative Live Quote Store
-- [x] **DO** read live quotes directly from Redis keys (`market:quote:<SYMBOL>`).
-- [x] **DO** validate quote timestamp and freshness on every quote read:
-  - Fresh: Age within configured executable threshold ($\le 120$s).
-  - Stale: Age older than threshold $\rightarrow$ return `ErrQuoteStale`.
-  - Missing: Redis key does not exist $\rightarrow$ return `ErrQuoteNotFound`.
-- [x] **DO** keep `CurrentQuote(symbol)` strictly read-only.
-- [ ] **DO NOT** perform read-time mutation (e.g. "GET quote $\rightarrow$ missing $\rightarrow$ create seed price $\rightarrow$ write Redis $\rightarrow$ return price").
-- [ ] **DO NOT** rely on synchronous HTTP worker rescue fallbacks during order execution or portfolio valuation.
-
-### 2.4 Canonical Instrument Master & Identity
-- [x] **DO** use canonical Angel One tokens and exchange segments (`NSE`, `NFO`, `BSE`) as the single source of truth for instruments.
-- [x] **DO** resolve all F&O contracts to canonical identity: `exchange`, `token`, `tradingSymbol`, `underlying`, `expiry`, `strike`, `optionType` (CE/PE), `instrumentType` (OPTIDX, OPTSTK, FUTIDX, FUTSTK), `lotSize`, and `tickSize`.
-- [x] **DO** support deterministic alias normalization (e.g. `PRAJIND` $\rightarrow$ canonical token $\rightarrow$ Redis key) consistently across Frontend, Go, and Python.
-- [ ] **DO NOT** fabricate derivative contracts from display strings (e.g., never assume `RELIANCE 2500 CE` exists without validating canonical instrument master).
-
-### 2.5 Trading Engine, Accounting & Invariants
-- [x] **DO** fetch authoritative execution prices server-side from Redis at the exact time of order fill.
-- [x] **DO** store and compute all monetary values in integer **paise** ($1 \text{ Rupee} = 100 \text{ paise}$) with 64-bit integer overflow protection.
-- [x] **DO** wrap order validation, cash reservation, trade creation, position updates, and wallet debit/credit in a single ACID PostgreSQL database transaction.
-- [x] **DO** separate product semantics cleanly:
-  - `DELIVERY` (CNC): Full cash required, long-only, zero leverage, no auto square-off.
-  - `INTRADAY` (MIS): Leverage multiplier applied, mandatory square-off before 3:20 PM IST.
-  - `FNO`: Contract lot size and tick size enforced, explicit margin for short options/futures, premium debit for long options.
-- [x] **DO** maintain strict wallet invariants: `available_balance + blocked_balance = cash_balance`.
-- [x] **DO** record immutable audit records (`Trade`, `WalletTransaction`, `RefreshSession`) for every balance change.
-- [ ] **DO NOT** allow client-specified fill prices. Limit order price is an execution condition, never the fill price.
-- [ ] **DO NOT** let an F&O `SELL` consume an equity delivery holding.
-- [ ] **DO NOT** delete order history or trade records during normal operations; reset must be an explicit, isolated simulation endpoint.
-
-### 2.6 Portfolio Valuation & Mark-to-Market
+### 2.4 Redis Live Store & Accounting Invariants
+- [x] **DO** maintain `CurrentQuote(symbol)` strictly read-only against Redis keys (`market:quote:<symbol>`).
 - [x] **DO** compute mark-to-market valuations from authoritative current quotes:
   $$\text{Current Value} = |\text{Quantity}| \times \text{Current Quote}$$
   $$\text{Unrealized P\&L (Long)} = (\text{Current Quote} - \text{Average Price}) \times \text{Quantity}$$
   $$\text{Unrealized P\&L (Short)} = (\text{Average Price} - \text{Current Quote}) \times |\text{Quantity}|$$
-- [x] **DO** expose explicit `is_stale` or `is_unavailable` flags on positions when current quotes are not fresh.
-- [ ] **DO NOT** fall back to cost basis (making P&L ₹0) when quotes are missing. Mark the valuation status as `UNAVAILABLE`.
+- [x] **DO** store and compute all monetary values in integer **paise** ($1 \text{ Rupee} = 100 \text{ paise}$) with 64-bit integer overflow protection.
+- [x] **DO** wrap order validation, cash reservation, trade creation, position updates, and wallet debit/credit in a single ACID PostgreSQL database transaction.
+- [x] **DO** preserve the wallet invariant: `available_balance + blocked_balance = cash_balance`.
+- [ ] **DO NOT** perform read-time cache mutation (e.g. writing fake seed prices to Redis on cache miss).
+- [ ] **DO NOT** allow F&O short sales to consume equity delivery holdings.
 
-### 2.7 Execution & Development Workflow
-- [x] **DO** implement only one phase at a time in the exact recommended phase order.
-- [x] **DO** inspect the repository first (`git status`, `git log`, inspect relevant modules) before writing code.
-- [x] **DO** verify existing features before assuming they are missing.
-- [x] **DO** run automated tests across backend (`go test ./...`), python (`unittest`), and frontend (`npm run lint && npx tsc --noEmit`) after every change.
-- [x] **DO** document each completed phase using the standardized Phase Completion Report template (Section 39).
-- [ ] **DO NOT** redesign the UI before the underlying data pipelines, execution engine, and accounting invariants are verified.
-- [ ] **DO NOT** mark a phase complete if any acceptance criteria or tests fail.
+### 2.5 Testing, Build & Verification Workflow
+- [x] **DO** run full automated quality checks after every architectural change:
+  - **Backend:** `go fmt ./...`, `go vet ./...`, `go test ./internal/... ./pkg/... -count=1`, `go build ./...`.
+  - **Frontend:** `npm run lint`, `npx tsc --noEmit`, `npm test`, `npm run build`.
+  - **Python Workers:** `python -m unittest` in both `market-worker` and `news-worker`.
+- [x] **DO** search repository for dead terminal references (`grep -RniE '/terminal|TradingTerminalDesk' frontend/src backend docs`) and verify zero unintended leftovers.
+- [x] **DO** document the refinement work using the standardized Completion Report format.
+- [ ] **DO NOT** hide or ignore test or lint warnings. Maintain zero TypeScript errors and zero ESLint errors.
 
 ---
 
-## 3. Step-by-Step 20-Phase Master Roadmap
+## 3. Step-by-Step Implementation Roadmap (Post-Phase-20)
 
 ```mermaid
 graph TD
-    P1[Phase 1: F&O Live Repricing & Quote Truth] --> P2[Phase 2: Purge Production Mock Data]
-    P2 --> P3[Phase 3: Canonical Instrument Master & Search]
-    P3 --> P4[Phase 4: Equity Market Aggregation & Movers]
-    P4 --> P5[Phase 5: Watchlist & Targeted Subscriptions]
-    P5 --> P6[Phase 6: WebSocket Hardening & Fanout]
-    P6 --> P7[Phase 7: Full Trading Lifecycle & Accounting]
-    P7 --> P8[Phase 8: MIS Intraday & Square-Off]
-    P8 --> P9[Phase 9: F&O Margin & Settlement]
-    P9 --> P10[Phase 10: Portfolio Mark-to-Market & Audit]
-    P10 --> P11[Phase 11: Real Historical & Live Charts]
-    P11 --> P12[Phase 12: Real Data Dashboard]
-    P12 --> P13[Phase 13: Trading Terminal Polish]
-    P13 --> P14[Phase 14: News Ingestion & Sentiment]
-    P14 --> P15[Phase 15: Trade-Aware AI Mentor]
-    P15 --> P16[Phase 16: Security & Auth Hardening]
-    P16 --> P17[Phase 17: Concurrency & Failure Tests]
-    P17 --> P18[Phase 18: CI/CD & Documentation]
-    P18 --> P19[Phase 19: Deployment Verification]
-    P19 --> P20[Phase 20: Final UI/UX Polish]
+    A[Step A: Inventory & Remove /terminal Route and Nav] --> B[Step B: Verify Contextual Order Flows: Stock, F&O, Portfolio]
+    B --> C[Step C: Market Truth Audit: LIVE vs UNAVAILABLE]
+    C --> D[Step D: F&O Option Chain Production Cleanup: Isolate Simulation]
+    D --> E[Step E: Dynamic Market APIs & Movers Verification]
+    E --> F[Step F: Purge Remaining Production Mock References]
+    F --> G[Step G: Full Test Matrix & Build Verification]
+    G --> H[Step H: Post-Phase-20 Completion Report]
 ```
 
-### Phase 1: F&O Live Repricing + Market Truth (START HERE)
-- **Objective:** Prove and enforce the complete live market pipeline from Angel One $\rightarrow$ Python Worker $\rightarrow$ Redis $\rightarrow$ Go `CurrentQuote()` $\rightarrow$ F&O Portfolio Valuation $\rightarrow$ Next.js UI.
-- **Key Tasks:**
-  1. Fix `PortfolioService.Get()` in Go: do not fall back to average cost basis when quotes are missing; return explicit quote availability flags.
-  2. Enforce canonical F&O contract identity across worker and backend.
-  3. Ensure `CurrentQuote()` is 100% read-only with timestamp validation and explicit errors (`QUOTE_NOT_FOUND`, `QUOTE_STALE`, `MARKET_DATA_UNAVAILABLE`).
-  4. Verify Long/Short CE, PE, and Futures P&L tests.
-- **Acceptance Criteria:**
-  - Redis is authoritative for live quotes.
-  - Zero read-time mutations or auto-generated prices.
-  - Missing and stale quotes produce explicit error/unavailable states rather than zero placeholders.
-  - All 6 F&O trading action P&L tests pass.
+### Step A: Terminal Removal & Navigation Clean-Up
+1. Remove `{ href: "/terminal", label: "Terminal", icon: Terminal }` from `NAV_LINKS` in [`Navbar.tsx`](file:///home/dhiraj/personal/Stock-Simulator/frontend/src/components/layout/Navbar.tsx).
+2. Remove "Pro Terminal" action button and link in [`StockDetailsPage.tsx`](file:///home/dhiraj/personal/Stock-Simulator/frontend/src/components/stocks/StockDetailsPage.tsx).
+3. Remove "Launch Terminal" link in [`NewsDeskPage.tsx`](file:///home/dhiraj/personal/Stock-Simulator/frontend/src/components/news/NewsDeskPage.tsx) and route directly to the relevant stock details page (`/stocks/${symbol}`).
+4. Update [`ShortcutsModal.tsx`](file:///home/dhiraj/personal/Stock-Simulator/frontend/src/components/layout/ShortcutsModal.tsx) to remove "Terminal Desk & Navigation" hotkeys and focus on general navigation, command palette, and charts.
+5. Remove [`frontend/src/app/(trading)/terminal/page.tsx`](file:///home/dhiraj/personal/Stock-Simulator/frontend/src/app/(trading)/terminal/page.tsx) and [`frontend/src/components/trading/TradingTerminalDesk.tsx`](file:///home/dhiraj/personal/Stock-Simulator/frontend/src/components/trading/TradingTerminalDesk.tsx).
+6. Verify that shared dependencies (`useTradingStore`, `TradingViewChart`, `OrderConfirmationModal`, `FnoOrderModal`, `useTargetedSubscription`) remain 100% intact and functional.
 
-### Phase 2: Remove Production Mock/Demo Data
-- **Objective:** Audit and eliminate all production-flow mock, dummy, Math.random, or fake pricing data.
-- **Key Tasks:**
-  1. Classify occurrences in `frontend/src/` into `PRODUCTION`, `TEST`, `DEV ONLY`, `UNUSED`.
-  2. Remove mock stock lists and fallback cards from user-facing trading paths.
-  3. Replace fake depth cards with real WebSocket depth or explicit "Depth Unavailable" indicators.
-- **Acceptance Criteria:**
-  - Zero random prices or synthetic fallbacks in production routes.
+### Step B: Verify Contextual Order Flows
+1. **Stock Details Flow:** Verify that clicking **BUY** or **SELL** on `/stocks/[symbol]` opens `OrderConfirmationModal` with the live quote, available margin, quantity input, order type (MARKET/LIMIT), product type (CNC/MIS), and executes server-authoritatively.
+2. **F&O Hub Flow:** Verify that clicking **BUY** or **SELL** on any strike in `/options` opens `FnoOrderModal` with contract specs (lot size, expiry, strike), margin validation, and executes cleanly.
+3. **Portfolio Exit Flow:** Verify that clicking **Sell / Exit** or **Square Off** in `/portfolio` opens the order ticket to close the position without routing to any terminal.
+4. **Search Flow:** Verify that searching an instrument via `Ctrl+K` allows instant navigation or order placement.
 
-### Phase 3: Canonical Instrument Master + Search
-- **Objective:** Build deterministic instrument master synchronization from Angel One OpenAPIScripMaster.
-- **Key Tasks:**
-  1. Download, parse, and store official Angel One scrip master.
-  2. Index exchange segments (`NSE`, `NFO`, `BSE`), tokens, lot sizes, tick sizes, strike prices, and expiries.
-  3. Wire `/api/v1/instruments` and `/api/v1/stocks` to search only canonical instruments.
-- **Acceptance Criteria:**
-  - No fabricated contracts. Only canonical exchange tokens are searchable and tradable.
+### Step C: Market-Truth & Anti-Fabrication Audit
+1. Audit quote resolution pipeline: `Angel One / Python Worker` $\rightarrow$ `Redis (market:quote:<symbol>)` $\rightarrow$ `Go CurrentQuote()` $\rightarrow$ `WebSocket / HTTP` $\rightarrow$ `Frontend`.
+2. Confirm fail-closed behavior: if a quote is missing or older than 120s, return `is_quote_available: false` and `quote_status: "UNAVAILABLE"` or `"STALE"`.
+3. Confirm frontend components display `UNAVAILABLE` or `—` instead of ₹0.00.
 
-### Phase 4: Equity Market Aggregation
-- **Objective:** Implement backend aggregation algorithms for market movers.
-- **Key Tasks:**
-  1. Top Gainers & Losers: computed dynamically from valid quotes in configured equity universe.
-  2. Most Traded: ranked by accumulated volume/turnover.
-  3. Trending: calculated using transparent, documented price-momentum/volatility formula.
-  4. Market Breadth: advances, declines, unchanged count.
-- **Acceptance Criteria:**
-  - Market mover endpoints return real computed values or empty/unavailable states; never static mock arrays.
+### Step D: F&O Option Chain Production Cleanup
+1. Inspect `backend/internal/fno/service/option_chain_service.go`.
+2. Ensure `buildSimulationChain()` is gated strictly by `feedStatus.isSynthetic` or explicit simulation mode.
+3. In `LIVE` mode, option chain rows without live quotes or canonical contracts must show `is_available: false` rather than generated mock prices.
 
-### Phase 5: Watchlist + Targeted Subscriptions
-- **Objective:** Centralize dynamic client WebSocket subscriptions based on active user view.
-- **Key Tasks:**
-  1. User adds/removes symbols to DB-backed watchlist.
-  2. Client subscribes only to active watchlist symbols + currently viewed stock/chart.
-  3. Prevent huge unbounded global subscription lists.
-- **Acceptance Criteria:**
-  - Browser WebSocket sends targeted subscribe/unsubscribe messages as user navigates.
+### Step E: Dynamic Market APIs & Movers
+1. Verify backend market endpoints (`/api/v1/market/movers`, `/api/v1/market/indices`, `/api/v1/market/sectors`).
+2. Ensure gainers/losers are sorted server-side based on actual quote percentage changes.
 
-### Phase 6: WebSocket Hardening
-- **Objective:** Ensure rock-solid real-time streaming to the browser.
-- **Key Tasks:**
-  1. Gorilla WebSocket configuration: read/write deadlines, ping/pong heartbeats.
-  2. Slow-client detection with bounded channel buffers; drop slow consumers without blocking Redis Pub/Sub.
-  3. Origin check against configured CORS allowlist.
-- **Acceptance Criteria:**
-  - A slow or hanging browser client does not block feeds for other users or crash the backend.
+### Step F: Clean Up Remaining Mock References
+1. Audit `mockData.ts` and `OrdersDemoData.ts` to confirm zero imports in production pages.
+2. Preserve animation randomness (e.g. ambient UI aurora particles) while confirming zero synthetic market data in production execution.
 
-### Phase 7: Complete Trading Lifecycle
-- **Objective:** Validate end-to-end order execution and state transitions.
-- **Key Tasks:**
-  1. Market and limit order placement with cash reservation.
-  2. Order matching against authoritative Redis quote.
-  3. Atomic execution: position update, trade creation, wallet debit/credit in single PostgreSQL transaction.
-  4. Cancellation releasing reserved funds.
-- **Acceptance Criteria:**
-  - Idempotent execution, zero balance drift, zero orphaned reservations.
-
-### Phase 8: MIS / Intraday Lifecycle
-- **Objective:** Implement intraday margin multiplier and automated square-off.
-- **Key Tasks:**
-  1. Configurable leverage (e.g. $5\times$).
-  2. Scheduled job triggering auto square-off at 3:20 PM IST on trading days.
-  3. Idempotent square-off preventing double fills.
-- **Acceptance Criteria:**
-  - Open MIS positions square off automatically at cutoff; manual square-off remains safe under concurrency.
-
-### Phase 9: F&O Margin + Settlement
-- **Objective:** Comprehensive derivative risk and expiry settlement.
-- **Key Tasks:**
-  1. Margin calculation for futures and option sellers; premium debit for option buyers.
-  2. Expiry day settlement using authoritative underlying spot close price.
-  3. Cash settlement of ITM options and futures; OTM options expire worthless.
-- **Acceptance Criteria:**
-  - Accurate settlement realized P&L credited to wallet; settlement price persisted for auditing.
-
-### Phase 10: Portfolio Accounting + Audit History
-- **Objective:** Exact accounting for invested capital, realized/unrealized P&L, and audit logs.
-- **Key Tasks:**
-  1. Cost basis preservation during partial position unwinding.
-  2. Complete transaction history in `wallet_transactions` and `trades`.
-  3. Reports: Contract Note and Ledger Statement endpoints.
-- **Acceptance Criteria:**
-  - All portfolio totals match ledger history down to the exact paisa.
-
-### Phase 11: Historical & Live Charts
-- **Objective:** Professional TradingView lightweight-charts integration.
-- **Key Tasks:**
-  1. Fetch 1-minute historical candles from Redis or worker archive.
-  2. Stream live tick updates into current open candle.
-  3. Graceful handling of missing history (show explicit unavailable state, no fake candles).
-- **Acceptance Criteria:**
-  - Charts render real OHLC candles; live price bar updates on WebSocket tick.
-
-### Phase 12: Real Data Dashboard
-- **Objective:** Connect the main dashboard to backend market aggregations.
-- **Key Tasks:**
-  1. Indices bar (NIFTY, BANKNIFTY, SENSEX).
-  2. Movers cards (Gainers, Losers, Most Active).
-  3. Portfolio summary snapshot and market open/closed status banner.
-- **Acceptance Criteria:**
-  - Zero hardcoded market numbers on the dashboard.
-
-### Phase 13: Trading Terminal Refactor & Polish
-- **Objective:** High-density, professional trading desk UX.
-- **Key Tasks:**
-  1. Cohesive 3-panel layout: Watchlist $\mid$ Chart $\mid$ Order Ticket + Bottom Positions/Orders table.
-  2. Keyboard shortcuts, quick order entry, and responsive layout.
-- **Acceptance Criteria:**
-  - Fast, intuitive terminal layout suitable for active paper-trading.
-
-### Phase 14: News Ingestion & Sentiment
-- **Objective:** Real Indian financial news ingestion and sentiment analysis.
-- **Key Tasks:**
-  1. Python news worker polling official RSS feeds.
-  2. Lexical scoring and symbol tagging stored in Redis.
-  3. Go API `/api/v1/news` and frontend news desk.
-- **Acceptance Criteria:**
-  - Headlines link to real sources; sentiment is transparently classified.
-
-### Phase 15: Trade-Aware AI Mentor
-- **Objective:** Server-side Gemini AI mentor offering educational trade critiques.
-- **Key Tasks:**
-  1. Backend-only integration (`POST /api/v1/ai/analyze-trade`).
-  2. Contextual injection of user's recent trades and risk stats into Gemini prompt.
-  3. Educational guidance without financial advice or guarantees.
-- **Acceptance Criteria:**
-  - Gemini API key never exposed to client; structured JSON educational critique rendered in UI.
-
-### Phase 16: Security Hardening
-- **Objective:** Complete authentication, authorization, and network security.
-- **Key Tasks:**
-  1. Transactional refresh token rotation with JTI tracking.
-  2. Strict CORS allowlist for production domains.
-  3. Redis token bucket rate limiting on auth and write routes.
-  4. Response sanitization preventing leakage of hashes or keys.
-- **Acceptance Criteria:**
-  - Automated security tests pass; rate limits prevent brute force.
-
-### Phase 17: Concurrency & Failure Stress Testing
-- **Objective:** Verify system resilience under race conditions and upstream outages.
-- **Key Tasks:**
-  1. Concurrent order creation vs. wallet reset.
-  2. Redis disconnection and reconnection handling.
-  3. Upstream market provider disconnect and recovery.
-- **Acceptance Criteria:**
-  - Zero double-spending, zero orphaned database locks, graceful recovery.
-
-### Phase 18: CI/CD + Documentation
-- **Objective:** Enforce quality gates and keep documentation in sync.
-- **Key Tasks:**
-  1. GitHub Actions CI running `go test`, `npm run lint`, `npx tsc`, and python checks without swallowing errors.
-  2. OpenAPI / Swagger documentation matching implemented endpoints.
-- **Acceptance Criteria:**
-  - Green CI pipeline; accurate README and architecture guides.
-
-### Phase 19: Deployment Verification
-- **Objective:** Live verification on Oracle VM + Vercel + Neon + Upstash.
-- **Key Tasks:**
-  1. Deploy Go backend and Python workers on Oracle VM via Docker / systemd.
-  2. Deploy Next.js frontend to Vercel.
-  3. Verify TLS, WebSocket connectivity, and end-to-end trade execution on production URLs.
-- **Acceptance Criteria:**
-  - Production paper-trading flows operate cleanly with zero mock dependencies.
-
-### Phase 20: Final UI/UX Polish
-- **Objective:** Visual excellence and modern Indian trading aesthetics (Groww/Kite inspired).
-- **Key Tasks:**
-  1. Polished dark mode, curated color tokens, crisp typography.
-  2. Clear feed status banners (`LIVE FEED`, `SIMULATED MODE`, `MARKET CLOSED`).
-- **Acceptance Criteria:**
-  - Clean, responsive, and trustworthy trading interface.
+### Step G: Comprehensive Testing & Production Build
+1. Run backend tests: `go test ./internal/... ./pkg/... -count=1`.
+2. Run frontend checks: `npm run lint`, `npx tsc --noEmit`, `npm test`, `npm run build`.
+3. Run python unit tests.
+4. Verify all tests pass with 0 errors.
 
 ---
 
-## 4. Phase 1 Immediate Action Plan & Checklist
+## 4. Phase Verification Matrix
 
-### 4.1 Goal
-Prove and harden the complete live F&O path:
-$$\text{Angel One / Redis} \longrightarrow \text{Go CurrentQuote()} \longrightarrow \text{F\&O Valuation} \longrightarrow \text{P\&L Calculation} \longrightarrow \text{Frontend Display}$$
+| Area | Checkpoint | Status | Notes |
+| :--- | :--- | :---: | :--- |
+| **Market** | Angel One Auth & Stream | ✅ Verified | Python worker interfaces with SmartWebSocketV2 |
+| **Market** | Redis Quote Read Authority | ✅ Verified | `CurrentQuote()` is strictly read-only (`TestCurrentQuote_RedisOnlyArchitecture`) |
+| **Market** | Quote Freshness & Fail-Closed | ✅ Verified | Max 120s TTL; returns `ErrQuoteStale` / `ErrQuoteNotFound` |
+| **Market** | Source Taxonomy Enforcement | ✅ Verified | `angelone_live`, `synthetic_gbm`, `fno_engine`, `unavailable` |
+| **Portfolio** | Unrealized P&L Calculation | ✅ Verified | Long: `(quote - avg) * qty`; Short: `(avg - quote) * qty` |
+| **Portfolio** | Missing Quote Status | ✅ Verified | Displays explicit `UNAVAILABLE` badge instead of ₹0.00 |
+| **Trading** | Server-Authoritative Execution | ✅ Verified | Market orders filled server-side from Redis at fill time |
+| **Trading** | Integer Paise Accounting | ✅ Verified | All ledger balances in integer paise; 64-bit overflow safe |
+| **Trading** | ACID Transaction Boundaries | ✅ Verified | Order reservation, fill, wallet debit/credit in single DB txn |
+| **F&O** | Canonical Contract Specifications| ✅ Verified | NIFTY 25, BANKNIFTY 15, FINNIFTY 25; 5-paise tick increments |
+| **F&O** | Option Chain Live vs Sim Isolation| ⚠️ In Progress| Needs explicit gating so `buildSimulationChain` only runs in `SYNTHETIC` |
+| **Frontend** | Direct Stock Details BUY/SELL | ✅ Verified | Contextual `OrderConfirmationModal` on `/stocks/[symbol]` |
+| **Frontend** | Direct F&O Option Chain BUY/SELL | ✅ Verified | Contextual `FnoOrderModal` on `/options` |
+| **Frontend** | Portfolio Exit & Square Off | ✅ Verified | Direct modal actions on `/portfolio` |
+| **Frontend** | Dedicated `/terminal` Removal | 🔄 Pending Step A | Remove route, desk component, navbar and cross-page links |
+| **Security** | JTI Refresh Token Rotation | ✅ Verified | Strict reuse detection & revocation |
+| **Security** | Rate Limiting & CORS | ✅ Verified | Token bucket headers (`X-RateLimit-*`) + strict CORS |
+| **CI/CD** | Automated Quality Gates | ✅ Verified | GitHub Actions with unmasked Postgres/Redis/Python/Node tests |
+| **Docs** | OpenAPI 3.0 Live Spec | ✅ Verified | Served at `/openapi.yaml` and `/api/v1/openapi.yaml` |
+| **UI/UX** | Feed Status Announcement Banner | ✅ Verified | Authoritative `LIVE FEED`, `SIMULATED MODE`, `MARKET CLOSED` banners |
 
-### 4.2 Phase 1 Checklist (Completed & Verified)
-- [x] **Audit & Refactor `PortfolioService.Get()`:**
-  - Replace silent fallback to `position.AveragePricePaise` when quotes are missing with explicit quote status (`is_quote_available: false`).
-  - Calculate unrealized P&L only when a valid, positive quote exists.
-- [x] **Verify Canonical Identity Resolution:**
-  - Validate that `product.ParseSyntheticFNOContract()` and `product.StandardContractSpecs` match official instrument specifications.
-- [x] **Validate Redis Quote Read-Only Invariant:**
-  - Confirm `CurrentQuote()` never writes or seeds prices into Redis.
-- [x] **Run F&O P&L Correctness Suite:**
-  - Execute `backend/internal/order/service/fno_correctness_test.go` and `portfolio_service_test.go`.
-- [x] **Frontend Stale/Unavailable Quote Indication:**
-  - Check `frontend/src/app/(trading)/portfolio/page.tsx` and ensure positions with missing quotes show an "Unavailable" badge rather than ₹0.00 P&L.
-- [x] **Generate Phase 1 Completion Report:**
-  - Fill out Section 39 template with test logs and runtime verification.
+---
+
+## 5. Post-Phase-20 Implementation Order
+
+1. **Step A:** Remove dedicated `/terminal` route, navbar entry, stock details / newsdesk links, and delete `TradingTerminalDesk.tsx`.
+2. **Step B:** Verify all contextual trading flows (Stock Details, F&O Hub, Portfolio Exit, Search).
+3. **Step C:** Gate `buildSimulationChain` in `option_chain_service.go` so it never serves fake values in `LIVE` mode.
+4. **Step D:** Verify market mover APIs and ensure zero production imports of demo/mock datasets.
+5. **Step E:** Run full test suite (`go test`, `npm test`, `npx tsc`, `npm run lint`, `npm run build`) and output completion report.
