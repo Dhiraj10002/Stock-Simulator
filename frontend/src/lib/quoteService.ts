@@ -73,6 +73,9 @@ export async function fetchQuote(symbol: string): Promise<Quote | null> {
 
   try {
     const res = await fetch(`${API_URL}/market/quotes/${encodeURIComponent(sym)}`);
+    if (res.status === 404) {
+      return null;
+    }
     if (!res.ok) {
       throw new Error(`Failed to fetch quote for ${sym}: ${res.status}`);
     }

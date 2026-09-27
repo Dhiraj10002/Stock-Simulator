@@ -103,14 +103,18 @@ func (r *OrderRepository) CreateWithReservation(order *model.Order, reservation 
 }
 
 func (r *OrderRepository) List(userUUID uuid.UUID) ([]model.Order, error) {
-	// Automatically purge terminal orders (executed, cancelled, rejected) older than 24 hours
-	cutoff := time.Now().Add(-24 * time.Hour)
-	_ = database.GetDB().
-		Where("user_uuid = ? AND status IN ? AND created_at < ?",
-			userUUID,
-			[]string{model.OrderStatusExecuted, model.OrderStatusCancelled, model.OrderStatusRejected},
-			cutoff).
-		Delete(&model.Order{}).Error
+	// Automatically purge terminal orders (executed, cancelled, rejected) older than 24 hours asynchronously
+	// to avoid blocking read queries on high-latency remote database connections
+	go func() {
+		defer func() { _ = recover() }()
+		cutoff := time.Now().Add(-24 * time.Hour)
+		_ = database.GetDB().
+			Where("user_uuid = ? AND status IN ? AND created_at < ?",
+				userUUID,
+				[]string{model.OrderStatusExecuted, model.OrderStatusCancelled, model.OrderStatusRejected},
+				cutoff).
+			Delete(&model.Order{}).Error
+	}()
 
 	var orders []model.Order
 	err := database.GetDB().

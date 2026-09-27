@@ -12,6 +12,7 @@ import (
 	fnoHandler "github.com/Dhiraj10002/Stock-Simulator/backend/internal/fno/handler"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/handler"
 	"strings"
+	"sync"
 
 	instrumentHandler "github.com/Dhiraj10002/Stock-Simulator/backend/internal/instrument/handler"
 	instrumentService "github.com/Dhiraj10002/Stock-Simulator/backend/internal/instrument/service"
@@ -90,38 +91,56 @@ func Setup(ctx context.Context, cfg *config.Config, opts ...SetupOption) *gin.En
 	}
 	if database.GetDB() != nil {
 		market.Service().SetDB(database.GetDB())
+		var instrumentFinderCache sync.Map
 		market.Service().SetInstrumentFinder(func(symbol string) (bool, error) {
 			clean := strings.ToUpper(strings.TrimSpace(symbol))
+			if clean == "" {
+				return false, nil
+			}
+			if cached, ok := instrumentFinderCache.Load(clean); ok {
+				return cached.(bool), nil
+			}
+
+			canonical := alias.ResolveCanonicalSymbol(clean)
+
+			// 1. Fast in-memory check against default canonical instruments
+			for _, inst := range instrumentService.DefaultCanonicalInstruments {
+				if inst.Symbol == clean || inst.Symbol == clean+"-EQ" || inst.Name == clean {
+					instrumentFinderCache.Store(clean, true)
+					return true, nil
+				}
+				if canonical != "" && (inst.Symbol == canonical || inst.Symbol == canonical+"-EQ" || inst.Name == canonical) {
+					instrumentFinderCache.Store(clean, true)
+					return true, nil
+				}
+			}
+
+			// 2. Database query using B-tree indexed columns (symbol and name)
 			var count int64
 			err := database.GetDB().Model(&model.Instrument{}).
-				Where("UPPER(symbol) = ? OR UPPER(symbol) = ? OR UPPER(name) = ?", clean, clean+"-EQ", clean).
+				Where("symbol IN (?, ?) OR name = ?", clean, clean+"-EQ", clean).
 				Count(&count).Error
 			if err != nil {
 				return false, err
 			}
 			if count > 0 {
+				instrumentFinderCache.Store(clean, true)
 				return true, nil
 			}
-			canonical := alias.ResolveCanonicalSymbol(clean)
 			if canonical != "" && canonical != clean {
 				err = database.GetDB().Model(&model.Instrument{}).
-					Where("UPPER(symbol) = ? OR UPPER(symbol) = ? OR UPPER(name) = ?", canonical, canonical+"-EQ", canonical).
+					Where("symbol IN (?, ?) OR name = ?", canonical, canonical+"-EQ", canonical).
 					Count(&count).Error
 				if err != nil {
 					return false, err
 				}
 				if count > 0 {
+					instrumentFinderCache.Store(clean, true)
 					return true, nil
 				}
 			}
-			for _, inst := range instrumentService.DefaultCanonicalInstruments {
-				if strings.EqualFold(inst.Symbol, clean) || strings.EqualFold(inst.Symbol, clean+"-EQ") || strings.EqualFold(inst.Name, clean) {
-					return true, nil
-				}
-				if canonical != "" && (strings.EqualFold(inst.Symbol, canonical) || strings.EqualFold(inst.Symbol, canonical+"-EQ") || strings.EqualFold(inst.Name, canonical)) {
-					return true, nil
-				}
-			}
+
+			instrumentFinderCache.Store(clean, false)
 			return false, nil
 		})
 	}

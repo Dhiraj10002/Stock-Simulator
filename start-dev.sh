@@ -108,6 +108,7 @@ fi
 PIDS=()
 
 cleanup() {
+  trap - SIGINT SIGTERM EXIT
   echo ""
   echo "[-] Shutting down services..."
   for pid in "${PIDS[@]}"; do

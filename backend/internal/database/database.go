@@ -37,10 +37,26 @@ func Connect(cfg *config.Config) error {
 			return err
 		}
 
-		// Force IPv4 dialing to avoid IPv6 routing timeouts on dual-stack hosts
-		dialer := &net.Dialer{Timeout: 8 * time.Second}
+		// Force IPv4 dialing to avoid IPv6 routing timeouts on dual-stack hosts, with retry for transient DNS hiccups
+		dialer := &net.Dialer{
+			Timeout:   8 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}
 		pgxCfg.DialFunc = func(ctx context.Context, _ string, addr string) (net.Conn, error) {
-			return dialer.DialContext(ctx, "tcp4", addr)
+			var conn net.Conn
+			var dialErr error
+			for attempt := 0; attempt < 3; attempt++ {
+				conn, dialErr = dialer.DialContext(ctx, "tcp4", addr)
+				if dialErr == nil {
+					return conn, nil
+				}
+				select {
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				case <-time.After(100 * time.Millisecond):
+				}
+			}
+			return nil, dialErr
 		}
 
 		sqlDB := stdlib.OpenDB(*pgxCfg)
