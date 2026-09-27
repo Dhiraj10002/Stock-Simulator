@@ -52,8 +52,8 @@ docker compose --profile local up --build
    - `REDIS_URL`: Upstash PROD connection string (`rediss://...`).
    - `JWT_SECRET`: High-entropy 64-character random string.
    - `CORS_ALLOWED_ORIGINS`: Production Vercel domain (`https://your-domain.vercel.app`).
-   - `MARKET_FEED_MODE`: `auto` (attempts Angel One if credentials exist; falls back to synthetic GBM if offline).
-   - `ANGEL_*` credentials: (Optional) API key, Client ID, PIN, and TOTP secret.
+   - `MARKET_FEED_MODE`: `live` (requires authentic Angel One feed; fails closed with `UNAVAILABLE` if offline, with zero synthetic leakage). Set to `synthetic` only for dedicated simulation environments.
+   - `ANGEL_*` credentials: API key, Client ID, PIN/Password, and TOTP secret (required for `live` mode).
    - `GEMINI_API_KEY`: (Optional) Server-side Gemini API key (defaults to built-in rule engine if omitted).
 4. Launch production stack:
    ```bash

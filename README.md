@@ -1,6 +1,6 @@
 # Stock Simulator 📈
 
-A production-grade Indian market paper trading simulator and real-time execution engine. Designed for realistic simulation of the National Stock Exchange (NSE) and Bombay Stock Exchange (BSE), the platform models live market data, strict session timings, integer-paise financial precision, intraday leverage, derivative contract settlement, and automated risk management.
+A production-style Indian market paper trading simulator and real-time execution engine. Designed for realistic simulation of the National Stock Exchange (NSE) and Bombay Stock Exchange (BSE), the platform models live market data, strict session timings, integer-paise financial precision, intraday leverage, derivative contract settlement, and automated risk management.
 
 ---
 
@@ -169,12 +169,12 @@ Next.js Frontend (Zustand market store)
 ```
 
 **Feed states** published to `market:feed_state`:
-- `LIVE` — receiving authentic Angel One ticks
-- `FALLBACK` — synthetic price generation active
-- `CONNECTING` / `RETRYING` — attempting to establish feed
-- `DISCONNECTED` / `STOPPED` — no active feed
+- `LIVE` — receiving authentic Angel One ticks (`source=angelone_live`)
+- `FALLBACK` / `SYNTHETIC` — synthetic price generation active (SYNTHETIC mode only)
+- `CONNECTING` / `RETRYING` — attempting to establish feed connection
+- `UNAVAILABLE` — upstream feed unavailable; live order fills strictly fail closed
 
-The `FeedSupervisor` tracks consecutive connection failures and transitions to synthetic fallback automatically in `auto` mode. Source labeling is guardrailed — quotes are never labeled `angelone_live` when fallback is active.
+Under `MARKET_FEED_MODE=live`, when Angel One is unavailable or disconnected, the system strictly fails closed (`UNAVAILABLE`). No synthetic prices or benchmark fallbacks are substituted into Redis or execution paths, and all order executions fail closed (`ErrQuoteUnavailable`) to prevent erroneous fills.
 
 ---
 
@@ -187,11 +187,11 @@ The `FeedSupervisor` tracks consecutive connection failures and transitions to s
 | `JWT_SECRET` | JWT signing secret (required) | — |
 | `CORS_ALLOWED_ORIGINS` | Comma-separated allowed origins | `http://localhost:3000` (dev) |
 | `APP_ENV` | `development` or `production` | `development` |
-| `MARKET_FEED_MODE` | `auto`, `live`, or `synthetic` | `auto` |
+| `MARKET_FEED_MODE` | `live`, `synthetic`, or `disabled` | `live` |
 | `MARKET_WORKER_URL` | Market worker HTTP endpoint | Auto-detected |
 | `SYMBOL_ALIASES_FILE` | Path to symbol aliases JSON file | `symbol_aliases.json` |
 | `SYMBOL_ALIASES` | JSON/CSV symbol alias overrides | — |
-| `ALLOW_SEEDED_QUOTES` | Allow synthetic quotes for order execution | `false` |
+| `ALLOW_SEEDED_QUOTES` | Allow synthetic quotes for order execution in simulation mode | `false` |
 | `NEXT_PUBLIC_API_URL` | Frontend API base URL (build-time) | `http://localhost:8080/api/v1` (dev) |
 | `NEXT_PUBLIC_WS_URL` | Frontend WebSocket URL (build-time) | `ws://localhost:8080/ws/market` (dev) |
 

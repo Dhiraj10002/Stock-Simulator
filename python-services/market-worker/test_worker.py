@@ -150,7 +150,7 @@ class MockRedis:
 class SyntheticFeedTest(unittest.TestCase):
     def test_synthetic_feed_generates_bounded_ticks(self):
         mock_redis = MockRedis()
-        writer = worker.QuoteWriter(mock_redis, 300, 86400, 500)
+        writer = worker.QuoteWriter(mock_redis, 300, 86400, 500, feed_mode="synthetic")
         subscriptions = [
             worker.Subscription("RELIANCE", "2885", "NSE", 1),
             worker.Subscription("TCS", "11536", "NSE", 1),
@@ -246,7 +246,7 @@ class SensitiveDataFilterTest(unittest.TestCase):
         mock_redis.pipeline.return_value.__enter__.return_value = mock_pipe
         mock_redis.lindex.return_value = None
 
-        writer = worker.QuoteWriter(mock_redis, quote_ttl=60, history_ttl=300, history_max_items=50)
+        writer = worker.QuoteWriter(mock_redis, quote_ttl=60, history_ttl=300, history_max_items=50, feed_mode="synthetic")
         sub = worker.Subscription(symbol="RELIANCE", token="2885", exchange_segment="NSE", exchange_type=1)
         writer.write(sub, price_paise=250000, volume=1000, source="synthetic")
 
@@ -438,20 +438,117 @@ class SymbolAliasTest(unittest.TestCase):
 
 
 class BenchmarkFallbackSourceTest(unittest.TestCase):
-    def test_benchmark_fallback_is_never_labeled_angelone_live(self):
-        old_smart_api = worker.GLOBAL_SMART_API
+    def setUp(self):
+        self.orig_smart_api = worker.GLOBAL_SMART_API
+        self.orig_writer = worker.GLOBAL_WRITER
+        self.orig_feed_mode = os.environ.get("MARKET_FEED_MODE")
+        worker.init_global_token_map()
+        worker.GLOBAL_TOKEN_MAP["RELIANCE"] = {"token": "2885", "exch_seg": "NSE", "symbol": "RELIANCE-EQ"}
+
+    def tearDown(self):
+        worker.GLOBAL_SMART_API = self.orig_smart_api
+        worker.GLOBAL_WRITER = self.orig_writer
+        if self.orig_feed_mode is not None:
+            os.environ["MARKET_FEED_MODE"] = self.orig_feed_mode
+        elif "MARKET_FEED_MODE" in os.environ:
+            del os.environ["MARKET_FEED_MODE"]
+
+    def test_a_live_mode_rejects_fallback_and_makes_no_fake_redis_write(self):
+        """Test A: In LIVE mode when Angel One is unavailable, return None and make zero Redis writes."""
+        os.environ["MARKET_FEED_MODE"] = "live"
         worker.GLOBAL_SMART_API = None
-        try:
+        mock_writer = MagicMock()
+        worker.GLOBAL_WRITER = mock_writer
+
+        quote = worker.fetch_quote_for_symbol("RELIANCE")
+        self.assertIsNone(quote, "LIVE mode must return None when Angel One quote is missing")
+        self.assertEqual(mock_writer.write.call_count, 0, "LIVE mode must never write benchmark fallback to Redis")
+
+    def test_b_live_mode_rejects_simulated_derivative_and_makes_no_fake_redis_write(self):
+        """Test B: In LIVE mode, missing underlying or Angel One must not generate simulated derivatives or write to Redis."""
+        os.environ["MARKET_FEED_MODE"] = "live"
+        worker.GLOBAL_SMART_API = None
+        mock_writer = MagicMock()
+        worker.GLOBAL_WRITER = mock_writer
+
+        quote_fut = worker.fetch_quote_for_symbol("NIFTY24SEPFUT")
+        quote_opt = worker.fetch_quote_for_symbol("NIFTY24SEP25000CE")
+        self.assertIsNone(quote_fut, "LIVE mode must not generate simulated futures")
+        self.assertIsNone(quote_opt, "LIVE mode must not generate simulated options")
+        self.assertEqual(mock_writer.write.call_count, 0, "LIVE mode must never write simulated derivatives to Redis")
+
+    def test_c_synthetic_mode_preserves_benchmark_fallback(self):
+        """Test C: In explicit SYNTHETIC mode, benchmark fallback is preserved and labeled benchmark_fallback."""
+        os.environ["MARKET_FEED_MODE"] = "synthetic"
+        worker.GLOBAL_SMART_API = None
+        mock_writer = MagicMock()
+        worker.GLOBAL_WRITER = mock_writer
+
+        quote = worker.fetch_quote_for_symbol("RELIANCE")
+        self.assertIsNotNone(quote)
+        self.assertNotEqual(quote.get("source"), "angelone_live")
+        self.assertEqual(quote.get("source"), "benchmark_fallback")
+        self.assertEqual(quote.get("price_paise"), worker.DEFAULT_BENCHMARK_PRICES_PAISE["RELIANCE"])
+        self.assertGreaterEqual(mock_writer.write.call_count, 1)
+
+    def test_d_synthetic_mode_preserves_simulated_derivative(self):
+        """Test D: In explicit SYNTHETIC mode, derivative contracts calculate simulated values labeled simulated_deriv."""
+        os.environ["MARKET_FEED_MODE"] = "synthetic"
+        worker.GLOBAL_SMART_API = None
+        mock_writer = MagicMock()
+        worker.GLOBAL_WRITER = mock_writer
+
+        quote_fut = worker.fetch_quote_for_symbol("NIFTY24SEPFUT")
+        self.assertIsNotNone(quote_fut)
+        self.assertEqual(quote_fut.get("source"), "simulated_deriv")
+        self.assertGreater(quote_fut.get("price_paise", 0), 0)
+
+        quote_opt = worker.fetch_quote_for_symbol("NIFTY24SEP25000CE")
+        self.assertIsNotNone(quote_opt)
+        self.assertEqual(quote_opt.get("source"), "simulated_deriv")
+        self.assertGreater(quote_opt.get("price_paise", 0), 0)
+
+    def test_e_live_mode_accepts_valid_angel_one_quote(self):
+        """Test E: In LIVE mode, valid quote from Angel One returns angelone_live and allows Redis write."""
+        os.environ["MARKET_FEED_MODE"] = "live"
+        mock_smart_api = MagicMock()
+        mock_smart_api.ltpData.return_value = {
+            "status": True,
+            "data": {
+                "ltp": 2550.50,
+                "close": 2500.00
+            }
+        }
+        worker.GLOBAL_SMART_API = mock_smart_api
+        mock_writer = MagicMock()
+        worker.GLOBAL_WRITER = mock_writer
+
+        with unittest.mock.patch.object(worker, "has_angel_credentials", return_value=True):
             quote = worker.fetch_quote_for_symbol("RELIANCE")
             self.assertIsNotNone(quote)
-            self.assertNotEqual(quote.get("source"), "angelone_live")
-            self.assertEqual(quote.get("source"), "benchmark_fallback")
-        finally:
-            worker.GLOBAL_SMART_API = old_smart_api
+            self.assertEqual(quote.get("source"), "angelone_live")
+            self.assertEqual(quote.get("price_paise"), 255050)
+            self.assertEqual(mock_writer.write.call_count, 1)
+            call_source = mock_writer.write.call_args[1].get("source")
+            self.assertEqual(call_source, "angelone_live")
+
+    def test_writer_rejects_non_live_source_in_live_mode(self):
+        """QuoteWriter in LIVE mode must drop any non-live quote (synthetic, fallback, etc.) with zero Redis writes."""
+        mock_redis = MagicMock()
+        writer = worker.QuoteWriter(mock_redis, 300, 86400, 500, feed_mode="live")
+        sub = worker.Subscription("RELIANCE", "2885", "NSE", 1)
+
+        writer.write(sub, 250000, 100, source="synthetic")
+        writer.write(sub, 250000, 100, source="benchmark_fallback")
+        writer.write(sub, 250000, 100, source="simulated_deriv")
+        writer.write(sub, 250000, 100, source="synthetic_gbm")
+
+        self.assertEqual(mock_redis.pipeline.call_count, 0, "No Redis pipeline must execute for non-live quotes in LIVE mode")
 
     def test_writer_default_source_is_not_angelone_live(self):
+        """In synthetic mode, QuoteWriter writes synthetic source and never mutates into angelone_live."""
         mock_redis = MagicMock()
-        writer = worker.QuoteWriter(mock_redis, 300, 86400, 500)
+        writer = worker.QuoteWriter(mock_redis, 300, 86400, 500, feed_mode="synthetic")
         sub = worker.Subscription("RELIANCE", "2885", "NSE", 1)
         writer.write(sub, 250000, 100)
         mock_pipe = mock_redis.pipeline.return_value.__enter__.return_value
@@ -468,8 +565,9 @@ class BenchmarkFallbackSourceTest(unittest.TestCase):
         self.assertIn("last_tick", feed_state_calls[0][2]["mapping"])
 
     def test_quote_writer_writes_authentic_source_without_mutation(self):
+        """In LIVE mode, QuoteWriter writes angelone_live without mutation."""
         mock_redis = MagicMock()
-        writer = worker.QuoteWriter(mock_redis, 300, 86400, 500)
+        writer = worker.QuoteWriter(mock_redis, 300, 86400, 500, feed_mode="live")
         sub = worker.Subscription("RELIANCE", "2885", "NSE", 1)
 
         writer.write(sub, 250000, 100, source="angelone_live")
@@ -506,9 +604,12 @@ class QuoteServerArchitectureTest(unittest.TestCase):
                 del os.environ["QUOTE_SERVER_PORT"]
 
     def test_quote_server_endpoint_serves_requests(self):
+        old_mode = os.environ.get("MARKET_FEED_MODE")
         os.environ["QUOTE_SERVER_HOST"] = "127.0.0.1"
         os.environ["QUOTE_SERVER_PORT"] = "0"
         try:
+            # 1. In SYNTHETIC mode: /quote?symbol=RELIANCE returns 200 with benchmark quote
+            os.environ["MARKET_FEED_MODE"] = "synthetic"
             server = worker.start_quote_server()
             self.assertIsNotNone(server)
             _, port = server.server_address
@@ -519,21 +620,33 @@ class QuoteServerArchitectureTest(unittest.TestCase):
             self.assertEqual(resp.status, 200)
             data = json.loads(resp.read().decode())
             self.assertEqual(data.get("symbol"), "RELIANCE")
+            self.assertEqual(data.get("source"), "benchmark_fallback")
             self.assertGreater(data.get("price_paise", 0), 0)
             conn.close()
 
+            # 2. In LIVE mode when Angel One is unavailable: /quote?symbol=RELIANCE returns 404 (Fail closed)
+            os.environ["MARKET_FEED_MODE"] = "live"
+            conn = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
+            conn.request("GET", "/quote?symbol=RELIANCE")
+            resp = conn.getresponse()
+            self.assertEqual(resp.status, 404)
+            conn.close()
+
+            # 3. Missing symbol parameter returns 400
             conn = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
             conn.request("GET", "/quote")
             resp = conn.getresponse()
             self.assertEqual(resp.status, 400)
             conn.close()
 
+            # 4. Unknown path returns 404
             conn = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
             conn.request("GET", "/unknown")
             resp = conn.getresponse()
             self.assertEqual(resp.status, 404)
             conn.close()
 
+            # 5. Health endpoint returns 200
             conn = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
             conn.request("GET", "/health")
             resp = conn.getresponse()
@@ -545,6 +658,10 @@ class QuoteServerArchitectureTest(unittest.TestCase):
             server.shutdown()
             server.server_close()
         finally:
+            if old_mode is not None:
+                os.environ["MARKET_FEED_MODE"] = old_mode
+            elif "MARKET_FEED_MODE" in os.environ:
+                del os.environ["MARKET_FEED_MODE"]
             os.environ.pop("QUOTE_SERVER_HOST", None)
             os.environ.pop("QUOTE_SERVER_PORT", None)
 

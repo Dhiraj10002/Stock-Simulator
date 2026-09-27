@@ -370,12 +370,14 @@ func TestFeedMode_AuthoritativeEligibilityMatrix(t *testing.T) {
 		{name: "LIVE rejects fno_engine", mode: dto.FeedModeLive, source: "fno_engine", allowSeeded: false, wantPass: false, wantErrIs: ErrQuoteIneligible},
 		{name: "LIVE rejects auto_seeded even if allowSeeded=true", mode: dto.FeedModeLive, source: "auto_seeded", allowSeeded: true, wantPass: false, wantErrIs: ErrQuoteIneligible},
 		{name: "LIVE rejects benchmark_fallback", mode: dto.FeedModeLive, source: "benchmark_fallback", allowSeeded: false, wantPass: false, wantErrIs: ErrQuoteIneligible},
+		{name: "LIVE rejects simulated_deriv", mode: dto.FeedModeLive, source: "simulated_deriv", allowSeeded: false, wantPass: false, wantErrIs: ErrQuoteIneligible},
 		{name: "LIVE rejects empty source", mode: dto.FeedModeLive, source: "", allowSeeded: false, wantPass: false, wantErrIs: ErrQuoteIneligible},
 
 		// SYNTHETIC feed mode
 		{name: "SYNTHETIC allows synthetic_gbm", mode: dto.FeedModeSynthetic, source: "synthetic_gbm", allowSeeded: false, wantPass: true},
 		{name: "SYNTHETIC allows synthetic", mode: dto.FeedModeSynthetic, source: "synthetic", allowSeeded: false, wantPass: true},
 		{name: "SYNTHETIC allows fno_engine", mode: dto.FeedModeSynthetic, source: "fno_engine", allowSeeded: false, wantPass: true},
+		{name: "SYNTHETIC allows simulated_deriv", mode: dto.FeedModeSynthetic, source: "simulated_deriv", allowSeeded: false, wantPass: true},
 		{name: "SYNTHETIC rejects angelone_live", mode: dto.FeedModeSynthetic, source: "angelone_live", allowSeeded: false, wantPass: false, wantErrIs: ErrQuoteIneligible},
 		{name: "SYNTHETIC rejects auto_seeded when allowSeeded=false", mode: dto.FeedModeSynthetic, source: "auto_seeded", allowSeeded: false, wantPass: false, wantErrIs: ErrQuoteIneligible},
 		{name: "SYNTHETIC allows auto_seeded when allowSeeded=true", mode: dto.FeedModeSynthetic, source: "auto_seeded", allowSeeded: true, wantPass: true},

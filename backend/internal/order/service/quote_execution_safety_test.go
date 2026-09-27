@@ -70,6 +70,36 @@ func TestOrderService_QuoteExecutionSafety(t *testing.T) {
 			wantErrIs:         marketService.ErrQuoteIneligible,
 		},
 		{
+			name:     "Market order rejected when quote source is benchmark_fallback in LIVE mode",
+			feedMode: marketDTO.FeedModeLive,
+			quoteFunc: func(symbol string) (*marketDTO.QuoteResponse, error) {
+				q := &marketDTO.QuoteResponse{
+					Symbol:     symbol,
+					PricePaise: 250000,
+					Source:     "benchmark_fallback",
+					UpdatedAt:  tradingTime.UTC().Format(time.RFC3339),
+				}
+				return q, marketService.ValidateExecutableQuoteWithFeedMode(q, tradingTime, marketDTO.FeedModeLive, false)
+			},
+			wantCreateSuccess: false,
+			wantErrIs:         marketService.ErrQuoteIneligible,
+		},
+		{
+			name:     "Market order rejected when quote source is simulated_deriv in LIVE mode",
+			feedMode: marketDTO.FeedModeLive,
+			quoteFunc: func(symbol string) (*marketDTO.QuoteResponse, error) {
+				q := &marketDTO.QuoteResponse{
+					Symbol:     symbol,
+					PricePaise: 250000,
+					Source:     "simulated_deriv",
+					UpdatedAt:  tradingTime.UTC().Format(time.RFC3339),
+				}
+				return q, marketService.ValidateExecutableQuoteWithFeedMode(q, tradingTime, marketDTO.FeedModeLive, false)
+			},
+			wantCreateSuccess: false,
+			wantErrIs:         marketService.ErrQuoteIneligible,
+		},
+		{
 			name:     "Market order rejected when market feed is unavailable (ErrQuoteUnavailable)",
 			feedMode: marketDTO.FeedModeUnavailable,
 			quoteFunc: func(symbol string) (*marketDTO.QuoteResponse, error) {

@@ -389,7 +389,18 @@ def init_smart_api() -> None:
             print(f"market worker: failed to init SmartConnect: {e}", flush=True)
 
 
+def get_feed_mode() -> str:
+    """Returns the canonical market feed mode: 'live', 'synthetic', or 'unavailable'/'disabled'."""
+    mode = os.getenv("MARKET_FEED_MODE", "live").strip().lower()
+    if mode == "auto":
+        return "live"
+    if mode in ("synthetic", "unavailable", "disabled", "live"):
+        return mode
+    return "live"
+
+
 def fetch_quote_for_symbol(symbol: str) -> dict[str, Any] | None:
+    mode = get_feed_mode()
     symbol = symbol.strip().upper()
     canonical_sym = resolve_canonical_symbol(symbol)
     clean_sym = symbol.replace("-EQ", "").replace("-BE", "").replace("-SM", "")
@@ -441,6 +452,12 @@ def fetch_quote_for_symbol(symbol: str) -> dict[str, Any] | None:
         except Exception as e:
             print(f"market worker: error fetching live quote for {symbol} from Angel One: {e}", flush=True)
 
+    # In LIVE, DISABLED, or UNAVAILABLE feed modes, strictly fail closed.
+    # Never return benchmark fallbacks or simulated derivatives, and never write them to Redis.
+    if mode != "synthetic":
+        return None
+
+    # Below here is EXPLICIT SYNTHETIC MODE ONLY
     benchmark = DEFAULT_BENCHMARK_PRICES_PAISE.get(clean_sym) or DEFAULT_BENCHMARK_PRICES_PAISE.get(canonical_sym)
     if benchmark:
         now_iso = datetime.now(timezone.utc).isoformat()
@@ -489,7 +506,7 @@ def fetch_quote_for_symbol(symbol: str) -> dict[str, Any] | None:
                 strike_str = deriv_match.group(5)
                 opt_type = deriv_match.group(6)
                 if strike_str:
-                    strike_rs = float(strike_str)
+                    strike_rs = max(1.0, float(strike_str))
                     import math
                     time_years = 7.0 / 365.0
                     vol = 0.16
@@ -943,15 +960,28 @@ def publish_feed_state(
 
 
 class QuoteWriter:
-    def __init__(self, client: redis.Redis, quote_ttl: int, history_ttl: int, history_max_items: int) -> None:
+    def __init__(self, client: redis.Redis, quote_ttl: int, history_ttl: int, history_max_items: int, feed_mode: str | None = None) -> None:
         self.client = client
         self.quote_ttl = quote_ttl
         self.history_ttl = history_ttl
         self.history_max_items = history_max_items
         self._daily_volume: dict[str, tuple[date, int]] = {}
         self.benchmark_prices = DEFAULT_BENCHMARK_PRICES_PAISE
+        self._feed_mode = feed_mode
+
+    @property
+    def feed_mode(self) -> str:
+        return self._feed_mode if self._feed_mode is not None else get_feed_mode()
 
     def write(self, subscription: Subscription, price_paise: int, volume: int, source: str = "synthetic") -> None:
+        mode = self.feed_mode
+        if mode == "live" and source != "angelone_live":
+            print(f"market worker: rejected non-live quote write to Redis in LIVE mode (source={source}, symbol={subscription.symbol})", flush=True)
+            return
+        if mode in ("unavailable", "disabled"):
+            print(f"market worker: rejected quote write to Redis in {mode.upper()} mode (source={source}, symbol={subscription.symbol})", flush=True)
+            return
+
         now = datetime.now(timezone.utc)
         benchmark = self.benchmark_prices.get(subscription.symbol, price_paise)
         change_paise = price_paise - benchmark
@@ -1345,10 +1375,9 @@ class FeedSupervisor:
 
 def main() -> None:
     global GLOBAL_WRITER
-    mode = os.getenv("MARKET_FEED_MODE", "live").strip().lower()
-    if mode == "auto":
+    mode = get_feed_mode()
+    if os.getenv("MARKET_FEED_MODE", "").strip().lower() == "auto":
         print("market worker: 'auto' feed mode is deprecated; strictly enforcing LIVE feed mode with explicit UNAVAILABLE state", flush=True)
-        mode = "live"
 
     default_symbols = (
         "RELIANCE,TCS,INFY,HDFCBANK,TATAMOTORS,TMPV,TMCV,BHARTIARTL,ETERNAL,ZOMATO,SUZLON,TRENT,ADANIENT,YESBANK,BEL,"
@@ -1384,8 +1413,9 @@ def main() -> None:
     init_smart_api()
     start_quote_server()
 
-    # Seed historical candles immediately so charts have candle context
-    seed_historical_candles(client, store.subscriptions(), history_ttl, history_max)
+    # Seed historical candles only in explicit synthetic simulation mode; never inject fake candles in LIVE mode
+    if mode == "synthetic":
+        seed_historical_candles(client, store.subscriptions(), history_ttl, history_max)
 
     # Synthetic Feed Mode (explicit only)
     if mode == "synthetic":
@@ -1396,9 +1426,9 @@ def main() -> None:
         synthetic_feed.run()
         return
 
-    # Unavailable Mode (explicit)
-    if mode == "unavailable":
-        print("market worker: running in explicit UNAVAILABLE feed mode", flush=True)
+    # Unavailable or Disabled Mode (explicit)
+    if mode in ("unavailable", "disabled"):
+        print(f"market worker: running in explicit {mode.upper()} feed mode", flush=True)
         publish_feed_state(client, feed_provider="none", feed_state="UNAVAILABLE", is_synthetic=False)
         while True:
             time.sleep(30)
