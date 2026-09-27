@@ -42,10 +42,7 @@ func TestMarketAggregation_NilClient(t *testing.T) {
 }
 
 func TestMarketAggregation_RedisDynamicCalculation(t *testing.T) {
-	svc, err := New("redis://localhost:6379/0", time.Second)
-	if err != nil || svc.Client() == nil || svc.Client().Ping(t.Context()).Err() != nil {
-		t.Skip("skipping test: Redis not reachable on localhost:6379")
-	}
+	svc := getTestRedis(t)
 
 	ctx := t.Context()
 	client := svc.Client()
@@ -233,6 +230,74 @@ func TestMarketAggregation_RedisDynamicCalculation(t *testing.T) {
 		}
 		if breadth.AdvancePercent != 40.0 {
 			t.Errorf("expected AdvancePercent 40.0%%, got %f", breadth.AdvancePercent)
+		}
+	})
+
+	t.Run("GetMarketIndices live and fail-closed", func(t *testing.T) {
+		indices, err := svc.GetMarketIndices(ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(indices) != len(BenchmarkIndices) {
+			t.Fatalf("expected %d benchmark indices, got %d", len(BenchmarkIndices), len(indices))
+		}
+		// In LIVE mode without index quotes seeded, indices must fail-closed
+		for _, idx := range indices {
+			if idx.IsAvailable {
+				t.Errorf("expected index %s to be unavailable without live quotes, got available", idx.Symbol)
+			}
+			if idx.PricePaise != 0 {
+				t.Errorf("expected index %s price to be 0 when unavailable, got %d", idx.Symbol, idx.PricePaise)
+			}
+		}
+
+		// Seed a genuine live quote for NIFTY
+		_ = client.HSet(ctx, "market:quote:NIFTY", map[string]interface{}{
+			"symbol":         "NIFTY",
+			"price_paise":    "2500000",
+			"change_paise":   "12500",
+			"change_percent": "0.50",
+			"source":         "angelone_live",
+			"updated_at":     now,
+		}).Err()
+		defer func() { _ = client.Del(ctx, "market:quote:NIFTY").Err() }()
+
+		indicesAfter, err := svc.GetMarketIndices(ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		var niftyFound bool
+		for _, idx := range indicesAfter {
+			if idx.Symbol == "NIFTY" {
+				niftyFound = true
+				if !idx.IsAvailable {
+					t.Errorf("expected NIFTY to be available after seeding live quote")
+				}
+				if idx.PricePaise != 2500000 {
+					t.Errorf("expected NIFTY price 2500000, got %d", idx.PricePaise)
+				}
+				if idx.ChangePercent != 0.50 {
+					t.Errorf("expected NIFTY change 0.50%%, got %f", idx.ChangePercent)
+				}
+			}
+		}
+		if !niftyFound {
+			t.Errorf("expected NIFTY in benchmark indices")
+		}
+	})
+
+	t.Run("GetMarketSectors dynamic aggregation", func(t *testing.T) {
+		sectors, err := svc.GetMarketSectors(ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(sectors) != len(SectorDefinitions) {
+			t.Fatalf("expected %d sectors, got %d", len(SectorDefinitions), len(sectors))
+		}
+		for _, sec := range sectors {
+			if sec.Name == "" || sec.ID == "" {
+				t.Errorf("expected non-empty sector ID and Name")
+			}
 		}
 	})
 }

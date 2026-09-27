@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 	"time"
 
@@ -16,6 +17,27 @@ func init() {
 	gin.SetMode(gin.TestMode)
 }
 
+func getTestRedis(t *testing.T) *service.Service {
+	t.Helper()
+	urls := []string{
+		os.Getenv("TEST_REDIS_URL"),
+		os.Getenv("REDIS_URL"),
+		"redis://localhost:6380/0",
+		"redis://localhost:6379/0",
+	}
+	for _, u := range urls {
+		if u == "" {
+			continue
+		}
+		svc, err := service.New(u, 200*time.Millisecond)
+		if err == nil && svc.Client() != nil && svc.Client().Ping(t.Context()).Err() == nil {
+			return svc
+		}
+	}
+	t.Skip("skipping test: Redis not reachable on configured URLs (checked 6380 and 6379)")
+	return nil
+}
+
 func setupTestRouter(svc *service.Service) *gin.Engine {
 	h := &Handler{service: svc}
 	r := gin.New()
@@ -23,6 +45,8 @@ func setupTestRouter(svc *service.Service) *gin.Engine {
 	r.GET("/api/v1/market/history/:symbol", h.History)
 	r.GET("/api/v1/market/movers", h.Movers)
 	r.GET("/api/v1/market/breadth", h.Breadth)
+	r.GET("/api/v1/market/indices", h.Indices)
+	r.GET("/api/v1/market/sectors", h.Sectors)
 	return r
 }
 
@@ -61,13 +85,7 @@ func TestMarketHandler_ErrorSemantics(t *testing.T) {
 		}))
 		defer workerServer.Close()
 
-		svc, err := service.New("redis://localhost:6379/0", 100*time.Millisecond)
-		if err != nil {
-			t.Skipf("skipping Redis-dependent handler test: %v", err)
-		}
-		if svc.Client() == nil || svc.Client().Ping(t.Context()).Err() != nil {
-			t.Skip("skipping Redis-dependent handler test: local Redis is not reachable")
-		}
+		svc := getTestRedis(t)
 		svc.SetWorkerURL(workerServer.URL)
 		svc.SetInstrumentFinder(func(symbol string) (bool, error) {
 			return true, nil // Known instrument, but quote missing
@@ -92,10 +110,7 @@ func TestMarketHandler_ErrorSemantics(t *testing.T) {
 	})
 
 	t.Run("Returns 422 QUOTE_STALE when quote is older than 2 minutes", func(t *testing.T) {
-		svc, err := service.New("redis://localhost:6379/0", 100*time.Millisecond)
-		if err != nil || svc.Client() == nil || svc.Client().Ping(t.Context()).Err() != nil {
-			t.Skip("skipping Redis-dependent handler test: local Redis is not reachable")
-		}
+		svc := getTestRedis(t)
 		staleSym := "STALE_HANDLER_SYM"
 		staleTime := time.Now().Add(-5 * time.Minute).UTC().Format(time.RFC3339)
 		_ = svc.Client().HSet(t.Context(), "market:quote:"+staleSym, map[string]interface{}{
@@ -214,4 +229,52 @@ func TestMarketHandler_ErrorSemantics(t *testing.T) {
 			t.Fatalf("expected status 503, got %d. Body: %s", w.Code, w.Body.String())
 		}
 	})
+
+	t.Run("Indices returns 503 MARKET_DATA_UNAVAILABLE when market service is disconnected", func(t *testing.T) {
+		svc := &service.Service{}
+		r := setupTestRouter(svc)
+
+		w := httptest.NewRecorder()
+		req, _ := http.NewRequest("GET", "/api/v1/market/indices", nil)
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusServiceUnavailable {
+			t.Fatalf("expected status 503, got %d. Body: %s", w.Code, w.Body.String())
+		}
+	})
+
+	t.Run("Sectors returns 503 MARKET_DATA_UNAVAILABLE when market service is disconnected", func(t *testing.T) {
+		svc := &service.Service{}
+		r := setupTestRouter(svc)
+
+		w := httptest.NewRecorder()
+		req, _ := http.NewRequest("GET", "/api/v1/market/sectors", nil)
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusServiceUnavailable {
+			t.Fatalf("expected status 503, got %d. Body: %s", w.Code, w.Body.String())
+		}
+	})
+
+	t.Run("Indices and Sectors return 200 OK when service is active", func(t *testing.T) {
+		svc := getTestRedis(t)
+		r := setupTestRouter(svc)
+
+		// Test Indices
+		wIdx := httptest.NewRecorder()
+		reqIdx, _ := http.NewRequest("GET", "/api/v1/market/indices", nil)
+		r.ServeHTTP(wIdx, reqIdx)
+		if wIdx.Code != http.StatusOK {
+			t.Fatalf("expected status 200 for indices, got %d", wIdx.Code)
+		}
+
+		// Test Sectors
+		wSec := httptest.NewRecorder()
+		reqSec, _ := http.NewRequest("GET", "/api/v1/market/sectors", nil)
+		r.ServeHTTP(wSec, reqSec)
+		if wSec.Code != http.StatusOK {
+			t.Fatalf("expected status 200 for sectors, got %d", wSec.Code)
+		}
+	})
 }
+

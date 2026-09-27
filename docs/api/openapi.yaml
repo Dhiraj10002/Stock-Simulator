@@ -610,6 +610,36 @@ paths:
               schema:
                 $ref: '#/components/schemas/MarketBreadthResponse'
 
+  /market/indices:
+    get:
+      summary: Benchmark Indices
+      description: Returns core institutional market indices (NIFTY, BANKNIFTY, FINNIFTY, SENSEX, MIDCPNIFTY) with live Redis quotes and percentage changes.
+      tags: [Market]
+      responses:
+        '200':
+          description: Benchmark indices retrieved
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MarketIndexItem'
+
+  /market/sectors:
+    get:
+      summary: Sectoral Performance
+      description: Returns dynamic sector performance, advance/decline ratios, and top contributing stock across key Indian market sectors.
+      tags: [Market]
+      responses:
+        '200':
+          description: Sector performance retrieved
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MarketSectorItem'
+
   /fno/option-chain:
     get:
       summary: F&O Option Chain

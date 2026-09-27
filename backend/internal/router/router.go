@@ -176,6 +176,8 @@ func Setup(ctx context.Context, cfg *config.Config, opts ...SetupOption) *gin.En
 		api.GET("/market/quotes/:symbol/history", market.History)
 		api.GET("/market/movers", market.Movers)
 		api.GET("/market/breadth", market.Breadth)
+		api.GET("/market/indices", market.Indices)
+		api.GET("/market/sectors", market.Sectors)
 		api.GET("/fno/option-chain", fno.GetOptionChain)
 		api.GET("/instruments", instruments.List)
 		api.GET("/instruments/:symbol", instruments.GetBySymbol)

@@ -350,3 +350,155 @@ func (s *Service) GetMarketBreadth(ctx context.Context) (*dto.MarketBreadthRespo
 		UpdatedAt:           time.Now().UTC().Format(time.RFC3339),
 	}, nil
 }
+
+// BenchmarkIndices represents the core institutional benchmark indices.
+var BenchmarkIndices = []struct {
+	Symbol string
+	Name   string
+}{
+	{Symbol: "NIFTY", Name: "NIFTY 50"},
+	{Symbol: "BANKNIFTY", Name: "BANK NIFTY"},
+	{Symbol: "FINNIFTY", Name: "FIN NIFTY"},
+	{Symbol: "SENSEX", Name: "BSE SENSEX"},
+	{Symbol: "MIDCPNIFTY", Name: "NIFTY MIDCAP SELECT"},
+}
+
+// GetMarketIndices dynamically retrieves authoritative index quotes from Redis.
+func (s *Service) GetMarketIndices(ctx context.Context) ([]dto.MarketIndexItem, error) {
+	if s == nil || s.client == nil {
+		return nil, ErrQuoteUnavailable
+	}
+
+	mode := s.FeedMode()
+	if mode == dto.FeedModeUnavailable {
+		return nil, ErrQuoteUnavailable
+	}
+
+	// Verify Redis feed state
+	if feedState, err := s.client.HGet(ctx, FeedStateKey, "feed_state").Result(); err == nil {
+		if strings.ToUpper(strings.TrimSpace(feedState)) == string(dto.FeedModeUnavailable) {
+			return nil, ErrQuoteUnavailable
+		}
+	}
+
+	results := make([]dto.MarketIndexItem, 0, len(BenchmarkIndices))
+	now := time.Now()
+
+	for _, idx := range BenchmarkIndices {
+		item := dto.MarketIndexItem{
+			Symbol:      idx.Symbol,
+			Name:        idx.Name,
+			IsAvailable: false,
+			QuoteStatus: string(dto.QuoteSourceUnavailable),
+		}
+
+		quote, err := s.CurrentQuote(idx.Symbol)
+		if err == nil && quote != nil && quote.PricePaise > 0 {
+			item.PricePaise = quote.PricePaise
+			item.ChangePaise = quote.ChangePaise
+			item.ChangePercent = math.Round(quote.ChangePercent*100) / 100
+			item.IsAvailable = true
+			item.QuoteStatus = string(quote.Source)
+			item.UpdatedAt = quote.UpdatedAt
+		} else if mode == dto.FeedModeSynthetic {
+			basePaise := int64(2450000)
+			if idx.Symbol == "BANKNIFTY" {
+				basePaise = 5200000
+			} else if idx.Symbol == "FINNIFTY" {
+				basePaise = 2350000
+			} else if idx.Symbol == "SENSEX" {
+				basePaise = 8100000
+			} else if idx.Symbol == "MIDCPNIFTY" {
+				basePaise = 1300000
+			}
+			item.PricePaise = basePaise
+			item.ChangePaise = 0
+			item.ChangePercent = 0.0
+			item.IsAvailable = true
+			item.QuoteStatus = string(dto.QuoteSourceSyntheticGBM)
+			item.UpdatedAt = now.UTC().Format(time.RFC3339)
+		}
+
+		results = append(results, item)
+	}
+
+	return results, nil
+}
+
+// SectorDefinitions maps market sectors to their representative institutional constituents.
+var SectorDefinitions = []struct {
+	ID           string
+	Name         string
+	Constituents []string
+}{
+	{ID: "banking", Name: "Banking & Financials", Constituents: []string{"HDFCBANK", "ICICIBANK", "SBIN", "KOTAKBANK", "AXISBANK", "BAJFINANCE", "POONAWALLA", "YESBANK"}},
+	{ID: "it", Name: "Information Technology", Constituents: []string{"TCS", "INFY"}},
+	{ID: "energy", Name: "Energy & Utilities", Constituents: []string{"RELIANCE", "TATAPOWER", "SUZLON", "ATGL"}},
+	{ID: "auto", Name: "Automobiles", Constituents: []string{"TATAMOTORS", "MARUTI"}},
+	{ID: "fmcg", Name: "FMCG & Consumer", Constituents: []string{"TRENT", "ETERNAL"}},
+	{ID: "industrials", Name: "Industrials & Defense", Constituents: []string{"BEL", "APARINDS", "PRAJIND", "BHARTIARTL"}},
+	{ID: "chemicals", Name: "Chemicals & Materials", Constituents: []string{"TATACHEM", "ADANIENT"}},
+}
+
+// GetMarketSectors dynamically computes sectoral breadth, mean price change,
+// and top performing stock across each sector from authoritative equity quotes.
+func (s *Service) GetMarketSectors(ctx context.Context) ([]dto.MarketSectorItem, error) {
+	items, err := s.collectValidEquityQuotes(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	quoteMap := make(map[string]dto.MarketMoverItem, len(items))
+	for _, it := range items {
+		quoteMap[strings.ToUpper(it.Symbol)] = it
+	}
+
+	sectors := make([]dto.MarketSectorItem, 0, len(SectorDefinitions))
+	nowStr := time.Now().UTC().Format(time.RFC3339)
+
+	for _, sec := range SectorDefinitions {
+		var gainers, losers int
+		var totalChange float64
+		var activeCount int
+		var topStock string
+		maxChange := -math.MaxFloat64
+
+		for _, sym := range sec.Constituents {
+			q, exists := quoteMap[sym]
+			if !exists || q.PricePaise <= 0 {
+				continue
+			}
+			activeCount++
+			if q.ChangePercent > 0 || q.ChangePaise > 0 {
+				gainers++
+			} else if q.ChangePercent < 0 || q.ChangePaise < 0 {
+				losers++
+			}
+			totalChange += q.ChangePercent
+			if q.ChangePercent > maxChange {
+				maxChange = q.ChangePercent
+				topStock = sym
+			}
+		}
+
+		secItem := dto.MarketSectorItem{
+			ID:           sec.ID,
+			Name:         sec.Name,
+			GainersCount: gainers,
+			LosersCount:  losers,
+			Constituents: activeCount,
+			TopStock:     "—",
+			UpdatedAt:    nowStr,
+		}
+
+		if activeCount > 0 {
+			secItem.ChangePercent = math.Round((totalChange/float64(activeCount))*100) / 100
+			secItem.TopStock = topStock
+			secItem.TopStockChange = math.Round(maxChange*100) / 100
+		}
+
+		sectors = append(sectors, secItem)
+	}
+
+	return sectors, nil
+}

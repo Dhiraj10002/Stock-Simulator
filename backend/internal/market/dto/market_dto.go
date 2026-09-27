@@ -34,3 +34,28 @@ type MarketBreadthResponse struct {
 	AdvancePercent      float64 `json:"advance_percent"`
 	UpdatedAt           string  `json:"updated_at"`
 }
+
+// MarketIndexItem represents an index quote in the indices aggregation.
+type MarketIndexItem struct {
+	Symbol        string  `json:"symbol"`
+	Name          string  `json:"name"`
+	PricePaise    int64   `json:"price_paise"`
+	ChangePaise   int64   `json:"change_paise"`
+	ChangePercent float64 `json:"change_percent"`
+	IsAvailable   bool    `json:"is_available"`
+	QuoteStatus   string  `json:"quote_status"`
+	UpdatedAt     string  `json:"updated_at,omitempty"`
+}
+
+// MarketSectorItem represents a sector performance aggregation.
+type MarketSectorItem struct {
+	ID             string  `json:"id"`
+	Name           string  `json:"name"`
+	GainersCount   int     `json:"gainers_count"`
+	LosersCount    int     `json:"losers_count"`
+	ChangePercent  float64 `json:"change_percent"`
+	TopStock       string  `json:"top_stock"`
+	TopStockChange float64 `json:"top_stock_change"`
+	Constituents   int     `json:"constituents"`
+	UpdatedAt      string  `json:"updated_at,omitempty"`
+}

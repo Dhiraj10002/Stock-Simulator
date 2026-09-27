@@ -142,9 +142,12 @@ graph TD
 4. **Automated Verification:** Added `TestOptionChainService_LiveVsSyntheticGating` in `option_chain_service_test.go` verifying 100% pass across `LIVE`, `SYNTHETIC`, and `UNAVAILABLE` feed modes.
 5. **Frontend Anti-Fabrication in F&O:** Updated `OptionChainDesk.tsx` and `FnoOrderModal.tsx` to render `UNAVAILABLE` instead of `₹0.00` when quotes are missing, and blocked Market order placement on contracts with unavailable quotes.
 
-### Step E: Dynamic Market APIs & Movers
-1. Verify backend market endpoints (`/api/v1/market/movers`, `/api/v1/market/indices`, `/api/v1/market/sectors`).
-2. Ensure gainers/losers are sorted server-side based on actual quote percentage changes.
+### Step E: Dynamic Market APIs & Movers ✅ Completed
+1. **Dynamic Market Movers & Server-Side Sorting:** Verified that `GetMarketMovers` dynamically computes gainers, losers, most traded, and trending equities directly from valid quotes in the configured universe with zero static mock arrays. Top gainers are sorted descending by percentage change, top losers are sorted ascending (largest drop first), most traded is ranked by turnover ($P \times V$), and trending is ranked by logarithmic volume velocity score.
+2. **Dynamic Benchmark Indices API:** Added `/api/v1/market/indices` (`GetMarketIndices`) dynamically serving major benchmark indices (`NIFTY`, `BANKNIFTY`, `FINNIFTY`, `SENSEX`, `MIDCPNIFTY`) from live Redis quotes, with fail-closed protection in `LIVE` mode.
+3. **Dynamic Sectoral Breadth API:** Added `/api/v1/market/sectors` (`GetMarketSectors`) dynamically computing sectoral breadth (advances/declines), mean sectoral percentage change, and top stock contributor across all key Indian market sectors.
+4. **OpenAPI 3.0 Documentation:** Documented `/market/indices` and `/market/sectors` in `openapi.yaml`.
+5. **Automated Verification:** Added test cases in `aggregation_test.go` and `market_handler_test.go` verifying 100% pass across active Redis connections and disconnected failure modes.
 
 ### Step F: Clean Up Remaining Mock References
 1. Audit `mockData.ts` and `OrdersDemoData.ts` to confirm zero imports in production pages.

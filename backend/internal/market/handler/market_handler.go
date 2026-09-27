@@ -213,3 +213,31 @@ func (h *Handler) Breadth(c *gin.Context) {
 	}
 	response.Success(c, http.StatusOK, "Market breadth retrieved successfully", breadth)
 }
+
+// Indices handles GET /api/v1/market/indices
+func (h *Handler) Indices(c *gin.Context) {
+	indices, err := h.service.GetMarketIndices(c.Request.Context())
+	if err != nil {
+		if errors.Is(err, cache.ErrUnavailable) || errors.Is(err, service.ErrQuoteUnavailable) {
+			response.Error(c, http.StatusServiceUnavailable, "Market data temporarily unavailable", "MARKET_DATA_UNAVAILABLE")
+			return
+		}
+		response.Error(c, http.StatusBadRequest, err.Error(), nil)
+		return
+	}
+	response.Success(c, http.StatusOK, "Market indices retrieved successfully", indices)
+}
+
+// Sectors handles GET /api/v1/market/sectors
+func (h *Handler) Sectors(c *gin.Context) {
+	sectors, err := h.service.GetMarketSectors(c.Request.Context())
+	if err != nil {
+		if errors.Is(err, cache.ErrUnavailable) || errors.Is(err, service.ErrQuoteUnavailable) {
+			response.Error(c, http.StatusServiceUnavailable, "Market data temporarily unavailable", "MARKET_DATA_UNAVAILABLE")
+			return
+		}
+		response.Error(c, http.StatusBadRequest, err.Error(), nil)
+		return
+	}
+	response.Success(c, http.StatusOK, "Market sectors retrieved successfully", sectors)
+}
