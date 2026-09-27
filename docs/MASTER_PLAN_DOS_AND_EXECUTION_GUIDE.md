@@ -149,9 +149,9 @@ graph TD
 4. **OpenAPI 3.0 Documentation:** Documented `/market/indices` and `/market/sectors` in `openapi.yaml`.
 5. **Automated Verification:** Added test cases in `aggregation_test.go` and `market_handler_test.go` verifying 100% pass across active Redis connections and disconnected failure modes.
 
-### Step F: Clean Up Remaining Mock References
-1. Audit `mockData.ts` and `OrdersDemoData.ts` to confirm zero imports in production pages.
-2. Preserve animation randomness (e.g. ambient UI aurora particles) while confirming zero synthetic market data in production execution.
+### Step F: Clean Up Remaining Mock References ✅ Completed
+1. **Mock Files Elimination:** Audited and permanently deleted `frontend/src/lib/mockData.ts` and `frontend/src/components/orders/OrdersDemoData.ts`. Confirmed zero remaining imports across all production pages and components.
+2. **Animation Randomness Preserved:** Confirmed that client-side `Math.random()` usage is strictly confined to aesthetic Canvas particles in `LandingPage.tsx` and `AuthModal.tsx`, and toast ID generation in `ToastProvider.tsx`. Zero synthetic prices, quotes, orders, or balances exist anywhere in client runtime.
 
 ### Step G: Comprehensive Testing & Production Build
 1. Run backend tests: `go test ./internal/... ./pkg/... -count=1`.
