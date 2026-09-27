@@ -204,6 +204,20 @@ export default function SearchModal() {
     setSearchPaletteOpen(false);
   };
 
+  const handleQuickTrade = (item: Instrument, side: "BUY" | "SELL") => {
+    const isFno = item.segment === "FUTURES" || item.segment === "OPTIONS";
+    if (isFno) {
+      handleOpenFnoOrder(item, side);
+    } else {
+      handleClose();
+      let targetSymbol = item.underlying || item.symbol;
+      if (targetSymbol.endsWith("-EQ")) {
+        targetSymbol = targetSymbol.replace(/-EQ$/, "");
+      }
+      router.push(`/stocks/${encodeURIComponent(targetSymbol)}?action=${side.toLowerCase()}`);
+    }
+  };
+
   const handleOpenChart = (item: Instrument) => {
     handleClose();
     let targetSymbol = item.underlying || item.symbol;
@@ -478,7 +492,7 @@ export default function SearchModal() {
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
-                              handleOpenFnoOrder(item, "BUY");
+                              handleQuickTrade(item, "BUY");
                             }}
                             className="w-7 h-7 rounded bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-bold text-xs flex items-center justify-center shadow-xs transition-transform cursor-pointer"
                             title="Buy (B)"
@@ -490,7 +504,7 @@ export default function SearchModal() {
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
-                              handleOpenFnoOrder(item, "SELL");
+                              handleQuickTrade(item, "SELL");
                             }}
                             className="w-7 h-7 rounded bg-orange-600 hover:bg-orange-500 active:scale-95 text-white font-bold text-xs flex items-center justify-center shadow-xs transition-transform cursor-pointer"
                             title="Sell (S)"

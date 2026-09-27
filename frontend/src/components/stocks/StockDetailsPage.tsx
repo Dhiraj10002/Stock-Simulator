@@ -368,14 +368,15 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
   // Right column tab: AI Mentor vs News (Requested by user: "add this for every stocks")
   const [rightPanelTab, setRightPanelTab] = useState<"mentor" | "news">("mentor");
 
+  const actionParam = searchParams.get("action");
   // Quick Order Modal state
   const [orderModal, setOrderModal] = useState<{
     isOpen: boolean;
     action: "BUY" | "SELL";
-  }>({
-    isOpen: false,
-    action: "BUY",
-  });
+  }>(() => ({
+    isOpen: actionParam === "buy" || actionParam === "sell",
+    action: actionParam === "sell" ? "SELL" : "BUY",
+  }));
   const [orderQty, setOrderQty] = useState(10);
   const [orderProduct, setOrderProduct] = useState<"CNC" | "MIS">("CNC");
   const [orderType, setOrderType] = useState<"MARKET" | "LIMIT">("MARKET");
@@ -387,6 +388,19 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
   // Ensure the currently viewed stock is dynamically subscribed over WebSocket
   useTargetedSubscription(symbolParam);
   const token = useMemo(() => getAuthToken(), []);
+
+  // Update order modal if action param changes subsequently
+  useEffect(() => {
+    const action = searchParams.get("action");
+    if (action === "buy" || action === "sell") {
+      queueMicrotask(() => {
+        setOrderModal({
+          isOpen: true,
+          action: action.toUpperCase() as "BUY" | "SELL",
+        });
+      });
+    }
+  }, [searchParams]);
 
   // ---------------------------------------------------------------------------
   // REAL DATA: Fetch wallet balance
@@ -1645,6 +1659,33 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
                 </div>
               )}
 
+              {/* Product Type Toggle (CNC vs MIS) */}
+              <div className="space-y-1.5">
+                <label className="font-bold text-slate-500 dark:text-slate-400">PRODUCT</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => setOrderProduct("CNC")}
+                    className={`py-1.5 rounded-lg font-bold border transition-colors cursor-pointer ${
+                      orderProduct === "CNC"
+                        ? "border-cyan-500 bg-cyan-50 dark:bg-cyan-950/50 text-cyan-700 dark:text-cyan-300"
+                        : "border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60"
+                    }`}
+                  >
+                    Delivery (CNC)
+                  </button>
+                  <button
+                    onClick={() => setOrderProduct("MIS")}
+                    className={`py-1.5 rounded-lg font-bold border transition-colors cursor-pointer ${
+                      orderProduct === "MIS"
+                        ? "border-cyan-500 bg-cyan-50 dark:bg-cyan-950/50 text-cyan-700 dark:text-cyan-300"
+                        : "border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60"
+                    }`}
+                  >
+                    Intraday (MIS 5x)
+                  </button>
+                </div>
+              </div>
+
               <div className="space-y-1.5">
                 <label className="font-bold text-slate-500 dark:text-slate-400">QUANTITY</label>
                 <input
@@ -1658,9 +1699,15 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
 
               <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 space-y-1">
                 <div className="flex justify-between text-slate-500 dark:text-slate-400">
-                  <span>Total Payable:</span>
+                  <span>Approx. Margin:</span>
                   <span className="font-black text-sm text-slate-900 dark:text-slate-100 font-tabular">
-                    ₹{(((orderType === "LIMIT" && limitPrice > 0 ? limitPrice : stock.price)) * orderQty).toFixed(2)}
+                    ₹{((orderProduct === "MIS" ? (orderType === "LIMIT" && limitPrice > 0 ? limitPrice : stock.price) * 0.2 : (orderType === "LIMIT" && limitPrice > 0 ? limitPrice : stock.price)) * orderQty).toFixed(2)}
+                  </span>
+                </div>
+                <div className="flex justify-between text-slate-500 dark:text-slate-400 text-[11px]">
+                  <span>Available Balance:</span>
+                  <span className="font-bold text-emerald-600 dark:text-emerald-400 font-tabular">
+                    ₹{(availableBalancePaise / 100).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
                 </div>
               </div>

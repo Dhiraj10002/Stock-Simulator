@@ -122,11 +122,11 @@ graph TD
 5. Remove [`frontend/src/app/(trading)/terminal/page.tsx`](file:///home/dhiraj/personal/Stock-Simulator/frontend/src/app/(trading)/terminal/page.tsx) and [`frontend/src/components/trading/TradingTerminalDesk.tsx`](file:///home/dhiraj/personal/Stock-Simulator/frontend/src/components/trading/TradingTerminalDesk.tsx).
 6. Verify that shared dependencies (`useTradingStore`, `TradingViewChart`, `OrderConfirmationModal`, `FnoOrderModal`, `useTargetedSubscription`) remain 100% intact and functional.
 
-### Step B: Verify Contextual Order Flows
-1. **Stock Details Flow:** Verify that clicking **BUY** or **SELL** on `/stocks/[symbol]` opens `OrderConfirmationModal` with the live quote, available margin, quantity input, order type (MARKET/LIMIT), product type (CNC/MIS), and executes server-authoritatively.
-2. **F&O Hub Flow:** Verify that clicking **BUY** or **SELL** on any strike in `/options` opens `FnoOrderModal` with contract specs (lot size, expiry, strike), margin validation, and executes cleanly.
-3. **Portfolio Exit Flow:** Verify that clicking **Sell / Exit** or **Square Off** in `/portfolio` opens the order ticket to close the position without routing to any terminal.
-4. **Search Flow:** Verify that searching an instrument via `Ctrl+K` allows instant navigation or order placement.
+### Step B: Verify Contextual Order Flows ✅ Completed
+1. **Stock Details Flow:** Verified that clicking **BUY** or **SELL** on `/stocks/[symbol]` opens `OrderConfirmationModal` with the live quote, available margin, quantity input, order type (MARKET/LIMIT), product type (Delivery CNC / Intraday MIS 5x toggle), and executes server-authoritatively (`price_paise = 0` for Market). URL `?action=buy|sell` automatically triggers modal from external actions.
+2. **F&O Hub & Option Chain Flow:** Integrated `OptionChainDesk` as a first-class tab in `/options` alongside `Explore` and `Positions`. Clicking **B** or **S** on any call or put strike directly opens `FnoOrderModal` with contract specs (lot size, strike, expiry, segment), margin validation, and executes cleanly to `/api/v1/orders`.
+3. **Portfolio Exit Flow:** Verified that clicking **Sell / Exit** or **Square Off** in `/portfolio` opens the order ticket to close the position directly without routing to any terminal.
+4. **Search Flow:** Verified that searching an instrument via `Ctrl+K` allows instant navigation, opens `FnoOrderModal` for F&O contracts, and routes equities directly to `/stocks/[symbol]?action=buy|sell`.
 
 ### Step C: Market-Truth & Anti-Fabrication Audit
 1. Audit quote resolution pipeline: `Angel One / Python Worker` $\rightarrow$ `Redis (market:quote:<symbol>)` $\rightarrow$ `Go CurrentQuote()` $\rightarrow$ `WebSocket / HTTP` $\rightarrow$ `Frontend`.

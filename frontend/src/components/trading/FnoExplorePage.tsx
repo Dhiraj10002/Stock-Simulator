@@ -559,7 +559,7 @@ interface FnoExplorePageProps {
   onSelectOptionChain?: (symbol: string) => void;
 }
 
-export default function FnoExplorePage({}: FnoExplorePageProps = {}) {
+export default function FnoExplorePage({ onSelectOptionChain }: FnoExplorePageProps = {}) {
   const router = useRouter();
   const fnoQuoteSymbols = useMemo(
     () => [
@@ -882,6 +882,16 @@ export default function FnoExplorePage({}: FnoExplorePageProps = {}) {
                       </div>
 
                       <div className="flex items-center gap-1.5">
+                        {onSelectOptionChain && (
+                          <button
+                            onClick={() => onSelectOptionChain(u.optionsSymbol || u.symbol.replace(" 50", "").replace(" ", ""))}
+                            className="px-2.5 py-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 text-xs font-bold transition-colors flex items-center gap-1 cursor-pointer"
+                            title="View Option Chain"
+                          >
+                            <Layers className="w-3.5 h-3.5" />
+                            <span>Chain</span>
+                          </button>
+                        )}
                         <Link
                           href={`/stocks/${u.optionsSymbol}`}
                           className="px-2.5 py-1.5 rounded-lg bg-cyan-50 dark:bg-cyan-950/60 border border-cyan-200 dark:border-cyan-800/60 hover:bg-cyan-100 dark:hover:bg-cyan-900/60 text-cyan-700 dark:text-cyan-300 text-xs font-bold transition-colors flex items-center gap-1 cursor-pointer"

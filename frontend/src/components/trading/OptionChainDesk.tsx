@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
-import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { useTradingStore } from "@/stores/trading-store";
 import { useSymbolQuote, useTargetedSubscription } from "@/stores/market-store";
@@ -18,7 +17,8 @@ import {
   Info,
   Flame,
 } from "lucide-react";
-import type { OptionChainResponse, OptionContract, ApiResponse } from "@/types";
+import type { OptionChainResponse, OptionContract, ApiResponse, Instrument, Wallet } from "@/types";
+import FnoOrderModal from "@/components/trading/FnoOrderModal";
 
 type StrategyType =
   | "NONE"
@@ -66,7 +66,6 @@ interface OptionChainDeskProps {
 }
 
 export default function OptionChainDesk({ initialUnderlying = "NIFTY" }: OptionChainDeskProps) {
-  const router = useRouter();
   const setSelectedSymbol = useTradingStore((s) => s.setSelectedSymbol);
 
   const [selectedUnderlying, setSelectedUnderlying] = useState(initialUnderlying);
@@ -124,10 +123,85 @@ export default function OptionChainDesk({ initialUnderlying = "NIFTY" }: OptionC
     setExecutionError(null);
   };
 
-  // Route single contract to stock details
-  const handleSelectContract = (contract: OptionContract, _side: "BUY" | "SELL") => {
+  // F&O Direct Buy/Sell order placement modal state
+  const [fnoModalInstrument, setFnoModalInstrument] = useState<Instrument | null>(null);
+  const [fnoOrderSide, setFnoOrderSide] = useState<"BUY" | "SELL">("BUY");
+  const [isFnoModalOpen, setIsFnoModalOpen] = useState(false);
+
+  // Fetch Wallet for Available Margin
+  const { data: wallet } = useQuery<Wallet>({
+    queryKey: ["wallet", token],
+    queryFn: async () => {
+      if (!token) {
+        return {
+          uuid: "",
+          cash_balance_paise: 100000000,
+          available_balance_paise: 100000000,
+          blocked_paise: 0,
+        };
+      }
+      try {
+        const res = await fetch(`${apiUrl}/wallet`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) {
+          return {
+            uuid: "",
+            cash_balance_paise: 100000000,
+            available_balance_paise: 100000000,
+            blocked_paise: 0,
+          };
+        }
+        const json: ApiResponse<Wallet> = await res.json();
+        return (
+          json.data || {
+            uuid: "",
+            cash_balance_paise: 100000000,
+            available_balance_paise: 100000000,
+            blocked_paise: 0,
+          }
+        );
+      } catch {
+        return {
+          uuid: "",
+          cash_balance_paise: 100000000,
+          available_balance_paise: 100000000,
+          blocked_paise: 0,
+        };
+      }
+    },
+    enabled: !!token,
+  });
+
+  // Open contextual F&O order modal for selected contract
+  const handleSelectContract = (contract: OptionContract, side: "BUY" | "SELL") => {
     setSelectedSymbol(contract.symbol);
-    router.push(`/stocks/${encodeURIComponent(contract.symbol)}`);
+    const inst: Instrument = {
+      id: contract.symbol,
+      symbol: contract.symbol,
+      display_symbol: `${selectedUnderlying} ${contract.strike_price_paise / 100} ${contract.option_type}`,
+      displayName: `${selectedUnderlying} ${contract.strike_price_paise / 100} ${contract.option_type}`,
+      name: `${selectedUnderlying} ${chain?.expiry_date || ""} ${contract.strike_price_paise / 100} ${contract.option_type}`,
+      exchange: "NFO",
+      token: contract.symbol,
+      instrument_type: "OPTIDX",
+      underlying: selectedUnderlying,
+      expiry: chain?.expiry_date || "",
+      strike: contract.strike_price_paise / 100,
+      option_type: contract.option_type,
+      lot_size: contract.lot_size || chain?.lot_size || 50,
+      lotSize: contract.lot_size || chain?.lot_size || 50,
+      tick_size: 0.05,
+      active: true,
+      segment: "OPTIONS",
+      basePricePaise: contract.ltp_paise,
+      price_paise: contract.ltp_paise,
+      dayChangePercent: 0,
+      change_percent: 0,
+    };
+    setFnoModalInstrument(inst);
+    setFnoOrderSide(side);
+    setIsFnoModalOpen(true);
   };
 
   // Compute Strategy Definition & Payoffs
@@ -914,6 +988,17 @@ export default function OptionChainDesk({ initialUnderlying = "NIFTY" }: OptionC
           </div>
         )}
       </div>
+      {/* Contextual F&O Option Order Modal */}
+      <FnoOrderModal
+        isOpen={isFnoModalOpen}
+        onClose={() => {
+          setIsFnoModalOpen(false);
+          setFnoModalInstrument(null);
+        }}
+        instrument={fnoModalInstrument}
+        initialSide={fnoOrderSide}
+        availableBalancePaise={wallet?.available_balance_paise ?? 100000000}
+      />
     </div>
   );
 }

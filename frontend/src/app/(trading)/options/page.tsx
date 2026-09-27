@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import Navbar from "@/components/layout/Navbar";
 import FnoExplorePage from "@/components/trading/FnoExplorePage";
+import OptionChainDesk from "@/components/trading/OptionChainDesk";
 import {
   Layers,
   TrendingUp,
@@ -17,8 +18,9 @@ import { API_URL } from "@/lib/api";
 import type { Portfolio, Wallet, ApiResponse } from "@/types";
 
 export default function OptionsPage() {
-  // Navigation tabs: Explore (Derivatives Hub) vs Positions
-  const [activeFnoTab, setActiveFnoTab] = useState<"explore" | "positions">("explore");
+  // Navigation tabs: Explore (Derivatives Hub) vs Option Chain vs Positions
+  const [activeFnoTab, setActiveFnoTab] = useState<"explore" | "chain" | "positions">("explore");
+  const [selectedChainUnderlying, setSelectedChainUnderlying] = useState<string>("NIFTY");
 
   const [token] = useState<string>(() => {
     if (typeof window !== "undefined") {
@@ -174,6 +176,18 @@ export default function OptionsPage() {
               </button>
 
               <button
+                onClick={() => setActiveFnoTab("chain")}
+                className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                  activeFnoTab === "chain"
+                    ? "bg-white dark:bg-slate-700 text-cyan-700 dark:text-cyan-300 shadow-xs font-bold"
+                    : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                }`}
+              >
+                <Layers className="w-3.5 h-3.5" />
+                <span>Option Chain</span>
+              </button>
+
+              <button
                 onClick={() => setActiveFnoTab("positions")}
                 className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
                   activeFnoTab === "positions"
@@ -199,7 +213,17 @@ export default function OptionsPage() {
 
         {/* 1. EXPLORE TAB */}
         {activeFnoTab === "explore" && (
-          <FnoExplorePage />
+          <FnoExplorePage
+            onSelectOptionChain={(sym) => {
+              setSelectedChainUnderlying(sym);
+              setActiveFnoTab("chain");
+            }}
+          />
+        )}
+
+        {/* 2. OPTION CHAIN TAB */}
+        {activeFnoTab === "chain" && (
+          <OptionChainDesk initialUnderlying={selectedChainUnderlying} />
         )}
 
         {/* 2. POSITIONS TAB (Derivative contracts quick desk) */}
