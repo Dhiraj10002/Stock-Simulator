@@ -12,7 +12,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { formatPaise, formatPercent } from "@/lib/format";
-import { useMarketStore } from "@/stores/market-store";
+import { useMultiSymbolQuotes } from "@/stores/market-store";
 import { resolveCanonicalSymbol } from "@/lib/alias";
 import type { Position } from "@/types";
 
@@ -49,7 +49,8 @@ export default function PositionsTable({
   const [squaringOff, setSquaringOff] = useState<string | null>(null);
   const [bulkClosing, setBulkClosing] = useState(false);
 
-  const quotes = useMarketStore((s) => s.quotes);
+  const positionSymbols = useMemo(() => positions.map((p) => p.symbol), [positions]);
+  const quotes = useMultiSymbolQuotes(positionSymbols);
 
   // Normalize positions and reprice from live quote stream if available
   const normalizedPositions = useMemo(() => {

@@ -317,9 +317,9 @@ func TestProdInfra_Health_And_Readiness_Endpoints(t *testing.T) {
 	}
 	r := Setup(context.Background(), cfg)
 
-	// Subtest 5a: Root /health and /api/v1/health return 200 with status healthy
+	// Subtest 5a: Root /health, /livez, and /api/v1/* return 200 with status healthy
 	t.Run("Liveness endpoints return 200", func(t *testing.T) {
-		for _, endpoint := range []string{"/health", "/api/v1/health"} {
+		for _, endpoint := range []string{"/health", "/livez", "/api/v1/health", "/api/v1/livez"} {
 			req := httptest.NewRequest(http.MethodGet, endpoint, nil)
 			w := httptest.NewRecorder()
 			r.ServeHTTP(w, req)
@@ -345,7 +345,7 @@ func TestProdInfra_Health_And_Readiness_Endpoints(t *testing.T) {
 
 	// Subtest 5b: Readiness endpoints return 200 when database is connected
 	t.Run("Readiness endpoints return 200 when database connected", func(t *testing.T) {
-		for _, endpoint := range []string{"/ready", "/api/v1/ready"} {
+		for _, endpoint := range []string{"/ready", "/readyz", "/api/v1/ready", "/api/v1/readyz"} {
 			req := httptest.NewRequest(http.MethodGet, endpoint, nil)
 			w := httptest.NewRecorder()
 			r.ServeHTTP(w, req)

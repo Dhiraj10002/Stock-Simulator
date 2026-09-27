@@ -160,14 +160,18 @@ func Setup(ctx context.Context, cfg *config.Config, opts ...SetupOption) *gin.En
 		rateLimiter = middleware.NewRateLimiter(client, cfg.RedisOperationTimeout)
 	}
 	r.GET("/health", healthHandler.Health)
+	r.GET("/livez", healthHandler.Health)
 	r.GET("/ready", healthHandler.Readiness)
+	r.GET("/readyz", healthHandler.Readiness)
 	r.GET("/openapi.yaml", func(c *gin.Context) {
 		c.Data(http.StatusOK, "application/yaml; charset=utf-8", openAPISpec)
 	})
 	r.GET("/ws/market", marketWS.Serve)
 	{
 		api.GET("/health", healthHandler.Health)
+		api.GET("/livez", healthHandler.Health)
 		api.GET("/ready", healthHandler.Readiness)
+		api.GET("/readyz", healthHandler.Readiness)
 		api.GET("/openapi.yaml", func(c *gin.Context) {
 			c.Data(http.StatusOK, "application/yaml; charset=utf-8", openAPISpec)
 		})

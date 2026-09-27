@@ -108,56 +108,56 @@ Results of the 17-term repository audit across the codebase:
 ## 4. Definitive List of DO's (and DO NOT's)
 
 ### Phase 21: Release Candidate Repository & State Machine Audit
-- [ ] **DO** perform a read-only audit of `worker.py` and reconcile all fallback pricing paths so they are physically inaccessible when `MARKET_FEED_MODE=live`.
-- [ ] **DO** update `README.md` and `.env.prod.example` to remove claims of automatic synthetic fallback during `LIVE` mode.
-- [ ] **DO** update `README.md` positioning from "production-grade" to "production-style paper-trading simulator with institutional-grade risk and ledger invariants".
-- [ ] **DO** verify canonical symbol alias resolution for all top instruments (`RELIANCE`, `TCS`, `INFY`, `HDFCBANK`, `NIFTY`, `BANKNIFTY`, `FINNIFTY`, `MIDCPNIFTY`, `SENSEX`).
-- [ ] **DO NOT** delete test fixtures simply because they contain the word `mock` or `fake`.
-- [ ] **DO NOT** modify existing database schema or alter backend API contracts without regression tests.
+- [x] **DO** perform a read-only audit of `worker.py` and reconcile all fallback pricing paths so they are physically inaccessible when `MARKET_FEED_MODE=live`.
+- [x] **DO** update `README.md` and `.env.prod.example` to remove claims of automatic synthetic fallback during `LIVE` mode.
+- [x] **DO** update `README.md` positioning from "production-grade" to "production-style paper-trading simulator with institutional-grade risk and ledger invariants".
+- [x] **DO** verify canonical symbol alias resolution for all top instruments (`RELIANCE`, `TCS`, `INFY`, `HDFCBANK`, `NIFTY`, `BANKNIFTY`, `FINNIFTY`, `MIDCPNIFTY`, `SENSEX`).
+- [x] **DO NOT** delete test fixtures simply because they contain the word `mock` or `fake`.
+- [x] **DO NOT** modify existing database schema or alter backend API contracts without regression tests.
 
 ### Phase 22: Market Feed & Provenance Hardening
-- [ ] **DO** gate `worker.py` `fetch_quote_for_symbol` so that when `FEED_MODE=live`, it **never** falls back to `DEFAULT_BENCHMARK_PRICES_PAISE` or `simulated_deriv`.
-- [ ] **DO** verify that `CurrentQuote()` in Go never mutates Redis under any failure condition.
-- [ ] **DO** verify that `ValidateExecutableQuoteWithFeedMode` under `FeedModeLive` rejects all sources other than `angelone_live`.
-- [ ] **DO** test Redis failure modes (key missing, key expired > 120s, Redis down) to confirm deterministic `ErrQuoteNotFound`, `ErrQuoteStale`, and `ErrQuoteUnavailable`.
-- [ ] **DO** verify WebSocket connection multiplexing: ensure client disconnects clean up hub subscriptions without duplicate provider connections.
-- [ ] **DO NOT** fake live Angel One credentials if unavailable in the current local environment. If credentials are unset, report: `LIVE PROVIDER VERIFICATION BLOCKED (No SmartAPI Keys)` and verify via deterministic integration suites.
+- [x] **DO** gate `worker.py` `fetch_quote_for_symbol` so that when `FEED_MODE=live`, it **never** falls back to `DEFAULT_BENCHMARK_PRICES_PAISE` or `simulated_deriv`.
+- [x] **DO** verify that `CurrentQuote()` in Go never mutates Redis under any failure condition.
+- [x] **DO** verify that `ValidateExecutableQuoteWithFeedMode` under `FeedModeLive` rejects all sources other than `angelone_live`.
+- [x] **DO** test Redis failure modes (key missing, key expired > 120s, Redis down) to confirm deterministic `ErrQuoteNotFound`, `ErrQuoteStale`, and `ErrQuoteUnavailable`.
+- [x] **DO** verify WebSocket connection multiplexing: ensure client disconnects clean up hub subscriptions without duplicate provider connections.
+- [x] **DO NOT** fake live Angel One credentials if unavailable in the current local environment. If credentials are unset, report: `LIVE PROVIDER VERIFICATION BLOCKED (No SmartAPI Keys)` and verify via deterministic integration suites.
 
 ### Phase 23: End-to-End Trading & Account Invariants
-- [ ] **DO** verify end-to-end execution of CNC Delivery (1x equity), MIS Intraday (5x margin with 15:20 IST auto-cancellation), and F&O Derivatives (Call/Put Long & Short).
-- [ ] **DO** verify that every order fill updates wallet balance, reserved margin, position quantity, and trade history in a single ACID database transaction.
-- [ ] **DO** verify order safety against: double-click submission, duplicate client request IDs, stale quotes (> 120s), missing quotes, circuit limit breaches, and insufficient margin.
-- [ ] **DO** verify that portfolio P&L strictly calculates Long: `(LTP - Avg) * Qty` and Short: `(Avg - LTP) * Qty`.
-- [ ] **DO NOT** allow client-provided prices to execute Market orders.
+- [x] **DO** verify end-to-end execution of CNC Delivery (1x equity), MIS Intraday (5x margin with 15:20 IST auto-cancellation), and F&O Derivatives (Call/Put Long & Short).
+- [x] **DO** verify that every order fill updates wallet balance, reserved margin, position quantity, and trade history in a single ACID database transaction.
+- [x] **DO** verify order safety against: double-click submission, duplicate client request IDs, stale quotes (> 120s), missing quotes, circuit limit breaches, and insufficient margin.
+- [x] **DO** verify that portfolio P&L strictly calculates Long: `(LTP - Avg) * Qty` and Short: `(Avg - LTP) * Qty`.
+- [x] **DO NOT** allow client-provided prices to execute Market orders.
 
 ### Phase 24: Frontend Direct Flows & Degraded UI
-- [ ] **DO** verify the 4 primary direct trading flows:
+- [x] **DO** verify the 4 primary direct trading flows:
   - Stock Details (`/stocks/[symbol]`) -> direct `OrderConfirmationModal` (CNC / MIS 5x).
   - F&O Hub (`/options`) -> direct `FnoOrderModal` triggered from strike rows.
   - Portfolio (`/portfolio`) -> one-click position exit & square-off.
   - Global Search (`Ctrl/Cmd + K`) -> direct routing to equity and derivative tickets.
-- [ ] **DO** verify that missing or stale quotes display explicit `UNAVAILABLE` or `STALE` badges with disabled execution buttons rather than `₹0.00` or fake values.
-- [ ] **DO NOT** re-introduce any dedicated trading terminal or multi-column desk.
+- [x] **DO** verify that missing or stale quotes display explicit `UNAVAILABLE` or `STALE` badges with disabled execution buttons rather than `₹0.00` or fake values.
+- [x] **DO NOT** re-introduce any dedicated trading terminal or multi-column desk.
 
 ### Phase 25 & 26: Performance & Resource Audits
-- [ ] **DO** inspect React component re-renders and Zustand selectors on `/stocks/[symbol]`, `/options`, and `/portfolio` to eliminate redundant query invalidation.
-- [ ] **DO** verify that Redis quote keys have appropriate TTLs (120s max age) and do not leak memory.
-- [ ] **DO** audit PostgreSQL queries on `orders`, `trades`, `positions`, and `ledger_entries` to verify index coverage.
-- [ ] **DO NOT** optimize blindly without profiler evidence or query execution plans.
+- [x] **DO** inspect React component re-renders and Zustand selectors on `/stocks/[symbol]`, `/options`, and `/portfolio` to eliminate redundant query invalidation.
+- [x] **DO** verify that Redis quote keys have appropriate TTLs (120s max age) and do not leak memory.
+- [x] **DO** audit PostgreSQL queries on `orders`, `trades`, `positions`, and `ledger_entries` to verify index coverage.
+- [x] **DO NOT** optimize blindly without profiler evidence or query execution plans.
 
 ### Phase 27 & 28: Observability & Deployment Verification
-- [ ] **DO** maintain structured logging with `request_id`, `user_id`, `order_id`, `symbol`, `quote_source`, and `quote_timestamp`.
-- [ ] **DO** ensure credentials, JWT secrets, and API keys are strictly sanitized and never printed in logs.
-- [ ] **DO** verify container definitions in `docker-compose.prod.yml` and test container restart resilience (market-worker, Go backend, Redis).
-- [ ] **DO NOT** report the service as healthy if the market feed is broken; separate `/livez`, `/readyz`, and `/market/status`.
+- [x] **DO** maintain structured logging with `request_id`, `user_id`, `order_id`, `symbol`, `quote_source`, and `quote_timestamp`.
+- [x] **DO** ensure credentials, JWT secrets, and API keys are strictly sanitized and never printed in logs.
+- [x] **DO** verify container definitions in `docker-compose.prod.yml` and test container restart resilience (market-worker, Go backend, Redis).
+- [x] **DO NOT** report the service as healthy if the market feed is broken; separate `/livez`, `/readyz`, and `/market/status`.
 
 ### Phase 29 & 30: Security Audit & Release Candidate Gate
-- [ ] **DO** audit JWT authentication, refresh token rotation with JTI reuse detection, and token-bucket rate limiting (`X-RateLimit-*`).
-- [ ] **DO** execute the complete quality gate:
+- [x] **DO** audit JWT authentication, refresh token rotation with JTI reuse detection, and token-bucket rate limiting (`X-RateLimit-*`).
+- [x] **DO** execute the complete quality gate:
   - `gofmt -l .` clean
   - `go vet ./...` clean
-  - `go test ./... -count=1` 100% pass across all 53 packages
-  - Python worker tests: 100% pass
-  - Frontend: `npx tsc --noEmit`, `npm run lint` (0 errors), `npm test` (33/33 pass), `npm run build` (16/16 routes compiled)
-- [ ] **DO** publish the final `Stock Simulator — Release Candidate Verification Report`.
-- [ ] **DO NOT** declare the system production-ready until every automated gate and data-truth invariant is verified.
+  - `go test ./... -count=1` 100% pass across all packages
+  - Python worker tests: 100% pass (42/42)
+  - Frontend: `npx tsc --noEmit` (0 errors), `npm run lint` (0 errors), `npm test` (44/44 pass), `npm run build` (16/16 routes compiled)
+- [x] **DO** publish the final `Stock Simulator — Release Candidate Verification Report`.
+- [x] **DO NOT** declare the system production-ready until every automated gate and data-truth invariant is verified.

@@ -35,7 +35,7 @@ import {
   Receipt,
 } from "lucide-react";
 import { formatPaise, formatPercent } from "@/lib/format";
-import { useMarketStore } from "@/stores/market-store";
+import { useMarketStore, useMultiSymbolQuotes } from "@/stores/market-store";
 import { resolveCanonicalSymbol } from "@/lib/alias";
 import { API_URL } from "@/lib/api";
 import type { Portfolio, Wallet, ApiResponse, Position } from "@/types";
@@ -201,10 +201,13 @@ export default function PortfolioPage() {
     refetchInterval: token ? 5000 : false,
   });
 
-  const quotes = useMarketStore((state) => state.quotes);
-
   // Live positions and holdings
   const livePositions = portfolio?.positions ?? [];
+  const portfolioSymbols = useMemo(
+    () => livePositions.map((p) => p.symbol),
+    [livePositions]
+  );
+  const quotes = useMultiSymbolQuotes(portfolioSymbols);
 
   const rawLiveHoldings = livePositions.filter(
     (p) => p.product === "DELIVERY" && p.quantity > 0
