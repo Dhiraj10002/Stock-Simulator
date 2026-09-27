@@ -19,7 +19,6 @@ import {
   BrainCircuit,
   Zap,
   ArrowRight,
-  Terminal,
   ExternalLink,
 } from "lucide-react";
 import TradingViewChart from "@/components/trading/TradingViewChart";
@@ -891,15 +890,6 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
 
             {/* Quick Watchlist + Trade Action Buttons */}
             <div className="flex items-center gap-2">
-              <Link
-                href={`/terminal?symbol=${encodeURIComponent(stock.symbol)}`}
-                className="p-2.5 rounded-xl border border-cyan-500/30 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-600 dark:text-cyan-400 transition-all text-xs font-bold flex items-center gap-1.5 shadow-xs"
-                title="Open in Institutional Pro Trading Terminal"
-              >
-                <Terminal className="w-4 h-4" />
-                <span className="hidden sm:inline">Pro Terminal</span>
-              </Link>
-
               <button
                 onClick={handleToggleWatchlist}
                 className={`p-2.5 rounded-xl border transition-all text-xs font-bold flex items-center gap-1.5 ${

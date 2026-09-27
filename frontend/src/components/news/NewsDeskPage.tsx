@@ -17,7 +17,6 @@ import {
   Info,
   X,
   Activity,
-  Terminal,
   ChevronRight,
 } from "lucide-react";
 import Navbar from "@/components/layout/Navbar";
@@ -196,11 +195,11 @@ export default function NewsDeskPage() {
             </button>
 
             <Link
-              href="/terminal"
+              href="/stocks"
               className="px-3.5 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-md shadow-cyan-600/20"
             >
-              <Terminal className="w-3.5 h-3.5" />
-              <span>Launch Terminal</span>
+              <TrendingUp className="w-3.5 h-3.5" />
+              <span>Explore Stocks</span>
             </Link>
           </div>
         </div>
@@ -488,11 +487,11 @@ export default function NewsDeskPage() {
                           </button>
 
                           <Link
-                            href={`/terminal?symbol=${encodeURIComponent(sym)}`}
+                            href={`/stocks/${encodeURIComponent(sym)}`}
                             className="p-1 rounded bg-slate-950 hover:bg-cyan-950 text-slate-400 hover:text-cyan-300 border border-slate-800 transition-colors text-[10px]"
-                            title={`Trade ${sym} in Pro Terminal`}
+                            title={`View & Trade ${sym}`}
                           >
-                            <Terminal className="w-3 h-3" />
+                            <TrendingUp className="w-3 h-3" />
                           </Link>
                         </div>
                       ))}

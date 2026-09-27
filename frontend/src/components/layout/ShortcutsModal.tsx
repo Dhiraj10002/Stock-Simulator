@@ -5,21 +5,15 @@ import { useUIStore } from "@/stores/ui-store";
 import {
   Keyboard,
   X,
-  TrendingUp,
-  TrendingDown,
-  Layers,
-  FileText,
   BarChart2,
   Search,
-  SlidersHorizontal,
-  ArrowUpDown,
   CheckCircle2,
 } from "lucide-react";
 
 interface ShortcutItem {
   keys: string[];
   description: string;
-  icon?: typeof TrendingUp;
+  icon?: typeof BarChart2;
   badgeColor?: string;
 }
 
@@ -30,89 +24,42 @@ interface ShortcutCategory {
 
 const SHORTCUT_CATEGORIES: ShortcutCategory[] = [
   {
-    category: "Terminal Order Execution",
+    category: "General Navigation & Search",
     items: [
-      {
-        keys: ["B"],
-        description: "Open / Focus BUY ticket for active counter",
-        icon: TrendingUp,
-        badgeColor: "bg-emerald-950/60 text-emerald-400 border-emerald-500/30",
-      },
-      {
-        keys: ["S"],
-        description: "Open / Focus SELL ticket for active counter",
-        icon: TrendingDown,
-        badgeColor: "bg-rose-950/60 text-rose-400 border-rose-500/30",
-      },
-      {
-        keys: ["C", "Esc"],
-        description: "Cancel order / close modal / reset ticket",
-        icon: X,
-        badgeColor: "bg-slate-800 text-slate-300 border-slate-700",
-      },
-      {
-        keys: ["Enter"],
-        description: "Confirm and dispatch order execution",
-        icon: CheckCircle2,
-        badgeColor: "bg-cyan-950/60 text-cyan-300 border-cyan-500/30",
-      },
-    ],
-  },
-  {
-    category: "Chart Timeframes & Analysis",
-    items: [
-      {
-        keys: ["1", "–", "5"],
-        description: "Switch timeframe (1m, 5m, 15m, 1H, 1D)",
-        icon: BarChart2,
-        badgeColor: "bg-blue-950/60 text-blue-300 border-blue-500/30",
-      },
-      {
-        keys: ["O"],
-        description: "Toggle F&O Option Chain & Greeks",
-        icon: Layers,
-        badgeColor: "bg-cyan-950/60 text-cyan-300 border-cyan-500/30",
-      },
-      {
-        keys: ["P"],
-        description: "Toggle Performance Analytics & Calendar",
-        icon: BarChart2,
-        badgeColor: "bg-purple-950/60 text-purple-300 border-purple-500/30",
-      },
       {
         keys: ["Ctrl", "K"],
         description: "Global stock search & command palette",
         icon: Search,
         badgeColor: "bg-amber-950/60 text-amber-300 border-amber-500/30",
       },
-    ],
-  },
-  {
-    category: "Terminal Desk & Navigation",
-    items: [
-      {
-        keys: ["Shift", "P"],
-        description: "Focus Open Positions table in bottom drawer",
-        icon: SlidersHorizontal,
-        badgeColor: "bg-indigo-950/60 text-indigo-300 border-indigo-500/30",
-      },
-      {
-        keys: ["Shift", "O"],
-        description: "Focus Pending Orders table in bottom drawer",
-        icon: CheckCircle2,
-        badgeColor: "bg-indigo-950/60 text-indigo-300 border-indigo-500/30",
-      },
-      {
-        keys: ["↑", "↓"],
-        description: "Cycle next / previous counter in watchlist",
-        icon: ArrowUpDown,
-        badgeColor: "bg-slate-800 text-slate-300 border-slate-700",
-      },
       {
         keys: ["?"],
         description: "Toggle this Keyboard Shortcuts Guide",
         icon: Keyboard,
         badgeColor: "bg-cyan-950/60 text-cyan-300 border-cyan-500/30",
+      },
+      {
+        keys: ["Esc"],
+        description: "Close active modal / dialog / cancel prompt",
+        icon: X,
+        badgeColor: "bg-slate-800 text-slate-300 border-slate-700",
+      },
+    ],
+  },
+  {
+    category: "Chart Timeframes & Order Actions",
+    items: [
+      {
+        keys: ["1", "–", "5"],
+        description: "Switch active timeframe (1m, 5m, 15m, 1H, 1D)",
+        icon: BarChart2,
+        badgeColor: "bg-blue-950/60 text-blue-300 border-blue-500/30",
+      },
+      {
+        keys: ["Enter"],
+        description: "Submit / confirm order in active order modal",
+        icon: CheckCircle2,
+        badgeColor: "bg-emerald-950/60 text-emerald-400 border-emerald-500/30",
       },
     ],
   },
@@ -201,7 +148,7 @@ export default function ShortcutsModal() {
               </h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {cat.items.map((item) => {
-                  const Icon = item.icon || SlidersHorizontal;
+                  const Icon = item.icon || BarChart2;
                   return (
                     <div
                       key={item.description}
