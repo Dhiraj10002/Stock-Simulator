@@ -12,6 +12,8 @@ type OptionContract struct {
 	Theta            float64 `json:"theta"`
 	Vega             float64 `json:"vega"`
 	LotSize          int64   `json:"lot_size"`
+	IsAvailable      bool    `json:"is_available"`
+	QuoteStatus      string  `json:"quote_status,omitempty"`
 }
 
 type StrikeRow struct {
@@ -29,5 +31,6 @@ type OptionChainResponse struct {
 	TotalPutOI       int64       `json:"total_put_oi"`
 	PutCallRatio     float64     `json:"put_call_ratio"`
 	LotSize          int64       `json:"lot_size"`
+	FeedMode         string      `json:"feed_mode,omitempty"`
 	Strikes          []StrikeRow `json:"strikes"`
 }

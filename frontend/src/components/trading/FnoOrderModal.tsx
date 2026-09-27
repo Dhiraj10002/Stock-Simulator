@@ -101,6 +101,13 @@ export default function FnoOrderModal({
 
   const handleExecuteOrder = async () => {
     if (executing) return;
+    if (orderType === "MARKET" && (!instrument.basePricePaise || instrument.basePricePaise <= 0)) {
+      setFeedback({
+        type: "error",
+        message: "Market quote is currently unavailable. Place a Limit order or wait for live feed.",
+      });
+      return;
+    }
     setExecuting(true);
     setFeedback(null);
 
@@ -189,7 +196,7 @@ export default function FnoOrderModal({
 
           <div className="text-right">
             <div className="text-lg font-black font-tabular text-slate-900 dark:text-slate-100">
-              ₹{ltpRupees.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+              {ltpRupees > 0 ? `₹${ltpRupees.toLocaleString("en-IN", { minimumFractionDigits: 2 })}` : "UNAVAILABLE"}
             </div>
             <div
               className={`text-xs font-bold font-tabular flex items-center justify-end gap-1 ${

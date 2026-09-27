@@ -873,7 +873,11 @@ export default function OptionChainDesk({ initialUnderlying = "NIFTY" }: OptionC
                           isCallItm ? "bg-emerald-950/20 text-emerald-300 font-extrabold" : ""
                         }`}
                       >
-                        {formatPaise(row.call.ltp_paise)}
+                        {row.call.is_available === false || row.call.ltp_paise <= 0 ? (
+                          <span className="text-slate-500 font-mono text-[11px] font-normal">UNAVAILABLE</span>
+                        ) : (
+                          formatPaise(row.call.ltp_paise)
+                        )}
                       </td>
 
                       {/* Call Fast Action */}
@@ -942,7 +946,11 @@ export default function OptionChainDesk({ initialUnderlying = "NIFTY" }: OptionC
                           isPutItm ? "bg-rose-950/20 text-rose-300 font-extrabold" : ""
                         }`}
                       >
-                        {formatPaise(row.put.ltp_paise)}
+                        {row.put.is_available === false || row.put.ltp_paise <= 0 ? (
+                          <span className="text-slate-500 font-mono text-[11px] font-normal">UNAVAILABLE</span>
+                        ) : (
+                          formatPaise(row.put.ltp_paise)
+                        )}
                       </td>
 
                       {/* Put Delta */}

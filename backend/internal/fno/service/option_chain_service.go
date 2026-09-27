@@ -12,6 +12,7 @@ import (
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/database"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/fno/dto"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/fno/greeks"
+	marketDto "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/dto"
 	marketService "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/service"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/product"
@@ -23,6 +24,13 @@ type OptionChainService struct {
 
 func New(market *marketService.Service) *OptionChainService {
 	return &OptionChainService{market: market}
+}
+
+func (s *OptionChainService) feedMode() marketDto.FeedMode {
+	if s == nil || s.market == nil {
+		return marketDto.FeedModeSynthetic
+	}
+	return s.market.FeedMode()
 }
 
 func (s *OptionChainService) GetOptionChain(symbol, expiry string) (*dto.OptionChainResponse, error) {
@@ -73,16 +81,18 @@ func (s *OptionChainService) GetOptionChain(symbol, expiry string) (*dto.OptionC
 	}
 	spotRupees := float64(spotPaise) / 100.0
 
+	mode := s.feedMode()
+
 	// Branch A: Real NFO option contracts found in database
 	if len(nfoInstruments) > 0 {
-		resp, err := s.buildFromRealInstruments(symbol, expiry, spotPaise, spotRupees, nfoInstruments, spec)
+		resp, err := s.buildFromRealInstruments(symbol, expiry, spotPaise, spotRupees, nfoInstruments, spec, mode)
 		if err == nil && resp != nil && len(resp.Strikes) > 0 {
 			return resp, nil
 		}
 	}
 
 	// Branch B: Fallback / Simulation generation using unified authoritative specs
-	return s.buildSimulationChain(symbol, expiry, spotPaise, spotRupees, spec)
+	return s.buildSimulationChain(symbol, expiry, spotPaise, spotRupees, spec, mode)
 }
 
 func parseExpiryDate(exp string) time.Time {
@@ -101,6 +111,7 @@ func (s *OptionChainService) buildFromRealInstruments(
 	spotPaise int64, spotRupees float64,
 	instruments []model.Instrument,
 	spec product.ContractSpec,
+	mode marketDto.FeedMode,
 ) (*dto.OptionChainResponse, error) {
 	effectiveExpiry := requestedExpiry
 	if effectiveExpiry == "" {
@@ -181,7 +192,7 @@ func (s *OptionChainService) buildFromRealInstruments(
 
 	// If no valid strikes found for this expiry, fallback to simulation chain
 	if len(strikesSorted) == 0 {
-		return s.buildSimulationChain(symbol, effectiveExpiry, spotPaise, spotRupees, spec)
+		return s.buildSimulationChain(symbol, effectiveExpiry, spotPaise, spotRupees, spec, mode)
 	}
 
 	timeYears := 7.0 / 365.0
@@ -217,26 +228,39 @@ func (s *OptionChainService) buildFromRealInstruments(
 
 		var ceContract dto.OptionContract
 		if pair.call != nil {
-			cePrice := int64(math.Round(callGreeks.Price * 100))
-			if cePrice < 50 {
-				cePrice = 50
-			}
-			callOI := int64(100000)
-			if s.market != nil {
-				// Fast cached lookup first
-				if q, err := s.market.CachedQuote(pair.call.Symbol); err == nil && q != nil && q.PricePaise > 0 {
-					cePrice = q.PricePaise
-				} else if isATM {
-					// ATM gets live worker quote
-					if liveQ, liveErr := s.market.CurrentQuote(pair.call.Symbol); liveErr == nil && liveQ != nil && liveQ.PricePaise > 0 {
-						cePrice = liveQ.PricePaise
+			var cePrice int64
+			var callOI int64
+			isAvailable := false
+			quoteStatus := string(marketDto.QuoteSourceUnavailable)
+
+			if mode == marketDto.FeedModeLive {
+				// LIVE mode: strictly read live quotes from Redis. Never write/seed to Redis!
+				if s.market != nil {
+					if q, err := s.market.CurrentQuote(pair.call.Symbol); err == nil && q != nil && q.PricePaise > 0 {
+						cePrice = q.PricePaise
+						callOI = q.Volume
+						isAvailable = true
+						quoteStatus = string(q.Source)
+					}
+				}
+			} else if mode == marketDto.FeedModeSynthetic {
+				// SYNTHETIC mode: calculate Black-Scholes price and seed to Redis
+				cePrice = int64(math.Round(callGreeks.Price * 100))
+				if cePrice < 50 {
+					cePrice = 50
+				}
+				callOI = int64(100000)
+				isAvailable = true
+				quoteStatus = string(marketDto.QuoteSourceSyntheticGBM)
+				if s.market != nil {
+					if q, err := s.market.CachedQuote(pair.call.Symbol); err == nil && q != nil && q.PricePaise > 0 {
+						cePrice = q.PricePaise
 					} else {
 						_ = s.market.SetQuote(pair.call.Symbol, cePrice, callOI)
 					}
-				} else {
-					_ = s.market.SetQuote(pair.call.Symbol, cePrice, callOI)
 				}
 			}
+
 			totalCallOI += callOI
 			ceContract = dto.OptionContract{
 				Symbol:           pair.call.Symbol,
@@ -250,31 +274,46 @@ func (s *OptionChainService) buildFromRealInstruments(
 				Theta:            callGreeks.Theta,
 				Vega:             callGreeks.Vega,
 				LotSize:          lotSize,
+				IsAvailable:      isAvailable,
+				QuoteStatus:      quoteStatus,
 			}
 		}
 
 		var peContract dto.OptionContract
 		if pair.put != nil {
-			pePrice := int64(math.Round(putGreeks.Price * 100))
-			if pePrice < 50 {
-				pePrice = 50
-			}
-			putOI := int64(100000)
-			if s.market != nil {
-				// Fast cached lookup first
-				if q, err := s.market.CachedQuote(pair.put.Symbol); err == nil && q != nil && q.PricePaise > 0 {
-					pePrice = q.PricePaise
-				} else if isATM {
-					// ATM gets live worker quote
-					if liveQ, liveErr := s.market.CurrentQuote(pair.put.Symbol); liveErr == nil && liveQ != nil && liveQ.PricePaise > 0 {
-						pePrice = liveQ.PricePaise
+			var pePrice int64
+			var putOI int64
+			isAvailable := false
+			quoteStatus := string(marketDto.QuoteSourceUnavailable)
+
+			if mode == marketDto.FeedModeLive {
+				// LIVE mode: strictly read live quotes from Redis. Never write/seed to Redis!
+				if s.market != nil {
+					if q, err := s.market.CurrentQuote(pair.put.Symbol); err == nil && q != nil && q.PricePaise > 0 {
+						pePrice = q.PricePaise
+						putOI = q.Volume
+						isAvailable = true
+						quoteStatus = string(q.Source)
+					}
+				}
+			} else if mode == marketDto.FeedModeSynthetic {
+				// SYNTHETIC mode: calculate Black-Scholes price and seed to Redis
+				pePrice = int64(math.Round(putGreeks.Price * 100))
+				if pePrice < 50 {
+					pePrice = 50
+				}
+				putOI = int64(100000)
+				isAvailable = true
+				quoteStatus = string(marketDto.QuoteSourceSyntheticGBM)
+				if s.market != nil {
+					if q, err := s.market.CachedQuote(pair.put.Symbol); err == nil && q != nil && q.PricePaise > 0 {
+						pePrice = q.PricePaise
 					} else {
 						_ = s.market.SetQuote(pair.put.Symbol, pePrice, putOI)
 					}
-				} else {
-					_ = s.market.SetQuote(pair.put.Symbol, pePrice, putOI)
 				}
 			}
+
 			totalPutOI += putOI
 			peContract = dto.OptionContract{
 				Symbol:           pair.put.Symbol,
@@ -288,6 +327,8 @@ func (s *OptionChainService) buildFromRealInstruments(
 				Theta:            putGreeks.Theta,
 				Vega:             putGreeks.Vega,
 				LotSize:          lotSize,
+				IsAvailable:      isAvailable,
+				QuoteStatus:      quoteStatus,
 			}
 		}
 
@@ -312,6 +353,7 @@ func (s *OptionChainService) buildFromRealInstruments(
 		TotalPutOI:       totalPutOI,
 		PutCallRatio:     pcr,
 		LotSize:          lotSize,
+		FeedMode:         string(mode),
 		Strikes:          strikeRows,
 	}, nil
 }
@@ -320,6 +362,7 @@ func (s *OptionChainService) buildSimulationChain(
 	symbol, expiry string,
 	spotPaise int64, spotRupees float64,
 	spec product.ContractSpec,
+	mode marketDto.FeedMode,
 ) (*dto.OptionChainResponse, error) {
 	step := spec.StrikeStep
 	if step <= 0 {
@@ -359,31 +402,58 @@ func (s *OptionChainService) buildSimulationChain(
 		ceSymbol := fmt.Sprintf("%s%s%dCE", symbol, strings.ToUpper(monthCode), int(strikeRupees))
 		peSymbol := fmt.Sprintf("%s%s%dPE", symbol, strings.ToUpper(monthCode), int(strikeRupees))
 
-		cePrice := int64(math.Round(callGreeks.Price * 100))
-		pePrice := int64(math.Round(putGreeks.Price * 100))
+		var cePrice, pePrice int64
+		var callOI, putOI int64
+		ceAvailable, peAvailable := false, false
+		ceQuoteStatus, peQuoteStatus := string(marketDto.QuoteSourceUnavailable), string(marketDto.QuoteSourceUnavailable)
 
-		if cePrice < 50 {
-			cePrice = 50
-		}
-		if pePrice < 50 {
-			pePrice = 50
-		}
-
-		baseOI := int64(50000)
-		oiDist := math.Exp(-moneyness * 5.0)
-		callOI := int64(float64(baseOI)*(1.0+oiDist*3.0)) + int64(math.Sin(float64(i))*5000)
-		putOI := int64(float64(baseOI)*(1.0+oiDist*3.2)) + int64(math.Cos(float64(i))*5000)
-
-		if s.market != nil {
-			if q, err := s.market.CachedQuote(ceSymbol); err == nil && q != nil && q.PricePaise > 0 {
-				cePrice = q.PricePaise
-			} else {
-				_ = s.market.SetQuote(ceSymbol, cePrice, callOI)
+		if mode == marketDto.FeedModeLive {
+			// In LIVE mode: only serve live quotes if they exist in Redis.
+			// NEVER fabricate prices or write to Redis via SetQuote!
+			if s.market != nil {
+				if q, err := s.market.CurrentQuote(ceSymbol); err == nil && q != nil && q.PricePaise > 0 {
+					cePrice = q.PricePaise
+					callOI = q.Volume
+					ceAvailable = true
+					ceQuoteStatus = string(q.Source)
+				}
+				if q, err := s.market.CurrentQuote(peSymbol); err == nil && q != nil && q.PricePaise > 0 {
+					pePrice = q.PricePaise
+					putOI = q.Volume
+					peAvailable = true
+					peQuoteStatus = string(q.Source)
+				}
 			}
-			if q, err := s.market.CachedQuote(peSymbol); err == nil && q != nil && q.PricePaise > 0 {
-				pePrice = q.PricePaise
-			} else {
-				_ = s.market.SetQuote(peSymbol, pePrice, putOI)
+		} else if mode == marketDto.FeedModeSynthetic {
+			// In SYNTHETIC mode: Compute theoretical Black-Scholes prices and seed Redis
+			cePrice = int64(math.Round(callGreeks.Price * 100))
+			pePrice = int64(math.Round(putGreeks.Price * 100))
+			if cePrice < 50 {
+				cePrice = 50
+			}
+			if pePrice < 50 {
+				pePrice = 50
+			}
+
+			baseOI := int64(50000)
+			oiDist := math.Exp(-moneyness * 5.0)
+			callOI = int64(float64(baseOI)*(1.0+oiDist*3.0)) + int64(math.Sin(float64(i))*5000)
+			putOI = int64(float64(baseOI)*(1.0+oiDist*3.2)) + int64(math.Cos(float64(i))*5000)
+
+			ceAvailable, peAvailable = true, true
+			ceQuoteStatus, peQuoteStatus = string(marketDto.QuoteSourceSyntheticGBM), string(marketDto.QuoteSourceSyntheticGBM)
+
+			if s.market != nil {
+				if q, err := s.market.CachedQuote(ceSymbol); err == nil && q != nil && q.PricePaise > 0 {
+					cePrice = q.PricePaise
+				} else {
+					_ = s.market.SetQuote(ceSymbol, cePrice, callOI)
+				}
+				if q, err := s.market.CachedQuote(peSymbol); err == nil && q != nil && q.PricePaise > 0 {
+					pePrice = q.PricePaise
+				} else {
+					_ = s.market.SetQuote(peSymbol, pePrice, putOI)
+				}
 			}
 		}
 
@@ -405,6 +475,8 @@ func (s *OptionChainService) buildSimulationChain(
 				Theta:            callGreeks.Theta,
 				Vega:             callGreeks.Vega,
 				LotSize:          spec.LotSize,
+				IsAvailable:      ceAvailable,
+				QuoteStatus:      ceQuoteStatus,
 			},
 			Put: dto.OptionContract{
 				Symbol:           peSymbol,
@@ -418,6 +490,8 @@ func (s *OptionChainService) buildSimulationChain(
 				Theta:            putGreeks.Theta,
 				Vega:             putGreeks.Vega,
 				LotSize:          spec.LotSize,
+				IsAvailable:      peAvailable,
+				QuoteStatus:      peQuoteStatus,
 			},
 		})
 	}
@@ -435,6 +509,7 @@ func (s *OptionChainService) buildSimulationChain(
 		TotalPutOI:       totalPutOI,
 		PutCallRatio:     pcr,
 		LotSize:          spec.LotSize,
+		FeedMode:         string(mode),
 		Strikes:          strikeRows,
 	}, nil
 }

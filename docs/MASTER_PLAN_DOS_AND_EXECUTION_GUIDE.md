@@ -135,10 +135,12 @@ graph TD
 4. **Portfolio Staleness Handling:** Verified `PortfolioService.Get()` sets `is_quote_available: false`, `quote_status: "UNAVAILABLE"` or `"STALE"`, and degrades valuation status rather than silently falling back to purchase price.
 5. **Frontend Anti-Fabrication Enforcement:** Verified `StockDetailsPage.tsx` renders `UNAVAILABLE` or `—` instead of ₹0.00 and blocks Market order placement when quote is missing/unavailable.
 
-### Step D: F&O Option Chain Production Cleanup
-1. Inspect `backend/internal/fno/service/option_chain_service.go`.
-2. Ensure `buildSimulationChain()` is gated strictly by `feedStatus.isSynthetic` or explicit simulation mode.
-3. In `LIVE` mode, option chain rows without live quotes or canonical contracts must show `is_available: false` rather than generated mock prices.
+### Step D: F&O Option Chain Production Cleanup ✅ Completed
+1. **Isolated Simulation Gating:** Refactored `backend/internal/fno/service/option_chain_service.go` so simulation pricing (Black-Scholes greeks and `s.market.SetQuote`) is strictly isolated to `SYNTHETIC` feed mode.
+2. **Fail-Closed LIVE Mode:** In `LIVE` mode, option contracts without genuine quotes from Redis are marked with `is_available: false`, `ltp_paise: 0`, and `quote_status: "unavailable"`. Fake prices are never fabricated, and Redis quote keys are never seeded.
+3. **Hardened Redis SetQuote Guard:** Added an invariant check to `backend/internal/market/service/redis.go` to reject simulated quote writes when operating under `LIVE` mode.
+4. **Automated Verification:** Added `TestOptionChainService_LiveVsSyntheticGating` in `option_chain_service_test.go` verifying 100% pass across `LIVE`, `SYNTHETIC`, and `UNAVAILABLE` feed modes.
+5. **Frontend Anti-Fabrication in F&O:** Updated `OptionChainDesk.tsx` and `FnoOrderModal.tsx` to render `UNAVAILABLE` instead of `₹0.00` when quotes are missing, and blocked Market order placement on contracts with unavailable quotes.
 
 ### Step E: Dynamic Market APIs & Movers
 1. Verify backend market endpoints (`/api/v1/market/movers`, `/api/v1/market/indices`, `/api/v1/market/sectors`).
@@ -170,7 +172,7 @@ graph TD
 | **Trading** | Integer Paise Accounting | ✅ Verified | All ledger balances in integer paise; 64-bit overflow safe |
 | **Trading** | ACID Transaction Boundaries | ✅ Verified | Order reservation, fill, wallet debit/credit in single DB txn |
 | **F&O** | Canonical Contract Specifications| ✅ Verified | NIFTY 25, BANKNIFTY 15, FINNIFTY 25; 5-paise tick increments |
-| **F&O** | Option Chain Live vs Sim Isolation| ⚠️ In Progress| Needs explicit gating so `buildSimulationChain` only runs in `SYNTHETIC` |
+| **F&O** | Option Chain Live vs Sim Isolation| ✅ Verified | Gated strictly by `FeedModeSynthetic`; fail-closed in `FeedModeLive` |
 | **Frontend** | Direct Stock Details BUY/SELL | ✅ Verified | Contextual `OrderConfirmationModal` on `/stocks/[symbol]` |
 | **Frontend** | Direct F&O Option Chain BUY/SELL | ✅ Verified | Contextual `FnoOrderModal` on `/options` |
 | **Frontend** | Portfolio Exit & Square Off | ✅ Verified | Direct modal actions on `/portfolio` |

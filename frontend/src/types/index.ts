@@ -223,6 +223,8 @@ export type OptionContract = {
   theta: number;
   vega: number;
   lot_size: number;
+  is_available?: boolean;
+  quote_status?: string;
 };
 
 export type StrikeRow = {
@@ -240,6 +242,7 @@ export type OptionChainResponse = {
   total_put_oi: number;
   put_call_ratio: number;
   lot_size: number;
+  feed_mode?: string;
   strikes: StrikeRow[];
 };
 

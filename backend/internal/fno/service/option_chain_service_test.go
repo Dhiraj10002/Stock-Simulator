@@ -2,6 +2,9 @@ package service
 
 import (
 	"testing"
+
+	marketDto "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/dto"
+	marketService "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/service"
 )
 
 func TestOptionChainService_AuthoritativeMetadata(t *testing.T) {
@@ -59,5 +62,85 @@ func TestOptionChainService_AuthoritativeMetadata(t *testing.T) {
 	}
 	if relChain.LotSize != 250 {
 		t.Fatalf("expected authoritative RELIANCE lot size 250, got %d", relChain.LotSize)
+	}
+}
+
+func TestOptionChainService_LiveVsSyntheticGating(t *testing.T) {
+	// A. LIVE Mode: When live market quotes are missing, do not fabricate prices or seed Redis
+	mktLive := &marketService.Service{}
+	mktLive.SetFeedMode(marketDto.FeedModeLive)
+	svcLive := New(mktLive)
+
+	chainLive, err := svcLive.GetOptionChain("NIFTY", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if chainLive.FeedMode != string(marketDto.FeedModeLive) {
+		t.Fatalf("expected FeedMode LIVE, got %s", chainLive.FeedMode)
+	}
+	for _, strike := range chainLive.Strikes {
+		if strike.Call.IsAvailable {
+			t.Errorf("expected strike call to be unavailable in LIVE mode without live feed, got available")
+		}
+		if strike.Call.LTPPaise != 0 {
+			t.Errorf("expected zero fake price for call in LIVE mode, got %d", strike.Call.LTPPaise)
+		}
+		if strike.Call.QuoteStatus != string(marketDto.QuoteSourceUnavailable) {
+			t.Errorf("expected quote status unavailable, got %s", strike.Call.QuoteStatus)
+		}
+		if strike.Put.IsAvailable {
+			t.Errorf("expected strike put to be unavailable in LIVE mode without live feed, got available")
+		}
+		if strike.Put.LTPPaise != 0 {
+			t.Errorf("expected zero fake price for put in LIVE mode, got %d", strike.Put.LTPPaise)
+		}
+	}
+
+	// B. SYNTHETIC Mode: Explicit simulation generates Black-Scholes pricing
+	mktSynth := &marketService.Service{}
+	mktSynth.SetFeedMode(marketDto.FeedModeSynthetic)
+	svcSynth := New(mktSynth)
+
+	chainSynth, err := svcSynth.GetOptionChain("NIFTY", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if chainSynth.FeedMode != string(marketDto.FeedModeSynthetic) {
+		t.Fatalf("expected FeedMode SYNTHETIC, got %s", chainSynth.FeedMode)
+	}
+	for _, strike := range chainSynth.Strikes {
+		if !strike.Call.IsAvailable {
+			t.Errorf("expected strike call to be available in SYNTHETIC mode")
+		}
+		if strike.Call.LTPPaise <= 0 {
+			t.Errorf("expected positive simulated price for call, got %d", strike.Call.LTPPaise)
+		}
+		if strike.Call.QuoteStatus != string(marketDto.QuoteSourceSyntheticGBM) {
+			t.Errorf("expected synthetic quote status, got %s", strike.Call.QuoteStatus)
+		}
+		if !strike.Put.IsAvailable {
+			t.Errorf("expected strike put to be available in SYNTHETIC mode")
+		}
+		if strike.Put.LTPPaise <= 0 {
+			t.Errorf("expected positive simulated price for put, got %d", strike.Put.LTPPaise)
+		}
+	}
+
+	// C. UNAVAILABLE Mode: Explicit unavailable state marks all contracts unavailable
+	mktUnavail := &marketService.Service{}
+	mktUnavail.SetFeedMode(marketDto.FeedModeUnavailable)
+	svcUnavail := New(mktUnavail)
+
+	chainUnavail, err := svcUnavail.GetOptionChain("NIFTY", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if chainUnavail.FeedMode != string(marketDto.FeedModeUnavailable) {
+		t.Fatalf("expected FeedMode UNAVAILABLE, got %s", chainUnavail.FeedMode)
+	}
+	for _, strike := range chainUnavail.Strikes {
+		if strike.Call.IsAvailable || strike.Put.IsAvailable {
+			t.Errorf("expected all strikes unavailable in UNAVAILABLE mode")
+		}
 	}
 }

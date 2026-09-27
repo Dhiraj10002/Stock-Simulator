@@ -203,6 +203,12 @@ func fetchLiveFromWorker(symbol string) (*dto.QuoteResponse, error) {
 }
 
 func (s *Service) SetQuote(symbol string, pricePaise int64, volume int64) error {
+	if s == nil || s.client == nil {
+		return fmt.Errorf("redis client is uninitialized")
+	}
+	if s.FeedMode() == dto.FeedModeLive {
+		return fmt.Errorf("cannot write simulated quote to redis in LIVE feed mode")
+	}
 	symbol = strings.ToUpper(strings.TrimSpace(symbol))
 	if symbol == "" {
 		return fmt.Errorf("symbol is required")
