@@ -172,7 +172,7 @@ graph TD
 | **Frontend** | Direct Stock Details BUY/SELL | ✅ Verified | Contextual `OrderConfirmationModal` on `/stocks/[symbol]` |
 | **Frontend** | Direct F&O Option Chain BUY/SELL | ✅ Verified | Contextual `FnoOrderModal` on `/options` |
 | **Frontend** | Portfolio Exit & Square Off | ✅ Verified | Direct modal actions on `/portfolio` |
-| **Frontend** | Dedicated `/terminal` Removal | 🔄 Pending Step A | Remove route, desk component, navbar and cross-page links |
+| **Frontend** | Dedicated `/terminal` Removal | ✅ Completed | Removed route, desk component, navbar and cross-page links (Commit 34ccfd4) |
 | **Security** | JTI Refresh Token Rotation | ✅ Verified | Strict reuse detection & revocation |
 | **Security** | Rate Limiting & CORS | ✅ Verified | Token bucket headers (`X-RateLimit-*`) + strict CORS |
 | **CI/CD** | Automated Quality Gates | ✅ Verified | GitHub Actions with unmasked Postgres/Redis/Python/Node tests |
