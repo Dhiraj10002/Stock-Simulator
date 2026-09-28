@@ -6,11 +6,13 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/calendar"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
 )
 
-// ContractSpec defines authoritative trading specifications for an F&O underlying.
+// ContractSpec defines simulation defaults for an F&O underlying.
 type ContractSpec struct {
 	UnderlyingSymbol string
 	LotSize          int64
@@ -19,8 +21,8 @@ type ContractSpec struct {
 	DefaultSpotPaise int64
 }
 
-// StandardContractSpecs defines authoritative contract specifications matching
-// Indian exchange standards (NSE/BSE).
+// StandardContractSpecs supplies simulation defaults. Live trading must use
+// the lot size and tick size on the canonical broker instrument.
 var StandardContractSpecs = map[string]ContractSpec{
 	"NIFTY":      {UnderlyingSymbol: "NIFTY", LotSize: 25, StrikeStep: 50, TickSize: "0.05", DefaultSpotPaise: 2532000},
 	"BANKNIFTY":  {UnderlyingSymbol: "BANKNIFTY", LotSize: 15, StrikeStep: 100, TickSize: "0.05", DefaultSpotPaise: 5215000},
@@ -35,7 +37,7 @@ var StandardContractSpecs = map[string]ContractSpec{
 	"SBIN":       {UnderlyingSymbol: "SBIN", LotSize: 750, StrikeStep: 10, TickSize: "0.05", DefaultSpotPaise: 81000},
 }
 
-// GetContractSpec retrieves the authoritative contract spec for an underlying symbol.
+// GetContractSpec retrieves a simulation specification for an underlying.
 func GetContractSpec(symbol string) (ContractSpec, bool) {
 	clean := strings.ToUpper(strings.TrimSpace(symbol))
 	spec, ok := StandardContractSpecs[clean]
@@ -83,164 +85,85 @@ func ValidateTickSize(pricePaise int64, tickSizeStr string) error {
 	return nil
 }
 
-// ParseSyntheticFNOContract parses a synthetic derivative symbol into a canonical model.Instrument.
-// It supports Indian exchange standard naming for both Futures (e.g. "NIFTY24SEPFUT", "NIFTY SEP FUT", "RELIANCE FUT")
-// and Options (e.g. "NIFTY 25000 CE", "NIFTY 25000 PE", "BANKNIFTY 52000 CE", "RELIANCE 1240 PE", "NIFTY24SEP25000CE").
+// Synthetic contracts are simulation fixtures, never authoritative live instruments.
+var datedContract = regexp.MustCompile(`^([A-Z&]+)([0-9]{2})(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)([0-9]{2})(FUT|[0-9]+(?:\.[0-9]+)?(?:CE|PE))$`)
+var legacyFuture = regexp.MustCompile(`^([A-Z&]+)([0-9]{2})(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)FUT$`)
+var spacedContract = regexp.MustCompile(`^([A-Z&]+) (?:([A-Z]{3}) )?(FUT|[0-9]+(?:\.[0-9]+)? (?:CE|PE))$`)
+
+func ParseContractExpiry(value string) (time.Time, error) {
+	for _, layout := range []string{"2006-01-02", "02Jan2006", "02-Jan-2006"} {
+		if d, err := time.ParseInLocation(layout, strings.TrimSpace(value), calendar.Location()); err == nil {
+			return time.Date(d.Year(), d.Month(), d.Day(), 15, 30, 0, 0, d.Location()), nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("invalid contract expiry %q", value)
+}
+
+// ParseSyntheticFNOContract accepts dated exchange symbols or explicitly spaced
+// simulation symbols. Undated simulation symbols use a rolling 30-day expiry.
 func ParseSyntheticFNOContract(symbol string) (*model.Instrument, error) {
 	clean := strings.ToUpper(strings.TrimSpace(symbol))
-	if clean == "" {
-		return nil, fmt.Errorf("empty symbol")
-	}
-
-	// 1. Identify underlying by greedy prefix matching against known underlyings
-	known := []string{
-		"MIDCPNIFTY", "BANKNIFTY", "FINNIFTY", "TATAMOTORS", "RELIANCE",
-		"BAJFINANCE", "BHARTIARTL", "HDFCBANK", "ICICIBANK", "KOTAKBANK",
-		"AXISBANK", "TATACHEM", "TATAPOWER", "SENSEX", "NIFTY",
-		"SUZLON", "ZOMATO", "APARINDS", "ETERNAL", "PRAJIND", "TRENT",
-		"MARUTI", "ADANIENT", "YESBANK", "BEL", "SBIN", "INFY", "TCS",
-	}
-
-	underlying := ""
-	for _, u := range known {
-		if strings.HasPrefix(clean, u) {
-			underlying = u
-			break
+	underlying, suffix := "", ""
+	var expiry time.Time
+	if m := datedContract.FindStringSubmatch(clean); m != nil {
+		underlying, suffix = m[1], m[5]
+		var err error
+		expiry, err = time.ParseInLocation("02Jan06", m[2]+m[3]+m[4], calendar.Location())
+		if err != nil {
+			return nil, fmt.Errorf("invalid contract date: %w", err)
 		}
-	}
-	if underlying == "" {
-		parts := strings.Fields(clean)
-		if len(parts) >= 2 {
-			underlying = parts[0]
+	} else if m := legacyFuture.FindStringSubmatch(clean); m != nil {
+		underlying, suffix = m[1], "FUT"
+		var err error
+		expiry, err = time.ParseInLocation("02Jan2006", m[2]+m[3]+strconv.Itoa(time.Now().In(calendar.Location()).Year()), calendar.Location())
+		if err != nil {
+			return nil, err
 		}
-	}
-	if underlying == "" {
-		return nil, fmt.Errorf("cannot identify F&O underlying from symbol %q", symbol)
-	}
-
-	spec, hasSpec := GetContractSpec(underlying)
-	lotSize := int64(1)
-	tickSize := "0.05"
-	if hasSpec && spec.LotSize > 0 {
-		lotSize = spec.LotSize
-		if spec.TickSize != "" {
-			tickSize = spec.TickSize
-		}
-	} else if strings.Contains(clean, "FUT") || strings.Contains(clean, "CE") || strings.Contains(clean, "PE") {
-		lotSize = 25
-	}
-
-	isIndex := underlying == "NIFTY" || underlying == "BANKNIFTY" || underlying == "FINNIFTY" || underlying == "MIDCPNIFTY" || underlying == "SENSEX"
-
-	// 2. Check for Future contract
-	if strings.Contains(clean, "FUT") {
-		instType := "FUTSTK"
-		if isIndex {
-			instType = "FUTIDX"
-		}
-		disp := clean
-		if !strings.Contains(clean, " ") {
-			for _, m := range []string{"JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"} {
-				if strings.Contains(clean, m) {
-					disp = fmt.Sprintf("%s %s FUT", underlying, m)
-					break
-				}
+	} else if m := spacedContract.FindStringSubmatch(clean); m != nil {
+		underlying, suffix = m[1], strings.ReplaceAll(m[3], " ", "")
+		expiry = time.Now().In(calendar.Location()).AddDate(0, 0, 30)
+		if m[2] != "" {
+			month, err := time.Parse("Jan", m[2])
+			if err != nil {
+				return nil, err
+			}
+			year := time.Now().In(calendar.Location()).Year()
+			expiry = time.Date(year, month.Month()+1, 0, 15, 30, 0, 0, calendar.Location())
+			if expiry.Before(time.Now()) {
+				expiry = expiry.AddDate(1, 0, 0)
 			}
 		}
-		return &model.Instrument{
-			Symbol:           clean,
-			DisplaySymbol:    disp,
-			Name:             underlying + " Futures",
-			Underlying:       underlying,
-			UnderlyingSymbol: underlying,
-			Exchange:         "NFO",
-			ExchangeSegment:  "NFO",
-			Token:            "SYNTH_" + clean,
-			InstrumentType:   instType,
-			Expiry:           "2026-09-24",
-			Strike:           "0.000000",
-			OptionType:       "",
-			LotSize:          lotSize,
-			TickSize:         tickSize,
-			Active:           true,
-		}, nil
+	} else {
+		return nil, fmt.Errorf("symbol %q is not a recognized synthetic F&O contract", symbol)
 	}
-
-	// 3. Check for Option contract (CE / PE)
-	isCE := strings.HasSuffix(clean, "CE") || strings.Contains(clean, " CE")
-	isPE := strings.HasSuffix(clean, "PE") || strings.Contains(clean, " PE")
-	if isCE || isPE {
-		optType := "CE"
-		if isPE {
-			optType = "PE"
+	spec, ok := GetContractSpec(underlying)
+	if !ok {
+		return nil, fmt.Errorf("no simulation specification for %s", underlying)
+	}
+	instType, optionType, strike := "FUTSTK", "", float64(0)
+	isIndex := underlying == "NIFTY" || underlying == "BANKNIFTY" || underlying == "FINNIFTY" || underlying == "MIDCPNIFTY" || underlying == "SENSEX"
+	if isIndex {
+		instType = "FUTIDX"
+	}
+	if suffix != "FUT" {
+		optionType = suffix[len(suffix)-2:]
+		var err error
+		strike, err = strconv.ParseFloat(suffix[:len(suffix)-2], 64)
+		if err != nil || strike <= 0 {
+			return nil, fmt.Errorf("invalid option strike")
 		}
-		instType := "OPTSTK"
+		instType = "OPTSTK"
 		if isIndex {
 			instType = "OPTIDX"
 		}
-
-		strikeVal := float64(0)
-		parts := strings.Fields(clean)
-		for _, p := range parts {
-			if s, err := strconv.ParseFloat(p, 64); err == nil && s > 0 {
-				strikeVal = s
-				break
-			}
-		}
-
-		if strikeVal == 0 {
-			re := regexp.MustCompile(`(\d+(?:\.\d+)?)(?:CE|PE)$`)
-			matches := re.FindStringSubmatch(clean)
-			if len(matches) > 1 {
-				s, _ := strconv.ParseFloat(matches[1], 64)
-				strikeVal = s
-			}
-		}
-
-		if strikeVal == 0 {
-			if spec.DefaultSpotPaise > 0 {
-				strikeVal = float64(spec.DefaultSpotPaise) / 100
-			} else {
-				strikeVal = 1000
-			}
-		}
-
-		disp := fmt.Sprintf("%s %.0f %s", underlying, strikeVal, optType)
-
-		return &model.Instrument{
-			Symbol:           clean,
-			DisplaySymbol:    disp,
-			Name:             underlying + " " + optType,
-			Underlying:       underlying,
-			UnderlyingSymbol: underlying,
-			Exchange:         "NFO",
-			ExchangeSegment:  "NFO",
-			Token:            "SYNTH_" + clean,
-			InstrumentType:   instType,
-			Expiry:           "2026-09-24",
-			Strike:           fmt.Sprintf("%.6f", strikeVal),
-			OptionType:       optType,
-			LotSize:          lotSize,
-			TickSize:         tickSize,
-			Active:           true,
-		}, nil
 	}
-
-	return nil, fmt.Errorf("symbol %q is not a recognized synthetic F&O contract", symbol)
+	return &model.Instrument{Symbol: clean, DisplaySymbol: clean, Name: underlying,
+		Underlying: underlying, UnderlyingSymbol: underlying, Exchange: "NFO", ExchangeSegment: "NFO",
+		Token: "SYNTH_" + clean, InstrumentType: instType, Expiry: expiry.Format("2006-01-02"),
+		Strike: fmt.Sprintf("%.6f", strike), OptionType: optionType, LotSize: spec.LotSize, TickSize: spec.TickSize, Active: true}, nil
 }
 
-// IsSyntheticContract checks if a symbol represents an F&O derivative format eligible for synthetic trading.
 func IsSyntheticContract(symbol string) bool {
-	clean := strings.ToUpper(strings.TrimSpace(symbol))
-	if clean == "" {
-		return false
-	}
-	if strings.HasSuffix(clean, "FUT") || strings.Contains(clean, " FUT") {
-		return true
-	}
-	if strings.HasSuffix(clean, "CE") || strings.Contains(clean, " CE") ||
-		strings.HasSuffix(clean, "PE") || strings.Contains(clean, " PE") {
-		return true
-	}
-	return false
+	_, err := ParseSyntheticFNOContract(symbol)
+	return err == nil
 }

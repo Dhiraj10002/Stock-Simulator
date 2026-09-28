@@ -437,7 +437,7 @@ func ParseAngelScripItem(raw AngelScripItem) (*model.Instrument, bool) {
 	strike := ""
 	if raw.Strike != "" && raw.Strike != "-1" && raw.Strike != "-1.000000" {
 		if val, err := strconv.ParseFloat(raw.Strike, 64); err == nil && val > 0 {
-			if val > 100000 { // Stored in paise
+			if segment == "NFO" { // NFO master strikes are in paise, including strikes below ₹1,000
 				val = val / 100.0
 			}
 			strike = fmt.Sprintf("%.2f", val)

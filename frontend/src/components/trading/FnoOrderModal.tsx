@@ -1,19 +1,12 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
-  TrendingUp,
-  TrendingDown,
-  Layers,
   Zap,
   X,
   CheckCircle2,
   AlertCircle,
-  ShieldCheck,
-  Wallet,
-  ArrowRight,
-  Sparkles,
 } from "lucide-react";
 import { formatPaise } from "@/lib/format";
 import { API_URL } from "@/lib/api";
@@ -65,40 +58,42 @@ export default function FnoOrderModal({
   // Live price state: fetched from backend when initial price is unavailable
   const [liveLtpPaise, setLiveLtpPaise] = React.useState<number>(0);
 
-  // When instrument or initialSide changes, reset defaults and fetch live quote if needed
   React.useEffect(() => {
-    if (instrument) {
+    if (!isOpen || !instrument) return;
+    let cancelled = false;
+    const controller = new AbortController();
+    queueMicrotask(() => {
+      if (cancelled) return;
       setLiveLtpPaise(0);
-      queueMicrotask(() => {
-        setFeedback(null);
-        setLots(1);
-        if (initialSide) {
-          setSide(initialSide);
+      setFeedback(null);
+      setLots(1);
+      setSide(initialSide);
+      setLimitPrice(((instrument.basePricePaise ?? 0) / 100).toFixed(2));
+    });
+    let inFlight = false;
+    const refresh = async () => {
+      if (inFlight) return;
+      inFlight = true;
+      try {
+        const res = await fetch(`${API_URL}/market/quotes/${encodeURIComponent(instrument.symbol)}`, { signal: controller.signal });
+        const body = res.ok ? await res.json() : null;
+        if (!cancelled && body?.success && body?.data?.price_paise > 0) {
+          setLiveLtpPaise(body.data.price_paise);
+          setLimitPrice((previous) => Number(previous) > 0 ? previous : (body.data.price_paise / 100).toFixed(2));
         }
-        const ltp = ((instrument.basePricePaise ?? 0) / 100).toFixed(2);
-        setLimitPrice(ltp);
-      });
-
-      // Fetch live quote from backend if initial price is zero/unavailable
-      if (!instrument.basePricePaise || instrument.basePricePaise <= 0) {
-        fetch(`${API_URL}/market/quotes/${encodeURIComponent(instrument.symbol)}`)
-          .then((res) => (res.ok ? res.json() : null))
-          .then((body) => {
-            if (body?.success && body?.data?.price_paise > 0) {
-              setLiveLtpPaise(body.data.price_paise);
-              setLimitPrice((body.data.price_paise / 100).toFixed(2));
-            }
-          })
-          .catch(() => {});
-      }
-    }
-  }, [instrument, initialSide]);
+      } catch { /* Keep unavailable until an authentic quote arrives. */ }
+      finally { inFlight = false; }
+    };
+    void refresh();
+    const timer = setInterval(refresh, 3000);
+    return () => { cancelled = true; controller.abort(); clearInterval(timer); };
+  }, [instrument, initialSide, isOpen]);
 
   if (!isOpen || !instrument) return null;
 
   const lotSize = instrument.lotSize && instrument.lotSize > 0 ? instrument.lotSize : 1;
   const totalQuantity = lots * lotSize;
-  const effectivePricePaise = (instrument.basePricePaise && instrument.basePricePaise > 0) ? instrument.basePricePaise : liveLtpPaise;
+  const effectivePricePaise = liveLtpPaise > 0 ? liveLtpPaise : (instrument.basePricePaise ?? 0);
   const ltpRupees = effectivePricePaise / 100;
   const activePrice =
     orderType === "LIMIT" && parseFloat(limitPrice) > 0
@@ -119,7 +114,7 @@ export default function FnoOrderModal({
 
   const handleExecuteOrder = async () => {
     if (executing) return;
-    if (orderType === "MARKET" && (!instrument.basePricePaise || instrument.basePricePaise <= 0)) {
+    if (orderType === "MARKET" && (effectivePricePaise <= 0)) {
       setFeedback({
         type: "error",
         message: "Market quote is currently unavailable. Place a Limit order or wait for live feed.",
@@ -379,7 +374,7 @@ export default function FnoOrderModal({
             <div className="flex justify-between items-center text-slate-500 dark:text-slate-400">
               <span>Required Margin:</span>
               <span className="font-black text-slate-900 dark:text-slate-100 font-tabular text-sm">
-                {formatPaise(requiredMarginPaise)}
+                {activePrice > 0 ? formatPaise(requiredMarginPaise) : "Unavailable"}
               </span>
             </div>
             <div className="flex justify-between items-center text-slate-500 dark:text-slate-400 text-[11px]">
@@ -415,7 +410,7 @@ export default function FnoOrderModal({
           {/* 6. Execution Button */}
           <button
             onClick={handleExecuteOrder}
-            disabled={executing || !hasSufficientMargin}
+            disabled={executing || !hasSufficientMargin || (orderType === "MARKET" && effectivePricePaise <= 0)}
             className={`w-full py-3.5 rounded-2xl text-white font-black text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer ${
               !hasSufficientMargin
                 ? "bg-slate-400 cursor-not-allowed"

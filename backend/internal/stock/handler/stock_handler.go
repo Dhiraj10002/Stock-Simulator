@@ -2,15 +2,20 @@ package handler
 
 import (
 	"fmt"
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/calendar"
+	"gorm.io/gorm/clause"
 	"net/http"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/database"
 	instrumentService "github.com/Dhiraj10002/Stock-Simulator/backend/internal/instrument/service"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/alias"
+	marketDTO "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/dto"
 	marketService "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/service"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/product"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/stock/dto"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/pkg/response"
 	"github.com/gin-gonic/gin"
@@ -108,35 +113,31 @@ func (h *Handler) Search(c *gin.Context) {
 		dbQuery = db.Where("symbol ILIKE ? ESCAPE '\\' OR name ILIKE ? ESCAPE '\\' OR symbol ILIKE ? OR name ILIKE ?", pattern, pattern, aliasPattern, aliasPattern)
 	}
 
+	// Imported masters contain historical contracts and non-equity NSE securities.
+	dbQuery = dbQuery.Where("active = ?", true).
+		Where("instrument_type IN ?", []string{"", "EQ", "EQUITY", "INDEX", "AMXIDX", "FUTSTK", "FUTIDX", "OPTSTK", "OPTIDX"}).
+		Where("exchange_segment = 'NFO' OR instrument_type IN ('INDEX', 'AMXIDX') OR symbol NOT LIKE '%-%' OR symbol LIKE '%-EQ'")
+	now := time.Now().In(calendar.Location())
+	cutoff := now.Format("2006-01-02")
+	if now.Hour() > 15 || (now.Hour() == 15 && now.Minute() >= 30) {
+		cutoff = now.AddDate(0, 0, 1).Format("2006-01-02")
+	}
+	dbQuery = dbQuery.Where(`COALESCE(expiry, '') = '' OR
+		(CASE WHEN expiry ~ '^\d{4}-\d{2}-\d{2}$' THEN expiry::date
+		 WHEN expiry ~ '^\d{2}[A-Za-z]{3}\d{4}$' THEN to_date(expiry, 'DDMONYYYY')
+		 WHEN expiry ~ '^\d{2}-[A-Za-z]{3}-\d{4}$' THEN to_date(expiry, 'DD-MON-YYYY') END) >= ?::date`, cutoff)
+
 	segment := strings.TrimSpace(c.Query("segment"))
-	if segment != "" && segment != "ALL" {
+	if segment == "FUTURES" {
+		dbQuery = dbQuery.Where("instrument_type IN ?", []string{"FUTSTK", "FUTIDX"})
+	} else if segment == "OPTIONS" {
+		dbQuery = dbQuery.Where("instrument_type IN ?", []string{"OPTSTK", "OPTIDX"})
+	} else if segment != "" && segment != "ALL" {
 		dbQuery = dbQuery.Where("exchange_segment = ? OR instrument_type = ?", segment, segment)
 	}
 
-	// Smart relevance ordering:
-	// 1. Exact match (symbol == query or symbol == query + "-EQ")
-	// 2. Prefix equity match (symbol LIKE query% and EQ)
-	// 3. Prefix equity match on name
-	// 4. Prefix futures match (symbol LIKE query% and FUT)
-	// 5. Prefix options match (symbol LIKE query% and OPT)
-	// 6. Other prefix matches
-	// 7. General substring matches
-	orderExpr := gorm.Expr(`
-		CASE 
-			WHEN UPPER(symbol) = UPPER(?) OR UPPER(symbol) = UPPER(?) || '-EQ' THEN 1
-			WHEN UPPER(symbol) LIKE UPPER(?) AND (instrument_type = '' OR instrument_type = 'EQ') THEN 2
-			WHEN UPPER(name) LIKE UPPER(?) AND (instrument_type = '' OR instrument_type = 'EQ') THEN 3
-			WHEN UPPER(symbol) LIKE UPPER(?) AND instrument_type LIKE 'FUT%' THEN 4
-			WHEN UPPER(symbol) LIKE UPPER(?) AND instrument_type LIKE 'OPT%' THEN 5
-			WHEN UPPER(symbol) LIKE UPPER(?) THEN 6
-			ELSE 7
-		END,
-		LENGTH(symbol) ASC,
-		symbol ASC
-	`, query, query, prefixPattern, prefixPattern, prefixPattern, prefixPattern, prefixPattern)
-
 	var instruments []model.Instrument
-	if err := dbQuery.Order(orderExpr).Limit(100).Find(&instruments).Error; err != nil {
+	if err := dbQuery.Clauses(searchOrder(query, prefixPattern)).Limit(100).Find(&instruments).Error; err != nil {
 		// Fallback to simple order if custom order fails
 		if errFallback := dbQuery.Order("symbol ASC").Limit(100).Find(&instruments).Error; errFallback != nil {
 			response.Error(c, http.StatusServiceUnavailable, "Instrument search is temporarily unavailable", nil)
@@ -151,6 +152,12 @@ func (h *Handler) Search(c *gin.Context) {
 			qUpper := strings.ToUpper(query)
 			segUpper := strings.ToUpper(segment)
 			for _, inst := range instrumentService.DefaultCanonicalInstruments {
+				if inst.Expiry != "" {
+					expiry, err := product.ParseContractExpiry(inst.Expiry)
+					if err != nil || !expiry.After(now) {
+						continue
+					}
+				}
 				if segUpper != "" && segUpper != "ALL" {
 					if !strings.EqualFold(inst.ExchangeSegment, segUpper) && !strings.EqualFold(inst.InstrumentType, segUpper) {
 						continue
@@ -165,20 +172,22 @@ func (h *Handler) Search(c *gin.Context) {
 		}
 	}
 
+	quotes := map[string]*marketDTO.QuoteResponse{}
+	if h.market != nil {
+		symbols := make([]string, 0, len(instruments))
+		for _, inst := range instruments {
+			symbols = append(symbols, inst.Symbol)
+		}
+		quotes = h.market.BatchQuotes(symbols)
+	}
 	items := make([]dto.StockResponse, 0, len(instruments))
 	for _, instrument := range instruments {
 		dispName, optType, _ := formatKiteDisplayName(instrument.Symbol, instrument.Expiry, instrument.Strike, instrument.OptionType)
 		var pricePaise int64
 		var changePct float64
 
-		if h.market != nil {
-			if q, err := h.market.CachedQuote(instrument.Symbol); err == nil && q != nil && q.PricePaise > 0 {
-				pricePaise = q.PricePaise
-				changePct = q.ChangePercent
-			} else if dq, derr := h.market.DerivedFNOQuote(instrument.Symbol); derr == nil && dq != nil && dq.PricePaise > 0 {
-				pricePaise = dq.PricePaise
-				changePct = dq.ChangePercent
-			}
+		if q := quotes[instrument.Symbol]; q != nil {
+			pricePaise, changePct = q.PricePaise, q.ChangePercent
 		}
 
 		items = append(items, dto.StockResponse{
@@ -198,4 +207,20 @@ func (h *Handler) Search(c *gin.Context) {
 		})
 	}
 	response.Success(c, http.StatusOK, "Stocks retrieved successfully", items)
+}
+
+func searchOrder(query, prefixPattern string) clause.OrderBy {
+	return clause.OrderBy{Expression: gorm.Expr(`
+		CASE
+			WHEN UPPER(symbol) = UPPER(?) OR UPPER(symbol) = UPPER(?) || '-EQ' THEN 1
+			WHEN UPPER(symbol) LIKE UPPER(?) AND (instrument_type = '' OR instrument_type IN ('EQ', 'EQUITY')) THEN 2
+			WHEN UPPER(name) LIKE UPPER(?) AND (instrument_type = '' OR instrument_type IN ('EQ', 'EQUITY')) THEN 3
+			WHEN UPPER(symbol) LIKE UPPER(?) AND instrument_type LIKE 'FUT%' THEN 4
+			WHEN UPPER(symbol) LIKE UPPER(?) AND instrument_type LIKE 'OPT%' THEN 5
+			WHEN UPPER(symbol) LIKE UPPER(?) THEN 6
+			ELSE 7
+		END,
+		LENGTH(symbol) ASC,
+		symbol ASC
+	`, query, query, prefixPattern, prefixPattern, prefixPattern, prefixPattern, prefixPattern)}
 }

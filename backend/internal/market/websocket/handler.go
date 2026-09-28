@@ -221,6 +221,12 @@ func (h *Handler) Serve(c *gin.Context) {
 			action := strings.ToLower(strings.TrimSpace(cmd.Action))
 			switch action {
 			case "ping":
+				// Keep broker subscriptions alive while the browser watches them.
+				symbols := make([]string, 0, len(subscribed))
+				for symbol := range subscribed {
+					symbols = append(symbols, symbol)
+				}
+				h.market.RenewQuoteSubscriptions(symbols)
 				// Application-level heartbeat support: refresh deadline & echo pong
 				_ = client.conn.SetReadDeadline(time.Now().Add(PongWait))
 				if !enqueueEvent(event{Type: "pong"}) {

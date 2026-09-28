@@ -36,16 +36,6 @@ func (h *Handler) Quote(c *gin.Context) {
 	symbol := c.Param("symbol")
 	quote, err := h.service.CurrentQuote(symbol)
 	if err != nil {
-		// For quote-not-found or instrument-not-found errors, try deriving F&O price from underlying
-		if errors.Is(err, service.ErrQuoteNotFound) || errors.Is(err, service.ErrInstrumentNotFound) || errors.Is(err, service.ErrQuoteStale) {
-			derivedQuote, derivedErr := h.service.DerivedFNOQuote(symbol)
-			if derivedErr == nil && derivedQuote != nil && derivedQuote.PricePaise > 0 {
-				quote = derivedQuote
-				err = nil
-			}
-		}
-	}
-	if err != nil {
 		if errors.Is(err, service.ErrInstrumentNotFound) {
 			response.Error(c, http.StatusNotFound, "Instrument not found in canonical master", "INSTRUMENT_NOT_FOUND")
 			return
@@ -106,6 +96,10 @@ func (h *Handler) BatchQuotes(c *gin.Context) {
 		return
 	}
 
+	if len(symbols) > 100 {
+		response.Error(c, http.StatusBadRequest, "At most 100 symbols per batch", nil)
+		return
+	}
 	quotes := h.service.BatchQuotes(symbols)
 	response.Success(c, http.StatusOK, "Batch quotes retrieved successfully", quotes)
 }

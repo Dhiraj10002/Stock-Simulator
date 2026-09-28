@@ -140,7 +140,6 @@ func Setup(ctx context.Context, cfg *config.Config, opts ...SetupOption) *gin.En
 				}
 			}
 
-			instrumentFinderCache.Store(clean, false)
 			return false, nil
 		})
 	}

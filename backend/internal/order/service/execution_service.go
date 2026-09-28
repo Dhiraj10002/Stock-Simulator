@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/database"
-	marketService "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/service"
+	marketDTO "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/dto"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/product"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/pkg/logger"
@@ -43,15 +43,7 @@ func (s *OrderService) Execute(userID, orderID string) error {
 	quote, err := s.executableQuote(pendingOrder.Symbol)
 	redisDuration := time.Since(redisStart)
 	if err != nil {
-		if pendingOrder.Side == model.OrderSideSell && (errors.Is(err, marketService.ErrQuoteStale) || errors.Is(err, marketService.ErrQuoteIneligible)) {
-			if q, qErr := s.currentQuote(pendingOrder.Symbol); qErr == nil && q != nil && q.PricePaise > 0 {
-				quote = q
-				err = nil
-			}
-		}
-		if err != nil {
-			return err
-		}
+		return err
 	}
 	executionPricePaise := quote.PricePaise
 	if pendingOrder.Type == model.OrderTypeMarket || pendingOrder.Type == model.OrderTypeSLM {
@@ -225,23 +217,13 @@ func (s *OrderService) executeMarginProduct(userUUID, orderUUID uuid.UUID, pendi
 	quote, err := s.executableQuote(pending.Symbol)
 	redisDuration := time.Since(redisStart)
 	if err != nil {
-		if errors.Is(err, marketService.ErrQuoteStale) || errors.Is(err, marketService.ErrQuoteIneligible) || errors.Is(err, marketService.ErrQuoteNotFound) {
-			if dq, derr := s.market.DerivedFNOQuote(pending.Symbol); derr == nil && dq != nil && dq.PricePaise > 0 {
-				quote = dq
-				err = nil
-			} else if q, qErr := s.currentQuote(pending.Symbol); qErr == nil && q != nil && q.PricePaise > 0 {
-				quote = q
-				err = nil
-			}
-		}
-		if err != nil {
-			return err
-		}
+		return err
 	}
+
 	instrumentType, underlying := "", ""
 	if pending.Product == model.OrderProductFNO {
 		instrument, err := s.repo.FindInstrument(pending.Symbol)
-		if err != nil || instrument == nil {
+		if (err != nil || instrument == nil) && s.market != nil && s.market.FeedMode() == marketDTO.FeedModeSynthetic {
 			if synth, synthErr := product.ParseSyntheticFNOContract(pending.Symbol); synthErr == nil && synth != nil {
 				instrument = synth
 			}

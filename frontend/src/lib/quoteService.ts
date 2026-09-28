@@ -25,7 +25,7 @@ export function getCachedQuote(symbol: string): Quote | undefined {
 
   // Check market store
   const storeQuotes = useMarketStore.getState().quotes;
-  if (storeQuotes[sym]) {
+  if (storeQuotes[sym] && Date.now() - Date.parse(storeQuotes[sym].updated_at) < CACHE_TTL_MS) {
     return storeQuotes[sym];
   }
 
@@ -126,69 +126,29 @@ export async function fetchBatchQuotes(
     return results;
   }
 
-  // First, attempt single batch API request
-  try {
-    const res = await fetch(`${API_URL}/market/quotes/batch`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ symbols: toFetch }),
-    });
-    if (res.ok) {
+  // A missing entry is an unavailable quote, not a reason to fan out requests.
+  // The backend has queued subscription demand; a later refresh picks up ticks.
+  for (let i = 0; i < toFetch.length; i += 100) {
+    const chunk = toFetch.slice(i, i + 100);
+    try {
+      const res = await fetch(`${API_URL}/market/quotes/batch`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ symbols: chunk }),
+      });
+      if (!res.ok) continue;
       const body = await res.json();
-      if (body?.success && body?.data) {
-        const batchData = body.data as Record<string, Quote>;
-        const remainingToFetch: string[] = [];
-
-        for (const sym of toFetch) {
-          const q = batchData[sym];
-          if (q && q.price_paise > 0) {
-            quoteCache.set(sym, {
-              quote: q,
-              expiresAt: Date.now() + CACHE_TTL_MS,
-            });
-            useMarketStore.getState().updateQuote(q);
-            results[sym] = q;
-          } else {
-            remainingToFetch.push(sym);
-          }
-        }
-
-        if (remainingToFetch.length === 0) {
-          return results;
-        }
-        // Only fetch unresolved symbols individually if needed
-        toFetch.length = 0;
-        toFetch.push(...remainingToFetch);
+      if (!body?.success || !body?.data) continue;
+      for (const sym of chunk) {
+        const q = body.data[sym] as Quote | undefined;
+        if (!q || q.price_paise <= 0) continue;
+        quoteCache.set(sym, { quote: q, expiresAt: Date.now() + CACHE_TTL_MS });
+        useMarketStore.getState().updateQuote(q);
+        results[sym] = q;
       }
-    }
-  } catch (err) {
-    console.warn("[quoteService] Batch quote fetch failed, falling back to chunked requests:", err);
-  }
-
-  if (toFetch.length === 0) {
-    return results;
-  }
-
-  // Fetch remaining in chunks of 8
-  const CHUNK_SIZE = 8;
-  for (let i = 0; i < toFetch.length; i += CHUNK_SIZE) {
-    const chunk = toFetch.slice(i, i + CHUNK_SIZE);
-    const promises = chunk.map(async (sym) => {
-      try {
-        const q = await fetchQuote(sym);
-        return { sym, quote: q };
-      } catch {
-        return { sym, quote: null };
-      }
-    });
-
-    const settled = await Promise.allSettled(promises);
-    for (const res of settled) {
-      if (res.status === "fulfilled" && res.value.quote) {
-        results[res.value.sym] = res.value.quote;
-      }
+    } catch (err) {
+      console.warn("[quoteService] Batch quote fetch failed:", err);
     }
   }
-
   return results;
 }

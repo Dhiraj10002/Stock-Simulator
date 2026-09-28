@@ -251,3 +251,10 @@ func TestSyncFromReader(t *testing.T) {
 		t.Errorf("expected 1 total skipped (MCX), got %d", stats.TotalSkipped)
 	}
 }
+
+func TestRegressionLowStrikeUnits(t *testing.T) {
+	inst, ok := ParseAngelScripItem(AngelScripItem{Token: "123", Symbol: "SBIN29SEP26800CE", Name: "SBIN", ExchSeg: "NFO", InstrumentType: "OPTSTK", Strike: "80000.000000", LotSize: "750", Expiry: "29SEP2026"})
+	if !ok || inst.Strike != "800" {
+		t.Fatalf("expected strike 800 rupees, got %+v", inst)
+	}
+}

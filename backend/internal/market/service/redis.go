@@ -246,12 +246,6 @@ func (s *Service) CachedQuote(symbol string) (*dto.QuoteResponse, error) {
 			return cq, nil
 		}
 	}
-	if dq, derr := s.DerivedFNOQuote(symbol); derr == nil && dq != nil && dq.PricePaise > 0 {
-		return dq, nil
-	}
-	if q != nil && q.PricePaise > 0 {
-		return q, nil
-	}
 	return nil, err
 }
 
@@ -302,16 +296,49 @@ func (s *Service) rawCachedQuote(symbol string) (*dto.QuoteResponse, error) {
 // BatchQuotes retrieves quotes for an array of symbols in a single call.
 func (s *Service) BatchQuotes(symbols []string) map[string]*dto.QuoteResponse {
 	results := make(map[string]*dto.QuoteResponse)
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	jobs := make(chan string)
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for sym := range jobs {
+				if q, err := s.CachedQuote(sym); err == nil && q != nil && q.PricePaise > 0 {
+					mu.Lock()
+					results[sym] = q
+					mu.Unlock()
+				}
+			}
+		}()
+	}
+	seen := make(map[string]bool)
 	for _, sym := range symbols {
 		clean := strings.ToUpper(strings.TrimSpace(sym))
-		if clean == "" {
-			continue
-		}
-		if q, err := s.CachedQuote(clean); err == nil && q != nil && q.PricePaise > 0 {
-			results[clean] = q
+		if clean != "" && !seen[clean] {
+			seen[clean] = true
+			jobs <- clean
 		}
 	}
+	close(jobs)
+	wg.Wait()
 	return results
+}
+
+// RenewQuoteSubscriptions keeps existing browser subscriptions alive without
+// re-reading every quote or checking the instrument database on each heartbeat.
+func (s *Service) RenewQuoteSubscriptions(symbols []string) {
+	if s == nil || s.client == nil || s.FeedMode() != dto.FeedModeLive || len(symbols) == 0 {
+		return
+	}
+	members := make([]redis.Z, 0, len(symbols))
+	now := float64(time.Now().Unix())
+	for _, symbol := range symbols {
+		members = append(members, redis.Z{Score: now, Member: symbol})
+	}
+	ctx, cancel := cache.Context(context.Background(), s.timeout)
+	defer cancel()
+	_ = s.client.ZAdd(ctx, "market:quote:demand", members...).Err()
 }
 
 // CurrentQuote retrieves the authoritative quote for a symbol directly and only from Redis.
@@ -338,7 +365,7 @@ func (s *Service) CurrentQuote(symbol string) (*dto.QuoteResponse, error) {
 		}
 		if !found {
 			// Permitted synthetic F&O contracts can proceed to derivative quote derivation
-			if product.IsSyntheticContract(symbol) {
+			if mode == dto.FeedModeSynthetic && product.IsSyntheticContract(symbol) {
 				// Synthetic contract permitted
 			} else {
 				return nil, fmt.Errorf("%w: %s (real F&O in live mode permits only canonical DB instruments)", ErrInstrumentNotFound, symbol)
@@ -359,6 +386,10 @@ func (s *Service) CurrentQuote(symbol string) (*dto.QuoteResponse, error) {
 		}
 	}
 
+	// Demand is consumed asynchronously by the worker; never call the broker in a request.
+	if mode == dto.FeedModeLive {
+		_ = s.client.ZAdd(ctx, "market:quote:demand", redis.Z{Score: float64(time.Now().Unix()), Member: symbol}).Err()
+	}
 	values, err := s.client.HGetAll(ctx, quoteKey(symbol)).Result()
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", cache.ErrUnavailable, err)
@@ -373,6 +404,9 @@ func (s *Service) CurrentQuote(symbol string) (*dto.QuoteResponse, error) {
 	}
 
 	if len(values) == 0 {
+		if mode == dto.FeedModeSynthetic {
+			return s.DerivedFNOQuote(symbol)
+		}
 		return nil, ErrQuoteNotFound
 	}
 
@@ -383,7 +417,7 @@ func (s *Service) CurrentQuote(symbol string) (*dto.QuoteResponse, error) {
 	}
 
 	normSource := dto.NormalizeQuoteSource(source)
-	if mode == dto.FeedModeLive && normSource != dto.QuoteSourceAngelOneLive && normSource != dto.QuoteSourceFNOEngine {
+	if mode == dto.FeedModeLive && normSource != dto.QuoteSourceAngelOneLive {
 		return nil, fmt.Errorf("%w: live feed mode requires angelone_live source, got %q", ErrQuoteIneligible, source)
 	}
 	if mode == dto.FeedModeSynthetic && normSource == dto.QuoteSourceAngelOneLive {
@@ -444,14 +478,7 @@ func IsSeededSource(source string) bool {
 func (s *Service) ExecutableQuote(symbol string) (*dto.QuoteResponse, error) {
 	quote, err := s.CurrentQuote(symbol)
 	if err != nil {
-		// For F&O derivatives without direct Redis quotes, try deriving from underlying
-		derivedQuote, derivedErr := s.DerivedFNOQuote(symbol)
-		if derivedErr == nil && derivedQuote != nil && derivedQuote.PricePaise > 0 {
-			quote = derivedQuote
-			err = nil
-		} else {
-			return nil, err
-		}
+		return nil, err
 	}
 	allowSeeded := s != nil && s.allowSeededQuotes
 	mode := s.FeedMode()

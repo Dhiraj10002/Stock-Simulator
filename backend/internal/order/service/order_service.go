@@ -161,7 +161,7 @@ func (s *OrderService) Create(userID string, request dto.CreateOrderRequest) (*d
 		if err == nil && found != nil {
 			instrument = found
 		} else {
-			if isLiveMode && request.Side == model.OrderSideBuy {
+			if isLiveMode {
 				return nil, fmt.Errorf("%w: instrument %q not found in canonical instrument master (real F&O under LIVE mode permits only canonical DB instruments)", ErrInstrumentNotFound, request.Symbol)
 			}
 			synth, synthErr := product.ParseSyntheticFNOContract(request.Symbol)
@@ -176,7 +176,7 @@ func (s *OrderService) Create(userID string, request dto.CreateOrderRequest) (*d
 		if err == nil && found != nil {
 			instrument = found
 		} else {
-			if isLiveMode && request.Side == model.OrderSideBuy {
+			if isLiveMode {
 				return nil, fmt.Errorf("%w: instrument %q not found in canonical instrument master (real F&O under LIVE mode permits only canonical DB instruments)", ErrInstrumentNotFound, request.Symbol)
 			}
 			synth, synthErr := product.ParseSyntheticFNOContract(request.Symbol)
@@ -263,17 +263,7 @@ func (s *OrderService) Create(userID string, request dto.CreateOrderRequest) (*d
 		// prevents a market order becoming an unfillable pending order.
 		redisStart := time.Now()
 		if _, err := s.executableQuote(request.Symbol); err != nil {
-			isExitOrder := request.Side == model.OrderSideSell && request.Product == model.OrderProductDelivery
-			if isExitOrder && (errors.Is(err, marketService.ErrQuoteStale) || errors.Is(err, marketService.ErrQuoteIneligible)) {
-				// Relax for CNC exit if quote exists with valid price
-				if q, qErr := s.currentQuote(request.Symbol); qErr == nil && q != nil && q.PricePaise > 0 {
-					// Proceed with exit
-				} else {
-					return nil, err
-				}
-			} else {
-				return nil, err
-			}
+			return nil, err
 		}
 		redisDuration = time.Since(redisStart)
 	}

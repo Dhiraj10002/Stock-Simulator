@@ -11,6 +11,7 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse, parse_qs
 from dataclasses import dataclass
+from zoneinfo import ZoneInfo
 from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any
@@ -717,6 +718,7 @@ class InstrumentStore:
     def __init__(self, database_url: str, symbols: list[str]) -> None:
         self.database_url = database_url
         self.symbols = symbols
+        self._rows: list[dict[str, Any]] = []
         self._subscriptions: dict[tuple[str, int], Subscription] = {}
         self._lock = threading.Lock()
 
@@ -732,7 +734,8 @@ class InstrumentStore:
         rows: list[dict[str, Any]] = []
 
         # 1. Check local cache first to avoid slow 35MB download
-        if os.path.exists(LOCAL_CACHE_PATH) and os.path.getsize(LOCAL_CACHE_PATH) > 1000000:
+        if (os.path.exists(LOCAL_CACHE_PATH) and os.path.getsize(LOCAL_CACHE_PATH) > 1000000
+                and time.time() - os.path.getmtime(LOCAL_CACHE_PATH) < 86400):
             print(f"market worker: loading instruments from local cache ({LOCAL_CACHE_PATH})", flush=True)
             try:
                 with open(LOCAL_CACHE_PATH, "r", encoding="utf-8") as f:
@@ -756,12 +759,21 @@ class InstrumentStore:
                         pass
             except Exception as error:
                 print(f"market worker: instrument master download failed: {error}; using fallback master", flush=True)
-                rows = FALLBACK_INSTRUMENT_MASTER
+                rows = self._rows
+                if not rows and os.path.exists(LOCAL_CACHE_PATH):
+                    try:
+                        with open(LOCAL_CACHE_PATH, "r", encoding="utf-8") as cached:
+                            rows = json.load(cached)
+                    except (OSError, ValueError):
+                        pass
+                if not rows:
+                    rows = FALLBACK_INSTRUMENT_MASTER
 
         # 3. Asynchronously upsert to DB if configured (don't block feed startup)
         if self.database_url:
             threading.Thread(target=self._upsert_bg, args=(rows,), daemon=True).start()
 
+        self._rows = rows
         subscriptions = self._build_subscriptions(rows)
         if not subscriptions:
             # Fall back to built-in subscriptions
@@ -821,6 +833,8 @@ class InstrumentStore:
                 strike = clean(row.get("strike"))
                 if strike in ("-1", "-1.000000"):
                     strike = ""
+                elif strike and segment == "NFO":
+                    strike = str(Decimal(strike) / 100)
 
                 lotsize = integer(row.get("lotsize"))
                 if lotsize <= 0:
@@ -885,38 +899,89 @@ class InstrumentStore:
                 result.append(Subscription(requested, match["token"], exch, EXCHANGE_TYPES.get(exch, 1)))
         return result
 
-    def _build_subscriptions(self, rows: list[dict[str, Any]]) -> list[Subscription]:
-        subscriptions = []
-        index_tokens = {
-            "NIFTY": ("99926000", "NSE", 1),
-            "BANKNIFTY": ("99926009", "NSE", 1),
-            "FINNIFTY": ("99926037", "NSE", 1),
-            "MIDCPNIFTY": ("99926074", "NSE", 1),
-            "SENSEX": ("99919000", "BSE", 3),
-        }
-
-        for requested in self.symbols:
-            req_upper = requested.upper()
-            if req_upper in index_tokens:
-                tok, exch, etype = index_tokens[req_upper]
-                subscriptions.append(Subscription(req_upper, tok, exch, etype))
-                continue
-
-            # Check equities in rows
-            match = next((row for row in rows if clean(row.get("exch_seg")) == "NSE" and
-                          (clean(row.get("symbol")).upper() == f"{req_upper}-EQ" or clean(row.get("name")).upper() == req_upper)), None)
-
-            if match is not None:
-                token = clean(match.get("token"))
-                exch = clean(match.get("exch_seg")) or "NSE"
-                subscriptions.append(Subscription(req_upper, token, exch, EXCHANGE_TYPES.get(exch, 1)))
+    def _build_subscriptions(self, rows: list[dict[str, Any]], requested_symbols=None) -> list[Subscription]:
+        # Exact NFO symbols and NSE equities share the same subscription path.
+        today = datetime.now(ZoneInfo("Asia/Kolkata")).date()
+        cached_rows, cached_day, cached_index = getattr(self, "_subscription_index", (None, None, None))
+        if cached_rows is rows and cached_day == today:
+            by_symbol = cached_index
+        else:
+            by_symbol = {}
+            for row in rows:
+                segment, symbol = clean(row.get("exch_seg")), clean(row.get("symbol")).upper()
+                if segment == "NFO":
+                    try:
+                        expiry = datetime.strptime(clean(row.get("expiry")), "%d%b%Y").date()
+                    except ValueError:
+                        continue
+                    if expiry < datetime.now(timezone.utc).astimezone(ZoneInfo("Asia/Kolkata")).date():
+                        continue
+                    by_symbol[symbol] = row
+                elif segment == "NSE" and symbol.endswith("-EQ"):
+                    by_symbol[symbol] = row
+                    by_symbol[symbol[:-3]] = row
+            self._subscription_index = (rows, today, by_symbol)
+        indexes = {"NIFTY": ("99926000", "NSE"), "BANKNIFTY": ("99926009", "NSE"),
+                   "FINNIFTY": ("99926037", "NSE"), "MIDCPNIFTY": ("99926074", "NSE"),
+                   "SENSEX": ("99919000", "BSE")}
+        subscriptions = {}
+        for requested in (self.symbols if requested_symbols is None else requested_symbols):
+            symbol = resolve_canonical_symbol(requested)
+            if symbol in indexes:
+                token, segment = indexes[symbol]
             else:
-                # Check fallback
-                fb = next((item for item in FALLBACK_INSTRUMENT_MASTER if item["name"] == req_upper), None)
-                if fb:
-                    subscriptions.append(Subscription(req_upper, fb["token"], fb["exch_seg"], EXCHANGE_TYPES.get(fb["exch_seg"], 1)))
+                row = by_symbol.get(symbol) or by_symbol.get(requested.upper())
+                if row is None:
+                    row = next((r for r in FALLBACK_INSTRUMENT_MASTER if r["name"] == symbol and r["symbol"].endswith("-EQ")), None)
+                if row is None:
+                    continue
+                token, segment = clean(row.get("token")), clean(row.get("exch_seg"))
+                if segment == "NFO":
+                    symbol = clean(row.get("symbol")).upper()
+            if not token or segment not in EXCHANGE_TYPES:
+                continue
+            key = (token, EXCHANGE_TYPES[segment])
+            subscriptions[key] = Subscription(symbol, token, segment, key[1])
+        return list(subscriptions.values())
 
-        return subscriptions
+    def demanded_subscriptions(self, client) -> list[Subscription]:
+        # Demand expires when no screen/matcher requests the symbol for five minutes.
+        cutoff = int(time.time()) - 300
+        client.zremrangebyscore("market:quote:demand", "-inf", cutoff)
+        demand = client.zrevrangebyscore("market:quote:demand", "+inf", cutoff, start=0, num=900)
+        demand = [s.decode() if isinstance(s, bytes) else s for s in demand]
+        return self._build_subscriptions(self._rows, self.symbols + demand)
+
+
+def sync_demand_subscriptions(store, client, websocket) -> list[Subscription]:
+    desired = {(s.token, s.exchange_type): s for s in store.demanded_subscriptions(client)}
+    current = {(s.token, s.exchange_type): s for s in store.subscriptions()}
+    added = [s for k, s in desired.items() if k not in current]
+    removed = [s for k, s in current.items() if k not in desired]
+    def groups(items):
+        grouped = {}
+        for item in items:
+            grouped.setdefault(item.exchange_type, []).append(item.token)
+        return [{"exchangeType": k, "tokens": v} for k, v in grouped.items()]
+    # Install lookup before subscription so the first incoming tick is recognized.
+    with store._lock:
+        store._subscriptions = {**current, **desired}
+    try:
+        if removed:
+            websocket.unsubscribe("demand", 1, groups(removed))
+        if added:
+            websocket.subscribe("demand", 1, groups(added))
+    except Exception:
+        with store._lock:
+            store._subscriptions = current
+        websocket.input_request_dict = {1: {g["exchangeType"]: g["tokens"] for g in groups(current.values())}}
+        raise
+    with store._lock:
+        store._subscriptions = desired
+    # The installed SDK appends tokens and does not correctly prune unsubscribe
+    # state. Keep its reconnect snapshot equal to the actual desired subscriptions.
+    websocket.input_request_dict = {1: {g["exchangeType"]: g["tokens"] for g in groups(desired.values())}}
+    return added
 
 
 def publish_feed_state(
@@ -1245,6 +1310,7 @@ def run_feed(store: InstrumentStore, writer: QuoteWriter, control: FeedControl) 
     auth_token = session["data"]["jwtToken"]
     feed_token = smart_api.getfeedToken()
     websocket = SmartWebSocketV2(auth_token, api_key, client_id, feed_token)
+    websocket.input_request_dict = {}
     control.attach(websocket)
     if writer and getattr(writer, "client", None):
         publish_feed_state(writer.client, feed_provider="angel_one", feed_state="CONNECTING", is_synthetic=False)
@@ -1271,6 +1337,44 @@ def run_feed(store: InstrumentStore, writer: QuoteWriter, control: FeedControl) 
     except Exception as snap_err:
         print(f"market worker: initial snapshot error: {snap_err}", flush=True)
 
+    stopped = threading.Event()
+    connected = threading.Event()
+
+    snapshot_attempts = {}
+
+    def demand_loop():
+        while not stopped.wait(2):
+            if not connected.is_set():
+                continue
+            try:
+                sync_demand_subscriptions(store, writer.client, websocket)
+                # Refresh one missing/stale LTP per cycle. This also recovers CNC
+                # exits for illiquid symbols without weakening quote validation.
+                for item in store.subscriptions():
+                    if item.token.startswith("999"):
+                        continue
+                    if time.monotonic() - snapshot_attempts.get(item.symbol, 0) < 60:
+                        continue
+                    updated = writer.client.hget(f"market:quote:{item.symbol}", "updated_at")
+                    if updated:
+                        try:
+                            stamp = datetime.fromisoformat(updated.replace("Z", "+00:00"))
+                            if (datetime.now(timezone.utc) - stamp).total_seconds() < 90:
+                                continue
+                        except (ValueError, TypeError):
+                            pass
+                    trading_symbol = item.symbol if item.exchange_segment == "NFO" else item.symbol + "-EQ"
+                    snapshot_attempts[item.symbol] = time.monotonic()
+                    result = smart_api.ltpData(item.exchange_segment, trading_symbol, item.token)
+                    data = result.get("data") or {}
+                    if result.get("status") and float(data.get("ltp") or 0) > 0:
+                        if float(data.get("close") or 0) > 0:
+                            writer.benchmark_prices[item.symbol] = int(round(float(data["close"]) * 100))
+                        writer.write(item, int(round(float(data["ltp"]) * 100)), 0, source="angelone_live")
+                    break
+            except Exception as error:
+                print(f"market worker: demand subscription refresh failed: {error}", flush=True)
+
     def on_open(_wsapp: Any) -> None:
         if writer and getattr(writer, "client", None):
             publish_feed_state(writer.client, feed_provider="angel_one", feed_state="LIVE", is_synthetic=False)
@@ -1279,6 +1383,7 @@ def run_feed(store: InstrumentStore, writer: QuoteWriter, control: FeedControl) 
             grouped.setdefault(item.exchange_type, []).append(item.token)
         websocket.subscribe("stock-simulator", 1, [{"exchangeType": exchange_type, "tokens": tokens} for exchange_type, tokens in grouped.items()])
         control.opened()
+        connected.set()
         print(f"market worker: Angel One WebSocket connected! Subscribed to {len(store.subscriptions())} instruments", flush=True)
 
     def on_data(_wsapp: Any, message: dict[str, Any]) -> None:
@@ -1300,6 +1405,7 @@ def run_feed(store: InstrumentStore, writer: QuoteWriter, control: FeedControl) 
             publish_feed_state(writer.client, feed_provider="angel_one", feed_state="DISCONNECTED", is_synthetic=False)
 
     def on_close(_wsapp: Any) -> None:
+        connected.clear()
         print("market worker: Angel One WebSocket closed", flush=True)
         if writer and getattr(writer, "client", None):
             publish_feed_state(writer.client, feed_provider="angel_one", feed_state="DISCONNECTED", is_synthetic=False)
@@ -1308,9 +1414,11 @@ def run_feed(store: InstrumentStore, writer: QuoteWriter, control: FeedControl) 
     websocket.on_data = on_data
     websocket.on_error = on_error
     websocket.on_close = on_close
+    threading.Thread(target=demand_loop, daemon=True).start()
     try:
         websocket.connect()
     finally:
+        stopped.set()
         opened = control.healthy_connection_opened()
         control.detach(websocket)
     return opened

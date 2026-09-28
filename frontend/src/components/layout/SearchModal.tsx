@@ -6,7 +6,6 @@ import { useQuery } from "@tanstack/react-query";
 import {
   Search,
   X,
-  TrendingUp,
   Filter,
   Loader2,
   Check,
@@ -152,8 +151,8 @@ export default function SearchModal() {
       if (!debouncedQuery) return [];
       let segmentParam = "";
       if (segmentFilter === "EQUITY") segmentParam = "&segment=NSE";
-      else if (segmentFilter === "FUTURES") segmentParam = "&segment=FUTSTK";
-      else if (segmentFilter === "OPTIONS") segmentParam = "&segment=OPTSTK";
+      else if (segmentFilter === "FUTURES") segmentParam = "&segment=FUTURES";
+      else if (segmentFilter === "OPTIONS") segmentParam = "&segment=OPTIONS";
 
       try {
         const res = await apiFetch<StockSearchResult[]>(
@@ -176,13 +175,20 @@ export default function SearchModal() {
   );
   const marketQuotes = useMultiSymbolQuotes(searchResultSymbols);
 
-  // Prefetch live quotes for search results
+  // Retry as the worker subscribes to newly searched instruments.
   useEffect(() => {
-    if (apiResults && apiResults.length > 0) {
-      const syms = apiResults.map((r) => r.symbol);
-      fetchBatchQuotes(syms).catch(() => {});
-    }
-  }, [apiResults]);
+    if (!isSearchPaletteOpen || !searchResultSymbols.length) return;
+    let inFlight = false;
+    const refresh = async () => {
+      if (inFlight) return;
+      inFlight = true;
+      try { await fetchBatchQuotes(searchResultSymbols); }
+      finally { inFlight = false; }
+    };
+    void refresh();
+    const timer = setInterval(refresh, 5000);
+    return () => clearInterval(timer);
+  }, [isSearchPaletteOpen, searchResultSymbols]);
 
   // F&O Direct Buy/Sell order placement modal state
   const [fnoModalInstrument, setFnoModalInstrument] = useState<Instrument | null>(null);

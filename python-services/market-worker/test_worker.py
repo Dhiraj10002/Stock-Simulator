@@ -735,3 +735,51 @@ if __name__ == "__main__":
 
 
 
+
+
+class DemandSubscriptionRegressionTest(unittest.TestCase):
+    def setUp(self):
+        self.store = worker.InstrumentStore("", ["TCS"])
+        self.rows = [
+            {"symbol": "TCS-EQ", "name": "TCS", "exch_seg": "NSE", "token": "11536"},
+            {"symbol": "TCS29SEP991940CE", "name": "TCS", "exch_seg": "NFO", "token": "50001", "expiry": "29SEP2099"},
+            {"symbol": "TCS24SEP001940CE", "name": "TCS", "exch_seg": "NFO", "token": "50002", "expiry": "24SEP2000"},
+            {"symbol": "835TCSL27-N0", "name": "TCS", "exch_seg": "NSE", "token": "999"},
+        ]
+        self.store._rows = self.rows
+        self.store._subscriptions = {(s.token, s.exchange_type): s for s in self.store._build_subscriptions(self.rows)}
+
+    def test_exact_nfo_token_is_subscribed_without_expired_contracts_or_bonds(self):
+        subs = self.store._build_subscriptions(self.rows, [r["symbol"] for r in self.rows])
+        self.assertEqual({s.symbol for s in subs}, {"TCS", "TCS29SEP991940CE"})
+        option = next(s for s in subs if s.exchange_segment == "NFO")
+        self.assertEqual((option.token, option.exchange_type), ("50001", 2))
+
+    def test_demand_adds_and_removes_broker_subscription(self):
+        client = MagicMock()
+        socket = MagicMock()
+        client.zrevrangebyscore.return_value = ["TCS29SEP991940CE"]
+        added = worker.sync_demand_subscriptions(self.store, client, socket)
+        self.assertEqual([s.symbol for s in added], ["TCS29SEP991940CE"])
+        socket.subscribe.assert_called_once_with("demand", 1, [{"exchangeType": 2, "tokens": ["50001"]}])
+        self.assertIsNotNone(self.store.lookup("50001", 2))
+        # Repeated polling must not re-subscribe or duplicate SDK reconnect tokens.
+        worker.sync_demand_subscriptions(self.store, client, socket)
+        self.assertEqual(socket.subscribe.call_count, 1)
+        self.assertEqual(socket.input_request_dict[1][2], ["50001"])
+        client.zrevrangebyscore.return_value = []
+        worker.sync_demand_subscriptions(self.store, client, socket)
+        socket.unsubscribe.assert_called_once_with("demand", 1, [{"exchangeType": 2, "tokens": ["50001"]}])
+        self.assertIsNone(self.store.lookup("50001", 2))
+        self.assertIsNotNone(self.store.lookup("11536", 1))
+
+    def test_failed_subscribe_can_retry(self):
+        client, socket = MagicMock(), MagicMock()
+        client.zrevrangebyscore.return_value = ["TCS29SEP991940CE"]
+        socket.subscribe.side_effect = RuntimeError("disconnected")
+        with self.assertRaises(RuntimeError):
+            worker.sync_demand_subscriptions(self.store, client, socket)
+        self.assertIsNone(self.store.lookup("50001", 2))
+        socket.subscribe.side_effect = None
+        worker.sync_demand_subscriptions(self.store, client, socket)
+        self.assertIsNotNone(self.store.lookup("50001", 2))

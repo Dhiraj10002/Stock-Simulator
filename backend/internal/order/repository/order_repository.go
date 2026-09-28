@@ -10,7 +10,6 @@ import (
 	instrumentService "github.com/Dhiraj10002/Stock-Simulator/backend/internal/instrument/service"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/alias"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
-	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/product"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -175,14 +174,14 @@ func (r *OrderRepository) FindInstrument(symbol string) (*model.Instrument, erro
 	// 1. Dynamic alias resolution: check canonical symbol first if mapped
 	canonical := alias.ResolveCanonicalSymbol(clean)
 	if canonical != "" && canonical != clean {
-		err := database.GetDB().Where("UPPER(symbol) = ? OR UPPER(symbol) = ? OR UPPER(name) = ?", canonical, canonical+"-EQ", canonical).First(&instrument).Error
+		err := database.GetDB().Where("UPPER(symbol) = ? OR UPPER(symbol) = ? OR (UPPER(name) = ? AND instrument_type IN ('', 'EQ', 'EQUITY', 'INDEX', 'AMXIDX'))", canonical, canonical+"-EQ", canonical).First(&instrument).Error
 		if err == nil {
 			return &instrument, nil
 		}
 	}
 
 	// 2. Direct query: exact symbol match, with -EQ suffix, or exact name
-	err := database.GetDB().Where("UPPER(symbol) = ? OR UPPER(symbol) = ? OR UPPER(name) = ?", clean, clean+"-EQ", clean).First(&instrument).Error
+	err := database.GetDB().Where("UPPER(symbol) = ? OR UPPER(symbol) = ? OR (UPPER(name) = ? AND instrument_type IN ('', 'EQ', 'EQUITY', 'INDEX', 'AMXIDX'))", clean, clean+"-EQ", clean).First(&instrument).Error
 	if err == nil {
 		return &instrument, nil
 	}
@@ -190,7 +189,7 @@ func (r *OrderRepository) FindInstrument(symbol string) (*model.Instrument, erro
 	// 3. Reverse alias resolution: check any aliases that map to this symbol
 	aliases := alias.GetAliases(clean)
 	for _, a := range aliases {
-		err = database.GetDB().Where("UPPER(symbol) = ? OR UPPER(symbol) = ? OR UPPER(name) = ?", a, a+"-EQ", a).First(&instrument).Error
+		err = database.GetDB().Where("UPPER(symbol) = ? OR UPPER(symbol) = ? OR (UPPER(name) = ? AND instrument_type IN ('', 'EQ', 'EQUITY', 'INDEX', 'AMXIDX'))", a, a+"-EQ", a).First(&instrument).Error
 		if err == nil {
 			return &instrument, nil
 		}
@@ -198,6 +197,9 @@ func (r *OrderRepository) FindInstrument(symbol string) (*model.Instrument, erro
 
 	// 4. Default canonical instruments fallback (for fresh setups / initial boot)
 	for _, inst := range instrumentService.DefaultCanonicalInstruments {
+		if inst.ExchangeSegment == "NFO" {
+			continue
+		}
 		if strings.EqualFold(inst.Symbol, clean) || strings.EqualFold(inst.Symbol, clean+"-EQ") || strings.EqualFold(inst.Name, clean) {
 			cp := inst
 			return &cp, nil
@@ -206,11 +208,6 @@ func (r *OrderRepository) FindInstrument(symbol string) (*model.Instrument, erro
 			cp := inst
 			return &cp, nil
 		}
-	}
-
-	// 5. Synthetic F&O derivative contract fallback
-	if synth, synthErr := product.ParseSyntheticFNOContract(clean); synthErr == nil && synth != nil {
-		return synth, nil
 	}
 
 	return nil, err
