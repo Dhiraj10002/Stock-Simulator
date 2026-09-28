@@ -545,17 +545,21 @@ export default function SearchModal() {
                         {/* Price & Change % */}
                         <div className="text-right min-w-[75px]">
                           <div className="text-xs font-bold font-tabular text-slate-900 dark:text-slate-100">
-                            {formatPaise(item.basePricePaise ?? 0)}
+                            {item.basePricePaise && item.basePricePaise > 0
+                              ? formatPaise(item.basePricePaise)
+                              : "—"}
                           </div>
-                          <div
-                            className={`text-[11px] font-semibold font-tabular flex items-center justify-end gap-0.5 ${
-                              isProfit
-                                ? "text-emerald-600 dark:text-emerald-400"
-                                : "text-rose-600 dark:text-rose-400"
-                            }`}
-                          >
-                            <span>{formatPercent(item.dayChangePercent ?? 0)}</span>
-                          </div>
+                          {item.basePricePaise && item.basePricePaise > 0 ? (
+                            <div
+                              className={`text-[11px] font-semibold font-tabular flex items-center justify-end gap-0.5 ${
+                                isProfit
+                                  ? "text-emerald-600 dark:text-emerald-400"
+                                  : "text-rose-600 dark:text-rose-400"
+                              }`}
+                            >
+                              <span>{formatPercent(item.dayChangePercent ?? 0)}</span>
+                            </div>
+                          ) : null}
                         </div>
 
                         {/* Exchange Tag: [NFO], [NSE], [BSE] */}

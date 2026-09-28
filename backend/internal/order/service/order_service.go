@@ -38,6 +38,7 @@ type OrderService struct {
 	createOrderFunc     func(order *model.Order) error
 	activeSymbolsMu     sync.RWMutex
 	activeSymbols       map[string]int
+	activeOrders        map[string][]model.Order
 }
 
 func New(market *marketService.Service, cfg *config.Config) *OrderService {
@@ -46,6 +47,7 @@ func New(market *marketService.Service, cfg *config.Config) *OrderService {
 		market:        market,
 		rules:         product.FromConfig(cfg),
 		activeSymbols: make(map[string]int),
+		activeOrders:  make(map[string][]model.Order),
 	}
 	_ = svc.RebuildActiveSymbolsFromDB()
 	return svc
@@ -115,7 +117,17 @@ func (s *OrderService) Create(userID string, request dto.CreateOrderRequest) (*d
 		request.Type != model.OrderTypeSL && request.Type != model.OrderTypeSLM {
 		return nil, fmt.Errorf("invalid order type %q; must be MARKET, LIMIT, SL, or SL-M", request.Type)
 	}
-	request.Product = strings.ToUpper(strings.TrimSpace(request.Product))
+
+	// Normalize product aliases (e.g. CNC -> DELIVERY, MIS -> INTRADAY, F&O -> FNO)
+	switch strings.ToUpper(strings.TrimSpace(request.Product)) {
+	case "CNC", model.OrderProductDelivery:
+		request.Product = model.OrderProductDelivery
+	case "MIS", model.OrderProductIntraday:
+		request.Product = model.OrderProductIntraday
+	case model.OrderProductFNO, "F&O":
+		request.Product = model.OrderProductFNO
+	}
+
 	if !isSupportedProduct(request.Product) {
 		return nil, fmt.Errorf("unsupported order product %s", request.Product)
 	}
@@ -149,7 +161,7 @@ func (s *OrderService) Create(userID string, request dto.CreateOrderRequest) (*d
 		if err == nil && found != nil {
 			instrument = found
 		} else {
-			if isLiveMode {
+			if isLiveMode && request.Side == model.OrderSideBuy {
 				return nil, fmt.Errorf("%w: instrument %q not found in canonical instrument master (real F&O under LIVE mode permits only canonical DB instruments)", ErrInstrumentNotFound, request.Symbol)
 			}
 			synth, synthErr := product.ParseSyntheticFNOContract(request.Symbol)
@@ -164,7 +176,7 @@ func (s *OrderService) Create(userID string, request dto.CreateOrderRequest) (*d
 		if err == nil && found != nil {
 			instrument = found
 		} else {
-			if isLiveMode {
+			if isLiveMode && request.Side == model.OrderSideBuy {
 				return nil, fmt.Errorf("%w: instrument %q not found in canonical instrument master (real F&O under LIVE mode permits only canonical DB instruments)", ErrInstrumentNotFound, request.Symbol)
 			}
 			synth, synthErr := product.ParseSyntheticFNOContract(request.Symbol)
@@ -251,7 +263,17 @@ func (s *OrderService) Create(userID string, request dto.CreateOrderRequest) (*d
 		// prevents a market order becoming an unfillable pending order.
 		redisStart := time.Now()
 		if _, err := s.executableQuote(request.Symbol); err != nil {
-			return nil, err
+			isExitOrder := request.Side == model.OrderSideSell && request.Product == model.OrderProductDelivery
+			if isExitOrder && (errors.Is(err, marketService.ErrQuoteStale) || errors.Is(err, marketService.ErrQuoteIneligible)) {
+				// Relax for CNC exit if quote exists with valid price
+				if q, qErr := s.currentQuote(request.Symbol); qErr == nil && q != nil && q.PricePaise > 0 {
+					// Proceed with exit
+				} else {
+					return nil, err
+				}
+			} else {
+				return nil, err
+			}
 		}
 		redisDuration = time.Since(redisStart)
 	}
@@ -349,7 +371,7 @@ func (s *OrderService) Create(userID string, request dto.CreateOrderRequest) (*d
 
 	// A limit or stop order may already be marketable/triggered at creation.
 	if order.Type != model.OrderTypeMarket {
-		s.RegisterActiveSymbol(order.Symbol)
+		s.RegisterActiveOrder(*order)
 	}
 	if err := s.MatchSymbol(request.Symbol); err != nil {
 		return nil, err
@@ -370,6 +392,23 @@ func (s *OrderService) RegisterActiveSymbol(symbol string) {
 	s.activeSymbols[sym]++
 }
 
+func (s *OrderService) RegisterActiveOrder(order model.Order) {
+	sym := strings.ToUpper(strings.TrimSpace(order.Symbol))
+	if sym == "" {
+		return
+	}
+	s.activeSymbolsMu.Lock()
+	defer s.activeSymbolsMu.Unlock()
+	if s.activeSymbols == nil {
+		s.activeSymbols = make(map[string]int)
+	}
+	if s.activeOrders == nil {
+		s.activeOrders = make(map[string][]model.Order)
+	}
+	s.activeSymbols[sym]++
+	s.activeOrders[sym] = append(s.activeOrders[sym], order)
+}
+
 func (s *OrderService) UnregisterActiveSymbol(symbol string) {
 	sym := strings.ToUpper(strings.TrimSpace(symbol))
 	if sym == "" {
@@ -377,10 +416,12 @@ func (s *OrderService) UnregisterActiveSymbol(symbol string) {
 	}
 	s.activeSymbolsMu.Lock()
 	defer s.activeSymbolsMu.Unlock()
-	if s.activeSymbols == nil {
-		return
+	if s.activeSymbols != nil {
+		delete(s.activeSymbols, sym)
 	}
-	delete(s.activeSymbols, sym)
+	if s.activeOrders != nil {
+		delete(s.activeOrders, sym)
+	}
 }
 
 func (s *OrderService) HasActiveOrders(symbol string) bool {
@@ -396,19 +437,47 @@ func (s *OrderService) HasActiveOrders(symbol string) bool {
 	return s.activeSymbols[sym] > 0
 }
 
+func (s *OrderService) refreshActiveOrdersForSymbol(symbol string) {
+	sym := strings.ToUpper(strings.TrimSpace(symbol))
+	if sym == "" {
+		return
+	}
+	orders, err := s.repo.ListActiveOrders(sym)
+	s.activeSymbolsMu.Lock()
+	defer s.activeSymbolsMu.Unlock()
+	if err != nil || len(orders) == 0 {
+		if s.activeSymbols != nil {
+			delete(s.activeSymbols, sym)
+		}
+		if s.activeOrders != nil {
+			delete(s.activeOrders, sym)
+		}
+		return
+	}
+	if s.activeSymbols == nil {
+		s.activeSymbols = make(map[string]int)
+	}
+	if s.activeOrders == nil {
+		s.activeOrders = make(map[string][]model.Order)
+	}
+	s.activeSymbols[sym] = len(orders)
+	s.activeOrders[sym] = orders
+}
+
 func (s *OrderService) RebuildActiveSymbolsFromDB() error {
 	db := database.GetDB()
 	if db == nil {
 		return nil
 	}
-	var symbols []string
+	var orders []model.Order
 	err := db.Model(&model.Order{}).
 		Where("status IN ?", []string{
 			model.OrderStatusPending,
 			model.OrderStatusOpen,
 			model.OrderStatusTriggerPending,
 		}).
-		Pluck("DISTINCT symbol", &symbols).Error
+		Order("created_at ASC").
+		Find(&orders).Error
 	if err != nil {
 		return err
 	}
@@ -416,10 +485,12 @@ func (s *OrderService) RebuildActiveSymbolsFromDB() error {
 	s.activeSymbolsMu.Lock()
 	defer s.activeSymbolsMu.Unlock()
 	s.activeSymbols = make(map[string]int)
-	for _, sym := range symbols {
-		cleaned := strings.ToUpper(strings.TrimSpace(sym))
+	s.activeOrders = make(map[string][]model.Order)
+	for _, order := range orders {
+		cleaned := strings.ToUpper(strings.TrimSpace(order.Symbol))
 		if cleaned != "" {
-			s.activeSymbols[cleaned] = 1
+			s.activeSymbols[cleaned]++
+			s.activeOrders[cleaned] = append(s.activeOrders[cleaned], order)
 		}
 	}
 	return nil
@@ -455,6 +526,8 @@ func calculateCircuitLimits(refPricePaise int64, product string) (lowerCircuit i
 // stored PricePaise before settling.
 func (s *OrderService) RunMatcher(ctx context.Context) {
 	_ = s.RebuildActiveSymbolsFromDB()
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
 	for {
 		if ctx.Err() != nil {
 			return
@@ -466,6 +539,8 @@ func (s *OrderService) RunMatcher(ctx context.Context) {
 			case <-ctx.Done():
 				_ = subscription.Close()
 				return
+			case <-ticker.C:
+				_ = s.RebuildActiveSymbolsFromDB()
 			case message, open := <-channel:
 				if !open {
 					_ = subscription.Close()
@@ -506,6 +581,34 @@ func (s *OrderService) MatchSymbol(symbol string) error {
 	if err != nil {
 		return nil // a zero or stale tick must not trigger settlement
 	}
+
+	s.activeSymbolsMu.RLock()
+	cachedOrders, hasCached := s.activeOrders[symbol]
+	s.activeSymbolsMu.RUnlock()
+
+	// If we have cached orders in memory, do an ultra-fast check to see if ANY order can trigger/fill.
+	// This prevents hammering remote Neon DB with 3-second queries on every incoming tick!
+	if hasCached && len(cachedOrders) > 0 {
+		hasActionable := false
+		for _, order := range cachedOrders {
+			if order.Status == model.OrderStatusTriggerPending {
+				if (order.Side == model.OrderSideBuy && quote.PricePaise >= order.TriggerPricePaise) ||
+					(order.Side == model.OrderSideSell && quote.PricePaise <= order.TriggerPricePaise) {
+					hasActionable = true
+					break
+				}
+			} else if order.Status == model.OrderStatusOpen || order.Status == model.OrderStatusPending {
+				if limitSatisfied(&order, quote.PricePaise) {
+					hasActionable = true
+					break
+				}
+			}
+		}
+		if !hasActionable {
+			return nil
+		}
+	}
+
 	orders, err := s.repo.ListActiveOrders(symbol)
 	if err != nil {
 		return err
@@ -514,6 +617,8 @@ func (s *OrderService) MatchSymbol(symbol string) error {
 		s.UnregisterActiveSymbol(symbol)
 		return nil
 	}
+
+	executedAny := false
 	for _, order := range orders {
 		if order.Status == model.OrderStatusTriggerPending {
 			isTriggered := false
@@ -528,21 +633,36 @@ func (s *OrderService) MatchSymbol(symbol string) error {
 					// SL-M: Triggers immediately into market execution
 					_ = s.repo.TriggerOrder(order.UUID, model.OrderStatusOpen)
 					_ = s.Execute(order.UserUUID.String(), order.UUID.String())
+					executedAny = true
 				} else if order.Type == model.OrderTypeSL {
 					// SL: Becomes an OPEN limit order
 					_ = s.repo.TriggerOrder(order.UUID, model.OrderStatusOpen)
 					order.Status = model.OrderStatusOpen
 					if limitSatisfied(&order, quote.PricePaise) {
 						_ = s.Execute(order.UserUUID.String(), order.UUID.String())
+						executedAny = true
 					}
 				}
 			}
 		} else if order.Status == model.OrderStatusOpen || order.Status == model.OrderStatusPending {
 			if limitSatisfied(&order, quote.PricePaise) {
 				_ = s.Execute(order.UserUUID.String(), order.UUID.String())
+				executedAny = true
 			}
 		}
 	}
+
+	if executedAny {
+		s.refreshActiveOrdersForSymbol(symbol)
+	} else {
+		s.activeSymbolsMu.Lock()
+		if s.activeOrders == nil {
+			s.activeOrders = make(map[string][]model.Order)
+		}
+		s.activeOrders[symbol] = orders
+		s.activeSymbolsMu.Unlock()
+	}
+
 	return nil
 }
 
@@ -589,7 +709,16 @@ func (s *OrderService) Cancel(userID, orderID string) error {
 		return fmt.Errorf("invalid order identity")
 	}
 
-	return s.repo.Cancel(userUUID, orderUUID)
+	existing, _ := s.repo.FindByUUID(userUUID, orderUUID)
+
+	if err := s.repo.Cancel(userUUID, orderUUID); err != nil {
+		return err
+	}
+
+	if existing != nil {
+		s.refreshActiveOrdersForSymbol(existing.Symbol)
+	}
+	return nil
 }
 
 func (s *OrderService) ClearHistory(userID string) (int64, error) {
@@ -598,6 +727,36 @@ func (s *OrderService) ClearHistory(userID string) (int64, error) {
 		return 0, fmt.Errorf("invalid user identity")
 	}
 	return s.repo.ClearHistory(userUUID)
+}
+
+func (s *OrderService) SquareOffPosition(userUUID, posUUID uuid.UUID) (*dto.OrderResponse, error) {
+	if database.GetDB() == nil {
+		return nil, errors.New("database not connected")
+	}
+
+	var position model.Position
+	if err := database.GetDB().Where("uuid = ? AND user_uuid = ?", posUUID, userUUID).First(&position).Error; err != nil {
+		return nil, fmt.Errorf("position not found: %w", err)
+	}
+
+	if position.Quantity == 0 {
+		return nil, fmt.Errorf("position is already closed")
+	}
+
+	closeSide := model.OrderSideSell
+	if position.Quantity < 0 {
+		closeSide = model.OrderSideBuy
+	}
+
+	req := dto.CreateOrderRequest{
+		Symbol:   position.Symbol,
+		Side:     closeSide,
+		Type:     model.OrderTypeMarket,
+		Product:  position.Product,
+		Quantity: abs(position.Quantity),
+	}
+
+	return s.Create(userUUID.String(), req)
 }
 
 func toResponse(order *model.Order) *dto.OrderResponse {

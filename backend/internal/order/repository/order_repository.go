@@ -10,6 +10,7 @@ import (
 	instrumentService "github.com/Dhiraj10002/Stock-Simulator/backend/internal/instrument/service"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/alias"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/product"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -29,6 +30,9 @@ func (r *OrderRepository) Create(order *model.Order) error {
 // CreateDeliverySell verifies that the user holds enough free shares
 // (position quantity minus open/pending sell orders) and creates the order atomically.
 func (r *OrderRepository) CreateDeliverySell(order *model.Order) error {
+	if database.GetDB() == nil {
+		return errors.New("database not connected")
+	}
 	return database.GetDB().Transaction(func(tx *gorm.DB) error {
 		// Lock wallet first to preserve uniform per-user serialization hierarchy
 		var wallet model.Wallet
@@ -73,6 +77,9 @@ func (r *OrderRepository) CreateDeliverySell(order *model.Order) error {
 }
 
 func (r *OrderRepository) CreateWithReservation(order *model.Order, reservation int64) error {
+	if database.GetDB() == nil {
+		return errors.New("database not connected")
+	}
 	return database.GetDB().Transaction(func(tx *gorm.DB) error {
 		var wallet model.Wallet
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_uuid = ?", order.UserUUID).First(&wallet).Error; err != nil {
@@ -199,6 +206,11 @@ func (r *OrderRepository) FindInstrument(symbol string) (*model.Instrument, erro
 			cp := inst
 			return &cp, nil
 		}
+	}
+
+	// 5. Synthetic F&O derivative contract fallback
+	if synth, synthErr := product.ParseSyntheticFNOContract(clean); synthErr == nil && synth != nil {
+		return synth, nil
 	}
 
 	return nil, err

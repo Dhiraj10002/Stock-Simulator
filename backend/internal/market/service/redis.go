@@ -10,6 +10,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/cache"
@@ -47,6 +48,10 @@ type Service struct {
 	db                *gorm.DB
 	workerURL         string
 	httpClient        *http.Client
+
+	equityUniverseCache  []EquityUniverseItem
+	equityUniverseExpiry time.Time
+	equityUniverseMu     sync.RWMutex
 }
 
 func (s *Service) SetAllowSeededQuotes(allow bool) {
@@ -228,9 +233,85 @@ func (s *Service) SetQuote(symbol string, pricePaise int64, volume int64) error 
 	}).Err()
 }
 
-// CachedQuote returns the quote from Redis, identical to CurrentQuote.
+// CachedQuote returns the quote from Redis, with fallback to derived F&O quote.
+// Unlike CurrentQuote which strictly validates staleness for execution, CachedQuote
+// returns the latest cached quote data for display and search even if stale.
 func (s *Service) CachedQuote(symbol string) (*dto.QuoteResponse, error) {
-	return s.CurrentQuote(symbol)
+	q, err := s.CurrentQuote(symbol)
+	if err == nil && q != nil && q.PricePaise > 0 {
+		return q, nil
+	}
+	if errors.Is(err, ErrQuoteStale) {
+		if cq, cerr := s.rawCachedQuote(symbol); cerr == nil && cq != nil && cq.PricePaise > 0 {
+			return cq, nil
+		}
+	}
+	if dq, derr := s.DerivedFNOQuote(symbol); derr == nil && dq != nil && dq.PricePaise > 0 {
+		return dq, nil
+	}
+	if q != nil && q.PricePaise > 0 {
+		return q, nil
+	}
+	return nil, err
+}
+
+func (s *Service) rawCachedQuote(symbol string) (*dto.QuoteResponse, error) {
+	if s == nil || s.client == nil {
+		return nil, ErrQuoteUnavailable
+	}
+	ctx, cancel := cache.Context(context.Background(), s.timeout)
+	defer cancel()
+
+	values, err := s.client.HGetAll(ctx, quoteKey(symbol)).Result()
+	if err != nil || len(values) == 0 {
+		canonical := alias.ResolveCanonicalSymbol(symbol)
+		if canonical != "" && canonical != symbol {
+			values, _ = s.client.HGetAll(ctx, quoteKey(canonical)).Result()
+		}
+	}
+	if len(values) == 0 {
+		return nil, ErrQuoteNotFound
+	}
+	price, err := strconv.ParseInt(values["price_paise"], 10, 64)
+	if err != nil || price <= 0 {
+		return nil, fmt.Errorf("invalid stored quote")
+	}
+	var changePaise int64
+	var changePercent float64
+	var volume int64
+	if cp, ok := values["change_paise"]; ok {
+		changePaise, _ = strconv.ParseInt(cp, 10, 64)
+	}
+	if cp, ok := values["change_percent"]; ok {
+		changePercent, _ = strconv.ParseFloat(cp, 64)
+	}
+	if v, ok := values["volume"]; ok {
+		volume, _ = strconv.ParseInt(v, 10, 64)
+	}
+	return &dto.QuoteResponse{
+		Symbol:        symbol,
+		PricePaise:    price,
+		ChangePaise:   changePaise,
+		ChangePercent: changePercent,
+		Volume:        volume,
+		Source:        values["source"],
+		UpdatedAt:     values["updated_at"],
+	}, nil
+}
+
+// BatchQuotes retrieves quotes for an array of symbols in a single call.
+func (s *Service) BatchQuotes(symbols []string) map[string]*dto.QuoteResponse {
+	results := make(map[string]*dto.QuoteResponse)
+	for _, sym := range symbols {
+		clean := strings.ToUpper(strings.TrimSpace(sym))
+		if clean == "" {
+			continue
+		}
+		if q, err := s.CachedQuote(clean); err == nil && q != nil && q.PricePaise > 0 {
+			results[clean] = q
+		}
+	}
+	return results
 }
 
 // CurrentQuote retrieves the authoritative quote for a symbol directly and only from Redis.
@@ -256,10 +337,9 @@ func (s *Service) CurrentQuote(symbol string) (*dto.QuoteResponse, error) {
 			return nil, err
 		}
 		if !found {
-			// In LIVE feed mode: ONLY canonical DB instruments permitted.
-			// In SYNTHETIC feed mode: Synthetic F&O contracts permitted.
-			if mode == dto.FeedModeSynthetic && product.IsSyntheticContract(symbol) {
-				// Synthetic contract permitted in synthetic mode
+			// Permitted synthetic F&O contracts can proceed to derivative quote derivation
+			if product.IsSyntheticContract(symbol) {
+				// Synthetic contract permitted
 			} else {
 				return nil, fmt.Errorf("%w: %s (real F&O in live mode permits only canonical DB instruments)", ErrInstrumentNotFound, symbol)
 			}
@@ -303,7 +383,7 @@ func (s *Service) CurrentQuote(symbol string) (*dto.QuoteResponse, error) {
 	}
 
 	normSource := dto.NormalizeQuoteSource(source)
-	if mode == dto.FeedModeLive && normSource != dto.QuoteSourceAngelOneLive {
+	if mode == dto.FeedModeLive && normSource != dto.QuoteSourceAngelOneLive && normSource != dto.QuoteSourceFNOEngine {
 		return nil, fmt.Errorf("%w: live feed mode requires angelone_live source, got %q", ErrQuoteIneligible, source)
 	}
 	if mode == dto.FeedModeSynthetic && normSource == dto.QuoteSourceAngelOneLive {
@@ -364,7 +444,14 @@ func IsSeededSource(source string) bool {
 func (s *Service) ExecutableQuote(symbol string) (*dto.QuoteResponse, error) {
 	quote, err := s.CurrentQuote(symbol)
 	if err != nil {
-		return nil, err
+		// For F&O derivatives without direct Redis quotes, try deriving from underlying
+		derivedQuote, derivedErr := s.DerivedFNOQuote(symbol)
+		if derivedErr == nil && derivedQuote != nil && derivedQuote.PricePaise > 0 {
+			quote = derivedQuote
+			err = nil
+		} else {
+			return nil, err
+		}
 	}
 	allowSeeded := s != nil && s.allowSeededQuotes
 	mode := s.FeedMode()

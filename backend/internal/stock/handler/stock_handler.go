@@ -175,6 +175,9 @@ func (h *Handler) Search(c *gin.Context) {
 			if q, err := h.market.CachedQuote(instrument.Symbol); err == nil && q != nil && q.PricePaise > 0 {
 				pricePaise = q.PricePaise
 				changePct = q.ChangePercent
+			} else if dq, derr := h.market.DerivedFNOQuote(instrument.Symbol); derr == nil && dq != nil && dq.PricePaise > 0 {
+				pricePaise = dq.PricePaise
+				changePct = dq.ChangePercent
 			}
 		}
 

@@ -55,26 +55,52 @@ var DefaultEquityUniverse = []EquityUniverseItem{
 // GetEquityUniverse resolves the active equity universe from a custom provider,
 // the canonical instruments database table, or DefaultEquityUniverse as a fallback.
 func (s *Service) GetEquityUniverse(ctx context.Context) ([]EquityUniverseItem, error) {
-	if s != nil && s.equityProvider != nil {
+	if s == nil {
+		return DefaultEquityUniverse, nil
+	}
+
+	s.equityUniverseMu.RLock()
+	if s.equityUniverseCache != nil && time.Now().Before(s.equityUniverseExpiry) {
+		cached := s.equityUniverseCache
+		s.equityUniverseMu.RUnlock()
+		return cached, nil
+	}
+	s.equityUniverseMu.RUnlock()
+
+	s.equityUniverseMu.Lock()
+	defer s.equityUniverseMu.Unlock()
+
+	// Double check cache under write lock
+	if s.equityUniverseCache != nil && time.Now().Before(s.equityUniverseExpiry) {
+		return s.equityUniverseCache, nil
+	}
+
+	if s.equityProvider != nil {
 		items, err := s.equityProvider(ctx)
 		if err == nil && len(items) > 0 {
+			s.equityUniverseCache = items
+			s.equityUniverseExpiry = time.Now().Add(5 * time.Minute)
 			return items, nil
 		}
 	}
 
-	if s != nil && s.db != nil {
+	if s.db != nil {
 		var dbItems []EquityUniverseItem
 		err := s.db.WithContext(ctx).
 			Table("instruments").
-			Select("symbol, name, exchange").
-			Where("exchange_segment = ? AND (instrument_type = ? OR instrument_type = ? OR instrument_type = '') AND active = ?", "NSE", "EQUITY", "EQ", true).
+			Select("symbol, name, COALESCE(NULLIF(exchange, ''), exchange_segment) as exchange").
+			Where("exchange_segment = ? AND (instrument_type = ? OR instrument_type = ? OR instrument_type = '') AND (active = ? OR active IS NULL)", "NSE", "EQUITY", "EQ", true).
 			Order("symbol ASC").
 			Find(&dbItems).Error
 		if err == nil && len(dbItems) > 0 {
+			s.equityUniverseCache = dbItems
+			s.equityUniverseExpiry = time.Now().Add(5 * time.Minute)
 			return dbItems, nil
 		}
 	}
 
+	s.equityUniverseCache = DefaultEquityUniverse
+	s.equityUniverseExpiry = time.Now().Add(5 * time.Minute)
 	return DefaultEquityUniverse, nil
 }
 

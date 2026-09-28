@@ -324,25 +324,31 @@ export default function PortfolioPage() {
   // Square off position
   const handleSquareOff = async (pos: Position) => {
     if (!token) return;
-    const closeSide = pos.quantity > 0 ? "SELL" : "BUY";
     try {
-      const res = await fetch(`${apiUrl}/orders`, {
+      // Use dedicated square-off endpoint if position has UUID, fallback to market order
+      const endpoint = pos.uuid
+        ? `${apiUrl}/portfolio/positions/${pos.uuid}/squareoff`
+        : `${apiUrl}/orders`;
+      const closeSide = pos.quantity > 0 ? "SELL" : "BUY";
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          symbol: pos.symbol,
-          side: closeSide,
-          type: "MARKET",
-          product: pos.product,
-          quantity: Math.abs(pos.quantity),
-        }),
+        body: pos.uuid
+          ? undefined
+          : JSON.stringify({
+              symbol: pos.symbol,
+              side: closeSide,
+              type: "MARKET",
+              product: pos.product,
+              quantity: Math.abs(pos.quantity),
+            }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        const errMsg = data.error || `Failed to square off position (${res.status})`;
+        const errMsg = data.message || data.error || `Failed to square off position (${res.status})`;
         alert(errMsg);
         return;
       }
@@ -365,7 +371,7 @@ export default function PortfolioPage() {
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        const errMsg = data.error || `Failed to square off MIS positions (${res.status})`;
+        const errMsg = data.message || data.error || `Failed to square off MIS positions (${res.status})`;
         alert(errMsg);
         return;
       }
@@ -390,13 +396,13 @@ export default function PortfolioPage() {
           symbol: holding.symbol,
           side: "SELL",
           type: "MARKET",
-          product: "CNC",
+          product: "DELIVERY",
           quantity: holding.quantity,
         }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        const errMsg = data.error || `Failed to place exit order (${res.status})`;
+        const errMsg = data.message || data.error || `Failed to place exit order (${res.status})`;
         alert(errMsg);
         return;
       }

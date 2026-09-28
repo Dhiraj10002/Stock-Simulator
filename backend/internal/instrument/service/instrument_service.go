@@ -269,7 +269,7 @@ func (s *Service) List(query, exchange, instrumentType, underlying string, activ
 
 	tx := db.Model(&model.Instrument{})
 	if activeOnly {
-		tx = tx.Where("active = ?", true)
+		tx = tx.Where("active = ? OR active IS NULL", true)
 	}
 	if exchange != "" && exchange != "ALL" {
 		tx = tx.Where("exchange = ? OR exchange_segment = ?", exchange, exchange)

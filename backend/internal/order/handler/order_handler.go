@@ -152,3 +152,23 @@ func (h *OrderHandler) ClearHistory(c *gin.Context) {
 		"deleted_count": deletedCount,
 	})
 }
+
+func (h *OrderHandler) SquareOffPosition(c *gin.Context) {
+	userID := c.GetString("user_id")
+	userUUID, err := uuid.Parse(userID)
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, "Invalid user identity", nil)
+		return
+	}
+	posUUID, err := uuid.Parse(c.Param("uuid"))
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, "Invalid position ID", nil)
+		return
+	}
+	order, err := h.service.SquareOffPosition(userUUID, posUUID)
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error(), nil)
+		return
+	}
+	response.Success(c, http.StatusOK, "Position squared off successfully", order)
+}

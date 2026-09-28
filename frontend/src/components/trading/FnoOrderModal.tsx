@@ -62,9 +62,13 @@ export default function FnoOrderModal({
 
   const apiUrl = API_URL;
 
-  // When instrument or initialSide changes, reset defaults
+  // Live price state: fetched from backend when initial price is unavailable
+  const [liveLtpPaise, setLiveLtpPaise] = React.useState<number>(0);
+
+  // When instrument or initialSide changes, reset defaults and fetch live quote if needed
   React.useEffect(() => {
     if (instrument) {
+      setLiveLtpPaise(0);
       queueMicrotask(() => {
         setFeedback(null);
         setLots(1);
@@ -74,6 +78,19 @@ export default function FnoOrderModal({
         const ltp = ((instrument.basePricePaise ?? 0) / 100).toFixed(2);
         setLimitPrice(ltp);
       });
+
+      // Fetch live quote from backend if initial price is zero/unavailable
+      if (!instrument.basePricePaise || instrument.basePricePaise <= 0) {
+        fetch(`${API_URL}/market/quotes/${encodeURIComponent(instrument.symbol)}`)
+          .then((res) => (res.ok ? res.json() : null))
+          .then((body) => {
+            if (body?.success && body?.data?.price_paise > 0) {
+              setLiveLtpPaise(body.data.price_paise);
+              setLimitPrice((body.data.price_paise / 100).toFixed(2));
+            }
+          })
+          .catch(() => {});
+      }
     }
   }, [instrument, initialSide]);
 
@@ -81,7 +98,8 @@ export default function FnoOrderModal({
 
   const lotSize = instrument.lotSize && instrument.lotSize > 0 ? instrument.lotSize : 1;
   const totalQuantity = lots * lotSize;
-  const ltpRupees = (instrument.basePricePaise ?? 0) / 100;
+  const effectivePricePaise = (instrument.basePricePaise && instrument.basePricePaise > 0) ? instrument.basePricePaise : liveLtpPaise;
+  const ltpRupees = effectivePricePaise / 100;
   const activePrice =
     orderType === "LIMIT" && parseFloat(limitPrice) > 0
       ? parseFloat(limitPrice)

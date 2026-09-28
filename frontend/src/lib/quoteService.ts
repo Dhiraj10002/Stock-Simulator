@@ -126,7 +126,50 @@ export async function fetchBatchQuotes(
     return results;
   }
 
-  // Fetch in chunks of 8 to avoid overwhelming the HTTP connection pool
+  // First, attempt single batch API request
+  try {
+    const res = await fetch(`${API_URL}/market/quotes/batch`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ symbols: toFetch }),
+    });
+    if (res.ok) {
+      const body = await res.json();
+      if (body?.success && body?.data) {
+        const batchData = body.data as Record<string, Quote>;
+        const remainingToFetch: string[] = [];
+
+        for (const sym of toFetch) {
+          const q = batchData[sym];
+          if (q && q.price_paise > 0) {
+            quoteCache.set(sym, {
+              quote: q,
+              expiresAt: Date.now() + CACHE_TTL_MS,
+            });
+            useMarketStore.getState().updateQuote(q);
+            results[sym] = q;
+          } else {
+            remainingToFetch.push(sym);
+          }
+        }
+
+        if (remainingToFetch.length === 0) {
+          return results;
+        }
+        // Only fetch unresolved symbols individually if needed
+        toFetch.length = 0;
+        toFetch.push(...remainingToFetch);
+      }
+    }
+  } catch (err) {
+    console.warn("[quoteService] Batch quote fetch failed, falling back to chunked requests:", err);
+  }
+
+  if (toFetch.length === 0) {
+    return results;
+  }
+
+  // Fetch remaining in chunks of 8
   const CHUNK_SIZE = 8;
   for (let i = 0; i < toFetch.length; i += CHUNK_SIZE) {
     const chunk = toFetch.slice(i, i + CHUNK_SIZE);

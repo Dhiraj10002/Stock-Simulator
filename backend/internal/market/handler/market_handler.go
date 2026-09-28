@@ -33,7 +33,18 @@ func (h *Handler) SetWorkerURL(workerURL string) {
 }
 
 func (h *Handler) Quote(c *gin.Context) {
-	quote, err := h.service.CurrentQuote(c.Param("symbol"))
+	symbol := c.Param("symbol")
+	quote, err := h.service.CurrentQuote(symbol)
+	if err != nil {
+		// For quote-not-found or instrument-not-found errors, try deriving F&O price from underlying
+		if errors.Is(err, service.ErrQuoteNotFound) || errors.Is(err, service.ErrInstrumentNotFound) || errors.Is(err, service.ErrQuoteStale) {
+			derivedQuote, derivedErr := h.service.DerivedFNOQuote(symbol)
+			if derivedErr == nil && derivedQuote != nil && derivedQuote.PricePaise > 0 {
+				quote = derivedQuote
+				err = nil
+			}
+		}
+	}
 	if err != nil {
 		if errors.Is(err, service.ErrInstrumentNotFound) {
 			response.Error(c, http.StatusNotFound, "Instrument not found in canonical master", "INSTRUMENT_NOT_FOUND")
@@ -67,6 +78,36 @@ func (h *Handler) Quote(c *gin.Context) {
 		quote.UpperCircuitPaise = quote.PricePaise + band
 	}
 	response.Success(c, http.StatusOK, "Market quote retrieved successfully", quote)
+}
+
+type BatchQuoteRequest struct {
+	Symbols []string `json:"symbols"`
+}
+
+func (h *Handler) BatchQuotes(c *gin.Context) {
+	var symbols []string
+
+	if raw := c.Query("symbols"); raw != "" {
+		for _, s := range strings.Split(raw, ",") {
+			s = strings.TrimSpace(s)
+			if s != "" {
+				symbols = append(symbols, s)
+			}
+		}
+	} else if c.Request.ContentLength > 0 {
+		var req BatchQuoteRequest
+		if err := c.ShouldBindJSON(&req); err == nil {
+			symbols = req.Symbols
+		}
+	}
+
+	if len(symbols) == 0 {
+		response.Success(c, http.StatusOK, "Batch quotes retrieved successfully", gin.H{})
+		return
+	}
+
+	quotes := h.service.BatchQuotes(symbols)
+	response.Success(c, http.StatusOK, "Batch quotes retrieved successfully", quotes)
 }
 
 func (h *Handler) History(c *gin.Context) {

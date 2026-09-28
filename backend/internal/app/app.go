@@ -14,6 +14,7 @@ import (
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/router"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/pkg/logger"
+	"gorm.io/gorm"
 )
 
 type App struct{}
@@ -84,7 +85,13 @@ func (a *App) RunWithContext(ctx context.Context) error {
 			_ = database.GetDB().AutoMigrate(&model.RefreshSession{})
 			logger.Info("Auto-migrated RefreshSession model (JTI column)")
 		}
+		if !database.GetDB().Migrator().HasColumn(&model.Instrument{}, "Active") || !database.GetDB().Migrator().HasColumn(&model.Instrument{}, "Exchange") {
+			_ = database.GetDB().AutoMigrate(&model.Instrument{})
+			logger.Info("Auto-migrated Instrument model (Exchange & Active columns)")
+		}
 	}
+
+	ensurePerformanceIndexes(database.GetDB())
 
 	// Setup Router with worker context
 	r := router.Setup(workerCtx, cfg)
@@ -126,3 +133,22 @@ func (a *App) RunWithContext(ctx context.Context) error {
 	logger.Info("HTTP server gracefully stopped")
 	return nil
 }
+
+func ensurePerformanceIndexes(db *gorm.DB) {
+	if db == nil {
+		return
+	}
+	indexes := []string{
+		"CREATE INDEX IF NOT EXISTS idx_orders_symbol_status_created ON orders (symbol, status, created_at ASC)",
+		"CREATE INDEX IF NOT EXISTS idx_orders_user_created ON orders (user_uuid, created_at DESC)",
+		"CREATE INDEX IF NOT EXISTS idx_positions_user_symbol ON positions (user_uuid, symbol)",
+		"CREATE INDEX IF NOT EXISTS idx_positions_user_qty ON positions (user_uuid, quantity)",
+		"CREATE INDEX IF NOT EXISTS idx_trades_user_executed ON trades (user_uuid, executed_at DESC)",
+		"CREATE INDEX IF NOT EXISTS idx_watchlist_user_symbol_sort ON watchlist_items (user_uuid, symbol ASC)",
+		"CREATE INDEX IF NOT EXISTS idx_wallets_user_id ON wallets (user_uuid, id ASC)",
+	}
+	for _, idx := range indexes {
+		_ = db.Exec(idx).Error
+	}
+}
+

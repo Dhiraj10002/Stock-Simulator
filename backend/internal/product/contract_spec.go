@@ -232,5 +232,15 @@ func ParseSyntheticFNOContract(symbol string) (*model.Instrument, error) {
 // IsSyntheticContract checks if a symbol represents an F&O derivative format eligible for synthetic trading.
 func IsSyntheticContract(symbol string) bool {
 	clean := strings.ToUpper(strings.TrimSpace(symbol))
-	return strings.Contains(clean, "FUT") || strings.Contains(clean, "CE") || strings.Contains(clean, "PE")
+	if clean == "" {
+		return false
+	}
+	if strings.HasSuffix(clean, "FUT") || strings.Contains(clean, " FUT") {
+		return true
+	}
+	if strings.HasSuffix(clean, "CE") || strings.Contains(clean, " CE") ||
+		strings.HasSuffix(clean, "PE") || strings.Contains(clean, " PE") {
+		return true
+	}
+	return false
 }
