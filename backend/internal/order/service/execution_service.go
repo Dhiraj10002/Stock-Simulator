@@ -30,6 +30,10 @@ func (s *OrderService) Execute(userID, orderID string) error {
 		return fmt.Errorf("invalid order identity")
 	}
 
+	if database.GetDB() == nil {
+		return errors.New("database not connected")
+	}
+
 	// Fetch before taking database locks. ExecutableQuote validates price and
 	// freshness so a Redis outage or old tick cannot settle an order.
 	var pendingOrder model.Order

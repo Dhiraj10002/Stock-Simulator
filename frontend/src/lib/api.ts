@@ -73,22 +73,92 @@ export async function tryRefreshToken(): Promise<string | null> {
 export interface ApiEnvelope<T> {
   success: boolean;
   message: string;
+  code?: string;
+  request_id?: string;
   data: T;
+  errors?: unknown;
 }
 
-/** Error thrown when an API call fails. */
+export interface ApiDiagnostic {
+  status: number;
+  code?: string;
+  message: string;
+  requestId?: string;
+  endpoint?: string;
+  timestamp: string;
+  details?: unknown;
+}
+
+/** Error thrown when an API call fails with complete diagnostics. */
 export class ApiError extends Error {
   status: number;
-  constructor(message: string, status: number) {
+  code?: string;
+  requestId?: string;
+  endpoint?: string;
+  timestamp: string;
+  details?: unknown;
+
+  constructor(
+    message: string,
+    status: number,
+    options?: {
+      code?: string;
+      requestId?: string;
+      endpoint?: string;
+      details?: unknown;
+    }
+  ) {
     super(message);
     this.name = "ApiError";
     this.status = status;
+    this.code = options?.code;
+    this.requestId = options?.requestId;
+    this.endpoint = options?.endpoint;
+    this.details = options?.details;
+    this.timestamp = new Date().toISOString();
   }
+
+  toDiagnostic(): ApiDiagnostic {
+    return {
+      status: this.status,
+      code: this.code,
+      message: this.message,
+      requestId: this.requestId,
+      endpoint: this.endpoint,
+      timestamp: this.timestamp,
+      details: this.details,
+    };
+  }
+}
+
+/** Helper to extract structured diagnostics from a fetch Response and body. */
+export function extractApiDiagnostic(
+  res: Response,
+  body: any,
+  endpoint?: string
+): ApiDiagnostic {
+  const code =
+    body?.code ||
+    (typeof body?.errors === "string" ? body.errors : undefined);
+  const requestId =
+    body?.request_id || res.headers?.get("x-request-id") || undefined;
+  const message =
+    body?.message || body?.error || `HTTP ${res.status} request failed`;
+
+  return {
+    status: res.status,
+    code,
+    message,
+    requestId,
+    endpoint,
+    timestamp: new Date().toISOString(),
+    details: body?.errors ?? body,
+  };
 }
 
 /**
  * Typed fetch wrapper with automatic auth headers and JSON parsing.
- * Throws ApiError on non-2xx responses.
+ * Throws ApiError on non-2xx responses with stable error codes and request IDs.
  */
 export async function apiFetch<T>(
   path: string,
@@ -122,16 +192,23 @@ export async function apiFetch<T>(
 
   if (!res.ok) {
     let msg = `API error ${res.status}`;
+    let code: string | undefined;
+    let requestId: string | undefined = res.headers.get("x-request-id") || undefined;
+    let details: unknown;
     try {
       const errBody = await res.json();
       if (errBody?.message) msg = errBody.message;
+      if (errBody?.code) code = errBody.code;
+      if (!code && typeof errBody?.errors === "string") code = errBody.errors;
+      if (errBody?.request_id) requestId = errBody.request_id;
+      if (errBody?.errors) details = errBody.errors;
     } catch {
       // ignore JSON parse errors on error responses
     }
     if (res.status === 401) {
       clearAuthTokens();
     }
-    throw new ApiError(msg, res.status);
+    throw new ApiError(msg, res.status, { code, requestId, endpoint: path, details });
   }
 
   const json: ApiEnvelope<T> = await res.json();
@@ -148,13 +225,20 @@ export async function publicFetch<T>(path: string): Promise<T> {
 
   if (!res.ok) {
     let msg = `API error ${res.status}`;
+    let code: string | undefined;
+    let requestId: string | undefined = res.headers.get("x-request-id") || undefined;
+    let details: unknown;
     try {
       const errBody = await res.json();
       if (errBody?.message) msg = errBody.message;
+      if (errBody?.code) code = errBody.code;
+      if (!code && typeof errBody?.errors === "string") code = errBody.errors;
+      if (errBody?.request_id) requestId = errBody.request_id;
+      if (errBody?.errors) details = errBody.errors;
     } catch {
       // ignore
     }
-    throw new ApiError(msg, res.status);
+    throw new ApiError(msg, res.status, { code, requestId, endpoint: path, details });
   }
 
   const json: ApiEnvelope<T> = await res.json();

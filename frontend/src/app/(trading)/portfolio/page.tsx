@@ -37,7 +37,8 @@ import {
 import { formatPaise, formatPercent } from "@/lib/format";
 import { useMarketStore, useMultiSymbolQuotes } from "@/stores/market-store";
 import { resolveCanonicalSymbol } from "@/lib/alias";
-import { API_URL } from "@/lib/api";
+import { API_URL, extractApiDiagnostic, type ApiDiagnostic } from "@/lib/api";
+import ErrorDiagnosticModal from "@/components/ui/ErrorDiagnosticModal";
 import type { Portfolio, Wallet, ApiResponse, Position } from "@/types";
 
 const STOCK_INFO_MAP: Record<
@@ -90,6 +91,8 @@ export default function PortfolioPage() {
   const [isAddFundsOpen, setIsAddFundsOpen] = useState(false);
   const [isAiInsightsOpen, setIsAiInsightsOpen] = useState(false);
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
+  const [diagnosticError, setDiagnosticError] = useState<ApiDiagnostic | null>(null);
+  const [diagnosticTitle, setDiagnosticTitle] = useState<string>("Operation Diagnostic");
 
 
   const [token] = useState<string>(() => {
@@ -348,14 +351,20 @@ export default function PortfolioPage() {
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        const errMsg = data.message || data.error || `Failed to square off position (${res.status})`;
-        alert(errMsg);
+        const diag = extractApiDiagnostic(res, data, endpoint);
+        setDiagnosticTitle(`Square Off Failed: ${pos.symbol}`);
+        setDiagnosticError(diag);
         return;
       }
       void queryClient.invalidateQueries({ queryKey: ["portfolio"] });
       void queryClient.invalidateQueries({ queryKey: ["wallet"] });
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : "Network error squaring off position");
+      setDiagnosticTitle(`Square Off Network Error: ${pos.symbol}`);
+      setDiagnosticError({
+        status: 0,
+        message: err instanceof Error ? err.message : "Network error squaring off position",
+        timestamp: new Date().toISOString(),
+      });
     }
   };
 
@@ -363,7 +372,8 @@ export default function PortfolioPage() {
   const handleSquareOffAllMIS = async () => {
     if (!token) return;
     try {
-      const res = await fetch(`${apiUrl}/orders/squareoff-mis`, {
+      const endpoint = `${apiUrl}/orders/squareoff-mis`;
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
@@ -371,14 +381,20 @@ export default function PortfolioPage() {
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        const errMsg = data.message || data.error || `Failed to square off MIS positions (${res.status})`;
-        alert(errMsg);
+        const diag = extractApiDiagnostic(res, data, endpoint);
+        setDiagnosticTitle("Bulk MIS Square-Off Failed");
+        setDiagnosticError(diag);
         return;
       }
       void queryClient.invalidateQueries({ queryKey: ["portfolio"] });
       void queryClient.invalidateQueries({ queryKey: ["wallet"] });
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : "Network error during bulk square-off");
+      setDiagnosticTitle("Bulk MIS Square-Off Network Error");
+      setDiagnosticError({
+        status: 0,
+        message: err instanceof Error ? err.message : "Network error during bulk square-off",
+        timestamp: new Date().toISOString(),
+      });
     }
   };
 
@@ -386,7 +402,8 @@ export default function PortfolioPage() {
   const handleExitHolding = async (holding: HoldingItem) => {
     if (!token) return;
     try {
-      const res = await fetch(`${apiUrl}/orders`, {
+      const endpoint = `${apiUrl}/orders`;
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -402,14 +419,20 @@ export default function PortfolioPage() {
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        const errMsg = data.message || data.error || `Failed to place exit order (${res.status})`;
-        alert(errMsg);
+        const diag = extractApiDiagnostic(res, data, endpoint);
+        setDiagnosticTitle(`Exit Holding Failed: ${holding.symbol}`);
+        setDiagnosticError(diag);
         return;
       }
       void queryClient.invalidateQueries({ queryKey: ["portfolio"] });
       void queryClient.invalidateQueries({ queryKey: ["wallet"] });
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : "Network error placing exit order");
+      setDiagnosticTitle(`Exit Holding Network Error: ${holding.symbol}`);
+      setDiagnosticError({
+        status: 0,
+        message: err instanceof Error ? err.message : "Network error placing exit order",
+        timestamp: new Date().toISOString(),
+      });
     }
   };
 
@@ -806,6 +829,13 @@ export default function PortfolioPage() {
       <ResetSimulationModal
         isOpen={isResetModalOpen}
         onClose={() => setIsResetModalOpen(false)}
+      />
+
+      {/* Structured Error Diagnostics Modal for 400/404 & Execution Failures */}
+      <ErrorDiagnosticModal
+        diagnostic={diagnosticError}
+        title={diagnosticTitle}
+        onClose={() => setDiagnosticError(null)}
       />
     </div>
   );

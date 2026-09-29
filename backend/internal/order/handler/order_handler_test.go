@@ -25,9 +25,26 @@ func init() {
 
 func setupOrderTestRouter(h *OrderHandler, userID string) *gin.Engine {
 	r := gin.New()
+	r.Use(func(c *gin.Context) {
+		reqID := c.GetHeader("X-Request-ID")
+		if reqID == "" {
+			reqID = "test-req-12345"
+		}
+		c.Set("request_id", reqID)
+		c.Header("X-Request-ID", reqID)
+		c.Next()
+	})
 	r.POST("/api/v1/orders", func(c *gin.Context) {
 		c.Set("user_id", userID)
 		h.Create(c)
+	})
+	r.POST("/api/v1/orders/:id/execute", func(c *gin.Context) {
+		c.Set("user_id", userID)
+		h.Execute(c)
+	})
+	r.POST("/api/v1/portfolio/positions/:uuid/squareoff", func(c *gin.Context) {
+		c.Set("user_id", userID)
+		h.SquareOffPosition(c)
 	})
 	return r
 }
@@ -232,6 +249,73 @@ func TestOrderHandler_ErrorSemantics(t *testing.T) {
 		_ = json.Unmarshal(w.Body.Bytes(), &apiResp)
 		if apiResp.Errors != "MARKET_DATA_UNAVAILABLE" {
 			t.Fatalf("expected error code MARKET_DATA_UNAVAILABLE, got %v", apiResp.Errors)
+		}
+		if apiResp.Code != "MARKET_DATA_UNAVAILABLE" {
+			t.Fatalf("expected Code field MARKET_DATA_UNAVAILABLE, got %v", apiResp.Code)
+		}
+		if apiResp.RequestID != "test-req-12345" {
+			t.Fatalf("expected RequestID test-req-12345, got %v", apiResp.RequestID)
+		}
+	})
+
+	t.Run("Returns 400 INVALID_POSITION_ID on malformed square-off UUID", func(t *testing.T) {
+		h := New(nil, cfg)
+		r := setupOrderTestRouter(h, userID)
+
+		w := httptest.NewRecorder()
+		req, _ := http.NewRequest("POST", "/api/v1/portfolio/positions/not-a-uuid/squareoff", nil)
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("expected status 400, got %d. Body: %s", w.Code, w.Body.String())
+		}
+
+		var apiResp response.APIResponse
+		_ = json.Unmarshal(w.Body.Bytes(), &apiResp)
+		if apiResp.Code != "INVALID_POSITION_ID" {
+			t.Fatalf("expected Code INVALID_POSITION_ID, got %v", apiResp.Code)
+		}
+		if apiResp.RequestID == "" {
+			t.Fatal("expected non-empty RequestID")
+		}
+	})
+
+	t.Run("Returns 400 EXECUTION_BODY_FORBIDDEN when body is sent to execute", func(t *testing.T) {
+		h := New(nil, cfg)
+		r := setupOrderTestRouter(h, userID)
+
+		w := httptest.NewRecorder()
+		req, _ := http.NewRequest("POST", "/api/v1/orders/"+uuid.NewString()+"/execute", bytes.NewReader([]byte(`{"price": 100}`)))
+		req.Header.Set("Content-Type", "application/json")
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("expected status 400, got %d. Body: %s", w.Code, w.Body.String())
+		}
+
+		var apiResp response.APIResponse
+		_ = json.Unmarshal(w.Body.Bytes(), &apiResp)
+		if apiResp.Code != "EXECUTION_BODY_FORBIDDEN" {
+			t.Fatalf("expected Code EXECUTION_BODY_FORBIDDEN, got %v", apiResp.Code)
+		}
+	})
+
+	t.Run("Returns 503 DATABASE_UNAVAILABLE when database is not connected on execution", func(t *testing.T) {
+		h := New(nil, cfg)
+		r := setupOrderTestRouter(h, userID)
+
+		w := httptest.NewRecorder()
+		req, _ := http.NewRequest("POST", "/api/v1/orders/"+uuid.NewString()+"/execute", nil)
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusServiceUnavailable {
+			t.Fatalf("expected status 503, got %d. Body: %s", w.Code, w.Body.String())
+		}
+
+		var apiResp response.APIResponse
+		_ = json.Unmarshal(w.Body.Bytes(), &apiResp)
+		if apiResp.Code != "DATABASE_UNAVAILABLE" {
+			t.Fatalf("expected Code DATABASE_UNAVAILABLE, got %v", apiResp.Code)
 		}
 	})
 }

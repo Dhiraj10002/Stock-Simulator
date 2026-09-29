@@ -2,7 +2,6 @@ package service
 
 import (
 	"fmt"
-	"os"
 	"testing"
 	"time"
 
@@ -11,16 +10,14 @@ import (
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/product"
 	"github.com/google/uuid"
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/testutil"
 	"gorm.io/gorm"
 )
 
 // These regressions require an explicitly selected disposable database.
 func accountingDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	if os.Getenv("TEST_DATABASE_URL") == "" {
-		t.Skip("set TEST_DATABASE_URL to a disposable PostgreSQL database")
-	}
-	return getTestDB(t)
+	return testutil.RequireDisposableDB(t)
 }
 
 func accountingWallet(t *testing.T, db *gorm.DB) model.Wallet {
