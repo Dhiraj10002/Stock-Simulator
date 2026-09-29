@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"net"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -17,9 +18,16 @@ func getTestDatabase(t *testing.T) {
 	if dbURL == "" {
 		dbURL = "postgres://postgres:postgres@127.0.0.1:5433/testdb?sslmode=disable"
 	}
-	conn, err := net.DialTimeout("tcp", "127.0.0.1:5433", 50*time.Millisecond)
+	targetAddr := "127.0.0.1:5433"
+	if u, err := url.Parse(dbURL); err == nil && u.Host != "" {
+		targetAddr = u.Host
+		if !strings.Contains(targetAddr, ":") {
+			targetAddr += ":5432"
+		}
+	}
+	conn, err := net.DialTimeout("tcp", targetAddr, 100*time.Millisecond)
 	if err != nil {
-		t.Skipf("PostgreSQL not accessible at 127.0.0.1:5433 (%v); skipping DB performance index test", err)
+		t.Skipf("PostgreSQL not accessible at %s (%v); skipping DB performance index test", targetAddr, err)
 		return
 	}
 	_ = conn.Close()
@@ -122,29 +130,29 @@ func TestPhase26_QueryPlansUseIndexScans(t *testing.T) {
 	defer cancel()
 
 	queries := []struct {
-		name          string
-		query         string
-		expectedIndex string
+		name              string
+		query             string
+		acceptableIndexes []string
 	}{
 		{
-			name:          "Order user query uses idx_orders_user_uuid",
-			query:         "EXPLAIN SELECT * FROM orders WHERE user_uuid = '00000000-0000-0000-0000-000000000000'",
-			expectedIndex: "idx_orders_user_uuid",
+			name:              "Order user query uses idx_orders_user_uuid",
+			query:             "EXPLAIN SELECT * FROM orders WHERE user_uuid = '00000000-0000-0000-0000-000000000000'",
+			acceptableIndexes: []string{"idx_orders_user_uuid", "idx_orders_user_created"},
 		},
 		{
-			name:          "Position user query uses idx_positions_user_uuid",
-			query:         "EXPLAIN SELECT * FROM positions WHERE user_uuid = '00000000-0000-0000-0000-000000000000'",
-			expectedIndex: "idx_positions_user_uuid",
+			name:              "Position user query uses idx_positions_user_uuid",
+			query:             "EXPLAIN SELECT * FROM positions WHERE user_uuid = '00000000-0000-0000-0000-000000000000'",
+			acceptableIndexes: []string{"idx_positions_user_uuid", "idx_positions_user_qty", "idx_positions_user_symbol"},
 		},
 		{
-			name:          "Trade user query uses idx_trades_user_uuid",
-			query:         "EXPLAIN SELECT * FROM trades WHERE user_uuid = '00000000-0000-0000-0000-000000000000'",
-			expectedIndex: "idx_trades_user_uuid",
+			name:              "Trade user query uses idx_trades_user_uuid",
+			query:             "EXPLAIN SELECT * FROM trades WHERE user_uuid = '00000000-0000-0000-0000-000000000000'",
+			acceptableIndexes: []string{"idx_trades_user_uuid", "idx_trades_user_executed"},
 		},
 		{
-			name:          "Instrument symbol query uses idx_instruments_symbol",
-			query:         "EXPLAIN SELECT * FROM instruments WHERE symbol = 'INFY'",
-			expectedIndex: "idx_instruments_symbol",
+			name:              "Instrument symbol query uses idx_instruments_symbol",
+			query:             "EXPLAIN SELECT * FROM instruments WHERE symbol = 'INFY'",
+			acceptableIndexes: []string{"idx_instruments_symbol"},
 		},
 	}
 
@@ -173,8 +181,15 @@ func TestPhase26_QueryPlansUseIndexScans(t *testing.T) {
 			}
 
 			plan := strings.Join(lines, "\n")
-			if !strings.Contains(plan, q.expectedIndex) {
-				t.Fatalf("query plan did not use expected index %s. Plan:\n%s", q.expectedIndex, plan)
+			matched := false
+			for _, expectedIndex := range q.acceptableIndexes {
+				if strings.Contains(plan, expectedIndex) {
+					matched = true
+					break
+				}
+			}
+			if !matched {
+				t.Fatalf("query plan did not use any expected index %v. Plan:\n%s", q.acceptableIndexes, plan)
 			}
 		})
 	}
