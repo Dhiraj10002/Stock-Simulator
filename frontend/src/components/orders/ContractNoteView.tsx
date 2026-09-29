@@ -7,7 +7,6 @@ import {
   Printer,
   Calendar,
   Building,
-  CheckCircle2,
   TrendingUp,
   TrendingDown,
   Shield,

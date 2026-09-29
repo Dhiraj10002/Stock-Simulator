@@ -12,7 +12,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { formatPaise } from "@/lib/format";
-import type { LedgerStatementResponse, LedgerEntry } from "@/types";
+import type { LedgerStatementResponse } from "@/types";
 
 interface LedgerStatementViewProps {
   token?: string | null;

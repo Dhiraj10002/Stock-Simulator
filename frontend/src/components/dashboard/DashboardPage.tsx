@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMultiSymbolQuotes } from "@/stores/market-store";
 import { fetchBatchQuotes, getCachedQuote } from "@/lib/quoteService";
@@ -10,31 +9,13 @@ import { getApiUrl } from "@/lib/config";
 import Navbar from "@/components/layout/Navbar";
 import {
   TrendingUp,
-  TrendingDown,
-  Wallet as WalletIcon,
-  Layers,
   PieChart,
-  ClipboardList,
-  Bookmark,
   BarChart2,
   ArrowRight,
-  RefreshCw,
   Zap,
   Activity,
   RotateCcw,
-  Sparkles,
-  ChevronRight,
-  Calendar,
-  DollarSign,
-  Newspaper,
-  Clock,
-  ExternalLink,
-  ShieldCheck,
-  CheckCircle2,
-  AlertCircle,
   Building,
-  Gift,
-  ArrowUpRight,
   Anchor,
   Car,
   Building2,
@@ -43,10 +24,9 @@ import {
   Factory,
   Cpu,
   Search,
-  Filter,
   ShoppingBag,
 } from "lucide-react";
-import { formatPaise, formatPercent } from "@/lib/format";
+import { formatPaise } from "@/lib/format";
 import { apiFetch } from "@/lib/api";
 import type { Wallet, Portfolio, ApiResponse, Candle } from "@/types";
 import IndicesBar from "@/components/dashboard/IndicesBar";
@@ -394,7 +374,6 @@ interface DashboardPageProps {
 }
 
 export default function DashboardPage({ onSignOut }: DashboardPageProps) {
-  const router = useRouter();
   const queryClient = useQueryClient();
   const [userName] = useState<string>(() => {
     if (typeof window !== "undefined") {
@@ -774,9 +753,7 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
   }, [indexKey, indexCandles, quotes]);
 
   const availableBalance = wallet?.available_balance_paise ?? 100000000;
-  const cashBalance = wallet?.cash_balance_paise ?? 100000000;
   const unrealizedPnl = portfolio?.unrealized_pnl_paise ?? 0;
-  const isProfit = unrealizedPnl >= 0;
   const openPositions = portfolio?.positions ?? [];
 
   return (

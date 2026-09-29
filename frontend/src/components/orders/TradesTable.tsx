@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo } from "react";
 import Link from "next/link";
-import { ArrowDownRight, ArrowUpRight, Clock, FileText, Search } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, Clock, Search } from "lucide-react";
 import { formatPaise } from "@/lib/format";
 import type { Trade } from "@/types";
 

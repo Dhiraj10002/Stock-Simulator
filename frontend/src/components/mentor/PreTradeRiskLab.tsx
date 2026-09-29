@@ -17,7 +17,6 @@ import {
   RotateCcw,
   Sparkles,
   Search,
-  Check,
 } from "lucide-react";
 import type { PreTradeCheckResponse, ApiResponse } from "@/types";
 

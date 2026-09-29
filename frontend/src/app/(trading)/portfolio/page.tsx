@@ -17,7 +17,6 @@ import {
   PieChart,
   Briefcase,
   Layers,
-  BarChart3,
   Calendar,
   Sparkles,
   TrendingUp,
@@ -26,16 +25,11 @@ import {
   RefreshCw,
   RotateCcw,
   Plus,
-  Flame,
-  Zap,
   Download,
-  ShieldCheck,
-  ArrowRight,
-  SlidersHorizontal,
   Receipt,
 } from "lucide-react";
-import { formatPaise, formatPercent } from "@/lib/format";
-import { useMarketStore, useMultiSymbolQuotes } from "@/stores/market-store";
+import { formatPaise } from "@/lib/format";
+import { useMultiSymbolQuotes } from "@/stores/market-store";
 import { resolveCanonicalSymbol } from "@/lib/alias";
 import { API_URL, extractApiDiagnostic, type ApiDiagnostic } from "@/lib/api";
 import ErrorDiagnosticModal from "@/components/ui/ErrorDiagnosticModal";
@@ -111,7 +105,6 @@ export default function PortfolioPage() {
   // 1. Fetch Portfolio via TanStack Query
   const {
     data: portfolio,
-    isLoading: loadingPortfolio,
     refetch: refetchPortfolio,
   } = useQuery<Portfolio>({
     queryKey: ["portfolio", token],
@@ -205,7 +198,10 @@ export default function PortfolioPage() {
   });
 
   // Live positions and holdings
-  const livePositions = portfolio?.positions ?? [];
+  const livePositions = useMemo(
+    () => portfolio?.positions ?? [],
+    [portfolio?.positions]
+  );
   const portfolioSymbols = useMemo(
     () => livePositions.map((p) => p.symbol),
     [livePositions]

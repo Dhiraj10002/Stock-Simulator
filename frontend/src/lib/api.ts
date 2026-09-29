@@ -134,16 +134,29 @@ export class ApiError extends Error {
 /** Helper to extract structured diagnostics from a fetch Response and body. */
 export function extractApiDiagnostic(
   res: Response,
-  body: any,
+  body: unknown,
   endpoint?: string
 ): ApiDiagnostic {
+  const payload =
+    body && typeof body === "object"
+      ? (body as Record<string, unknown>)
+      : undefined;
   const code =
-    body?.code ||
-    (typeof body?.errors === "string" ? body.errors : undefined);
+    typeof payload?.code === "string"
+      ? payload.code
+      : typeof payload?.errors === "string"
+      ? (payload.errors as string)
+      : undefined;
   const requestId =
-    body?.request_id || res.headers?.get("x-request-id") || undefined;
+    typeof payload?.request_id === "string"
+      ? payload.request_id
+      : res.headers?.get("x-request-id") || undefined;
   const message =
-    body?.message || body?.error || `HTTP ${res.status} request failed`;
+    typeof payload?.message === "string"
+      ? payload.message
+      : typeof payload?.error === "string"
+      ? payload.error
+      : `HTTP ${res.status} request failed`;
 
   return {
     status: res.status,
@@ -152,7 +165,7 @@ export function extractApiDiagnostic(
     requestId,
     endpoint,
     timestamp: new Date().toISOString(),
-    details: body?.errors ?? body,
+    details: payload?.errors ?? body,
   };
 }
 

@@ -6,13 +6,11 @@ import {
   Clock,
   Ban,
   CheckCircle2,
-  AlertCircle,
   XCircle,
   Filter,
   Search,
   ArrowUpRight,
   ArrowDownRight,
-  TrendingUp,
 } from "lucide-react";
 import { formatPaise } from "@/lib/format";
 import type { Order } from "@/types";

@@ -18,7 +18,6 @@ import {
   TrendingUp,
   TrendingDown,
   Layers,
-  Sparkles,
   Download,
   FileText,
   Trash2,

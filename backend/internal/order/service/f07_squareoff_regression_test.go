@@ -29,12 +29,12 @@ func TestRegression_F07_OrdinarySquareOffLacksReduceOnlySemantics(t *testing.T) 
 
 	// Ensure Instrument exists for margin calculation
 	inst := model.Instrument{
-		Token:          uuid.NewString()[:16],
-		Symbol:         symbol,
+		Token:           uuid.NewString()[:16],
+		Symbol:          symbol,
 		ExchangeSegment: "NSE",
-		InstrumentType: "EQUITY",
-		LotSize:        1,
-		Active:         true,
+		InstrumentType:  "EQUITY",
+		LotSize:         1,
+		Active:          true,
 	}
 	_ = db.Create(&inst).Error
 	t.Cleanup(func() { _ = db.Delete(&inst).Error })

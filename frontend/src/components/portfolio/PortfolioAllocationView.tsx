@@ -10,8 +10,6 @@ import {
   Flame,
   Layers,
   Sparkles,
-  TrendingUp,
-  AlertTriangle,
   Wallet,
   Gauge,
   Activity,
@@ -182,7 +180,6 @@ export default function PortfolioAllocationView({
     ? overview.margin_utilization_pct
     : Math.min(100, Math.round(((futuresValuation + intradayValuation) / (totalCapital || 1)) * 100 * 10) / 10);
   const rmsEquityPaise = isLive ? overview.account_equity_paise : totalCapital;
-  const rmsCashPaise = isLive ? overview.cash_balance_paise : availableMarginPaise;
   const rmsBlockedPaise = isLive ? overview.blocked_paise : (futuresValuation + intradayValuation);
   const rmsAvailablePaise = isLive ? overview.available_balance_paise : availableMarginPaise;
   const rmsMessage = isLive
@@ -191,10 +188,6 @@ export default function PortfolioAllocationView({
   const rmsIntradayCount = isLive
     ? overview.intraday_positions_count
     : positions.filter((p) => p.product === "INTRADAY").length;
-  const rmsDeliveryCount = isLive
-    ? overview.delivery_positions_count
-    : holdings.length;
-  const rmsActiveOrdersCount = isLive ? overview.active_orders_count : 0;
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -250,7 +243,6 @@ export default function PortfolioAllocationView({
             {/* Segment Breakdown List */}
             <div className="flex-1 space-y-3 w-full">
               {segments.map((seg) => {
-                const Icon = seg.icon;
                 const isHovered = hoveredSegment === seg.id;
 
                 return (

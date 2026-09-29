@@ -472,15 +472,15 @@ func TestReconciliation_FailedExecutionPreservesInvariants(t *testing.T) {
 
 	// Order limit is at Rs 1100.00 (BUY limit requires execution price <= 110000, but quote is 120000)
 	order := model.Order{
-		UserUUID:          w.UserUUID,
-		Symbol:            symbol,
-		Product:           model.OrderProductDelivery,
-		Side:              model.OrderSideBuy,
-		Type:              model.OrderTypeLimit,
-		Quantity:          10,
-		PricePaise:        110000,
-		Status:            model.OrderStatusOpen,
-		ReservedPaise:     1100000,
+		UserUUID:      w.UserUUID,
+		Symbol:        symbol,
+		Product:       model.OrderProductDelivery,
+		Side:          model.OrderSideBuy,
+		Type:          model.OrderTypeLimit,
+		Quantity:      10,
+		PricePaise:    110000,
+		Status:        model.OrderStatusOpen,
+		ReservedPaise: 1100000,
 	}
 	if err := db.Create(&order).Error; err != nil {
 		t.Fatal(err)

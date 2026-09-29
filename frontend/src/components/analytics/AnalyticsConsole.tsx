@@ -22,9 +22,6 @@ import {
   IndianRupee,
   Target,
   Scale,
-  ArrowUpRight,
-  ArrowDownRight,
-  SlidersHorizontal,
   Compass,
   Layers,
 } from "lucide-react";
@@ -168,13 +165,17 @@ export default function AnalyticsConsole({
 
   const performance: PerformanceOverview = livePerformance || EMPTY_LIVE_PERFORMANCE;
 
-  const calendarData: PnlCalendarResponse = liveCalendarData || {
-    month: currentMonth,
-    days: [],
-    month_total_pnl_paise: 0,
-    profitable_days_count: 0,
-    loss_days_count: 0,
-  };
+  const calendarData: PnlCalendarResponse = useMemo(
+    () =>
+      liveCalendarData || {
+        month: currentMonth,
+        days: [],
+        month_total_pnl_paise: 0,
+        profitable_days_count: 0,
+        loss_days_count: 0,
+      },
+    [liveCalendarData, currentMonth]
+  );
 
   const trades: Trade[] = liveTrades;
 

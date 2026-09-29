@@ -7,9 +7,7 @@ import {
   ShieldCheck,
   TrendingUp,
   AlertTriangle,
-  Layers,
   CheckCircle2,
-  ArrowRight,
 } from "lucide-react";
 
 interface PortfolioAiInsightsModalProps {
@@ -77,7 +75,7 @@ export default function PortfolioAiInsightsModal({
               <span>Optimal Risk-Return</span>
             </span>
             <div className="text-[10px] text-slate-400 mt-1">
-              Based on {holdingsCount} assets • MTM ROI: {pnlPercent >= 0 ? "+" : ""}{pnlPercent.toFixed(2)}%
+              Based on {holdingsCount} assets (₹{totalValuationRupees.toLocaleString("en-IN")}) • MTM ROI: {pnlPercent >= 0 ? "+" : ""}{pnlPercent.toFixed(2)}%
             </div>
           </div>
         </div>

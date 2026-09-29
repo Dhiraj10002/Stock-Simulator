@@ -11,13 +11,10 @@ import {
   Shield,
   Sliders,
   CheckCircle2,
-  Award,
   Star,
   ExternalLink,
   Code2,
-  Globe,
   BrainCircuit,
-  Quote,
   TrendingUp,
   PieChart,
 } from "lucide-react";

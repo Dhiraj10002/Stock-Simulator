@@ -25,15 +25,15 @@ type Discrepancy struct {
 }
 
 type AuditReport struct {
-	GeneratedAt            string        `json:"generated_at"`
-	TotalUsers             int64         `json:"total_users"`
-	TotalWallets           int64         `json:"total_wallets"`
-	TotalOrders            int64         `json:"total_orders"`
-	TotalTrades            int64         `json:"total_trades"`
-	TotalPositions         int64         `json:"total_positions"`
-	TotalLedgerEntries     int64         `json:"total_ledger_entries"`
-	TotalDiscrepancies     int           `json:"total_discrepancies"`
-	Discrepancies          []Discrepancy `json:"discrepancies"`
+	GeneratedAt             string         `json:"generated_at"`
+	TotalUsers              int64          `json:"total_users"`
+	TotalWallets            int64          `json:"total_wallets"`
+	TotalOrders             int64          `json:"total_orders"`
+	TotalTrades             int64          `json:"total_trades"`
+	TotalPositions          int64          `json:"total_positions"`
+	TotalLedgerEntries      int64          `json:"total_ledger_entries"`
+	TotalDiscrepancies      int            `json:"total_discrepancies"`
+	Discrepancies           []Discrepancy  `json:"discrepancies"`
 	DiscrepanciesByCategory map[string]int `json:"discrepancies_by_category"`
 }
 

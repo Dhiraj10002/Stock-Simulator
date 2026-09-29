@@ -226,6 +226,11 @@ export default function TradeCopilot({ token, apiUrl, initialQuery }: TradeCopil
     }, 400);
   };
 
+  const handleAskRef = useRef(handleAsk);
+  useEffect(() => {
+    handleAskRef.current = handleAsk;
+  });
+
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, asking]);
@@ -233,7 +238,7 @@ export default function TradeCopilot({ token, apiUrl, initialQuery }: TradeCopil
   useEffect(() => {
     if (initialQuery && !initialQueryHandled.current) {
       initialQueryHandled.current = true;
-      void handleAsk(initialQuery);
+      void handleAskRef.current(initialQuery);
     }
   }, [initialQuery]);
 

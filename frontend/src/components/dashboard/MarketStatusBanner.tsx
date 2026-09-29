@@ -5,13 +5,9 @@ import { useQuery } from "@tanstack/react-query";
 import {
   Clock,
   Radio,
-  Calendar,
-  AlertTriangle,
   TrendingUp,
   TrendingDown,
   RefreshCw,
-  Sparkles,
-  Zap,
 } from "lucide-react";
 import { publicFetch } from "@/lib/api";
 import { useMarketStore } from "@/stores/market-store";
@@ -42,7 +38,6 @@ interface MarketStatusBannerProps {
 }
 
 export default function MarketStatusBanner({ className = "" }: MarketStatusBannerProps) {
-  const storeFeedProvider = useMarketStore((s) => s.feedProvider);
   const storeConnectionState = useMarketStore((s) => s.connectionState);
 
   // Poll authoritative backend market status
@@ -83,7 +78,6 @@ export default function MarketStatusBanner({ className = "" }: MarketStatusBanne
   }, []);
 
   const status = statusData?.status || "CLOSED";
-  const isOpen = statusData?.is_open || false;
   const holidayName = statusData?.holiday_name;
 
   // Feed badge configuration

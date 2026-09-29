@@ -9,7 +9,6 @@ import {
   Activity,
   Flame,
   ArrowRight,
-  ExternalLink,
   RotateCcw,
 } from "lucide-react";
 import { publicFetch } from "@/lib/api";
@@ -50,7 +49,7 @@ export default function MarketMoversCard({
 }: MarketMoversCardProps) {
   const [activeTab, setActiveTab] = useState<TabType>("gainers");
 
-  const { data: moversData, isLoading, refetch, isFetching } = useQuery<MarketMoversResponse>({
+  const { data: moversData, isLoading } = useQuery<MarketMoversResponse>({
     queryKey: ["market-movers-card", limit],
     queryFn: () => publicFetch<MarketMoversResponse>(`/market/movers?limit=${limit}`),
     refetchInterval: 5000,
@@ -139,7 +138,6 @@ export default function MarketMoversCard({
         ) : (
           items.map((item, idx) => {
             const price = item.price_paise / 100;
-            const change = item.change_paise / 100;
             const changePct = item.change_percent;
             const isPositive = changePct >= 0;
             const turnoverCr = item.turnover ? item.turnover / 1e7 : (price * item.volume) / 1e7;

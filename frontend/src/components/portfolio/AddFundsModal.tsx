@@ -8,9 +8,6 @@ import {
   Plus,
   CheckCircle2,
   RefreshCcw,
-  Sparkles,
-  ShieldCheck,
-  Zap,
   Receipt,
 } from "lucide-react";
 import { formatPaise } from "@/lib/format";

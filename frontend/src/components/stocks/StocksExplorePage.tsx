@@ -2,7 +2,6 @@
 
 import React, { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import Navbar from "@/components/layout/Navbar";
 import { useMultiSymbolQuotes } from "@/stores/market-store";
@@ -11,8 +10,6 @@ import { getApiUrl } from "@/lib/config";
 import { apiFetch } from "@/lib/api";
 import {
   TrendingUp,
-  TrendingDown,
-  Layers,
   PieChart,
   ArrowRight,
   Sparkles,
@@ -20,11 +17,7 @@ import {
   Activity,
   BarChart3,
   Wallet as WalletIcon,
-  Search,
   ChevronRight,
-  Filter,
-  CheckCircle2,
-  Clock,
   ArrowUpRight,
   Flame,
   ShieldCheck,
@@ -33,10 +26,9 @@ import {
   Car,
   Pill,
   Factory,
-  ZapOff,
 } from "lucide-react";
-import { formatPaise, formatPercent } from "@/lib/format";
-import { MASTER_STOCKS_CATALOG, WatchlistItem, SECTOR_CONSTITUENTS } from "@/components/dashboard/DashboardPage";
+import { formatPaise } from "@/lib/format";
+import { MASTER_STOCKS_CATALOG, SECTOR_CONSTITUENTS } from "@/components/dashboard/DashboardPage";
 import type { Wallet, Portfolio, ApiResponse } from "@/types";
 
 // ---------------------------------------------------------------------------
@@ -191,8 +183,6 @@ function MiniSparkline({ isGain, points }: { isGain: boolean; points: number[] }
 }
 
 export default function StocksExplorePage() {
-  const router = useRouter();
-
   // Mover tabs & scope
   const [moverTab, setMoverTab] = useState<"gainers" | "losers" | "volume">("gainers");
   const [indexScope, setIndexScope] = useState<"NIFTY 100" | "NIFTY 500">("NIFTY 100");

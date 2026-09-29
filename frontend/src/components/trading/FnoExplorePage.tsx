@@ -2,30 +2,21 @@
 
 import React, { useState, useMemo } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { useMultiSymbolQuotes } from "@/stores/market-store";
 import { API_URL } from "@/lib/api";
 import {
   TrendingUp,
-  TrendingDown,
   Layers,
   Zap,
   Activity,
   ArrowRight,
-  Search,
-  ExternalLink,
   ChevronDown,
-  CheckCircle2,
-  ShieldAlert,
   Wallet as WalletIcon,
-  PieChart,
   BarChart2,
   Sparkles,
-  ArrowUpRight,
-  Filter,
 } from "lucide-react";
-import { formatPaise, formatNumber } from "@/lib/format";
+import { formatPaise } from "@/lib/format";
 import type { Wallet, Portfolio, ApiResponse } from "@/types";
 import FnoOrderModal from "@/components/trading/FnoOrderModal";
 import type { Instrument } from "@/types";
@@ -560,7 +551,6 @@ interface FnoExplorePageProps {
 }
 
 export default function FnoExplorePage({ onSelectOptionChain }: FnoExplorePageProps = {}) {
-  const router = useRouter();
   const fnoQuoteSymbols = useMemo(
     () => [
       ...FNO_INDICES_STRIP.map((idx) => idx.symbol),
@@ -609,9 +599,6 @@ export default function FnoExplorePage({ onSelectOptionChain }: FnoExplorePagePr
 
   // Tab state for F&O Stocks Table
   const [fnoStockTab, setFnoStockTab] = useState<"GAINERS" | "LOSERS" | "ALL">("GAINERS");
-
-  // Search filter
-  const [searchQuery, setSearchQuery] = useState("");
 
   // Token & API
   const [token] = useState<string>(() => {

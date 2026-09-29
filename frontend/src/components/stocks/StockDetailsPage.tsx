@@ -13,7 +13,6 @@ import {
   Bookmark,
   ArrowLeft,
   X,
-  Info,
   Sparkles,
   Newspaper,
   BrainCircuit,

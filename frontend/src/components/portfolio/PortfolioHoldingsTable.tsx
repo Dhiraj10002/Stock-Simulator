@@ -8,14 +8,10 @@ import {
   Search,
   ArrowUpDown,
   Filter,
-  ExternalLink,
-  Plus,
-  Minus,
-  Sparkles,
   Layers,
   ArrowUpRight,
 } from "lucide-react";
-import { formatPaise, formatPercent } from "@/lib/format";
+import { formatPaise } from "@/lib/format";
 import type { HoldingItem } from "./PortfolioTypes";
 
 interface PortfolioHoldingsTableProps {
@@ -29,7 +25,6 @@ type SortOrder = "asc" | "desc";
 
 export default function PortfolioHoldingsTable({
   holdings = [],
-  onBuyMore,
   onExitHolding,
 }: PortfolioHoldingsTableProps) {
   const [search, setSearch] = useState("");

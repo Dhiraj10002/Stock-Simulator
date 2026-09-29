@@ -7,7 +7,6 @@ import {
   LayoutDashboard,
   TrendingUp,
   Bookmark,
-  SlidersHorizontal,
   ClipboardList,
   PieChart,
 } from "lucide-react";

@@ -9,8 +9,8 @@ import (
 	marketDTO "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/dto"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/product"
-	"github.com/google/uuid"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/testutil"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 

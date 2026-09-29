@@ -151,4 +151,3 @@ func ensurePerformanceIndexes(db *gorm.DB) {
 		_ = db.Exec(idx).Error
 	}
 }
-

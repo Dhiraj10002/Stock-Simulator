@@ -21,9 +21,7 @@ import {
   LogOut,
   Sun,
   Moon,
-  Sparkles,
   AlertTriangle,
-  ShieldAlert,
   Newspaper,
 } from "lucide-react";
 import { formatPaise, getIndianMarketStatus } from "@/lib/format";
@@ -66,8 +64,7 @@ export default function Navbar({
 }: NavbarProps) {
   const pathname = usePathname();
   const setSearchPaletteOpen = useUIStore((s) => s.setSearchPaletteOpen);
-  const setShortcutsGuideOpen = useUIStore((s) => s.setShortcutsGuideOpen);
-  const { theme, toggleTheme, setTheme } = useTheme();
+  const { theme, setTheme } = useTheme();
 
   const [clientMarketStatus, setClientMarketStatus] = useState(getIndianMarketStatus());
   const feedStatus = useMarketStore((s) => s.feedStatus);
@@ -83,14 +80,12 @@ export default function Navbar({
 
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
-  const [mounted, setMounted] = useState(false);
   const [userName, setUserName] = useState("Dhiraj");
   const profileMenuRef = useRef<HTMLDivElement>(null);
   const { overview, isBreached } = useRiskOverview();
 
   useEffect(() => {
     queueMicrotask(() => {
-      setMounted(true);
       const storedName = localStorage.getItem("user_name");
       if (storedName) setUserName(storedName);
     });
