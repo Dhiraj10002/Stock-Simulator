@@ -15,7 +15,7 @@ import (
 )
 
 func main() {
-	sourceFlag := flag.String("source", "https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json", "Source URL or local file path to Angel One OpenAPIScripMaster.json")
+	sourceFlag := flag.String("source", service.OfficialScripMasterURL, "Official HTTPS scrip master URL or reviewed local JSON file")
 	batchSizeFlag := flag.Int("batch-size", 500, "Number of instruments to upsert per database transaction")
 	segmentsFlag := flag.String("segments", "NSE,NFO,BSE", "Comma-separated exchange segments to sync")
 	underlyingsFlag := flag.String("underlyings", "", "Optional comma-separated list of underlyings to filter")

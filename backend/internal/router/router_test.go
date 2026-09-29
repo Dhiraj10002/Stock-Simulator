@@ -106,3 +106,16 @@ func TestOpenAPISpecServing(t *testing.T) {
 		}
 	}
 }
+
+func TestInstrumentImportIsNotExposed(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	r := Setup(ctx, &config.Config{CORSAllowedOrigins: "http://localhost:3000"})
+	for _, source := range []string{"", "?source=http://127.0.0.1/admin", "?source=/etc/passwd"} {
+		response := httptest.NewRecorder()
+		r.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/api/v1/instruments/sync"+source, nil))
+		if response.Code != http.StatusNotFound {
+			t.Fatalf("import endpoint exposed: %d", response.Code)
+		}
+	}
+}

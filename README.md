@@ -184,7 +184,7 @@ Under `MARKET_FEED_MODE=live`, when Angel One is unavailable or disconnected, th
 |:---------|:------------|:--------|
 | `DATABASE_URL` | PostgreSQL connection string (required) | — |
 | `REDIS_URL` | Redis connection string | `redis://localhost:6379/0` |
-| `JWT_SECRET` | JWT signing secret (required) | — |
+| `JWT_SECRET` | Generated signing secret, at least 32 bytes; placeholders rejected | — |
 | `CORS_ALLOWED_ORIGINS` | Comma-separated allowed origins | `http://localhost:3000` (dev) |
 | `APP_ENV` | `development` or `production` | `development` |
 | `MARKET_FEED_MODE` | `live`, `synthetic`, or `disabled` | `live` |

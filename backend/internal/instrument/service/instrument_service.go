@@ -7,6 +7,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -651,39 +652,73 @@ func (s *Service) SyncFromReader(ctx context.Context, r io.Reader, opts ...SyncO
 	return stats, nil
 }
 
-// SyncFromScripMaster downloads or reads the official Angel One scrip master and syncs to database.
+// OfficialScripMasterURL is the only remote import source. Local files are
+// supported for trusted operators running cmd/sync-instruments, never over HTTP.
+const OfficialScripMasterURL = "https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json"
+const maxScripMasterBytes int64 = 128 << 20
+
+func scripMasterHTTPClient() *http.Client {
+	return &http.Client{Timeout: 90 * time.Second, CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+		return fmt.Errorf("instrument download redirects are not allowed")
+	}}
+}
+
+// SyncFromScripMaster is an operator-only import operation.
 func (s *Service) SyncFromScripMaster(ctx context.Context, source string, opts ...SyncOptions) (*SyncStats, error) {
 	if source == "" {
-		source = "https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json"
+		source = OfficialScripMasterURL
 	}
-
-	if strings.HasPrefix(source, "http://") || strings.HasPrefix(source, "https://") {
+	parsed, err := url.Parse(source)
+	if err != nil {
+		return nil, fmt.Errorf("invalid instrument source")
+	}
+	if parsed.Scheme != "" || parsed.Host != "" {
+		if source != OfficialScripMasterURL {
+			return nil, fmt.Errorf("remote instrument source must be the official HTTPS scrip master URL; use a local file for reviewed offline imports")
+		}
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, source, nil)
 		if err != nil {
-			return nil, fmt.Errorf("failed creating http request: %w", err)
+			return nil, err
 		}
-		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
-
-		client := &http.Client{Timeout: 90 * time.Second}
-		resp, err := client.Do(req)
+		resp, err := scripMasterHTTPClient().Do(req)
 		if err != nil {
-			return nil, fmt.Errorf("scrip master download failed from %s: %w", source, err)
+			return nil, fmt.Errorf("instrument download failed: %w", err)
 		}
 		defer resp.Body.Close()
-
 		if resp.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("scrip master download returned HTTP status %d", resp.StatusCode)
+			return nil, fmt.Errorf("instrument download returned HTTP status %d", resp.StatusCode)
 		}
-
-		return s.SyncFromReader(ctx, resp.Body, opts...)
+		return s.syncBoundedSource(ctx, resp.Body, opts...)
 	}
-
-	// Local file source
 	f, err := os.Open(source)
 	if err != nil {
-		return nil, fmt.Errorf("failed opening local scrip master file %s: %w", source, err)
+		return nil, fmt.Errorf("failed opening local instrument file: %w", err)
 	}
 	defer f.Close()
+	return s.syncBoundedSource(ctx, f, opts...)
+}
 
+// Finish the bounded read before importing, so oversized or failed downloads
+// cannot partially update the master. The temporary file is private and removed.
+func (s *Service) syncBoundedSource(ctx context.Context, source io.Reader, opts ...SyncOptions) (*SyncStats, error) {
+	f, err := os.CreateTemp("", "instrument-master-*.json")
+	if err != nil {
+		return nil, err
+	}
+	defer os.Remove(f.Name())
+	defer f.Close()
+	n, err := io.Copy(f, io.LimitReader(source, maxScripMasterBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("reading instrument source: %w", err)
+	}
+	if n > maxScripMasterBytes {
+		return nil, fmt.Errorf("instrument source exceeds 128 MiB limit")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		return nil, err
+	}
 	return s.SyncFromReader(ctx, f, opts...)
 }

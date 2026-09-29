@@ -87,7 +87,7 @@ func (s *OrderService) Execute(userID, orderID string) error {
 			return errors.New("wallet has invalid balances")
 		}
 		var position model.Position
-		positionErr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_uuid = ? AND symbol = ?", userUUID, order.Symbol).First(&position).Error
+		positionErr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_uuid = ? AND symbol = ? AND product = ?", userUUID, order.Symbol, model.OrderProductDelivery).First(&position).Error
 
 		realizedPnlPaise := int64(0)
 		if order.Side == model.OrderSideBuy {
@@ -108,7 +108,7 @@ func (s *OrderService) Execute(userID, orderID string) error {
 				wallet.BlockedPaise -= order.ReservedPaise
 			}
 			if positionErr == gorm.ErrRecordNotFound {
-				position = model.Position{UserUUID: userUUID, Symbol: order.Symbol, Quantity: order.Quantity, AveragePricePaise: executionPricePaise, CostBasisPaise: total, CurrentPricePaise: executionPricePaise}
+				position = model.Position{UserUUID: userUUID, Symbol: order.Symbol, Product: model.OrderProductDelivery, Quantity: order.Quantity, AveragePricePaise: executionPricePaise, CostBasisPaise: total, CurrentPricePaise: executionPricePaise}
 			} else if positionErr != nil {
 				return positionErr
 			} else {
@@ -240,6 +240,7 @@ func (s *OrderService) executeMarginProduct(userUUID, orderUUID uuid.UUID, pendi
 		}
 		underlying = instrument.UnderlyingSymbol
 	}
+	var executedPricePaise int64
 	dbStart := time.Now()
 	txErr := database.GetDB().Transaction(func(tx *gorm.DB) error {
 		var wallet model.Wallet
@@ -294,7 +295,7 @@ func (s *OrderService) executeMarginProduct(userUUID, orderUUID uuid.UUID, pendi
 				}
 			}
 		}
-		transition, err := calculatePositionTransition(position.Quantity, position.AveragePricePaise, order.Quantity, quote.PricePaise, order.Side)
+		transition, err := calculatePositionTransition(position.Quantity, position.AveragePricePaise, order.Quantity, fillPrice, order.Side)
 		if err != nil {
 			return err
 		}
@@ -365,7 +366,7 @@ func (s *OrderService) executeMarginProduct(userUUID, orderUUID uuid.UUID, pendi
 		}
 		position.UserUUID, position.Symbol, position.Product = userUUID, order.Symbol, order.Product
 		position.InstrumentType, position.UnderlyingSymbol = instrumentType, underlying
-		position.Quantity, position.AveragePricePaise, position.CurrentPricePaise = newQty, newAverage, quote.PricePaise
+		position.Quantity, position.AveragePricePaise, position.CurrentPricePaise = newQty, newAverage, fillPrice
 		position.MarginBlockedPaise = newMargin
 		position.RealizedPnlPaise, ok = add(position.RealizedPnlPaise, realized)
 		if !ok {
@@ -378,10 +379,11 @@ func (s *OrderService) executeMarginProduct(userUUID, orderUUID uuid.UUID, pendi
 		if err := tx.Save(&position).Error; err != nil {
 			return err
 		}
-		if err := tx.Create(&model.Trade{OrderUUID: order.UUID, UserUUID: userUUID, Symbol: order.Symbol, Side: order.Side, Quantity: order.Quantity, PricePaise: quote.PricePaise, TotalPaise: total, Product: order.Product, Source: order.Source, Reason: order.Reason, RealizedPnlPaise: realized, ExecutedAt: time.Now()}).Error; err != nil {
+		if err := tx.Create(&model.Trade{OrderUUID: order.UUID, UserUUID: userUUID, Symbol: order.Symbol, Side: order.Side, Quantity: order.Quantity, PricePaise: fillPrice, TotalPaise: total, Product: order.Product, Source: order.Source, Reason: order.Reason, RealizedPnlPaise: realized, ExecutedAt: time.Now()}).Error; err != nil {
 			return err
 		}
-		order.Status, order.ExecutedPricePaise, order.ReservedPaise = model.OrderStatusExecuted, quote.PricePaise, 0
+		order.Status, order.ExecutedPricePaise, order.ReservedPaise = model.OrderStatusExecuted, fillPrice, 0
+		executedPricePaise = fillPrice
 		return tx.Save(&order).Error
 	})
 	dbDuration := time.Since(dbStart)
@@ -396,7 +398,7 @@ func (s *OrderService) executeMarginProduct(userUUID, orderUUID uuid.UUID, pendi
 		zap.String("side", pending.Side),
 		zap.String("product", pending.Product),
 		zap.Int64("quantity", pending.Quantity),
-		zap.Int64("executed_price_paise", quote.PricePaise),
+		zap.Int64("executed_price_paise", executedPricePaise),
 		logger.ExecutionLatency(time.Since(execStart)),
 		logger.RedisLatency(redisDuration),
 		logger.DBLatency(dbDuration),

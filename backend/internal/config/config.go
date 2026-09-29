@@ -55,7 +55,7 @@ func Load() (*Config, error) {
 		RedisURL:              viper.GetString("REDIS_URL"),
 		RedisOperationTimeout: viper.GetDuration("REDIS_OPERATION_TIMEOUT"),
 
-		RateLimitEnabled:         viper.IsSet("RATE_LIMIT_ENABLED") && viper.GetBool("RATE_LIMIT_ENABLED"),
+		RateLimitEnabled:         !viper.IsSet("RATE_LIMIT_ENABLED") || viper.GetBool("RATE_LIMIT_ENABLED"),
 		RateLimitWindow:          viper.GetDuration("RATE_LIMIT_WINDOW"),
 		RateLimitMaxRequests:     viper.GetInt("RATE_LIMIT_MAX_REQUESTS"),
 		AuthRateLimitMaxRequests: viper.GetInt("AUTH_RATE_LIMIT_MAX_REQUESTS"),
@@ -143,8 +143,8 @@ func Load() (*Config, error) {
 	if cfg.DatabaseURL == "" {
 		return nil, fmt.Errorf("DATABASE_URL is required")
 	}
-	if strings.TrimSpace(cfg.JWTSecret) == "" {
-		return nil, fmt.Errorf("JWT_SECRET is required")
+	if err := validateJWTSecret(cfg.JWTSecret); err != nil {
+		return nil, err
 	}
 
 	return cfg, nil

@@ -724,19 +724,6 @@ paths:
         '404':
           description: Instrument not found
 
-  /instruments/sync:
-    post:
-      summary: Synchronize Instrument Master
-      description: Triggers background synchronization of instruments against Angel One official scrip master.
-      tags: [Instruments]
-      responses:
-        '200':
-          description: Synchronization started or completed
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SuccessResponse'
-
   /orders/squareoff-mis:
     post:
       summary: Square Off MIS Positions

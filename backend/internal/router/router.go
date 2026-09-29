@@ -205,7 +205,6 @@ func Setup(ctx context.Context, cfg *config.Config, opts ...SetupOption) *gin.En
 		api.GET("/fno/option-chain", fno.GetOptionChain)
 		api.GET("/instruments", instruments.List)
 		api.GET("/instruments/:symbol", instruments.GetBySymbol)
-		api.POST("/instruments/sync", instruments.Sync)
 		api.GET("/stocks", stocks.Search)
 		api.GET("/news", news.List)
 

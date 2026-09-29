@@ -118,7 +118,7 @@ func TestPositionCrossing_IntradayReversals(t *testing.T) {
 	if err := db.Where("user_uuid = ? AND symbol = ? AND product = ?", userUUID, "RELIANCE", model.OrderProductIntraday).First(&pos).Error; err != nil {
 		t.Fatalf("load position after step 1: %v", err)
 	}
-	if pos.Quantity != 100 || pos.AveragePricePaise != 2500 || pos.MarginBlockedPaise != 50000 {
+	if pos.Quantity != 100 || pos.AveragePricePaise != 2505 || pos.MarginBlockedPaise != 50100 {
 		t.Fatalf("step 1 unexpected position: qty=%d, avg=%d, margin=%d", pos.Quantity, pos.AveragePricePaise, pos.MarginBlockedPaise)
 	}
 
@@ -126,13 +126,13 @@ func TestPositionCrossing_IntradayReversals(t *testing.T) {
 	if err := db.Where("uuid = ?", walletUUID).First(&w).Error; err != nil {
 		t.Fatalf("load wallet after step 1: %v", err)
 	}
-	if w.CashBalancePaise != 1000000 || w.BlockedPaise != 50000 {
+	if w.CashBalancePaise != 1000000 || w.BlockedPaise != 50100 {
 		t.Fatalf("step 1 unexpected wallet: cash=%d, blocked=%d", w.CashBalancePaise, w.BlockedPaise)
 	}
 
 	// -------------------------------------------------------------
 	// STEP 2: Position Crossing Long -> Short (+100 selling 150 @ 2,800 paise)
-	// Closes 100 long with +30,000 paise realized P&L, opens 50 short @ 2,800
+	// Fills at 2,795 after slippage: closes 100 entered at 2,505 for +29,000; opens 50 short.
 	// -------------------------------------------------------------
 	currentMockPrice = 2800
 	createResp2, err := orderSvc.Create(userUUID.String(), dto.CreateOrderRequest{
@@ -156,31 +156,31 @@ func TestPositionCrossing_IntradayReversals(t *testing.T) {
 	if pos.Quantity != -50 {
 		t.Fatalf("step 2 expected position quantity -50, got %d", pos.Quantity)
 	}
-	if pos.AveragePricePaise != 2800 {
-		t.Fatalf("step 2 expected position average price 2800 (execution price), got %d", pos.AveragePricePaise)
+	if pos.AveragePricePaise != 2795 {
+		t.Fatalf("step 2 expected position average price 2795 (execution price), got %d", pos.AveragePricePaise)
 	}
-	if pos.RealizedPnlPaise != 30000 {
-		t.Fatalf("step 2 expected realized P&L 30000, got %d", pos.RealizedPnlPaise)
+	if pos.RealizedPnlPaise != 29000 {
+		t.Fatalf("step 2 expected realized P&L 29000, got %d", pos.RealizedPnlPaise)
 	}
-	// New margin for 50 short @ 2800: (50 * 2800) / 5 = 28,000 paise
-	if pos.MarginBlockedPaise != 28000 {
-		t.Fatalf("step 2 expected margin blocked 28000, got %d", pos.MarginBlockedPaise)
+	// New margin: (50 * 2795) / 5 = 27,950 paise
+	if pos.MarginBlockedPaise != 27950 {
+		t.Fatalf("step 2 expected margin blocked 27950, got %d", pos.MarginBlockedPaise)
 	}
 
 	if err := db.Where("uuid = ?", walletUUID).First(&w).Error; err != nil {
 		t.Fatalf("load wallet after step 2: %v", err)
 	}
-	// Cash balance increased by realized profit (+30,000) -> 1,030,000
-	if w.CashBalancePaise != 1030000 {
-		t.Fatalf("step 2 expected cash balance 1030000, got %d", w.CashBalancePaise)
+	// Cash increases by 29,000 to 1,029,000.
+	if w.CashBalancePaise != 1029000 {
+		t.Fatalf("step 2 expected cash balance 1029000, got %d", w.CashBalancePaise)
 	}
-	if w.BlockedPaise != 28000 {
-		t.Fatalf("step 2 expected blocked paise 28000, got %d", w.BlockedPaise)
+	if w.BlockedPaise != 27950 {
+		t.Fatalf("step 2 expected blocked paise 27950, got %d", w.BlockedPaise)
 	}
 
 	// -------------------------------------------------------------
 	// STEP 3: Position Crossing Short -> Long (-50 buying 150 @ 2,600 paise)
-	// Closes 50 short with +10,000 paise realized P&L, opens 100 long @ 2,600
+	// Fills at 2,605: closes 50 short entered at 2,795 for +9,500; opens 100 long.
 	// -------------------------------------------------------------
 	currentMockPrice = 2600
 	createResp3, err := orderSvc.Create(userUUID.String(), dto.CreateOrderRequest{
@@ -204,27 +204,27 @@ func TestPositionCrossing_IntradayReversals(t *testing.T) {
 	if pos.Quantity != 100 {
 		t.Fatalf("step 3 expected position quantity +100, got %d", pos.Quantity)
 	}
-	if pos.AveragePricePaise != 2600 {
-		t.Fatalf("step 3 expected position average price 2600 (execution price), got %d", pos.AveragePricePaise)
+	if pos.AveragePricePaise != 2605 {
+		t.Fatalf("step 3 expected position average price 2605 (execution price), got %d", pos.AveragePricePaise)
 	}
-	// Cumulative realized P&L: 30000 + (50 * (2800 - 2600)) = 30000 + 10000 = 40,000 paise
-	if pos.RealizedPnlPaise != 40000 {
-		t.Fatalf("step 3 expected realized P&L 40000, got %d", pos.RealizedPnlPaise)
+	// Cumulative P&L: 29,000 + 50*(2795-2605) = 38,500 paise
+	if pos.RealizedPnlPaise != 38500 {
+		t.Fatalf("step 3 expected realized P&L 38500, got %d", pos.RealizedPnlPaise)
 	}
-	// New margin for 100 long @ 2600: (100 * 2600) / 5 = 52,000 paise
-	if pos.MarginBlockedPaise != 52000 {
-		t.Fatalf("step 3 expected margin blocked 52000, got %d", pos.MarginBlockedPaise)
+	// New margin: (100 * 2605) / 5 = 52,100 paise
+	if pos.MarginBlockedPaise != 52100 {
+		t.Fatalf("step 3 expected margin blocked 52100, got %d", pos.MarginBlockedPaise)
 	}
 
 	if err := db.Where("uuid = ?", walletUUID).First(&w).Error; err != nil {
 		t.Fatalf("load wallet after step 3: %v", err)
 	}
-	// Cash balance increased by realized profit (+10,000) -> 1,040,000
-	if w.CashBalancePaise != 1040000 {
-		t.Fatalf("step 3 expected cash balance 1040000, got %d", w.CashBalancePaise)
+	// Cash increases by 9,500 to 1,038,500.
+	if w.CashBalancePaise != 1038500 {
+		t.Fatalf("step 3 expected cash balance 1038500, got %d", w.CashBalancePaise)
 	}
-	if w.BlockedPaise != 52000 {
-		t.Fatalf("step 3 expected blocked paise 52000, got %d", w.BlockedPaise)
+	if w.BlockedPaise != 52100 {
+		t.Fatalf("step 3 expected blocked paise 52100, got %d", w.BlockedPaise)
 	}
 
 	// Verify all trades were properly recorded

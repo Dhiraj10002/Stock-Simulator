@@ -150,10 +150,10 @@ func (s *OrderService) settleExpiredPosition(positionID uuid.UUID, settlementPri
 			return fmt.Errorf("position value is too large")
 		}
 		pnl := settlementValue - entryValue
-		cashChange := pnl
 		if position.Quantity < 0 {
 			pnl = entryValue - settlementValue
 		}
+		cashChange := pnl
 		if kind == product.InstrumentOption {
 			cashChange = settlementValue
 			if position.Quantity < 0 {
