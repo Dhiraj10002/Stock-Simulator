@@ -7,13 +7,11 @@ import (
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/calendar"
 )
 
-// TestRegression_F06_ExpiryParsingFailsOpen reproduces defect F06:
-// 1. The layout list in expiryDate contains "02JAN2006", where "JAN" is treated
-//    by Go's time.Parse as literal text "JAN" rather than the month placeholder "Jan".
-// 2. strings.ToUpper causes "02-Jan-2006" to become "02-SEP-2006", failing title-case parsing.
-// 3. Any parse failure in isExpired returns false (fails open), causing expired
-//    contracts with standard broker formats like "29SEP2026" to never expire.
-func TestRegression_F06_ExpiryParsingFailsOpen(t *testing.T) {
+// TestRegression_F06_ExpiryParsingResolved verifies that:
+// 1. All 12 monthly expiry formats from Angel One (DDMMMYYYY) parse with exact month resolution.
+// 2. Both hyphenated ("29-Sep-2026", "29-SEP-2026") and non-hyphenated ("29SEP2026") strings parse correctly.
+// 3. isExpired correctly recognizes expired contracts and fails closed on malformed dates.
+func TestRegression_F06_ExpiryParsingResolved(t *testing.T) {
 	months := []struct {
 		expiryStr   string
 		expectedMon time.Month
@@ -38,44 +36,60 @@ func TestRegression_F06_ExpiryParsingFailsOpen(t *testing.T) {
 		t.Run("Parse_"+m.expiryStr, func(t *testing.T) {
 			parsed, err := expiryDate(m.expiryStr)
 			if err != nil {
-				// Defect F06 confirmed: all months except January fail because "JAN" is literal in "02JAN2006"
-				t.Logf("CONFIRMED DEFECT F06: Valid Angel One format %q failed to parse: %v", m.expiryStr, err)
-			} else {
-				if m.expectedMon != time.January {
-					t.Errorf("Unexpectedly passed for %q: got %v", m.expiryStr, parsed)
-				} else {
-					t.Logf("Notice: %q passed only because literal 'JAN' matched January", m.expiryStr)
-				}
+				t.Fatalf("Valid Angel One format %q failed to parse: %v", m.expiryStr, err)
+			}
+			if parsed.Month() != m.expectedMon {
+				t.Fatalf("Month mismatch for %q: expected %s (%d), got %s (%d)",
+					m.expiryStr, m.monthName, m.expectedMon, parsed.Month(), parsed.Month())
+			}
+			if parsed.Year() != 2026 {
+				t.Fatalf("Year mismatch for %q: expected 2026, got %d", m.expiryStr, parsed.Year())
 			}
 		})
 	}
 
-	t.Run("FailOpen_FailsToRecognizeExpiredContract", func(t *testing.T) {
-		// Reference time: 2026-10-01 16:00:00 (definitely after 29-SEP-2026 15:30:00 cutoff)
+	t.Run("FailClosed_RecognizesExpiredContract", func(t *testing.T) {
 		loc := calendar.Location()
 		nowAfterExpiry := time.Date(2026, 10, 1, 16, 0, 0, 0, loc)
 
-		// With valid ISO format, it recognizes expiry:
-		if !isExpired("2026-09-29", nowAfterExpiry) {
-			t.Errorf("expected 2026-09-29 to be recognized as expired")
+		// Standard broker master format "29SEP2026" must be recognized as expired on 2026-10-01
+		if !isExpired("29SEP2026", nowAfterExpiry) {
+			t.Fatalf("expected 29SEP2026 to be recognized as expired on 2026-10-01")
 		}
 
-		// With broker master format "29SEP2026", isExpired fails open:
-		expiredResult := isExpired("29SEP2026", nowAfterExpiry)
-		if !expiredResult {
-			t.Logf("CONFIRMED DEFECT F06: isExpired('29SEP2026') returned FALSE on 2026-10-01 because parse error fails open")
-		} else {
-			t.Errorf("Expected isExpired('29SEP2026') to fail open (return false) in unfixed code")
+		// Active trading time on expiry day morning (10:00 AM) must NOT be expired
+		morningOfExpiry := time.Date(2026, 9, 29, 10, 0, 0, 0, loc)
+		if isExpired("29SEP2026", morningOfExpiry) {
+			t.Fatalf("expected 29SEP2026 to be active on morning of expiry")
+		}
+
+		// Cutoff at 15:30:00 IST on expiry day must be expired
+		cutoffTime := time.Date(2026, 9, 29, 15, 30, 0, 0, loc)
+		if !isExpired("29SEP2026", cutoffTime) {
+			t.Fatalf("expected 29SEP2026 to be expired at 15:30:00 IST cutoff")
+		}
+
+		// Malformed/unparseable expiry date must FAIL CLOSED (return true) to prevent trading bad contracts
+		if !isExpired("MALFORMED_DATE", morningOfExpiry) {
+			t.Fatalf("expected malformed expiry date to fail closed (isExpired = true)")
 		}
 	})
 
-	t.Run("HyphenatedMonthTitleCaseRejection", func(t *testing.T) {
-		// "29-Sep-2026" uppercased to "29-SEP-2026" fails "02-Jan-2006"
-		parsed, err := expiryDate("29-Sep-2026")
-		if err != nil {
-			t.Logf("CONFIRMED DEFECT F06: '29-Sep-2026' failed to parse due to strings.ToUpper: %v", err)
-		} else {
-			t.Logf("Parsed: %v", parsed)
+	t.Run("HyphenatedAndTitleCaseFormats", func(t *testing.T) {
+		testCases := []string{
+			"29-Sep-2026",
+			"29-SEP-2026",
+			"29-sep-2026",
+			"2026-09-29",
+		}
+		for _, tc := range testCases {
+			parsed, err := expiryDate(tc)
+			if err != nil {
+				t.Fatalf("format %q failed to parse: %v", tc, err)
+			}
+			if parsed.Month() != time.September || parsed.Day() != 29 || parsed.Year() != 2026 {
+				t.Fatalf("unexpected parsed result for %q: %v", tc, parsed)
+			}
 		}
 	})
 }

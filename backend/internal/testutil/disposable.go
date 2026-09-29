@@ -95,6 +95,7 @@ func RequireDisposableDB(t *testing.T) *gorm.DB {
 		}
 		db := database.GetDB()
 		if err := db.AutoMigrate(
+			&model.User{},
 			&model.Wallet{},
 			&model.WalletTransaction{},
 			&model.Position{},

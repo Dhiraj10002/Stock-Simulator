@@ -79,6 +79,16 @@ func (s *OrderService) Execute(userID, orderID string) error {
 		if order.Quantity <= 0 || (order.Side != model.OrderSideBuy && order.Side != model.OrderSideSell) {
 			return errors.New("order has invalid settlement data")
 		}
+		if order.Status == model.OrderStatusTriggerPending {
+			if !triggerSatisfied(&order, quote.PricePaise) {
+				return fmt.Errorf("stop trigger condition not met: market price %d has not reached trigger price %d", quote.PricePaise, order.TriggerPricePaise)
+			}
+			order.Status = model.OrderStatusOpen
+			if order.Type == model.OrderTypeSL && !limitSatisfied(&order, executionPricePaise) {
+				_ = tx.Save(&order)
+				return errors.New("market price does not satisfy limit order")
+			}
+		}
 		if (order.Type == model.OrderTypeLimit || order.Type == model.OrderTypeSL) && !limitSatisfied(&order, executionPricePaise) {
 			return errors.New("market price does not satisfy limit order")
 		}
@@ -131,11 +141,26 @@ func (s *OrderService) Execute(userID, orderID string) error {
 				position.CurrentPricePaise = executionPricePaise
 			}
 		} else {
-			if positionErr != nil {
-				return errors.New("position not found")
-			}
-			if position.Quantity < order.Quantity {
-				return errors.New("insufficient position quantity")
+			if order.Reason == model.OrderReasonSquareOff || order.Reason == model.OrderReasonMISSquareOff {
+				if positionErr != nil || position.Quantity <= 0 {
+					order.Status = model.OrderStatusCancelled
+					return tx.Save(&order).Error
+				}
+				if position.Quantity < order.Quantity {
+					order.Quantity = position.Quantity
+					var ok bool
+					total, ok = multiply(order.Quantity, executionPricePaise)
+					if !ok {
+						return errors.New("order value is too large")
+					}
+				}
+			} else {
+				if positionErr != nil {
+					return errors.New("position not found")
+				}
+				if position.Quantity < order.Quantity {
+					return errors.New("insufficient position quantity")
+				}
 			}
 			costSold, ok := proportionalCostBasis(position.InvestedValuePaise(), order.Quantity, position.Quantity)
 			if !ok {
@@ -175,7 +200,7 @@ func (s *OrderService) Execute(userID, orderID string) error {
 		if err := tx.Save(&position).Error; err != nil {
 			return err
 		}
-		walletType, walletAmount := model.WalletTransactionDebit, -total
+		walletType, walletAmount := model.WalletTransactionDebit, total
 		if order.Side == model.OrderSideSell {
 			walletType, walletAmount = model.WalletTransactionCredit, total
 		}
@@ -262,6 +287,16 @@ func (s *OrderService) executeMarginProduct(userUUID, orderUUID uuid.UUID, pendi
 		if order.Type == model.OrderTypeMarket || order.Type == model.OrderTypeSLM {
 			fillPrice = calculateSlippage(order.Quantity, quote.PricePaise, order.Side)
 		}
+		if order.Status == model.OrderStatusTriggerPending {
+			if !triggerSatisfied(&order, quote.PricePaise) {
+				return fmt.Errorf("stop trigger condition not met: market price %d has not reached trigger price %d", quote.PricePaise, order.TriggerPricePaise)
+			}
+			order.Status = model.OrderStatusOpen
+			if order.Type == model.OrderTypeSL && !limitSatisfied(&order, fillPrice) {
+				_ = tx.Save(&order)
+				return errors.New("market price does not satisfy limit order")
+			}
+		}
 		if (order.Type == model.OrderTypeLimit || order.Type == model.OrderTypeSL) && !limitSatisfied(&order, fillPrice) {
 			return errors.New("market price does not satisfy limit order")
 		}
@@ -279,7 +314,7 @@ func (s *OrderService) executeMarginProduct(userUUID, orderUUID uuid.UUID, pendi
 		if err != nil && err != gorm.ErrRecordNotFound {
 			return err
 		}
-		if order.Reason == model.OrderReasonMISSquareOff {
+		if order.Reason == model.OrderReasonMISSquareOff || order.Reason == model.OrderReasonSquareOff {
 			if position.Quantity == 0 {
 				order.Status = model.OrderStatusCancelled
 				return tx.Save(&order).Error
@@ -354,13 +389,15 @@ func (s *OrderService) executeMarginProduct(userUUID, orderUUID uuid.UUID, pendi
 		}
 		if cashChange != 0 {
 			walletType := model.WalletTransactionCredit
+			walletAmount := cashChange
 			if cashChange < 0 {
 				walletType = model.WalletTransactionDebit
+				walletAmount = -cashChange
 			}
 			if err := tx.Create(&model.WalletTransaction{
 				WalletUUID:   wallet.UUID,
 				Type:         walletType,
-				AmountPaise:  cashChange,
+				AmountPaise:  walletAmount,
 				BalancePaise: wallet.CashBalancePaise,
 				BlockedPaise: wallet.BlockedPaise,
 				Note:         "Order execution",
@@ -467,6 +504,14 @@ func limitSatisfied(order *model.Order, executionPricePaise int64) bool {
 	}
 	return (order.Side == model.OrderSideBuy && executionPricePaise <= order.PricePaise) ||
 		(order.Side == model.OrderSideSell && executionPricePaise >= order.PricePaise)
+}
+
+func triggerSatisfied(order *model.Order, currentPricePaise int64) bool {
+	if (order.Type != model.OrderTypeSL && order.Type != model.OrderTypeSLM) || order.TriggerPricePaise <= 0 || currentPricePaise <= 0 {
+		return false
+	}
+	return (order.Side == model.OrderSideBuy && currentPricePaise >= order.TriggerPricePaise) ||
+		(order.Side == model.OrderSideSell && currentPricePaise <= order.TriggerPricePaise)
 }
 
 // proportionalCostBasis allocates the exact remaining cost to a partial sale.

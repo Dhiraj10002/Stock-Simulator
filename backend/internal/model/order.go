@@ -29,6 +29,7 @@ const (
 	OrderSourceUser         = "USER"
 	OrderSourceSystem       = "SYSTEM"
 	OrderReasonMISSquareOff = "MIS_SQUARE_OFF"
+	OrderReasonSquareOff    = "SQUARE_OFF"
 	OrderReasonFNOExpiry    = "FNO_EXPIRY_SETTLEMENT"
 )
 

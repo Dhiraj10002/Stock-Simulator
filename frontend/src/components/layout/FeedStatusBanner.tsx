@@ -93,7 +93,7 @@ export default function FeedStatusBanner({
     );
   }
 
-  if (isDismissed) {
+  if (isDismissed && authoritativeStatus.bannerType !== "unavailable" && authoritativeStatus.bannerType !== "disconnected") {
     return null;
   }
 
@@ -153,7 +153,7 @@ export default function FeedStatusBanner({
             )}
           </button>
 
-          {dismissable && (
+          {dismissable && authoritativeStatus.bannerType !== "unavailable" && authoritativeStatus.bannerType !== "disconnected" && (
             <button
               type="button"
               onClick={() => setDismissedBannerType(authoritativeStatus.bannerType)}

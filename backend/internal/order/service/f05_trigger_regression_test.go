@@ -1,6 +1,7 @@
 package service
 
 import (
+	"strings"
 	"testing"
 
 	marketDTO "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/dto"
@@ -93,25 +94,44 @@ func TestRegression_F05_DirectExecutionBypassesStopTrigger(t *testing.T) {
 				})
 			}
 
-			// Attempt direct execution
+			// Attempt direct execution while untriggered
 			err := s.Execute(w.UserUUID.String(), order.UUID.String())
+			if err == nil {
+				t.Fatalf("expected error executing untriggered stop order, got nil")
+			}
+			if !strings.Contains(err.Error(), "stop trigger condition not met") {
+				t.Fatalf("expected 'stop trigger condition not met', got: %v", err)
+			}
 
-			// Defect F05 demonstration:
-			// In the unfixed code, err == nil and the order executes prematurely at 10000!
-			// A correct execution boundary MUST reject direct execution of untriggered stop orders.
 			var refreshed model.Order
 			if dbErr := db.First(&refreshed, order.ID).Error; dbErr != nil {
 				t.Fatal(dbErr)
 			}
+			if refreshed.Status != model.OrderStatusTriggerPending {
+				t.Fatalf("expected order to remain TRIGGER_PENDING, got: %s", refreshed.Status)
+			}
 
-			// We record and assert whether the defect is present:
-			t.Logf("[%s] Execution err: %v, Order Status: %s, ExecutedPrice: %d",
-				tc.name, err, refreshed.Status, refreshed.ExecutedPricePaise)
+			// Now simulate market price moving across the trigger price
+			triggeredQuotePaise := tc.triggerPrice
+			if tc.side == model.OrderSideBuy {
+				triggeredQuotePaise += 100 // Rises above trigger
+			} else {
+				triggeredQuotePaise -= 100 // Falls below trigger
+			}
+			s.SetExecutableQuoteFunc(func(symbol string) (*marketDTO.QuoteResponse, error) {
+				return &marketDTO.QuoteResponse{Symbol: symbol, PricePaise: triggeredQuotePaise}, nil
+			})
 
-			// Reproduce F05: The order has executed despite market price NOT having triggered the stop
-			if err == nil && refreshed.Status == model.OrderStatusExecuted {
-				t.Logf("CONFIRMED DEFECT F05: Order in TRIGGER_PENDING executed directly without meeting trigger condition (market=%d, trigger=%d)",
-					currentQuotePaise, tc.triggerPrice)
+			// Executing now that trigger is met must succeed
+			if err := s.Execute(w.UserUUID.String(), order.UUID.String()); err != nil {
+				t.Fatalf("expected execution to succeed once trigger is satisfied, got: %v", err)
+			}
+
+			if dbErr := db.First(&refreshed, order.ID).Error; dbErr != nil {
+				t.Fatal(dbErr)
+			}
+			if refreshed.Status != model.OrderStatusExecuted {
+				t.Fatalf("expected order to be EXECUTED once triggered, got: %s", refreshed.Status)
 			}
 		})
 	}

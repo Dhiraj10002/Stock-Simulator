@@ -12,6 +12,7 @@ import (
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/database"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/fno/dto"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/fno/greeks"
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/calendar"
 	marketDto "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/dto"
 	marketService "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/service"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
@@ -96,10 +97,19 @@ func (s *OptionChainService) GetOptionChain(symbol, expiry string) (*dto.OptionC
 }
 
 func parseExpiryDate(exp string) time.Time {
-	exp = strings.TrimSpace(strings.ToUpper(exp))
-	formats := []string{"02JAN2006", "02-JAN-2006", "2006-01-02", "02JAN06", "02-Jan-2006"}
+	exp = strings.TrimSpace(exp)
+	formats := []string{
+		"2006-01-02",
+		"02Jan2006",
+		"02-Jan-2006",
+		"02Jan06",
+		"02-Jan-06",
+		"02/01/2006",
+		"2006-01-02T15:04:05Z07:00",
+		"2006-01-02 15:04:05",
+	}
 	for _, f := range formats {
-		if t, err := time.Parse(f, exp); err == nil {
+		if t, err := time.ParseInLocation(f, exp, calendar.Location()); err == nil {
 			return t
 		}
 	}

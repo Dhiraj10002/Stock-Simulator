@@ -96,11 +96,7 @@ func TestRegression_F07_OrdinarySquareOffLacksReduceOnlySemantics(t *testing.T) 
 
 	t.Logf("Final position quantity: %d (expected 0 if reduce-only/idempotent)", finalPos.Quantity)
 
-	// Defect F07 demonstration:
-	// If both orders succeeded or position flipped negative:
-	if finalPos.Quantity < 0 {
-		t.Logf("CONFIRMED DEFECT F07: Concurrent square-off flipped position to %d (reverse short position) due to lack of reduce-only / idempotency!", finalPos.Quantity)
-	} else if r1.err != nil || r2.err != nil {
-		t.Logf("One request was rejected or serialized: r1.err=%v, r2.err=%v", r1.err, r2.err)
+	if finalPos.Quantity != 0 {
+		t.Fatalf("expected position quantity to be 0 after square-off, got: %d", finalPos.Quantity)
 	}
 }

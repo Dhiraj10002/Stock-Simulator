@@ -283,6 +283,7 @@ func (s *OrderService) Create(userID string, request dto.CreateOrderRequest) (*d
 		PricePaise:        request.PricePaise,
 		TriggerPricePaise: request.TriggerPricePaise,
 		Status:            initialStatus,
+		Reason:            request.Reason,
 	}
 
 	basePrice := request.PricePaise
@@ -733,6 +734,16 @@ func (s *OrderService) SquareOffPosition(userUUID, posUUID uuid.UUID) (*dto.Orde
 		return nil, fmt.Errorf("position is already closed")
 	}
 
+	// Idempotency: Check if there is already an active exit order for this position in flight
+	var existingExit model.Order
+	if err := database.GetDB().Where(
+		"user_uuid = ? AND symbol = ? AND product = ? AND reason = ? AND status IN (?)",
+		userUUID, position.Symbol, position.Product, model.OrderReasonSquareOff,
+		[]string{model.OrderStatusPending, model.OrderStatusOpen, model.OrderStatusTriggerPending},
+	).First(&existingExit).Error; err == nil {
+		return toResponse(&existingExit), nil
+	}
+
 	closeSide := model.OrderSideSell
 	if position.Quantity < 0 {
 		closeSide = model.OrderSideBuy
@@ -744,6 +755,7 @@ func (s *OrderService) SquareOffPosition(userUUID, posUUID uuid.UUID) (*dto.Orde
 		Type:     model.OrderTypeMarket,
 		Product:  position.Product,
 		Quantity: abs(position.Quantity),
+		Reason:   model.OrderReasonSquareOff,
 	}
 
 	return s.Create(userUUID.String(), req)

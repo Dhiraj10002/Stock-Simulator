@@ -8,6 +8,7 @@ type CreateOrderRequest struct {
 	Quantity          int64  `json:"quantity" binding:"required,gt=0"`
 	PricePaise        int64  `json:"price_paise"`
 	TriggerPricePaise int64  `json:"trigger_price_paise"`
+	Reason            string `json:"reason,omitempty"`
 }
 
 type OrderResponse struct {

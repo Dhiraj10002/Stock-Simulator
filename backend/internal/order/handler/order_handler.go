@@ -146,6 +146,9 @@ func (h *OrderHandler) Execute(c *gin.Context) {
 		case strings.Contains(errMsg, "database not connected"):
 			code = "DATABASE_UNAVAILABLE"
 			status = http.StatusServiceUnavailable
+		case strings.Contains(errMsg, "stop trigger condition not met"):
+			code = "TRIGGER_PRICE_NOT_MET"
+			status = http.StatusBadRequest
 		case strings.Contains(errMsg, "market price does not satisfy limit"):
 			code = "LIMIT_PRICE_NOT_MET"
 		case strings.Contains(errMsg, "status"):

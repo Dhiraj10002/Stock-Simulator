@@ -284,7 +284,7 @@ func TestSecurity_RefreshTokenRotation_And_ReuseDetection(t *testing.T) {
 func TestSecurity_TokenBucketRateLimiting(t *testing.T) {
 	redisURL := os.Getenv("TEST_REDIS_URL")
 	if redisURL == "" {
-		redisURL = "redis://127.0.0.1:6380/0"
+		t.Skip("TEST_REDIS_URL is not set; skipping Redis token bucket test")
 	}
 
 	cfg := &config.Config{

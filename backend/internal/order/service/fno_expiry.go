@@ -228,7 +228,8 @@ func (s *OrderService) recordExpiryRisk(position model.Position, cause error) {
 func isExpired(value string, now time.Time) bool {
 	date, err := expiryDate(value)
 	if err != nil {
-		return false
+		// Fail closed: contracts with missing or malformed expiry dates cannot be traded.
+		return true
 	}
 	cutoff := time.Date(date.Year(), date.Month(), date.Day(), 15, 30, 0, 0, date.Location())
 	return !now.Before(cutoff)
@@ -236,12 +237,24 @@ func isExpired(value string, now time.Time) bool {
 
 func expiryDate(value string) (time.Time, error) {
 	value = strings.TrimSpace(value)
-	for _, layout := range []string{"2006-01-02", "02JAN2006", "02-Jan-2006"} {
-		if date, err := time.ParseInLocation(layout, strings.ToUpper(value), calendar.Location()); err == nil {
+	if value == "" {
+		return time.Time{}, fmt.Errorf("empty expiry date")
+	}
+	for _, layout := range []string{
+		"2006-01-02",
+		"02Jan2006",
+		"02-Jan-2006",
+		"02Jan06",
+		"02-Jan-06",
+		"02/01/2006",
+		"2006-01-02T15:04:05Z07:00",
+		"2006-01-02 15:04:05",
+	} {
+		if date, err := time.ParseInLocation(layout, value, calendar.Location()); err == nil {
 			return date, nil
 		}
 	}
-	return time.Time{}, fmt.Errorf("invalid expiry date")
+	return time.Time{}, fmt.Errorf("invalid expiry date: %s", value)
 }
 
 func parsePaise(value string) (int64, error) {

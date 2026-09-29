@@ -173,7 +173,7 @@ func (s *ReportsService) GetLedgerStatement(userID, fromStr, toStr string) (*dto
 
 	if db != nil {
 		_ = db.Where("user_uuid = ?", userUUID).First(&wallet).Error
-		_ = db.Where("wallet_uuid = ?", wallet.UUID).Order("created_at ASC").Find(&txs).Error
+		_ = db.Where("wallet_uuid = ?", wallet.UUID).Order("created_at ASC, id ASC").Find(&txs).Error
 	}
 
 	// Double-entry ledger calculation
@@ -266,7 +266,7 @@ func (s *ReportsService) GetLedgerStatement(userID, fromStr, toStr string) (*dto
 	}
 
 	closingBalance := runningBalance
-	if len(entries) == 0 && wallet.CashBalancePaise > 0 {
+	if len(txs) == 0 && wallet.CashBalancePaise > 0 {
 		closingBalance = wallet.CashBalancePaise
 		openingBalance = wallet.CashBalancePaise
 	}
