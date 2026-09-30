@@ -49,7 +49,7 @@ func (s *PortfolioService) currentQuote(symbol string) (*marketDTO.QuoteResponse
 		return s.currentQuoteFunc(symbol)
 	}
 	if s.market != nil {
-		return s.market.CurrentQuote(symbol)
+		return s.market.CachedQuote(symbol)
 	}
 	return nil, fmt.Errorf("market service not configured")
 }

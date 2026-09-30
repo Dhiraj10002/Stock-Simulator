@@ -220,13 +220,7 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
             }
             if (data.type === "quote" && data.quote) {
               const q = data.quote;
-              updateQuote({
-                symbol: q.symbol,
-                price_paise: q.price_paise,
-                change_percent: q.change_percent,
-                source: q.source,
-                updated_at: q.updated_at,
-              } as Quote);
+              updateQuote(q as Quote);
             }
           } catch {
             // Ignore parse errors

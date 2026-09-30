@@ -69,6 +69,9 @@ export type Transaction = {
 };
 
 export type Quote = {
+  open_interest?: number;
+  previous_close_paise?: number;
+  day_change_available?: boolean;
   symbol: string;
   price_paise: number;
   change_paise?: number;

@@ -7,15 +7,18 @@ import (
 )
 
 type QuoteResponse struct {
-	Symbol            string  `json:"symbol"`
-	PricePaise        int64   `json:"price_paise"`
-	ChangePaise       int64   `json:"change_paise,omitempty"`
-	ChangePercent     float64 `json:"change_percent,omitempty"`
-	LowerCircuitPaise int64   `json:"lower_circuit_paise,omitempty"`
-	UpperCircuitPaise int64   `json:"upper_circuit_paise,omitempty"`
-	Volume            int64   `json:"volume,omitempty"`
-	Source            string  `json:"source"`
-	UpdatedAt         string  `json:"updated_at"`
+	OpenInterest       int64   `json:"open_interest"`
+	PreviousClosePaise int64   `json:"previous_close_paise"`
+	DayChangeAvailable bool    `json:"day_change_available"`
+	Symbol             string  `json:"symbol"`
+	PricePaise         int64   `json:"price_paise"`
+	ChangePaise        int64   `json:"change_paise"`
+	ChangePercent      float64 `json:"change_percent"`
+	LowerCircuitPaise  int64   `json:"lower_circuit_paise,omitempty"`
+	UpperCircuitPaise  int64   `json:"upper_circuit_paise,omitempty"`
+	Volume             int64   `json:"volume,omitempty"`
+	Source             string  `json:"source"`
+	UpdatedAt          string  `json:"updated_at"`
 }
 
 type CandleResponse struct {

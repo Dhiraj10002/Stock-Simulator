@@ -5,6 +5,7 @@ import os
 import random
 import re
 import socket
+import ssl
 import threading
 import time
 import urllib.request
@@ -12,7 +13,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse, parse_qs
 from dataclasses import dataclass
 from zoneinfo import ZoneInfo
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timezone, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any
 import uuid
@@ -103,7 +104,20 @@ import pyotp
 import redis
 from SmartApi import SmartConnect
 from SmartApi.smartWebSocketV2 import SmartWebSocketV2
+from websocket import WebSocketApp
 install_log_sanitizer()
+
+
+class VerifiedSmartWebSocket(SmartWebSocketV2):
+    """The SDK disables certificate checks; enforce verified TLS in our transport."""
+    def connect(self):
+        headers = {"Authorization": self.auth_token, "x-api-key": self.api_key,
+                   "x-client-code": self.client_code, "x-feed-token": self.feed_token}
+        self.wsapp = WebSocketApp(self.ROOT_URI, header=headers, on_open=self.on_open,
+            on_error=self.on_error, on_close=lambda ws, code, message: self.on_close(ws),
+            on_data=self._on_data, on_ping=self._on_ping, on_pong=self._on_pong)
+        self.wsapp.run_forever(sslopt={"cert_reqs": ssl.CERT_REQUIRED, "check_hostname": True},
+                              ping_interval=self.HEART_BEAT_INTERVAL)
 
 
 INSTRUMENT_MASTER_URL = "https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json"
@@ -217,6 +231,9 @@ GLOBAL_SMART_API: Any = None
 GLOBAL_WRITER: Any = None
 GLOBAL_SUPERVISOR: Any = None
 GLOBAL_TOKEN_MAP: dict[str, dict[str, Any]] = {}
+BROKER_REST_LOCK = threading.Lock()
+BROKER_REST_LAST_CALL = 0.0
+QUOTE_SUBSCRIPTION_MODE = 3  # SNAP_QUOTE includes OI as well as close and volume.
 
 DEFAULT_CANONICAL_SYMBOL_ALIASES: dict[str, str] = {
     "ZOMATO": "ETERNAL",
@@ -352,7 +369,7 @@ def init_global_token_map() -> None:
             for d in data:
                 exch = d.get("exch_seg")
                 inst_type = d.get("instrumenttype")
-                if exch == "NSE" and (inst_type == "" or inst_type == "AMXIDX"):
+                if exch == "NSE" and d.get("symbol", "").endswith("-EQ"):
                     name = d.get("name", "").strip().upper()
                     if name:
                         GLOBAL_TOKEN_MAP[name] = d
@@ -401,6 +418,148 @@ def get_feed_mode() -> str:
     return "live"
 
 
+def rupees_to_paise(value: Any) -> int:
+    try:
+        number = Decimal(str(value))
+        return int((number * 100).quantize(Decimal('1'))) if number.is_finite() and number > 0 else 0
+    except (InvalidOperation, ValueError, TypeError):
+        return 0
+
+
+def broker_quote_time(value: Any) -> datetime | None:
+    """Keep exchange time; a REST fetch must never make yesterday's price fresh."""
+    try:
+        if isinstance(value, (int, float)):
+            return datetime.fromtimestamp(value / 1000, timezone.utc)
+        raw = str(value or '').strip()
+        for fmt in ('%d-%b-%Y %H:%M:%S', '%d-%b-%Y %H:%M:%S.%f', '%Y-%m-%d %H:%M:%S'):
+            try:
+                return datetime.strptime(raw, fmt).replace(tzinfo=ZoneInfo('Asia/Kolkata')).astimezone(timezone.utc)
+            except ValueError:
+                pass
+        stamp = datetime.fromisoformat(raw.replace('Z', '+00:00'))
+        return stamp.astimezone(timezone.utc) if stamp.tzinfo else None
+    except (ValueError, TypeError, OverflowError, OSError):
+        return None
+
+
+def broker_call(call):
+    """Serialize SDK requests and pace quote/history calls together below 1/sec."""
+    global BROKER_REST_LAST_CALL
+    with BROKER_REST_LOCK:
+        wait = 1.1 - (time.monotonic() - BROKER_REST_LAST_CALL)
+        if wait > 0:
+            time.sleep(wait)
+        try:
+            return call()
+        finally:
+            BROKER_REST_LAST_CALL = time.monotonic()
+
+
+def fetch_full_snapshots(api, subscriptions) -> dict:
+    groups = {}
+    expected = set()
+    for item in subscriptions[:50]:
+        groups.setdefault(item.exchange_segment, []).append(item.token)
+        expected.add((item.exchange_segment, item.token))
+    if not groups:
+        return {}
+    result = broker_call(lambda: api.getMarketData('FULL', groups))
+    if not isinstance(result, dict) or result.get('status') is not True:
+        return {}
+    return {(row.get('exchange'), str(row.get('symbolToken'))): row
+            for row in (result.get('data') or {}).get('fetched', [])
+            if (row.get('exchange'), str(row.get('symbolToken'))) in expected}
+
+
+def fetch_full_snapshot(api, segment: str, token: str) -> dict | None:
+    item = Subscription('', token, segment, EXCHANGE_TYPES[segment])
+    return fetch_full_snapshots(api, [item]).get((segment, token))
+
+
+HISTORY_INTERVALS = {'ONE_MINUTE': 7, 'ONE_HOUR': 31, 'ONE_DAY': 370}
+
+
+def normalize_broker_candles(rows, now: datetime) -> list[dict]:
+    candles = {}
+    for row in rows:
+        try:
+            stamp = datetime.fromisoformat(str(row[0]).replace('Z', '+00:00'))
+            if stamp.tzinfo is None or stamp > now:
+                continue
+            o, h, l, c = [rupees_to_paise(v) for v in row[1:5]]
+            volume = int(row[5])
+            if min(o, h, l, c) <= 0 or not l <= o <= h or not l <= c <= h or volume < 0:
+                continue
+            timestamp = int(stamp.timestamp())
+            candles[timestamp] = dict(timestamp=timestamp, open_paise=o, high_paise=h,
+                                      low_paise=l, close_paise=c, volume=volume,
+                                      source='angelone_live', feed_mode='LIVE')
+        except (ValueError, TypeError, IndexError):
+            continue
+    return [candles[t] for t in sorted(candles, reverse=True)]
+
+
+def backfill_history(writer, api, subscription, interval: str) -> bool:
+    if writer.feed_mode != 'live' or interval not in HISTORY_INTERVALS:
+        return False
+    now = datetime.now(timezone.utc)
+    local_now = now.astimezone(ZoneInfo('Asia/Kolkata'))
+    params = {'exchange': subscription.exchange_segment, 'symboltoken': subscription.token,
+              'interval': interval, 'fromdate': (local_now - timedelta(days=HISTORY_INTERVALS[interval])).strftime('%Y-%m-%d %H:%M'),
+              'todate': local_now.strftime('%Y-%m-%d %H:%M')}
+    result = broker_call(lambda: api.getCandleData(params))
+    if not isinstance(result, dict) or result.get('status') is not True:
+        return False
+    candles = normalize_broker_candles(result.get('data') or [], now)
+    if not candles:
+        return False
+    symbol = subscription.symbol
+    key = f'market:history:{symbol}' if interval == 'ONE_MINUTE' else f'market:history:{symbol}:{interval}'
+    with writer.history_lock:
+        # Merge at commit time, preserving newer stream buckets received during REST.
+        merged = {c['timestamp']: c for c in candles}
+        for raw in writer.client.lrange(key, 0, writer.history_max_items - 1):
+            try:
+                existing = json.loads(raw)
+                if existing.get('source') == 'angelone_live' and existing.get('feed_mode') == 'LIVE':
+                    merged.setdefault(int(existing['timestamp']), existing)
+            except (ValueError, TypeError, KeyError):
+                pass
+        newest = sorted(merged, reverse=True)[:writer.history_max_items]
+        with writer.client.pipeline() as pipe:
+            pipe.delete(key)
+            pipe.rpush(key, *[json.dumps(merged[t]) for t in newest])
+            pipe.expire(key, writer.history_ttl)
+            pipe.execute()
+    return True
+
+
+def history_demand_loop(store, writer, api, stopped):
+    attempts = {}
+    while not stopped.wait(2):
+        try:
+            cutoff = time.time() - 300
+            writer.client.zremrangebyscore('market:history:demand', '-inf', cutoff)
+            requests = writer.client.zrevrangebyscore('market:history:demand', '+inf', cutoff, start=0, num=900)
+            requests.sort(key=lambda request: attempts.get(request.decode() if isinstance(request, bytes) else request, 0))
+            for request in requests:
+                request = request.decode() if isinstance(request, bytes) else request
+                if time.monotonic() - attempts.get(request, 0) < 60:
+                    continue
+                symbol, interval = request.rsplit('|', 1)
+                attempts[request] = time.monotonic()
+                subscriptions = store._build_subscriptions(store._rows, [symbol])
+                if subscriptions and interval in HISTORY_INTERVALS:
+                    backfill_history(writer, api, subscriptions[0], interval)
+                    break
+            # Bound cooldown memory to the active demand set.
+            active = {r.decode() if isinstance(r, bytes) else r for r in requests}
+            attempts = {k: v for k, v in attempts.items() if k in active}
+        except Exception as error:
+            print(f'market worker: historical backfill failed: {type(error).__name__}', flush=True)
+
+
 def fetch_quote_for_symbol(symbol: str) -> dict[str, Any] | None:
     mode = get_feed_mode()
     symbol = symbol.strip().upper()
@@ -421,41 +580,30 @@ def fetch_quote_for_symbol(symbol: str) -> dict[str, Any] | None:
         exch = info.get("exch_seg") or "NSE"
         inst_type = info.get("instrumenttype") or ""
 
-    if GLOBAL_SMART_API and token:
+    if mode == "live" and GLOBAL_SMART_API and token:
         try:
-            if exch in ("NFO", "BFO") or "FUT" in inst_type or "OPT" in inst_type:
-                trading_symbol = info.get("symbol") or clean_sym
-            else:
-                trading_symbol = info.get("symbol") or f"{clean_sym}-EQ"
-            res = GLOBAL_SMART_API.ltpData(exch, trading_symbol, token)
-            if isinstance(res, dict) and res.get("status") is True:
-                data = res.get("data") or {}
-                if data.get("ltp") is not None and float(data.get("ltp", 0)) > 0:
-                    ltp = float(data["ltp"])
-                    close = float(data.get("close") or ltp)
-                    if close <= 0:
-                        close = ltp
-                    ltp_paise = int(round(ltp * 100))
-                    close_paise = int(round(close * 100))
-                    change_paise = ltp_paise - close_paise
-                    change_percent = round((change_paise / close_paise) * 100, 2) if close_paise > 0 else 0.0
-
-                    source = "angelone_live"
-                    now_iso = datetime.now(timezone.utc).isoformat()
-                    quote = {
-                        "symbol": symbol,
-                        "price_paise": ltp_paise,
-                        "change_paise": change_paise,
-                        "change_percent": change_percent,
-                        "source": source,
-                        "updated_at": now_iso
-                    }
-                    if GLOBAL_WRITER:
-                        exch_type = EXCHANGE_TYPES.get(exch, 1)
-                        sub = Subscription(symbol, token, exch, exch_type)
-                        GLOBAL_WRITER.benchmark_prices[symbol] = close_paise
-                        GLOBAL_WRITER.write(sub, ltp_paise, 5000, source=source)
-                    return quote
+            data = fetch_full_snapshot(GLOBAL_SMART_API, exch, str(token))
+            if data:
+                ltp_paise = rupees_to_paise(data.get("ltp"))
+                close_paise = rupees_to_paise(data.get("close"))
+                stamp = broker_quote_time(data.get("exchFeedTime"))
+                if ltp_paise <= 0 or stamp is None:
+                    return None
+                quote = {
+                    "symbol": symbol, "price_paise": ltp_paise,
+                    "previous_close_paise": close_paise,
+                    "day_change_available": close_paise > 0,
+                    "volume": integer(data.get("tradeVolume")),
+                    "source": "angelone_live", "updated_at": stamp.isoformat()
+                }
+                if close_paise > 0:
+                    quote["change_paise"] = ltp_paise - close_paise
+                    quote["change_percent"] = round((ltp_paise - close_paise) * 100 / close_paise, 2)
+                if GLOBAL_WRITER:
+                    sub = Subscription(symbol, str(token), exch, EXCHANGE_TYPES[exch])
+                    GLOBAL_WRITER.write(sub, ltp_paise, quote["volume"], source="angelone_live",
+                                        previous_close_paise=close_paise, event_time=stamp, build_history=False, open_interest=integer(data.get("opnInterest")))
+                return quote
         except Exception as e:
             print(f"market worker: error fetching live quote for {symbol} from Angel One: {e}", flush=True)
 
@@ -780,6 +928,7 @@ class InstrumentStore:
             threading.Thread(target=self._upsert_bg, args=(rows,), daemon=True).start()
 
         self._rows = rows
+        init_global_token_map()
         subscriptions = self._build_subscriptions(rows)
         if not subscriptions:
             # Fall back to built-in subscriptions
@@ -815,7 +964,7 @@ class InstrumentStore:
                 token, segment = clean(row.get("token")), clean(row.get("exch_seg"))
                 if not token or not segment:
                     continue
-                if segment not in ("NSE", "NFO", "BSE"):
+                if segment not in ("NSE", "NFO", "BSE", "BFO"):
                     continue
 
                 name = clean(row.get("name")).upper()
@@ -826,11 +975,20 @@ class InstrumentStore:
                 is_equity = segment == "NSE" and (symbol.endswith("-EQ") or clean(row.get("instrumenttype")) in ("", "EQ"))
                 is_index = clean(row.get("instrumenttype")) == "AMXIDX" or name in ("NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "SENSEX")
 
-                if not (is_target or is_equity or is_index):
+                is_derivative = segment in ("NFO", "BFO") and clean(row.get("instrumenttype")) in ("FUTSTK", "FUTIDX", "OPTSTK", "OPTIDX")
+                if is_derivative:
+                    try:
+                        if datetime.strptime(clean(row.get("expiry")), "%d%b%Y").date() < datetime.now(ZoneInfo("Asia/Kolkata")).date():
+                            continue
+                    except ValueError:
+                        continue
+                    if integer(row.get("lotsize")) <= 0:
+                        continue  # never invent derivative contract sizes
+                if not (is_target or is_equity or is_index or is_derivative):
                     continue
 
                 opt_type = clean(row.get("option_type"))
-                if not opt_type and segment == "NFO":
+                if not opt_type and segment in ("NFO", "BFO"):
                     if symbol.endswith("CE"):
                         opt_type = "CE"
                     elif symbol.endswith("PE"):
@@ -839,7 +997,7 @@ class InstrumentStore:
                 strike = clean(row.get("strike"))
                 if strike in ("-1", "-1.000000"):
                     strike = ""
-                elif strike and segment == "NFO":
+                elif strike and segment in ("NFO", "BFO"):
                     strike = str(Decimal(strike) / 100)
 
                 lotsize = integer(row.get("lotsize"))
@@ -915,7 +1073,7 @@ class InstrumentStore:
             by_symbol = {}
             for row in rows:
                 segment, symbol = clean(row.get("exch_seg")), clean(row.get("symbol")).upper()
-                if segment == "NFO":
+                if segment in ("NFO", "BFO"):
                     try:
                         expiry = datetime.strptime(clean(row.get("expiry")), "%d%b%Y").date()
                     except ValueError:
@@ -942,7 +1100,7 @@ class InstrumentStore:
                 if row is None:
                     continue
                 token, segment = clean(row.get("token")), clean(row.get("exch_seg"))
-                if segment == "NFO":
+                if segment in ("NFO", "BFO"):
                     symbol = clean(row.get("symbol")).upper()
             if not token or segment not in EXCHANGE_TYPES:
                 continue
@@ -974,19 +1132,19 @@ def sync_demand_subscriptions(store, client, websocket) -> list[Subscription]:
         store._subscriptions = {**current, **desired}
     try:
         if removed:
-            websocket.unsubscribe("demand", 1, groups(removed))
+            websocket.unsubscribe("demand", QUOTE_SUBSCRIPTION_MODE, groups(removed))
         if added:
-            websocket.subscribe("demand", 1, groups(added))
+            websocket.subscribe("demand", QUOTE_SUBSCRIPTION_MODE, groups(added))
     except Exception:
         with store._lock:
             store._subscriptions = current
-        websocket.input_request_dict = {1: {g["exchangeType"]: g["tokens"] for g in groups(current.values())}}
+        websocket.input_request_dict = {QUOTE_SUBSCRIPTION_MODE: {g["exchangeType"]: g["tokens"] for g in groups(current.values())}}
         raise
     with store._lock:
         store._subscriptions = desired
     # The installed SDK appends tokens and does not correctly prune unsubscribe
     # state. Keep its reconnect snapshot equal to the actual desired subscriptions.
-    websocket.input_request_dict = {1: {g["exchangeType"]: g["tokens"] for g in groups(desired.values())}}
+    websocket.input_request_dict = {QUOTE_SUBSCRIPTION_MODE: {g["exchangeType"]: g["tokens"] for g in groups(desired.values())}}
     return added
 
 
@@ -1033,11 +1191,12 @@ def publish_feed_state(
 class QuoteWriter:
     def __init__(self, client: redis.Redis, quote_ttl: int, history_ttl: int, history_max_items: int, feed_mode: str | None = None) -> None:
         self.client = client
-        self.quote_ttl = quote_ttl
+        self.quote_ttl = max(quote_ttl, 7 * 86400) if (feed_mode or get_feed_mode()) == "live" else quote_ttl
         self.history_ttl = history_ttl
         self.history_max_items = history_max_items
         self._daily_volume: dict[str, tuple[date, int]] = {}
-        self.benchmark_prices = DEFAULT_BENCHMARK_PRICES_PAISE
+        self.benchmark_prices = dict(DEFAULT_BENCHMARK_PRICES_PAISE)
+        self.history_lock = threading.RLock()
         self._feed_mode = feed_mode
         self.settlement_recorder = SettlementRecorder(os.getenv("DATABASE_URL", ""))
 
@@ -1045,7 +1204,9 @@ class QuoteWriter:
     def feed_mode(self) -> str:
         return self._feed_mode if self._feed_mode is not None else get_feed_mode()
 
-    def write(self, subscription: Subscription, price_paise: int, volume: int, source: str = "synthetic") -> None:
+    def write(self, subscription: Subscription, price_paise: int, volume: int, source: str = "synthetic",
+              previous_close_paise: int = 0, event_time: datetime | None = None,
+              build_history: bool = True, open_interest: int = 0) -> None:
         mode = self.feed_mode
         if mode == "live" and source != "angelone_live":
             print(f"market worker: rejected non-live quote write to Redis in LIVE mode (source={source}, symbol={subscription.symbol})", flush=True)
@@ -1054,9 +1215,13 @@ class QuoteWriter:
             print(f"market worker: rejected quote write to Redis in {mode.upper()} mode (source={source}, symbol={subscription.symbol})", flush=True)
             return
 
-        now = datetime.now(timezone.utc)
-        benchmark = self.benchmark_prices.get(subscription.symbol, price_paise)
-        change_paise = price_paise - benchmark
+        if price_paise <= 0:
+            return
+        now = event_time or datetime.now(timezone.utc)
+        if now.tzinfo is None or now > datetime.now(timezone.utc) + timedelta(seconds=5):
+            return
+        benchmark = previous_close_paise if mode == "live" else self.benchmark_prices.get(subscription.symbol, price_paise)
+        change_paise = price_paise - benchmark if benchmark > 0 else 0
         change_percent = round((change_paise / benchmark) * 100, 2) if benchmark > 0 else 0.0
         market_event_id = f"mkt_tick_{int(now.timestamp() * 1000)}_{subscription.symbol}_{uuid.uuid4().hex[:8]}"
 
@@ -1067,6 +1232,9 @@ class QuoteWriter:
             "change_paise": change_paise,
             "change_percent": change_percent,
             "volume": volume,
+            "previous_close_paise": benchmark,
+            "open_interest": max(open_interest, 0),
+            "day_change_available": benchmark > 0,
             "source": source,
             "updated_at": now.isoformat()
         }
@@ -1086,28 +1254,37 @@ class QuoteWriter:
             self.settlement_recorder.record(sym, price_paise, source, mode, now)
 
         t0 = time.perf_counter()
-        with self.client.pipeline() as pipe:
+        with self.history_lock, self.client.pipeline() as pipe:
+            existing = self.client.hgetall(quote_key)
+            old_stamp = broker_quote_time(existing.get("updated_at")) if existing else None
+            if existing.get("source") == source and old_stamp is not None and old_stamp > now:
+                return
             pipe.hset("market:feed_state", mapping={"last_tick": now.isoformat()})
             for sym in symbols_to_write:
                 q_key = f"market:quote:{sym}"
                 h_key = f"market:history:{sym}"
                 sym_quote = dict(quote)
                 sym_quote["symbol"] = sym
-                pipe.hset(q_key, mapping=sym_quote)
+                if benchmark <= 0:
+                    sym_quote.pop("change_paise", None)
+                    sym_quote.pop("change_percent", None)
+                    pipe.hdel(q_key, "change_paise", "change_percent")
+                pipe.hset(q_key, mapping={**sym_quote, "day_change_available": str(sym_quote["day_change_available"]).lower()})
                 pipe.expire(q_key, self.quote_ttl)
 
-                sym_latest = self.client.lindex(h_key, 0)
-                candle = make_candle(sym_latest, bucket, price_paise, self.volume_delta(sym, now.date(), volume), source, mode.upper())
-                try:
-                    same_bucket = json.loads(sym_latest).get("timestamp") == bucket * 60 if sym_latest else False
-                except (TypeError, ValueError):
-                    same_bucket = False
-                if same_bucket:
-                    pipe.lset(h_key, 0, json.dumps(candle))
-                else:
-                    pipe.lpush(h_key, json.dumps(candle))
-                pipe.ltrim(h_key, 0, self.history_max_items - 1)
-                pipe.expire(h_key, self.history_ttl)
+                if build_history:
+                    sym_latest = self.client.lindex(h_key, 0)
+                    candle = make_candle(sym_latest, bucket, price_paise, self.volume_delta(sym, now.date(), volume), source, mode.upper())
+                    try:
+                        same_bucket = json.loads(sym_latest).get("timestamp") == bucket * 60 if sym_latest else False
+                    except (TypeError, ValueError):
+                        same_bucket = False
+                    if same_bucket:
+                        pipe.lset(h_key, 0, json.dumps(candle))
+                    else:
+                        pipe.lpush(h_key, json.dumps(candle))
+                    pipe.ltrim(h_key, 0, self.history_max_items - 1)
+                    pipe.expire(h_key, self.history_ttl)
                 pipe.publish("market:updates", json.dumps(sym_quote))
             pipe.execute()
         redis_latency_ms = round((time.perf_counter() - t0) * 1000, 2)
@@ -1323,34 +1500,13 @@ def run_feed(store: InstrumentStore, writer: QuoteWriter, control: FeedControl) 
     GLOBAL_WRITER = writer
     auth_token = session["data"]["jwtToken"]
     feed_token = smart_api.getfeedToken()
-    websocket = SmartWebSocketV2(auth_token, api_key, client_id, feed_token)
+    websocket = VerifiedSmartWebSocket(auth_token, api_key, client_id, feed_token)
     websocket.input_request_dict = {}
     control.attach(websocket)
     if writer and getattr(writer, "client", None):
         publish_feed_state(writer.client, feed_provider="angel_one", feed_state="CONNECTING", is_synthetic=False)
 
-    # Initial Angel One REST LTP snapshot to populate Redis immediately with authentic data
-    try:
-        print("market worker: pre-fetching authentic Angel One LTP & close snapshots...", flush=True)
-        for item in store.subscriptions():
-            if item.exchange_segment == "NSE" and not item.token.startswith("999"):
-                try:
-                    res = smart_api.ltpData("NSE", f"{item.symbol}-EQ", item.token)
-                    if isinstance(res, dict) and res.get("status") is True:
-                        d = res.get("data") or {}
-                        ltp = d.get("ltp")
-                        close = d.get("close")
-                        if ltp and close and float(ltp) > 0 and float(close) > 0:
-                            close_paise = int(round(float(close) * 100))
-                            ltp_paise = int(round(float(ltp) * 100))
-                            writer.benchmark_prices[item.symbol] = close_paise
-                            writer.write(item, ltp_paise, 0, source="angelone_live")
-                except Exception:
-                    pass
-        print("market worker: authentic initial snapshots written to Redis!", flush=True)
-    except Exception as snap_err:
-        print(f"market worker: initial snapshot error: {snap_err}", flush=True)
-
+    # Snapshot all segments asynchronously after connection.
     stopped = threading.Event()
     connected = threading.Event()
 
@@ -1362,30 +1518,32 @@ def run_feed(store: InstrumentStore, writer: QuoteWriter, control: FeedControl) 
                 continue
             try:
                 sync_demand_subscriptions(store, writer.client, websocket)
-                # Refresh one missing/stale LTP per cycle. This also recovers CNC
-                # exits for illiquid symbols without weakening quote validation.
-                for item in store.subscriptions():
-                    if item.token.startswith("999"):
-                        continue
+                # Up to 50 exact identities per FULL request, across all segments.
+                pending = []
+                active = store.subscriptions()
+                active_symbols = {item.symbol for item in active}
+                for symbol in list(snapshot_attempts):
+                    if symbol not in active_symbols:
+                        snapshot_attempts.pop(symbol, None)
+                for item in active:
                     if time.monotonic() - snapshot_attempts.get(item.symbol, 0) < 60:
                         continue
                     updated = writer.client.hget(f"market:quote:{item.symbol}", "updated_at")
-                    if updated:
-                        try:
-                            stamp = datetime.fromisoformat(updated.replace("Z", "+00:00"))
-                            if (datetime.now(timezone.utc) - stamp).total_seconds() < 90:
-                                continue
-                        except (ValueError, TypeError):
-                            pass
-                    trading_symbol = item.symbol if item.exchange_segment in ("NFO", "BFO") else item.symbol + "-EQ"
+                    stamp = broker_quote_time(updated)
+                    if stamp and (datetime.now(timezone.utc) - stamp).total_seconds() < 90:
+                        continue
                     snapshot_attempts[item.symbol] = time.monotonic()
-                    result = smart_api.ltpData(item.exchange_segment, trading_symbol, item.token)
-                    data = result.get("data") or {}
-                    if result.get("status") and float(data.get("ltp") or 0) > 0:
-                        if float(data.get("close") or 0) > 0:
-                            writer.benchmark_prices[item.symbol] = int(round(float(data["close"]) * 100))
-                        writer.write(item, int(round(float(data["ltp"]) * 100)), 0, source="angelone_live")
-                    break
+                    pending.append(item)
+                    if len(pending) == 50:
+                        break
+                snapshots = fetch_full_snapshots(smart_api, pending)
+                for item in pending:
+                    data = snapshots.get((item.exchange_segment, item.token))
+                    stamp = broker_quote_time(data.get("exchFeedTime")) if data else None
+                    if data and stamp:
+                        writer.write(item, rupees_to_paise(data.get("ltp")), integer(data.get("tradeVolume")),
+                                     source="angelone_live", previous_close_paise=rupees_to_paise(data.get("close")),
+                                     event_time=stamp, build_history=False, open_interest=integer(data.get("opnInterest")))
             except Exception as error:
                 print(f"market worker: demand subscription refresh failed: {error}", flush=True)
 
@@ -1395,7 +1553,7 @@ def run_feed(store: InstrumentStore, writer: QuoteWriter, control: FeedControl) 
         grouped: dict[int, list[str]] = {}
         for item in store.subscriptions():
             grouped.setdefault(item.exchange_type, []).append(item.token)
-        websocket.subscribe("stock-simulator", 1, [{"exchangeType": exchange_type, "tokens": tokens} for exchange_type, tokens in grouped.items()])
+        websocket.subscribe("stock-sim", QUOTE_SUBSCRIPTION_MODE, [{"exchangeType": exchange_type, "tokens": tokens} for exchange_type, tokens in grouped.items()])
         control.opened()
         connected.set()
         print(f"market worker: Angel One WebSocket connected! Subscribed to {len(store.subscriptions())} instruments", flush=True)
@@ -1409,7 +1567,12 @@ def run_feed(store: InstrumentStore, writer: QuoteWriter, control: FeedControl) 
             price_paise = paise(message.get("last_traded_price"))
             volume = integer(message.get("volume_trade_for_the_day"))
             control.tick()
-            writer.write(subscription, price_paise, volume, source="angelone_live")
+            stamp = broker_quote_time(message.get("exchange_timestamp"))
+            if stamp is None:
+                return
+            writer.write(subscription, price_paise, volume, source="angelone_live",
+                         previous_close_paise=paise(message.get("closed_price")), event_time=stamp,
+                         open_interest=integer(message.get("open_interest")))
         except (ValueError, redis.RedisError) as error:
             print(f"market worker: discarded Angel One tick: {error}", flush=True)
 
@@ -1429,6 +1592,7 @@ def run_feed(store: InstrumentStore, writer: QuoteWriter, control: FeedControl) 
     websocket.on_error = on_error
     websocket.on_close = on_close
     threading.Thread(target=demand_loop, daemon=True).start()
+    threading.Thread(target=history_demand_loop, args=(store, writer, smart_api, stopped), daemon=True).start()
     try:
         websocket.connect()
     finally:

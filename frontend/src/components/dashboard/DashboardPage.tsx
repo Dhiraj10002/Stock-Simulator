@@ -387,6 +387,7 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
 
   // Kite widget active tab
   type KiteTab = "ipos" | "news" | "economic" | "earnings";
+  const showDemoData = process.env.NEXT_PUBLIC_SHOW_DEMO_DATA === "true";
   const [activeKiteTab, setActiveKiteTab] = useState<KiteTab>("economic");
   const [calendarSubView, setCalendarSubView] = useState<"economic" | "holidays">("economic");
   const [earningsSubView, setEarningsSubView] = useState<"earnings" | "actions">("earnings");
@@ -487,7 +488,7 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
     }
   };
 
-  const quotes = useMultiSymbolQuotes(MASTER_STOCKS_CATALOG.map((s) => s.symbol));
+  const quotes = useMultiSymbolQuotes([...MASTER_STOCKS_CATALOG.map((s) => s.symbol), "NIFTY", "SENSEX", "BANKNIFTY"]);
 
   // Prefetch live real-time quotes for all catalog stocks on mount
   useEffect(() => {
@@ -622,17 +623,19 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
       ? "SENSEX"
       : "BANKNIFTY";
 
+  const historyInterval = selectedTimeframe === "1Y" ? "ONE_DAY" : selectedTimeframe === "1D" ? "ONE_MINUTE" : "ONE_HOUR";
   const { data: indexCandles } = useQuery<Candle[]>({
     queryKey: ["index-candles", indexKey, selectedTimeframe],
     queryFn: async () => {
       try {
-        const res = await apiFetch<Candle[]>(`/market/quotes/${indexKey}/history?limit=50`);
+        const res = await apiFetch<Candle[]>(`/market/quotes/${indexKey}/history?limit=500&interval=${historyInterval}`);
         return res || [];
       } catch {
         return [];
       }
     },
-    staleTime: 60_000,
+    staleTime: 5_000,
+    refetchInterval: (query) => query.state.data?.length ? 60_000 : 5_000,
   });
 
   // Market Overview Chart Coordinates & Values Generator
@@ -643,7 +646,13 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
       liveIdxQuote?.change_paise !== undefined ? liveIdxQuote.change_paise / 100 : 0;
     const liveChangePercent = liveIdxQuote?.change_percent ?? 0;
 
-    const candles = indexCandles || [];
+    const allCandles = indexCandles || [];
+    const latestTimestamp = allCandles.at(-1)?.timestamp ?? 0;
+    const windowSeconds = selectedTimeframe === "1W" ? 7 * 86400 : selectedTimeframe === "1M" ? 31 * 86400 : 370 * 86400;
+    const istDate = (timestamp: number) => new Date(timestamp * 1000).toLocaleDateString("en-CA", {timeZone: "Asia/Kolkata"});
+    const candles = allCandles.filter((c) => selectedTimeframe === "1D"
+      ? istDate(c.timestamp) === istDate(latestTimestamp)
+      : c.timestamp >= latestTimestamp - windowSeconds);
     if (candles.length === 0) {
       return {
         pts: [],
@@ -661,7 +670,7 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
 
     const pts = candles.map((c) => {
       const d = new Date(c.timestamp * 1000);
-      const time = `${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
+      const time = d.toLocaleString("en-IN", {timeZone: "Asia/Kolkata", ...(selectedTimeframe === "1D" ? {hour: "2-digit", minute: "2-digit"} as const : {day: "2-digit", month: "short"} as const)});
       return { price: c.close_paise / 100, time };
     });
 
@@ -708,7 +717,7 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
       change: finalChange,
       changePercent: finalChangePercent,
     };
-  }, [indexKey, indexCandles, quotes]);
+  }, [indexKey, indexCandles, quotes, selectedTimeframe]);
 
   const availableBalance = wallet?.available_balance_paise;
   const unrealizedPnl = portfolio?.unrealized_pnl_paise ?? 0;
@@ -1065,6 +1074,10 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
 
             {/* TAB CONTENT */}
             <div className="flex-1 p-3 overflow-y-auto max-h-[380px]">
+              {!showDemoData && <div className="p-4 text-sm text-slate-400">
+                No verified data source is connected for this calendar desk.
+                <Link href="/news" className="block mt-2 text-cyan-400">View sourced market news</Link>
+              </div>}
               {/* 1. IPOs TAB */}
               {activeKiteTab === "ipos" && (
                 <div className="space-y-2.5">
@@ -1073,7 +1086,7 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
                     <span className="font-mono">GMP Premium</span>
                   </div>
 
-                  {KITE_IPOS.map((ipo) => (
+                  {(showDemoData ? KITE_IPOS : []).map((ipo) => (
                     <div
                       key={ipo.symbol}
                       className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60 hover:border-cyan-500/40 transition-colors"
@@ -1126,7 +1139,7 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
                     <span>Live</span>
                   </div>
 
-                  {MARKET_NEWS_ITEMS.map((item) => (
+                  {(showDemoData ? MARKET_NEWS_ITEMS : []).map((item) => (
                     <div
                       key={item.id}
                       className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60 hover:border-cyan-500/40 transition-colors"
@@ -1189,7 +1202,7 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
                         <span className="col-span-3 text-right">Forecast / Prev</span>
                       </div>
 
-                      {ECONOMIC_CALENDAR_EVENTS.map((item, idx) => (
+                      {(showDemoData ? ECONOMIC_CALENDAR_EVENTS : []).map((item, idx) => (
                         <div
                           key={idx}
                           className="grid grid-cols-12 py-2 items-center text-xs hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors"
@@ -1223,7 +1236,7 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
                         NSE / BSE Official Holiday Calendar
                       </div>
 
-                      {NSE_MARKET_HOLIDAYS.map((h, i) => (
+                      {(showDemoData ? NSE_MARKET_HOLIDAYS : []).map((h, i) => (
                         <div
                           key={i}
                           className="p-2 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60 flex items-center justify-between text-xs"
@@ -1281,7 +1294,7 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
 
                   {earningsSubView === "earnings" ? (
                     <div className="divide-y divide-slate-100 dark:divide-slate-800/80">
-                      {EARNINGS_CALENDAR_EVENTS.map((e) => (
+                      {(showDemoData ? EARNINGS_CALENDAR_EVENTS : []).map((e) => (
                         <div
                           key={e.symbol}
                           className="py-2.5 flex items-center justify-between text-xs hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors"
@@ -1313,7 +1326,7 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
                     </div>
                   ) : (
                     <div className="space-y-2">
-                      {CORPORATE_ACTIONS_EVENTS.map((a, i) => (
+                      {(showDemoData ? CORPORATE_ACTIONS_EVENTS : []).map((a, i) => (
                         <div
                           key={i}
                           className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60"
@@ -1352,7 +1365,7 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
 
             <div className="p-2.5 border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/40 text-center">
               <span className="text-[10px] text-slate-400">
-                Data synced live with Indian market calendar & exchange filings
+                {showDemoData ? "Demo entries — illustrative data only" : "Calendar, IPO and earnings feed unavailable"}
               </span>
             </div>
           </div>

@@ -4,6 +4,8 @@ import (
 	"context"
 	orderDTO "github.com/Dhiraj10002/Stock-Simulator/backend/internal/order/dto"
 	orderService "github.com/Dhiraj10002/Stock-Simulator/backend/internal/order/service"
+	"io"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -344,6 +346,12 @@ func TestMentorService_PreTradeCheck_DirectionalErrors(t *testing.T) {
 	}
 }
 
+type rejectingGeminiTransport struct{}
+
+func (rejectingGeminiTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	return &http.Response{StatusCode: http.StatusForbidden, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"error":{"message":"invalid test key"}}`)), Request: req}, nil
+}
+
 func TestMentorService_FallbackOnInvalidApiKey(t *testing.T) {
 	// Provide a fake/unreachable API key to verify it doesn't crash or error out,
 	// but gracefully falls back to the rule-based trade-aware engine
@@ -352,6 +360,7 @@ func TestMentorService_FallbackOnInvalidApiKey(t *testing.T) {
 		GeminiModel:  "gemini-2.0-flash",
 	}
 	svc := New(cfg)
+	svc.client = &http.Client{Transport: rejectingGeminiTransport{}} // no external network or data transfer
 	svc.OrderPreview = func(_ string, req orderDTO.CreateOrderRequest) (*orderService.OrderPreview, error) {
 		return &orderService.OrderPreview{RequiredFundsPaise: 2500000, AvailableBalancePaise: 100000000, SufficientFunds: true}, nil
 	}

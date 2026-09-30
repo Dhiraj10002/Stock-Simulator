@@ -11,7 +11,7 @@ from datetime import date
 
 from unittest.mock import MagicMock
 
-for mod in ["psycopg", "pyotp", "redis", "SmartApi", "SmartApi.smartWebSocketV2"]:
+for mod in ["psycopg", "pyotp", "redis", "websocket", "SmartApi", "SmartApi.smartWebSocketV2"]:
     if mod not in sys.modules:
         try:
             __import__(mod)
@@ -80,6 +80,9 @@ class MockRedisPipeline:
 
     def hset(self, key, mapping):
         self.commands.append(("hset", key, mapping))
+
+    def hdel(self, key, *fields):
+        self.commands.append(("hdel", key, fields))
 
     def expire(self, key, ttl):
         self.commands.append(("expire", key, ttl))
@@ -512,12 +515,9 @@ class BenchmarkFallbackSourceTest(unittest.TestCase):
         """Test E: In LIVE mode, valid quote from Angel One returns angelone_live and allows Redis write."""
         os.environ["MARKET_FEED_MODE"] = "live"
         mock_smart_api = MagicMock()
-        mock_smart_api.ltpData.return_value = {
+        mock_smart_api.getMarketData.return_value = {
             "status": True,
-            "data": {
-                "ltp": 2550.50,
-                "close": 2500.00
-            }
+            "data": {"fetched": [{"symbolToken": "2885", "exchange": "NSE", "ltp": 2550.50, "close": 2500.00, "exchFeedTime": "30-Sep-2026 15:30:00"}]}
         }
         worker.GLOBAL_SMART_API = mock_smart_api
         mock_writer = MagicMock()
@@ -761,15 +761,15 @@ class DemandSubscriptionRegressionTest(unittest.TestCase):
         client.zrevrangebyscore.return_value = ["TCS29SEP991940CE"]
         added = worker.sync_demand_subscriptions(self.store, client, socket)
         self.assertEqual([s.symbol for s in added], ["TCS29SEP991940CE"])
-        socket.subscribe.assert_called_once_with("demand", 1, [{"exchangeType": 2, "tokens": ["50001"]}])
+        socket.subscribe.assert_called_once_with("demand", 3, [{"exchangeType": 2, "tokens": ["50001"]}])
         self.assertIsNotNone(self.store.lookup("50001", 2))
         # Repeated polling must not re-subscribe or duplicate SDK reconnect tokens.
         worker.sync_demand_subscriptions(self.store, client, socket)
         self.assertEqual(socket.subscribe.call_count, 1)
-        self.assertEqual(socket.input_request_dict[1][2], ["50001"])
+        self.assertEqual(socket.input_request_dict[3][2], ["50001"])
         client.zrevrangebyscore.return_value = []
         worker.sync_demand_subscriptions(self.store, client, socket)
-        socket.unsubscribe.assert_called_once_with("demand", 1, [{"exchangeType": 2, "tokens": ["50001"]}])
+        socket.unsubscribe.assert_called_once_with("demand", 3, [{"exchangeType": 2, "tokens": ["50001"]}])
         self.assertIsNone(self.store.lookup("50001", 2))
         self.assertIsNotNone(self.store.lookup("11536", 1))
 
@@ -792,3 +792,102 @@ class ProvenanceCandleTest(unittest.TestCase):
         self.assertEqual(live["high_paise"], 10000)
         self.assertEqual(live["volume"], 3)
         self.assertEqual(live["source"], "angelone_live")
+
+
+class RealBrokerDataRegressionTest(unittest.TestCase):
+    def test_zero_change_is_available_and_no_fake_volume_is_written(self):
+        from unittest.mock import patch
+        api = MagicMock()
+        api.getMarketData.return_value = {"status": True, "data": {"fetched": [
+            {"exchange": "NFO", "symbolToken": "12345", "ltp": 4.6, "close": 4.6,
+             "tradeVolume": 22, "exchFeedTime": "30-Sep-2026 15:30:00"}]}}
+        info = {"token": "12345", "exch_seg": "NFO", "symbol": "TCS23NOV262640CE"}
+        with patch.dict(os.environ, MARKET_FEED_MODE="live"), patch.object(worker, "GLOBAL_SMART_API", api), patch.object(worker, "GLOBAL_TOKEN_MAP", {info["symbol"]: info}), patch.object(worker, "GLOBAL_WRITER", None), patch.object(worker, "broker_call", side_effect=lambda call: call()):
+            q = worker.fetch_quote_for_symbol(info["symbol"])
+        self.assertEqual(q["change_paise"], 0)
+        self.assertTrue(q["day_change_available"])
+        self.assertEqual(q["previous_close_paise"], 460)
+        self.assertEqual(q["volume"], 22)
+        self.assertEqual(q["updated_at"], "2026-09-30T10:00:00+00:00")
+        api.getMarketData.assert_called_once_with("FULL", {"NFO": ["12345"]})
+
+    def test_snapshot_wrong_identity_rejected(self):
+        from unittest.mock import patch
+        api = MagicMock()
+        api.getMarketData.return_value = {"status": True, "data": {"fetched": [{"exchange": "NSE", "symbolToken": "12345", "ltp": 900}]}}
+        with patch.object(worker, "broker_call", side_effect=lambda call: call()):
+            self.assertIsNone(worker.fetch_full_snapshot(api, "NFO", "12345"))
+
+    def test_missing_close_does_not_use_hardcoded_live_benchmark(self):
+        redis = MockRedis()
+        writer = worker.QuoteWriter(redis, 300, 86400, 500, feed_mode="live")
+        writer.write(worker.Subscription("RELIANCE", "2885", "NSE", 1), 10000, 0, source="angelone_live", build_history=False)
+        q = redis.store["market:quote:RELIANCE"]
+        self.assertEqual(q["previous_close_paise"], 0)
+        self.assertEqual(q["day_change_available"], "false")
+        self.assertNotIn("change_paise", q)
+        self.assertNotIn("market:history:RELIANCE", redis.store)
+
+    def test_historical_rows_use_rupees_to_paise_sort_and_filter_invalid_data(self):
+        now = worker.datetime(2026, 9, 30, 11, tzinfo=worker.timezone.utc)
+        rows = [["2026-09-30T15:29:00+05:30", 100, 102, 99, 101, 0],
+                ["2026-09-30T15:28:00+05:30", 100, 102, 99, 100, 100],
+                ["2026-09-30T15:29:00+05:30", 100, 102, 99, 101, 0],
+                ["2026-09-30T15:30:00+05:30", 100, 90, 110, 101, 1],
+                ["2026-10-01T15:30:00+05:30", 100, 102, 99, 101, 1]]
+        candles = worker.normalize_broker_candles(rows, now)
+        self.assertEqual(len(candles), 2)
+        self.assertGreater(candles[0]["timestamp"], candles[1]["timestamp"])
+        self.assertEqual(candles[0]["close_paise"], 10100)
+        self.assertEqual(candles[0]["volume"], 0)
+        self.assertEqual(candles[0]["feed_mode"], "LIVE")
+
+    def test_backfill_is_disabled_outside_live_mode(self):
+        writer = worker.QuoteWriter(None, 300, 86400, 500, feed_mode="synthetic")
+        api = MagicMock()
+        self.assertFalse(worker.backfill_history(writer, api, worker.Subscription("NIFTY", "99926000", "NSE", 1), "ONE_MINUTE"))
+        api.getCandleData.assert_not_called()
+
+    def test_verified_websocket_requires_tls_validation(self):
+        from unittest.mock import patch
+        socket = object.__new__(worker.VerifiedSmartWebSocket)
+        socket.auth_token, socket.api_key, socket.client_code, socket.feed_token = "test", "test", "test", "test"
+        with patch.object(worker, "WebSocketApp") as app:
+            socket.connect()
+        self.assertEqual(app.return_value.run_forever.call_args.kwargs["sslopt"]["cert_reqs"], worker.ssl.CERT_REQUIRED)
+        self.assertTrue(app.return_value.run_forever.call_args.kwargs["sslopt"]["check_hostname"])
+
+
+class BrokerHistoryIntegrationBoundaryTest(unittest.TestCase):
+    def test_backfill_merges_newer_stream_bucket_and_never_fabricates_quotes(self):
+        from unittest.mock import patch
+        now = worker.datetime.now(worker.timezone.utc)
+        old = now - worker.timedelta(minutes=5)
+        stream = dict(timestamp=int(now.timestamp()) // 60 * 60, open_paise=10100, high_paise=10200,
+                      low_paise=10000, close_paise=10150, volume=5, source="angelone_live", feed_mode="LIVE")
+        client = MagicMock()
+        client.lrange.return_value = [json.dumps(stream)]
+        writer = worker.QuoteWriter(client, 300, 86400, 500, feed_mode="live")
+        api = MagicMock()
+        api.getCandleData.return_value = {"status": True, "data": [[old.isoformat(), 100, 102, 99, 101, 0]]}
+        sub = worker.Subscription("NIFTY", "99926000", "NSE", 1)
+        with patch.object(worker, "broker_call", side_effect=lambda call: call()):
+            self.assertTrue(worker.backfill_history(writer, api, sub, "ONE_MINUTE"))
+        pipe = client.pipeline.return_value.__enter__.return_value
+        args = pipe.rpush.call_args.args
+        self.assertEqual(args[0], "market:history:NIFTY")
+        self.assertEqual(json.loads(args[1])["close_paise"], 10150)
+        self.assertEqual(json.loads(args[2])["volume"], 0)
+        pipe.hset.assert_not_called()
+        params = api.getCandleData.call_args.args[0]
+        self.assertEqual(params["symboltoken"], "99926000")
+        self.assertEqual(params["interval"], "ONE_MINUTE")
+
+    def test_empty_broker_history_does_not_delete_cached_candles(self):
+        from unittest.mock import patch
+        client, api = MagicMock(), MagicMock()
+        api.getCandleData.return_value = {"status": True, "data": []}
+        writer = worker.QuoteWriter(client, 300, 86400, 500, feed_mode="live")
+        with patch.object(worker, "broker_call", side_effect=lambda call: call()):
+            self.assertFalse(worker.backfill_history(writer, api, worker.Subscription("NIFTY", "99926000", "NSE", 1), "ONE_MINUTE"))
+        client.pipeline.assert_not_called()

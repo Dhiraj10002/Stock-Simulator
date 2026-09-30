@@ -117,6 +117,10 @@ func (h *Handler) Search(c *gin.Context) {
 	dbQuery = dbQuery.Where("active = ?", true).
 		Where("instrument_type IN ?", []string{"", "EQ", "EQUITY", "INDEX", "AMXIDX", "FUTSTK", "FUTIDX", "OPTSTK", "OPTIDX"}).
 		Where("exchange_segment IN ('NFO', 'BFO') OR instrument_type IN ('INDEX', 'AMXIDX') OR symbol NOT LIKE '%-%' OR symbol LIKE '%-EQ'")
+	// Legacy demo tokens cannot be resolved by the live broker.
+	if h.market == nil || h.market.FeedMode() != marketDTO.FeedModeSynthetic {
+		dbQuery = dbQuery.Where("token ~ '^[0-9]+$'")
+	}
 	now := time.Now().In(calendar.Location())
 	cutoff := now.Format("2006-01-02")
 	if now.Hour() > 15 || (now.Hour() == 15 && now.Minute() >= 30) {
@@ -172,6 +176,21 @@ func (h *Handler) Search(c *gin.Context) {
 		}
 	}
 
+	// Prefer the master symbol over a duplicate display alias in one exchange.
+	unique := make([]model.Instrument, 0, len(instruments))
+	seen := make(map[string]int)
+	for _, inst := range instruments {
+		key := inst.ExchangeSegment + ":" + strings.TrimSuffix(strings.ToUpper(inst.Symbol), "-EQ")
+		if i, ok := seen[key]; ok {
+			if strings.HasSuffix(inst.Symbol, "-EQ") {
+				unique[i] = inst
+			}
+			continue
+		}
+		seen[key] = len(unique)
+		unique = append(unique, inst)
+	}
+	instruments = unique
 	quotes := map[string]*marketDTO.QuoteResponse{}
 	if h.market != nil {
 		symbols := make([]string, 0, len(instruments))
