@@ -249,7 +249,7 @@ func (h *Handler) Serve(c *gin.Context) {
 						continue
 					}
 					subscribed[symbol] = struct{}{}
-					if q, err := h.market.CurrentQuote(symbol); err == nil && q != nil {
+					if q, err := h.market.CurrentQuote(symbol); err == nil && q != nil && h.market.ValidateStreamQuote(q) == nil {
 						if !enqueueEvent(event{Type: "quote", Quote: q}) {
 							return
 						}
@@ -309,6 +309,9 @@ func (h *Handler) Serve(c *gin.Context) {
 				continue
 			}
 			if _, ok := subscribed[strings.ToUpper(quote.Symbol)]; !ok {
+				continue
+			}
+			if h.market.ValidateStreamQuote(&quote) != nil {
 				continue
 			}
 			if !enqueueEvent(event{Type: "quote", Quote: &quote}) {

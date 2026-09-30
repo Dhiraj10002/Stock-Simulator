@@ -35,7 +35,7 @@ export type Portfolio = {
   current_value_paise: number;
   unrealized_pnl_paise: number;
   realized_pnl_paise?: number;
-  daily_pnl_paise?: number;
+  daily_pnl_paise?: number | null;
   total_pnl_paise?: number;
   valuation_status?: "REALTIME" | "STALE" | "DEGRADED";
   positions: Position[];

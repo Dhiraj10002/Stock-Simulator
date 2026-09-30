@@ -100,3 +100,8 @@ class NewsWorkerAliasTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class PublicationProvenanceTest(unittest.TestCase):
+    def test_unknown_publication_time_is_not_now(self):
+        self.assertEqual(worker.published_at(None), "")
+        self.assertEqual(worker.published_at("invalid date"), "")

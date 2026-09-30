@@ -7,32 +7,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/cache"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/news/dto"
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/testutil"
 	"github.com/redis/go-redis/v9"
 )
 
 func getTestRedis(t *testing.T) (*redis.Client, string) {
-	candidates := []string{
-		os.Getenv("TEST_REDIS_URL"),
-		"redis://127.0.0.1:6380/0",
-		"redis://localhost:6379/0",
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-
-	for _, u := range candidates {
-		if u == "" {
-			continue
-		}
-		c, err := cache.NewRedisClient(u, 2*time.Second)
-		if err == nil && c.Ping(ctx).Err() == nil {
-			return c, u
-		}
-	}
-	t.Skip("No test Redis instance reachable; skipping live Redis tests")
-	return nil, ""
+	return testutil.RequireDisposableRedis(t), os.Getenv("TEST_REDIS_URL")
 }
 
 func TestNewsService_LimitValidation(t *testing.T) {
@@ -50,33 +31,6 @@ func TestNewsService_LimitValidation(t *testing.T) {
 	}
 	if _, err := svc.ListWithFilters("", "", -5); err == nil {
 		t.Errorf("Expected error for limit=-5, got nil")
-	}
-}
-
-func TestNewsService_FallbackArticles(t *testing.T) {
-	// Test fallback articles logic
-	articles := getFallbackArticles("", "", 10)
-	if len(articles) == 0 {
-		t.Fatalf("Expected fallback articles, got 0")
-	}
-
-	// Verify sentiment filter on fallback
-	positives := getFallbackArticles("", "POSITIVE", 10)
-	for _, a := range positives {
-		if a.Sentiment != "POSITIVE" {
-			t.Errorf("Expected POSITIVE article, got %s", a.Sentiment)
-		}
-	}
-
-	// Verify symbol filter on fallback
-	relianceNews := getFallbackArticles("RELIANCE", "", 10)
-	if len(relianceNews) == 0 {
-		t.Fatalf("Expected fallback news for RELIANCE, got 0")
-	}
-	for _, a := range relianceNews {
-		if !contains(a.Symbols, "RELIANCE") {
-			t.Errorf("Expected article to contain RELIANCE symbol, got %v", a.Symbols)
-		}
 	}
 }
 
@@ -129,5 +83,26 @@ func TestNewsService_LiveRedisIngestedItems(t *testing.T) {
 	}
 	if symbolResults[0].Sentiment != "POSITIVE" {
 		t.Errorf("Expected POSITIVE sentiment, got %s", symbolResults[0].Sentiment)
+	}
+}
+
+func TestNewsEmptyAndStaleIngestion(t *testing.T) {
+	c, url := getTestRedis(t)
+	ctx := context.Background()
+	c.Del(ctx, itemsKey, "news:health")
+	defer c.Del(ctx, itemsKey, "news:health")
+	s, err := New(url, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.client.Close()
+	items, err := s.List("", 20)
+	if err != nil || len(items) != 0 {
+		t.Fatalf("empty feed invented news: %v %v", items, err)
+	}
+	c.HSet(ctx, "news:health", map[string]any{"last_poll": time.Now().Add(-time.Hour).Format(time.RFC3339), "last_success": time.Now().Add(-time.Hour).Format(time.RFC3339), "poll_interval_seconds": 60})
+	status, err := s.Status()
+	if err != nil || status["status"] != "STALE" {
+		t.Fatalf("stopped worker: %v %v", status, err)
 	}
 }

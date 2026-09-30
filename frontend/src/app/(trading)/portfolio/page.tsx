@@ -1,4 +1,6 @@
 "use client";
+import { exitRetryKey, completeExitRetry } from "@/lib/exitRetry";
+import { useAccountWallet } from "@/hooks/useAccountWallet";
 
 import React, { useState, useMemo } from "react";
 import Link from "next/link";
@@ -31,9 +33,9 @@ import {
 import { formatPaise } from "@/lib/format";
 import { useMultiSymbolQuotes } from "@/stores/market-store";
 import { resolveCanonicalSymbol } from "@/lib/alias";
-import { API_URL, extractApiDiagnostic, type ApiDiagnostic } from "@/lib/api";
+import { API_URL, apiFetch, extractApiDiagnostic, type ApiDiagnostic } from "@/lib/api";
 import ErrorDiagnosticModal from "@/components/ui/ErrorDiagnosticModal";
-import type { Portfolio, Wallet, ApiResponse, Position } from "@/types";
+import type { Portfolio, Position } from "@/types";
 
 const STOCK_INFO_MAP: Record<
   string,
@@ -106,101 +108,21 @@ export default function PortfolioPage() {
   const {
     data: portfolio,
     refetch: refetchPortfolio,
+    isError: portfolioError,
   } = useQuery<Portfolio>({
     queryKey: ["portfolio", token],
-    queryFn: async () => {
-      if (!token) {
-        return {
-          invested_value_paise: 0,
-          current_value_paise: 0,
-          unrealized_pnl_paise: 0,
-          positions: [],
-        };
-      }
-      try {
-        const res = await fetch(`${apiUrl}/portfolio`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!res.ok) {
-          return {
-            invested_value_paise: 0,
-            current_value_paise: 0,
-            unrealized_pnl_paise: 0,
-            positions: [],
-          };
-        }
-        const json: ApiResponse<Portfolio> = await res.json();
-        return (
-          json.data || {
-            invested_value_paise: 0,
-            current_value_paise: 0,
-            unrealized_pnl_paise: 0,
-            positions: [],
-          }
-        );
-      } catch {
-        return {
-          invested_value_paise: 0,
-          current_value_paise: 0,
-          unrealized_pnl_paise: 0,
-          positions: [],
-        };
-      }
-    },
+    queryFn: () => apiFetch<Portfolio>("/portfolio"),
     enabled: !!token,
     refetchInterval: token ? 5000 : false,
   });
 
   // 2. Fetch Wallet via TanStack Query
-  const { data: wallet } = useQuery<Wallet>({
-    queryKey: ["wallet", token],
-    queryFn: async () => {
-      if (!token) {
-        return {
-          uuid: "",
-          cash_balance_paise: 100000000,
-          available_balance_paise: 100000000,
-          blocked_paise: 0,
-        };
-      }
-      try {
-        const res = await fetch(`${apiUrl}/wallet`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!res.ok) {
-          return {
-            uuid: "",
-            cash_balance_paise: 100000000,
-            available_balance_paise: 100000000,
-            blocked_paise: 0,
-          };
-        }
-        const json: ApiResponse<Wallet> = await res.json();
-        return (
-          json.data || {
-            uuid: "",
-            cash_balance_paise: 100000000,
-            available_balance_paise: 100000000,
-            blocked_paise: 0,
-          }
-        );
-      } catch {
-        return {
-          uuid: "",
-          cash_balance_paise: 100000000,
-          available_balance_paise: 100000000,
-          blocked_paise: 0,
-        };
-      }
-    },
-    enabled: !!token,
-    refetchInterval: token ? 5000 : false,
-  });
+  const { data: wallet, isError: walletError } = useAccountWallet();
 
   // Live positions and holdings
   const livePositions = useMemo(
-    () => portfolio?.positions ?? [],
-    [portfolio?.positions]
+    () => (portfolio?.positions ?? []).map(p => portfolioError ? { ...p, is_quote_available: false } : p),
+    [portfolio?.positions, portfolioError]
   );
   const portfolioSymbols = useMemo(
     () => livePositions.map((p) => p.symbol),
@@ -214,7 +136,7 @@ export default function PortfolioPage() {
   const totalLiveHoldingsCurrentPaise = rawLiveHoldings.reduce((sum, p) => {
     const canonical = resolveCanonicalSymbol(p.symbol);
     const liveQuote = quotes[p.symbol] || quotes[canonical];
-    const isAvail = p.is_quote_available ?? (liveQuote ? liveQuote.price_paise > 0 : p.current_price_paise > 0);
+    const isAvail = !portfolioError && !p.is_quote_stale && (p.is_quote_available ?? false);
     const ltpPaise = liveQuote?.price_paise || p.current_price_paise || (isAvail ? p.average_price_paise : 0);
     return sum + (isAvail ? ltpPaise * p.quantity : 0);
   }, 0);
@@ -222,24 +144,15 @@ export default function PortfolioPage() {
   const activeHoldings: HoldingItem[] = rawLiveHoldings.map((p, idx) => {
     const canonical = resolveCanonicalSymbol(p.symbol);
     const liveQuote = quotes[p.symbol] || quotes[canonical];
-    const isAvail = p.is_quote_available ?? (liveQuote ? liveQuote.price_paise > 0 : p.current_price_paise > 0);
+    const isAvail = !portfolioError && !p.is_quote_stale && (p.is_quote_available ?? false);
     const ltpPaise = liveQuote?.price_paise || p.current_price_paise || (isAvail ? p.average_price_paise : 0);
     const prevClosePaise =
       liveQuote && liveQuote.change_paise !== undefined
         ? ltpPaise - liveQuote.change_paise
         : p.average_price_paise;
-    const dayChangePaise =
-      liveQuote && liveQuote.change_paise !== undefined
-        ? Math.round(liveQuote.change_paise * p.quantity)
-        : isAvail && ltpPaise > 0
-        ? Math.round((ltpPaise - p.average_price_paise) * p.quantity * 0.1)
-        : 0;
-    const dayChangePercent =
-      liveQuote && liveQuote.change_percent !== undefined
-        ? liveQuote.change_percent
-        : prevClosePaise > 0
-        ? ((ltpPaise - prevClosePaise) / prevClosePaise) * 100
-        : 0;
+    // No persisted session baseline is available; do not invent daily P&L.
+    const dayChangePaise = 0;
+    const dayChangePercent = 0;
 
     const investedValuePaise =
       p.invested_value_paise || p.average_price_paise * p.quantity;
@@ -274,6 +187,8 @@ export default function PortfolioPage() {
       currentValuePaise,
       unrealizedPnlPaise,
       pnlPercent,
+      dayPnlAvailable: false,
+      quoteAvailable: isAvail,
       dayChangePaise,
       dayChangePercent,
       weightPercent,
@@ -297,53 +212,29 @@ export default function PortfolioPage() {
   const isPositionsTab = activeTab === "POSITIONS";
   const totalInvestedPaise = isPositionsTab ? positionsInvestedVal : holdingsInvestedVal;
   const totalUnrealizedPnlPaise = isPositionsTab ? positionsPnl : holdingsPnl;
-  const totalValuationPaise = isPositionsTab ? (positionsInvestedVal + positionsPnl) : holdingsCurrentVal;
+  const totalValuationPaise = isPositionsTab ? activePositions.reduce((sum, p) => sum + p.current_value_paise, 0) : holdingsCurrentVal;
   const totalPnlPercent =
     totalInvestedPaise > 0 ? (totalUnrealizedPnlPaise / totalInvestedPaise) * 100 : 0;
   const isOverallProfit = totalUnrealizedPnlPaise >= 0;
 
-  // Day P&L calculation
-  const holdingsDayPnlPaise = activeHoldings.reduce((sum, h) => sum + h.dayChangePaise, 0);
-  const positionsDayPnlPaise = activePositions.reduce((sum, p) => {
-    const q = quotes[p.symbol];
-    if (q && q.change_paise !== undefined) {
-      return sum + Math.round(q.change_paise * p.quantity);
-    }
-    return sum + Math.round((p.unrealized_pnl_paise || 0) * 0.05);
-  }, 0);
-
-  const dayPnlPaise = isPositionsTab ? positionsDayPnlPaise : holdingsDayPnlPaise;
-  const dayPnlPercent =
-    (totalValuationPaise - dayPnlPaise) > 0 ? (dayPnlPaise / (totalValuationPaise - dayPnlPaise)) * 100 : 0;
-  const isDayProfit = dayPnlPaise >= 0;
-
-  const availableBalancePaise = wallet?.available_balance_paise ?? 100000000;
-  const blockedMarginPaise = wallet?.blocked_paise ?? 0;
+  // Daily P&L needs a session baseline plus intraday cash flows. Until the
+  // backend supplies that metric, display unavailable (not lifetime P&L).
+  const dayPnlPaise: number | undefined = undefined;
+  const isDayProfit = false;
+  const valuationAvailable = !!portfolio && !portfolioError && livePositions.every(p => p.is_quote_available && !p.is_quote_stale);
+  const availableBalancePaise = walletError ? undefined : wallet?.available_balance_paise;
+  const blockedMarginPaise = walletError ? undefined : wallet?.blocked_paise;
 
   // Square off position
   const handleSquareOff = async (pos: Position) => {
     if (!token) return;
     try {
-      // Use dedicated square-off endpoint if position has UUID, fallback to market order
-      const endpoint = pos.uuid
-        ? `${apiUrl}/portfolio/positions/${pos.uuid}/squareoff`
-        : `${apiUrl}/orders`;
-      const closeSide = pos.quantity > 0 ? "SELL" : "BUY";
+      if (!pos.uuid) throw new Error("Position identity unavailable; refresh the portfolio before exiting.");
+      const endpoint = `${apiUrl}/portfolio/positions/${pos.uuid}/squareoff`;
+      const retryKey = exitRetryKey(sessionStorage, pos.uuid);
       const res = await fetch(endpoint, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: pos.uuid
-          ? undefined
-          : JSON.stringify({
-              symbol: pos.symbol,
-              side: closeSide,
-              type: "MARKET",
-              product: pos.product,
-              quantity: Math.abs(pos.quantity),
-            }),
+        headers: { Authorization: `Bearer ${token}`, "Idempotency-Key": retryKey },
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -352,6 +243,9 @@ export default function PortfolioPage() {
         setDiagnosticError(diag);
         return;
       }
+      const result = await res.json();
+      completeExitRetry(sessionStorage, pos.uuid, result.data?.status);
+      if (result.data?.status !== "EXECUTED") throw new Error(`Exit ${result.data?.status?.toLowerCase() || "pending"}; refresh the position before trying again.`);
       void queryClient.invalidateQueries({ queryKey: ["portfolio"] });
       void queryClient.invalidateQueries({ queryKey: ["wallet"] });
     } catch (err: unknown) {
@@ -394,42 +288,10 @@ export default function PortfolioPage() {
     }
   };
 
-  // Exit CNC Equity holding via genuine market sell order
+  // Holdings use the same durable, position-bound exit workflow.
   const handleExitHolding = async (holding: HoldingItem) => {
-    if (!token) return;
-    try {
-      const endpoint = `${apiUrl}/orders`;
-      const res = await fetch(endpoint, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          symbol: holding.symbol,
-          side: "SELL",
-          type: "MARKET",
-          product: "DELIVERY",
-          quantity: holding.quantity,
-        }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        const diag = extractApiDiagnostic(res, data, endpoint);
-        setDiagnosticTitle(`Exit Holding Failed: ${holding.symbol}`);
-        setDiagnosticError(diag);
-        return;
-      }
-      void queryClient.invalidateQueries({ queryKey: ["portfolio"] });
-      void queryClient.invalidateQueries({ queryKey: ["wallet"] });
-    } catch (err: unknown) {
-      setDiagnosticTitle(`Exit Holding Network Error: ${holding.symbol}`);
-      setDiagnosticError({
-        status: 0,
-        message: err instanceof Error ? err.message : "Network error placing exit order",
-        timestamp: new Date().toISOString(),
-      });
-    }
+    const position = livePositions.find(p => p.uuid && `h-live-${p.uuid}` === holding.id);
+    if (position) await handleSquareOff(position);
   };
 
   // Export CSV summary
@@ -472,6 +334,9 @@ export default function PortfolioPage() {
       />
 
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
+        {(!portfolio || portfolioError || availableBalancePaise === undefined) && <p role="status" className="p-3 text-sm text-amber-700">Account data is loading or unavailable. Balances and returns are shown only when verified.</p>}
+        <p className="text-xs text-slate-500">Daily P&amp;L is unavailable until a reliable session baseline is recorded.</p>
+
         {/* ===================================================================== */}
         {/* TOP HEADER & INSTITUTIONAL ACTIONS BAR                                */}
         {/* ===================================================================== */}
@@ -542,19 +407,19 @@ export default function PortfolioPage() {
         {/* TOP KPI CARDS (TOTAL VALUATION, INVESTED, OVERALL P&L, MARGIN)         */}
         {/* ===================================================================== */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {/* 1. Total Valuation */}
+          {/* 1. Gross Position Value */}
           <div className="p-5 rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 shadow-xs space-y-2 relative overflow-hidden group hover:border-cyan-500/40 transition-all">
             <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 flex items-center justify-between">
-              <span>Total Valuation</span>
+              <span>Gross Position Value</span>
               <span className="text-[10px] font-mono text-cyan-600 dark:text-cyan-400">Live MTM</span>
             </span>
             <div className="text-2xl font-black font-tabular text-slate-900 dark:text-slate-100">
-              {formatPaise(totalValuationPaise)}
+              {formatPaise(valuationAvailable ? totalValuationPaise : undefined)}
             </div>
             <div className="flex items-center gap-1.5 text-xs">
               <span className="text-slate-400">Invested:</span>
               <span className="font-bold font-tabular text-slate-700 dark:text-slate-300">
-                {formatPaise(totalInvestedPaise)}
+                {formatPaise(portfolio && !portfolioError ? totalInvestedPaise : undefined)}
               </span>
             </div>
           </div>
@@ -570,8 +435,8 @@ export default function PortfolioPage() {
                     : "bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-800/40"
                 }`}
               >
-                {isOverallProfit ? "+" : ""}
-                {totalPnlPercent.toFixed(2)}%
+                {valuationAvailable && isOverallProfit ? "+" : ""}
+                {valuationAvailable ? `${totalPnlPercent.toFixed(2)}%` : "Unavailable"}
               </span>
             </span>
             <div className="flex items-baseline gap-2">
@@ -588,8 +453,8 @@ export default function PortfolioPage() {
                   <TrendingDown className="w-5 h-5 shrink-0" />
                 )}
                 <span>
-                  {isOverallProfit ? "+" : ""}
-                  {formatPaise(totalUnrealizedPnlPaise)}
+                  {valuationAvailable && isOverallProfit ? "+" : ""}
+                  {formatPaise(valuationAvailable ? totalUnrealizedPnlPaise : undefined)}
                 </span>
               </div>
             </div>
@@ -612,7 +477,7 @@ export default function PortfolioPage() {
                 }`}
               >
                 {isDayProfit ? "+" : ""}
-                {dayPnlPercent.toFixed(2)}%
+                Unavailable
               </span>
             </span>
             <div
@@ -771,7 +636,7 @@ export default function PortfolioPage() {
         {/* ===================================================================== */}
         {/* TAB 3: ASSET ALLOCATION & RISK DIVERSIFICATION                        */}
         {/* ===================================================================== */}
-        {activeTab === "ALLOCATION" && (
+        {activeTab === "ALLOCATION" && availableBalancePaise !== undefined && valuationAvailable && (
           <PortfolioAllocationView
             holdings={activeHoldings}
             positions={activePositions}
@@ -783,7 +648,7 @@ export default function PortfolioPage() {
         {/* ===================================================================== */}
         {/* TAB 4: P&L JOURNAL & QUANT ANALYTICS                                  */}
         {/* ===================================================================== */}
-        {activeTab === "ANALYTICS" && (
+        {activeTab === "ANALYTICS" && availableBalancePaise !== undefined && valuationAvailable && (
           <PortfolioPnlAnalytics
             totalValuationPaise={totalValuationPaise}
             totalUnrealizedPnlPaise={totalUnrealizedPnlPaise}
@@ -806,11 +671,11 @@ export default function PortfolioPage() {
       </main>
 
       {/* Virtual Deposit / Add Funds Modal */}
-      <AddFundsModal
+      {availableBalancePaise !== undefined && <AddFundsModal
         isOpen={isAddFundsOpen}
         onClose={() => setIsAddFundsOpen(false)}
         currentBalancePaise={availableBalancePaise}
-      />
+      />}
 
       {/* AI Portfolio Health Audit Modal */}
       <PortfolioAiInsightsModal

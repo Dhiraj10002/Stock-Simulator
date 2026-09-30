@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Zap,
   X,
@@ -9,7 +9,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { formatPaise } from "@/lib/format";
-import { API_URL } from "@/lib/api";
+import { API_URL, apiFetch } from "@/lib/api";
 import type { Instrument } from "@/types";
 
 export interface FnoOrderModalProps {
@@ -26,7 +26,6 @@ export default function FnoOrderModal({
   onClose,
   instrument,
   initialSide = "BUY",
-  availableBalancePaise = 100000000,
   onSuccess,
 }: FnoOrderModalProps) {
   const queryClient = useQueryClient();
@@ -68,7 +67,7 @@ export default function FnoOrderModal({
       setFeedback(null);
       setLots(1);
       setSide(initialSide);
-      setLimitPrice(((instrument.basePricePaise ?? 0) / 100).toFixed(2));
+      setLimitPrice(((instrument?.basePricePaise ?? 0) / 100).toFixed(2));
     });
     let inFlight = false;
     const refresh = async () => {
@@ -89,31 +88,37 @@ export default function FnoOrderModal({
     return () => { cancelled = true; controller.abort(); clearInterval(timer); };
   }, [instrument, initialSide, isOpen]);
 
-  if (!isOpen || !instrument) return null;
-
-  const lotSize = instrument.lotSize && instrument.lotSize > 0 ? instrument.lotSize : 1;
+  const lotSize = instrument?.lotSize && instrument.lotSize > 0 ? instrument.lotSize : 1;
   const totalQuantity = lots * lotSize;
-  const effectivePricePaise = liveLtpPaise > 0 ? liveLtpPaise : (instrument.basePricePaise ?? 0);
+  const effectivePricePaise = liveLtpPaise > 0 ? liveLtpPaise : (instrument?.basePricePaise ?? 0);
   const ltpRupees = effectivePricePaise / 100;
   const activePrice =
     orderType === "LIMIT" && parseFloat(limitPrice) > 0
       ? parseFloat(limitPrice)
       : ltpRupees;
 
-  // Margin calculation:
-  // - If buying option: Premium required = Quantity * Price
-  // - If future or selling option: Margin required = Approx 18% of contract value for NRML, 10% for MIS
-  const isOptionBuy = instrument.segment === "OPTIONS" && side === "BUY";
-  const requiredMarginPaise = isOptionBuy
-    ? Math.round(totalQuantity * activePrice * 100)
-    : product === "INTRADAY"
-    ? Math.round(totalQuantity * activePrice * 100 * 0.1) // 10% intraday MIS margin
-    : Math.round(totalQuantity * activePrice * 100 * 0.18); // 18% overnight NRML margin
-
-  const hasSufficientMargin = availableBalancePaise >= requiredMarginPaise;
+  const previewBody = {
+    symbol: instrument?.symbol, side, type: orderType, product,
+    quantity: totalQuantity,
+    price_paise: orderType === "MARKET" ? 0 : Math.round(activePrice * 100),
+  };
+  const preview = useQuery<{
+    required_funds_paise: number; available_balance_paise: number;
+    estimated_price_paise: number; sufficient_funds: boolean;
+  }>({
+    queryKey: ["order-preview", token, previewBody],
+    queryFn: () => apiFetch("/orders/preview", {method: "POST", body: JSON.stringify(previewBody)}),
+    enabled: isOpen && !!instrument && !!token && totalQuantity > 0,
+    refetchInterval: 5000, retry: false,
+  });
+  const validPreview = !preview.isError && !preview.isFetching ? preview.data : undefined;
+  const requiredMarginPaise = validPreview?.required_funds_paise;
+  const availableBalancePaise = validPreview?.available_balance_paise;
+  const hasSufficientMargin = validPreview?.sufficient_funds === true;
+  if (!isOpen || !instrument) return null;
 
   const handleExecuteOrder = async () => {
-    if (executing) return;
+    if (executing || !hasSufficientMargin) return;
     if (orderType === "MARKET" && (effectivePricePaise <= 0)) {
       setFeedback({
         type: "error",
@@ -372,9 +377,9 @@ export default function FnoOrderModal({
           {/* 5. Margin & Capital Breakdown Box */}
           <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/60 text-xs space-y-1.5">
             <div className="flex justify-between items-center text-slate-500 dark:text-slate-400">
-              <span>Required Margin:</span>
+              <span>Required additional funds:</span>
               <span className="font-black text-slate-900 dark:text-slate-100 font-tabular text-sm">
-                {activePrice > 0 ? formatPaise(requiredMarginPaise) : "Unavailable"}
+                {formatPaise(requiredMarginPaise)}
               </span>
             </div>
             <div className="flex justify-between items-center text-slate-500 dark:text-slate-400 text-[11px]">
@@ -389,6 +394,9 @@ export default function FnoOrderModal({
             </div>
           </div>
 
+          <p className="text-xs text-slate-500" role="status">
+            {preview.isError ? `Preview unavailable: ${preview.error.message}` : preview.isFetching ? "Checking price and funds…" : "Server estimate; price and funds are rechecked at execution."}
+          </p>
           {/* Feedback message */}
           {feedback && (
             <div

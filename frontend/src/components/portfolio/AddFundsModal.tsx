@@ -18,7 +18,7 @@ import WalletTransactionsTable from "./WalletTransactionsTable";
 interface AddFundsModalProps {
   isOpen: boolean;
   onClose: () => void;
-  currentBalancePaise: number;
+  currentBalancePaise?: number;
 }
 
 export default function AddFundsModal({

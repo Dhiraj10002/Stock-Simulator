@@ -1,4 +1,6 @@
 "use client";
+import { formatPaise } from "@/lib/format";
+import { useOrderPreview } from "@/hooks/useOrderPreview";
 
 import React, { useState, useMemo, useEffect, useCallback } from "react";
 import Link from "next/link";
@@ -25,7 +27,7 @@ import { MASTER_STOCKS_CATALOG } from "@/components/dashboard/DashboardPage";
 import { useMarketStore, useSymbolQuote, useTargetedSubscription } from "@/stores/market-store";
 import Navbar from "@/components/layout/Navbar";
 import { apiFetch, publicFetch, getAuthToken, ApiError } from "@/lib/api";
-import type { Wallet, Candle, Article } from "@/types";
+import type { Candle, Article } from "@/types";
 
 interface StockDetailsProps {
   initialSymbol?: string;
@@ -404,20 +406,8 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
   // ---------------------------------------------------------------------------
   // REAL DATA: Fetch wallet balance
   // ---------------------------------------------------------------------------
-  const { data: wallet } = useQuery<Wallet>({
-    queryKey: ["wallet", token],
-    queryFn: () => apiFetch<Wallet>("/wallet"),
-    enabled: !!token,
-    refetchInterval: token ? 5000 : false,
-    placeholderData: {
-      uuid: "",
-      cash_balance_paise: 100000000,
-      available_balance_paise: 100000000,
-      blocked_paise: 0,
-    },
-  });
 
-  const availableBalancePaise = wallet?.available_balance_paise ?? 100000000;
+
 
   // ---------------------------------------------------------------------------
   // REAL DATA: Fetch candle history from backend
@@ -711,7 +701,14 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
   // ---------------------------------------------------------------------------
   // REAL ORDER EXECUTION: POST /api/v1/orders + auto-execute
   // ---------------------------------------------------------------------------
+  const fundsPreview = useOrderPreview({
+    symbol: stock.symbol, side: orderModal.action, type: orderType,
+    product: orderProduct === "MIS" ? "INTRADAY" : "DELIVERY", quantity: orderQty,
+    price_paise: orderType === "MARKET" ? 0 : Math.round((limitPrice > 0 ? limitPrice : stock.price) * 100),
+  });
+  const availableBalancePaise = fundsPreview.data?.available_balance_paise;
   const handleExecuteOrder = useCallback(async () => {
+    if (!fundsPreview.data?.sufficient_funds) { setOrderFeedback("Order preview is unavailable or funds are insufficient."); return; }
     if (!token) {
       setOrderFeedback("⚠ Please log in to place orders");
       setTimeout(() => setOrderFeedback(null), 2500);
@@ -780,7 +777,7 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
     } finally {
       setOrderSubmitting(false);
     }
-  }, [token, stock, orderModal.action, orderProduct, orderType, limitPrice, orderQty, queryClient]);
+  }, [token, stock, orderModal.action, orderProduct, orderType, limitPrice, orderQty, queryClient, fundsPreview.data]);
 
   // ---------------------------------------------------------------------------
   // Full 5-Depth (L2) Order Book Generator
@@ -1447,15 +1444,15 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
               {/* Margin Calculation */}
               <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 text-xs space-y-1">
                 <div className="flex justify-between text-slate-500 dark:text-slate-400">
-                  <span>Approx. Margin</span>
+                  <span>Required additional funds</span>
                   <span className="font-bold text-slate-900 dark:text-slate-100 font-tabular">
-                    ₹{((orderProduct === "MIS" ? (orderType === "LIMIT" && limitPrice > 0 ? limitPrice : stock.price) * 0.2 : (orderType === "LIMIT" && limitPrice > 0 ? limitPrice : stock.price)) * orderQty).toFixed(2)}
+                    {formatPaise(fundsPreview.data?.required_funds_paise)}
                   </span>
                 </div>
                 <div className="flex justify-between text-slate-500 dark:text-slate-400 text-[11px]">
                   <span>Available Funds</span>
                   <span className="font-bold text-emerald-600 dark:text-emerald-400 font-tabular">
-                    ₹{(availableBalancePaise / 100).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    {formatPaise(availableBalancePaise)}
                   </span>
                 </div>
               </div>
@@ -1463,7 +1460,7 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
               {/* Submit Button */}
               <button
                 onClick={handleExecuteOrder}
-                disabled={orderSubmitting}
+                disabled={orderSubmitting || !fundsPreview.data?.sufficient_funds}
                 className={`w-full py-3 rounded-xl text-white font-extrabold text-sm shadow-md transition-all cursor-pointer ${
                   orderSubmitting ? "opacity-60 cursor-not-allowed" : "hover:scale-[1.01]"
                 } ${
@@ -1833,15 +1830,15 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
 
               <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 space-y-1">
                 <div className="flex justify-between text-slate-500 dark:text-slate-400">
-                  <span>Approx. Margin:</span>
+                  <span>Required additional funds:</span>
                   <span className="font-black text-sm text-slate-900 dark:text-slate-100 font-tabular">
-                    ₹{((orderProduct === "MIS" ? (orderType === "LIMIT" && limitPrice > 0 ? limitPrice : stock.price) * 0.2 : (orderType === "LIMIT" && limitPrice > 0 ? limitPrice : stock.price)) * orderQty).toFixed(2)}
+                    {formatPaise(fundsPreview.data?.required_funds_paise)}
                   </span>
                 </div>
                 <div className="flex justify-between text-slate-500 dark:text-slate-400 text-[11px]">
                   <span>Available Balance:</span>
                   <span className="font-bold text-emerald-600 dark:text-emerald-400 font-tabular">
-                    ₹{(availableBalancePaise / 100).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    {formatPaise(availableBalancePaise)}
                   </span>
                 </div>
               </div>
@@ -1864,7 +1861,7 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
                   </button>
                   <button
                     onClick={handleExecuteOrder}
-                    disabled={orderSubmitting}
+                    disabled={orderSubmitting || !fundsPreview.data?.sufficient_funds}
                     className={`flex-1 py-2.5 rounded-xl text-white font-extrabold cursor-pointer transition-all ${
                       orderSubmitting ? "opacity-60 cursor-not-allowed" : ""
                     } ${

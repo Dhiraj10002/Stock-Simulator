@@ -621,6 +621,9 @@ func (s *Service) HistoricalQuotes(symbol string, limit int) ([]dto.CandleRespon
 		if err := json.Unmarshal([]byte(items[i]), &candle); err != nil {
 			return nil, fmt.Errorf("invalid stored candle")
 		}
+		if !ValidHistoricalCandle(candle, s.FeedMode(), s.AllowSeededQuotes(), time.Now()) {
+			continue
+		}
 		result = append(result, candle)
 	}
 	return result, nil
@@ -663,3 +666,15 @@ func (s *Service) FeedStatus(ctx context.Context) (*dto.FeedStatusResponse, erro
 
 func quoteKey(symbol string) string   { return "market:quote:" + symbol }
 func historyKey(symbol string) string { return "market:history:" + symbol }
+
+// ValidHistoricalCandle rejects unknown provenance and cross-mode cached data.
+// Historical candles need a valid timestamp, not the freshness of a live tick.
+func ValidHistoricalCandle(c dto.CandleResponse, mode dto.FeedMode, allowSeeded bool, now time.Time) bool {
+	source := dto.NormalizeQuoteSource(c.Source)
+	eligible := dto.IsSourceExecutableInMode(source, mode) || (allowSeeded && mode == dto.FeedModeSynthetic && source == dto.QuoteSourceSeed)
+	return eligible && dto.NormalizeFeedMode(c.FeedMode) == mode && c.Timestamp > 0 && c.Timestamp <= now.Unix()+5 && c.OpenPaise > 0 && c.ClosePaise > 0 && c.LowPaise > 0 && c.HighPaise >= c.LowPaise && c.OpenPaise >= c.LowPaise && c.OpenPaise <= c.HighPaise && c.ClosePaise >= c.LowPaise && c.ClosePaise <= c.HighPaise && c.Volume >= 0
+}
+
+func (s *Service) ValidateStreamQuote(q *dto.QuoteResponse) error {
+	return ValidateExecutableQuoteWithFeedMode(q, time.Now(), s.FeedMode(), s.AllowSeededQuotes())
+}

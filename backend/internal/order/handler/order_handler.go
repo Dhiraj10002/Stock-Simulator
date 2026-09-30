@@ -204,8 +204,17 @@ func (h *OrderHandler) SquareOffPosition(c *gin.Context) {
 		response.ErrorWithCode(c, http.StatusBadRequest, "INVALID_POSITION_ID", "Invalid position ID", nil)
 		return
 	}
-	order, err := h.service.SquareOffPosition(userUUID, posUUID)
+	key := strings.TrimSpace(c.GetHeader("Idempotency-Key"))
+	if key == "" || len(key) > 128 {
+		response.ErrorWithCode(c, http.StatusBadRequest, "INVALID_IDEMPOTENCY_KEY", "Provide an Idempotency-Key of 1–128 characters", nil)
+		return
+	}
+	order, err := h.service.SquareOffPosition(userUUID, posUUID, key)
 	if err != nil {
+		if errors.Is(err, service.ErrExitKeyConflict) {
+			response.ErrorWithCode(c, http.StatusConflict, "IDEMPOTENCY_CONFLICT", err.Error(), nil)
+			return
+		}
 		errMsg := err.Error()
 		if strings.Contains(errMsg, "position not found") {
 			response.ErrorWithCode(c, http.StatusNotFound, "POSITION_NOT_FOUND", "Position not found", nil)
@@ -235,4 +244,18 @@ func (h *OrderHandler) SquareOffPosition(c *gin.Context) {
 		return
 	}
 	response.Success(c, http.StatusOK, "Position squared off successfully", order)
+}
+
+func (h *OrderHandler) Preview(c *gin.Context) {
+	var request dto.CreateOrderRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		response.ErrorWithCode(c, http.StatusBadRequest, "INVALID_ORDER", err.Error(), nil)
+		return
+	}
+	preview, err := h.service.Preview(c.GetString("user_id"), request)
+	if err != nil {
+		response.ErrorWithCode(c, http.StatusBadRequest, "PREVIEW_UNAVAILABLE", err.Error(), nil)
+		return
+	}
+	response.Success(c, http.StatusOK, "Order preview; execution revalidates price and funds", preview)
 }

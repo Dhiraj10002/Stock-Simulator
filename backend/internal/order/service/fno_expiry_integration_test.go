@@ -260,9 +260,9 @@ func TestFNOExpiry_EndToEndSettlement(t *testing.T) {
 	orderSvc.SetExecutableQuoteFunc(func(symbol string) (*marketDTO.QuoteResponse, error) {
 		switch symbol {
 		case "NIFTY24SEP26FUT":
-			return &marketDTO.QuoteResponse{Symbol: symbol, PricePaise: 21000, UpdatedAt: quoteTimeStr}, nil
+			return &marketDTO.QuoteResponse{Symbol: symbol, PricePaise: 21000, UpdatedAt: quoteTimeStr, Source: "angelone_live"}, nil
 		case "NIFTY":
-			return &marketDTO.QuoteResponse{Symbol: symbol, PricePaise: 24500, UpdatedAt: quoteTimeStr}, nil
+			return &marketDTO.QuoteResponse{Symbol: symbol, PricePaise: 24500, UpdatedAt: quoteTimeStr, Source: "angelone_live"}, nil
 		default:
 			return nil, errors.New("unexpected symbol")
 		}

@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
@@ -91,6 +92,10 @@ func (a *App) RunWithContext(ctx context.Context) error {
 		}
 	}
 
+	// Required additive upgrade: fail startup rather than run without durable exits.
+	if err := database.GetDB().AutoMigrate(&model.Order{}, &model.RefreshSession{}, &model.SettlementReference{}); err != nil {
+		return fmt.Errorf("upgrade durable exit schema: %w", err)
+	}
 	ensurePerformanceIndexes(database.GetDB())
 
 	// Setup Router with worker context

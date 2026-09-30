@@ -166,9 +166,9 @@ func TestPortfolioService_DisplayDecouplingFromExecutableFreshness(t *testing.T)
 		t.Fatalf("expected RealizedPnlPaise 13000, got %d", portfolio.RealizedPnlPaise)
 	}
 
-	// Daily P&L: Unrealized (15,000) + Today's Realized (8,000) = 23,000 paise
-	if portfolio.DailyPnlPaise != 23000 {
-		t.Fatalf("expected DailyPnlPaise 23000, got %d", portfolio.DailyPnlPaise)
+	// Missing session baseline must not be replaced with lifetime unrealized P&L.
+	if portfolio.DailyPnlPaise != nil {
+		t.Fatal("daily P&L must be unavailable without a session baseline")
 	}
 
 	// Total P&L: Unrealized (15,000) + Total Realized (13,000) = 28,000 paise

@@ -1,6 +1,7 @@
 package dto
 
 type PositionResponse struct {
+	MarginBlockedPaise int64  `json:"margin_blocked_paise"`
 	UUID               string `json:"uuid"`
 	Symbol             string `json:"symbol"`
 	Product            string `json:"product"`
@@ -24,7 +25,7 @@ type PortfolioResponse struct {
 	CurrentValuePaise  int64              `json:"current_value_paise"`
 	UnrealizedPnlPaise int64              `json:"unrealized_pnl_paise"`
 	RealizedPnlPaise   int64              `json:"realized_pnl_paise"`
-	DailyPnlPaise      int64              `json:"daily_pnl_paise"`
+	DailyPnlPaise      *int64             `json:"daily_pnl_paise"`
 	TotalPnlPaise      int64              `json:"total_pnl_paise"`
 	ValuationStatus    string             `json:"valuation_status,omitempty"` // "REALTIME", "STALE", "DEGRADED"
 }

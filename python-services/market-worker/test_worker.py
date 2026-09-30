@@ -783,3 +783,12 @@ class DemandSubscriptionRegressionTest(unittest.TestCase):
         socket.subscribe.side_effect = None
         worker.sync_demand_subscriptions(self.store, client, socket)
         self.assertIsNotNone(self.store.lookup("50001", 2))
+
+class ProvenanceCandleTest(unittest.TestCase):
+    def test_mode_switch_does_not_mix_same_minute_ohlc(self):
+        old = worker.make_candle(None, 10, 99999, 100, "synthetic_gbm", "SYNTHETIC")
+        live = worker.make_candle(json.dumps(old), 10, 10000, 3, "angelone_live", "LIVE")
+        self.assertEqual(live["open_paise"], 10000)
+        self.assertEqual(live["high_paise"], 10000)
+        self.assertEqual(live["volume"], 3)
+        self.assertEqual(live["source"], "angelone_live")

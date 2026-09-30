@@ -92,7 +92,7 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 		return
 	}
 
-	loginResponse, err := h.service.Refresh(req.RefreshToken)
+	loginResponse, err := h.service.Refresh(req.RefreshToken, c.GetHeader("Idempotency-Key"))
 	if err != nil {
 		response.Error(c, http.StatusUnauthorized, "Invalid refresh token", nil)
 		return

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -10,7 +11,6 @@ import (
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/database"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/calendar"
 	marketDTO "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/dto"
-	marketService "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/service"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/product"
 	"github.com/google/uuid"
@@ -89,34 +89,67 @@ func (s *OrderService) expiryPrice(instrument model.Instrument, kind string) (in
 	return optionIntrinsic(instrument.OptionType, underlyingPrice, strike)
 }
 
-// finalQuotePrice accepts the last recorded executable quote from the expiry
-// trading session (up to market close 15:30 IST).
+// finalQuotePrice prefers a durable reference and never substitutes a quote
+// from another session or feed mode. Closing-window observations are explicitly
+// a paper-settlement proxy, not an official exchange settlement price.
 func (s *OrderService) finalQuotePrice(symbol, expiry string) (int64, error) {
-	expiryDay, err := expiryDate(expiry)
+	day, err := expiryDate(expiry)
 	if err != nil {
+		return 0, err
+	}
+	mode := marketDTO.FeedModeLive
+	if s.market != nil {
+		mode = s.market.FeedMode()
+	}
+	if mode == marketDTO.FeedModeUnavailable {
+		return 0, fmt.Errorf("settlement feed unavailable")
+	}
+	db := database.GetDB()
+	if db == nil {
+		return 0, fmt.Errorf("settlement reference database unavailable")
+	}
+	var ref model.SettlementReference
+	err = db.Where("symbol = ? AND session_date = ? AND feed_mode = ?", symbol, day.Format("2006-01-02"), string(mode)).First(&ref).Error
+	if err == nil {
+		if err := validateSettlementReference(ref, day, mode); err != nil {
+			return 0, err
+		}
+		return ref.PricePaise, nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return 0, err
 	}
 	quote, err := s.currentQuote(symbol)
 	if err != nil {
 		return 0, err
 	}
-	allowSeeded := s.market != nil && s.market.AllowSeededQuotes()
-	if !allowSeeded && marketService.IsSeededSource(quote.Source) {
-		return 0, fmt.Errorf("final settlement quote source '%s' cannot be used for settlement without explicit simulation mode", quote.Source)
-	}
-	if quote.PricePaise <= 0 {
-		return 0, fmt.Errorf("invalid settlement quote price")
-	}
-	updated, err := time.Parse(time.RFC3339, quote.UpdatedAt)
+	observed, err := time.Parse(time.RFC3339, quote.UpdatedAt)
 	if err != nil {
-		return 0, fmt.Errorf("invalid final quote timestamp")
+		return 0, err
 	}
-	open := time.Date(expiryDay.Year(), expiryDay.Month(), expiryDay.Day(), 9, 15, 0, 0, expiryDay.Location())
-	cutoff := time.Date(expiryDay.Year(), expiryDay.Month(), expiryDay.Day(), 15, 30, 0, 0, expiryDay.Location())
-	if updated.Before(open) || updated.After(cutoff.Add(30*time.Minute)) {
-		return 0, fmt.Errorf("final settlement quote is unavailable")
+	ref = model.SettlementReference{Symbol: symbol, SessionDate: day.Format("2006-01-02"), FeedMode: string(mode), Source: quote.Source, PricePaise: quote.PricePaise, ObservedAt: observed}
+	if err := validateSettlementReference(ref, day, mode); err != nil {
+		return 0, err
 	}
-	return quote.PricePaise, nil
+	if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&ref).Error; err != nil {
+		return 0, err
+	}
+	// Re-read the winning reference if another worker inserted concurrently.
+	if err := db.Where("symbol = ? AND session_date = ? AND feed_mode = ?", symbol, ref.SessionDate, ref.FeedMode).First(&ref).Error; err != nil {
+		return 0, err
+	}
+	if err := validateSettlementReference(ref, day, mode); err != nil {
+		return 0, err
+	}
+	return ref.PricePaise, nil
+}
+
+func validateSettlementReference(ref model.SettlementReference, day time.Time, mode marketDTO.FeedMode) error {
+	close := time.Date(day.Year(), day.Month(), day.Day(), 15, 30, 0, 0, day.Location())
+	if ref.PricePaise <= 0 || ref.FeedMode != string(mode) || ref.SessionDate != day.Format("2006-01-02") || !marketDTO.IsSourceExecutableInMode(marketDTO.NormalizeQuoteSource(ref.Source), mode) || ref.ObservedAt.Before(close.Add(-time.Minute)) || !ref.ObservedAt.Before(close) {
+		return fmt.Errorf("valid closing-window settlement reference unavailable")
+	}
+	return nil
 }
 
 func (s *OrderService) settleExpiredPosition(positionID uuid.UUID, settlementPrice int64, kind string) error {

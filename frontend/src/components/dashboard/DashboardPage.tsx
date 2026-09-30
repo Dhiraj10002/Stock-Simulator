@@ -1,4 +1,5 @@
 "use client";
+import { useAccountWallet } from "@/hooks/useAccountWallet";
 
 import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
@@ -28,7 +29,7 @@ import {
 } from "lucide-react";
 import { formatPaise } from "@/lib/format";
 import { apiFetch } from "@/lib/api";
-import type { Wallet, Portfolio, ApiResponse, Candle } from "@/types";
+import type { Portfolio, ApiResponse, Candle } from "@/types";
 import IndicesBar from "@/components/dashboard/IndicesBar";
 import MarketStatusBanner from "@/components/dashboard/MarketStatusBanner";
 import MarketMoversCard from "@/components/dashboard/MarketMoversCard";
@@ -414,50 +415,7 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
   const apiUrl = getApiUrl();
 
   // 1. Fetch Wallet
-  const { data: wallet, refetch: refetchWallet } = useQuery<Wallet>({
-    queryKey: ["wallet", token],
-    queryFn: async () => {
-      if (!token) {
-        return {
-          uuid: "",
-          cash_balance_paise: 100000000,
-          available_balance_paise: 100000000,
-          blocked_paise: 0,
-        };
-      }
-      try {
-        const res = await fetch(`${apiUrl}/wallet`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!res.ok) {
-          return {
-            uuid: "",
-            cash_balance_paise: 100000000,
-            available_balance_paise: 100000000,
-            blocked_paise: 0,
-          };
-        }
-        const json: ApiResponse<Wallet> = await res.json();
-        return (
-          json.data || {
-            uuid: "",
-            cash_balance_paise: 100000000,
-            available_balance_paise: 100000000,
-            blocked_paise: 0,
-          }
-        );
-      } catch {
-        return {
-          uuid: "",
-          cash_balance_paise: 100000000,
-          available_balance_paise: 100000000,
-          blocked_paise: 0,
-        };
-      }
-    },
-    enabled: !!token,
-    refetchInterval: token ? 5000 : false,
-  });
+  const { data: wallet, refetch: refetchWallet } = useAccountWallet();
 
   // 2. Fetch Portfolio
   const { data: portfolio } = useQuery<Portfolio>({
@@ -752,7 +710,7 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
     };
   }, [indexKey, indexCandles, quotes]);
 
-  const availableBalance = wallet?.available_balance_paise ?? 100000000;
+  const availableBalance = wallet?.available_balance_paise;
   const unrealizedPnl = portfolio?.unrealized_pnl_paise ?? 0;
   const openPositions = portfolio?.positions ?? [];
 

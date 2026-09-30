@@ -122,7 +122,7 @@ export default function PositionsTable({
     });
 
     const pnlPercent = invested > 0 ? (pnl / invested) * 100 : 0;
-    return { invested, current, pnl, pnlPercent };
+    return { invested, current, pnl, pnlPercent, available: filteredPositions.every(p => p.is_quote_available && !p.is_quote_stale) };
   }, [filteredPositions]);
 
   const handleSquareOffSingle = async (pos: Position) => {
@@ -229,7 +229,7 @@ export default function PositionsTable({
             </span>
             <span className="text-slate-300 dark:text-slate-700">•</span>
             <span className="text-slate-500 dark:text-slate-400 text-[11px]">
-              Val: <strong className="text-slate-800 dark:text-slate-200 font-bold">{formatPaise(segmentStats.current)}</strong>
+              Val: <strong className="text-slate-800 dark:text-slate-200 font-bold">{formatPaise(segmentStats.available ? segmentStats.current : undefined)}</strong>
             </span>
             <span className="text-slate-300 dark:text-slate-700">•</span>
             <span
@@ -239,8 +239,8 @@ export default function PositionsTable({
                   : "text-rose-600 dark:text-rose-400"
               }`}
             >
-              {isSegmentProfit ? "+" : ""}
-              {formatPaise(segmentStats.pnl)} ({formatPercent(segmentStats.pnlPercent)})
+              {segmentStats.available && isSegmentProfit ? "+" : ""}
+              {formatPaise(segmentStats.available ? segmentStats.pnl : undefined)} ({segmentStats.available ? formatPercent(segmentStats.pnlPercent) : "—"})
             </span>
           </div>
 

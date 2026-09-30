@@ -159,6 +159,7 @@ func Setup(ctx context.Context, cfg *config.Config, opts ...SetupOption) *gin.En
 	trades := tradeHandler.New()
 	watchlist := watchlistHandler.New()
 	mentor := aiHandler.New(cfg)
+	mentor.Service().OrderPreview = orders.Service().Preview
 	risk := riskHandler.New(market.Service())
 	fno := fnoHandler.New(market.Service())
 	analytics := analyticsHandler.New()
@@ -207,6 +208,7 @@ func Setup(ctx context.Context, cfg *config.Config, opts ...SetupOption) *gin.En
 		api.GET("/instruments/:symbol", instruments.GetBySymbol)
 		api.GET("/stocks", stocks.Search)
 		api.GET("/news", news.List)
+		api.GET("/news/status", news.Status)
 
 		authLimit := gin.HandlerFunc(func(c *gin.Context) { c.Next() })
 		writeLimit := gin.HandlerFunc(func(c *gin.Context) { c.Next() })
@@ -226,6 +228,7 @@ func Setup(ctx context.Context, cfg *config.Config, opts ...SetupOption) *gin.En
 		protected.GET("/wallet/transactions", wallet.Transactions)
 		protected.POST("/simulation/reset", writeLimit, simulation.Reset)
 		protected.POST("/orders", writeLimit, orders.Create)
+		protected.POST("/orders/preview", writeLimit, orders.Preview)
 		protected.POST("/orders/:id/execute", writeLimit, orders.Execute)
 		protected.POST("/ai/analyze-trade", writeLimit, mentor.Analyze)
 		protected.POST("/ai/trade-critique", writeLimit, mentor.Critique)

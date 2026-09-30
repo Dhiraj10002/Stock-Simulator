@@ -49,6 +49,9 @@ func (s *OrderService) Execute(userID, orderID string) error {
 	if err != nil {
 		return err
 	}
+	if err := s.activateStop(userUUID, orderUUID, quote.PricePaise); err != nil {
+		return err
+	}
 	executionPricePaise := quote.PricePaise
 	if pendingOrder.Type == model.OrderTypeMarket || pendingOrder.Type == model.OrderTypeSLM {
 		executionPricePaise = calculateSlippage(pendingOrder.Quantity, quote.PricePaise, pendingOrder.Side)
@@ -79,16 +82,7 @@ func (s *OrderService) Execute(userID, orderID string) error {
 		if order.Quantity <= 0 || (order.Side != model.OrderSideBuy && order.Side != model.OrderSideSell) {
 			return errors.New("order has invalid settlement data")
 		}
-		if order.Status == model.OrderStatusTriggerPending {
-			if !triggerSatisfied(&order, quote.PricePaise) {
-				return fmt.Errorf("stop trigger condition not met: market price %d has not reached trigger price %d", quote.PricePaise, order.TriggerPricePaise)
-			}
-			order.Status = model.OrderStatusOpen
-			if order.Type == model.OrderTypeSL && !limitSatisfied(&order, executionPricePaise) {
-				_ = tx.Save(&order)
-				return errors.New("market price does not satisfy limit order")
-			}
-		}
+
 		if (order.Type == model.OrderTypeLimit || order.Type == model.OrderTypeSL) && !limitSatisfied(&order, executionPricePaise) {
 			return errors.New("market price does not satisfy limit order")
 		}
@@ -103,6 +97,10 @@ func (s *OrderService) Execute(userID, orderID string) error {
 		var position model.Position
 		positionErr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_uuid = ? AND symbol = ? AND product = ?", userUUID, order.Symbol, model.OrderProductDelivery).First(&position).Error
 
+		if staleExit(&order, &position) {
+			order.Status = model.OrderStatusCancelled
+			return tx.Save(&order).Error
+		}
 		realizedPnlPaise := int64(0)
 		if order.Side == model.OrderSideBuy {
 			if order.ReservedPaise > 0 && total > order.ReservedPaise {
@@ -249,6 +247,9 @@ func (s *OrderService) executeMarginProduct(userUUID, orderUUID uuid.UUID, pendi
 		return err
 	}
 
+	if err := s.activateStop(userUUID, orderUUID, quote.PricePaise); err != nil {
+		return err
+	}
 	instrumentType, underlying := "", ""
 	if pending.Product == model.OrderProductFNO {
 		instrument, err := s.repo.FindInstrument(pending.Symbol)
@@ -287,16 +288,7 @@ func (s *OrderService) executeMarginProduct(userUUID, orderUUID uuid.UUID, pendi
 		if order.Type == model.OrderTypeMarket || order.Type == model.OrderTypeSLM {
 			fillPrice = calculateSlippage(order.Quantity, quote.PricePaise, order.Side)
 		}
-		if order.Status == model.OrderStatusTriggerPending {
-			if !triggerSatisfied(&order, quote.PricePaise) {
-				return fmt.Errorf("stop trigger condition not met: market price %d has not reached trigger price %d", quote.PricePaise, order.TriggerPricePaise)
-			}
-			order.Status = model.OrderStatusOpen
-			if order.Type == model.OrderTypeSL && !limitSatisfied(&order, fillPrice) {
-				_ = tx.Save(&order)
-				return errors.New("market price does not satisfy limit order")
-			}
-		}
+
 		if (order.Type == model.OrderTypeLimit || order.Type == model.OrderTypeSL) && !limitSatisfied(&order, fillPrice) {
 			return errors.New("market price does not satisfy limit order")
 		}
@@ -313,6 +305,10 @@ func (s *OrderService) executeMarginProduct(userUUID, orderUUID uuid.UUID, pendi
 		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_uuid = ? AND symbol = ? AND product = ?", userUUID, order.Symbol, order.Product).First(&position).Error
 		if err != nil && err != gorm.ErrRecordNotFound {
 			return err
+		}
+		if staleExit(&order, &position) {
+			order.Status = model.OrderStatusCancelled
+			return tx.Save(&order).Error
 		}
 		if order.Reason == model.OrderReasonMISSquareOff || order.Reason == model.OrderReasonSquareOff {
 			if position.Quantity == 0 {

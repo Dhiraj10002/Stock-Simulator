@@ -1,4 +1,5 @@
 "use client";
+import { useAccountWallet } from "@/hooks/useAccountWallet";
 
 import React, { useState, Suspense } from "react";
 import Link from "next/link";
@@ -21,7 +22,7 @@ import TradeCopilot from "@/components/mentor/TradeCopilot";
 import PreTradeRiskLab from "@/components/mentor/PreTradeRiskLab";
 import { formatPaise } from "@/lib/format";
 import { API_URL } from "@/lib/api";
-import type { Wallet, Portfolio, ApiResponse } from "@/types";
+import type { Portfolio, ApiResponse } from "@/types";
 
 function MentorContent() {
   const searchParams = useSearchParams();
@@ -41,50 +42,7 @@ function MentorContent() {
   const apiUrl = API_URL;
 
   // Server state via TanStack Query with graceful fallback
-  const { data: wallet } = useQuery<Wallet>({
-    queryKey: ["wallet", token],
-    queryFn: async () => {
-      if (!token) {
-        return {
-          uuid: "",
-          cash_balance_paise: 100000000,
-          available_balance_paise: 100000000,
-          blocked_paise: 0,
-        };
-      }
-      try {
-        const res = await fetch(`${apiUrl}/wallet`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!res.ok) {
-          return {
-            uuid: "",
-            cash_balance_paise: 100000000,
-            available_balance_paise: 100000000,
-            blocked_paise: 0,
-          };
-        }
-        const json: ApiResponse<Wallet> = await res.json();
-        return (
-          json.data || {
-            uuid: "",
-            cash_balance_paise: 100000000,
-            available_balance_paise: 100000000,
-            blocked_paise: 0,
-          }
-        );
-      } catch {
-        return {
-          uuid: "",
-          cash_balance_paise: 100000000,
-          available_balance_paise: 100000000,
-          blocked_paise: 0,
-        };
-      }
-    },
-    enabled: !!token,
-    staleTime: 10_000,
-  });
+  const { data: wallet } = useAccountWallet();
 
   const { data: portfolio } = useQuery<Portfolio>({
     queryKey: ["portfolio", token],
@@ -131,7 +89,7 @@ function MentorContent() {
     staleTime: 15_000,
   });
 
-  const availableBalance = wallet?.available_balance_paise ?? 100000000;
+  const availableBalance = wallet?.available_balance_paise;
   const blockedMargin = wallet?.blocked_paise ?? 0;
   const unrealizedPnl = portfolio?.unrealized_pnl_paise ?? 0;
   const isPnlPositive = unrealizedPnl >= 0;

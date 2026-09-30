@@ -34,11 +34,10 @@ export default function PortfolioSummarySnapshot({
   isResetting = false,
   className = "",
 }: PortfolioSummarySnapshotProps) {
-  // Authoritative calculations matching Phase 10 double-entry portfolio accounting:
-  // Total Value = Cash Balance + Current Valuation = Cash + Invested + Unrealized P&L
-  const cashBalance = wallet?.cash_balance_paise ?? 100000000;
-  const availableMargin = wallet?.available_balance_paise ?? 100000000;
-  const blockedPaise = wallet?.blocked_paise ?? 0;
+  // Gross exposure is separate from cash: derivative notional is not account equity.
+  const cashBalance = wallet?.cash_balance_paise;
+  const availableMargin = wallet?.available_balance_paise;
+  const blockedPaise = wallet?.blocked_paise;
 
   const investedPaise = portfolio?.invested_value_paise ?? 0;
   const currentValuationPaise = portfolio?.current_value_paise ?? 0;
@@ -46,7 +45,8 @@ export default function PortfolioSummarySnapshot({
   const realizedPnlPaise = portfolio?.realized_pnl_paise ?? 0;
   const totalNetPnlPaise = unrealizedPnlPaise + realizedPnlPaise;
 
-  const totalPortfolioValuePaise = cashBalance + currentValuationPaise;
+  const quotesAvailable = !!portfolio && portfolio.positions.every(p => p.is_quote_available && !p.is_quote_stale);
+  const totalPortfolioValuePaise = !quotesAvailable ? undefined : currentValuationPaise;
 
   const returnPercent =
     investedPaise > 0 ? (unrealizedPnlPaise / investedPaise) * 100 : 0;
@@ -54,7 +54,7 @@ export default function PortfolioSummarySnapshot({
   const isTotalProfit = totalNetPnlPaise >= 0;
 
   const positionsCount = portfolio?.positions?.length ?? 0;
-  const valuationStatus = portfolio?.valuation_status ?? "REALTIME";
+  const valuationStatus = portfolio?.valuation_status ?? "DEGRADED";
 
   const statusBadge = {
     REALTIME: {
@@ -78,13 +78,13 @@ export default function PortfolioSummarySnapshot({
     <div
       className={`rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 p-5 shadow-xs space-y-5 ${className}`}
     >
-      {/* Top Banner: Total Portfolio Value & Valuation Status */}
+      {/* Top Banner: Gross Position Value & Valuation Status */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100 dark:border-slate-800/80">
         <div>
           <div className="flex items-center gap-2">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
               <PieChart className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
-              Total Portfolio Value
+              Gross Position Value
             </span>
             <span
               className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-md border ${statusBadge.bg}`}
@@ -98,7 +98,7 @@ export default function PortfolioSummarySnapshot({
             {formatPaise(totalPortfolioValuePaise)}
           </div>
           <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-            Cash ({formatPaise(cashBalance)}) + Invested ({formatPaise(currentValuationPaise)})
+            Cash balance: {formatPaise(cashBalance)} • Position value excludes cash
           </div>
         </div>
 
@@ -158,10 +158,10 @@ export default function PortfolioSummarySnapshot({
             Invested Capital
           </div>
           <div className="text-lg font-black font-tabular text-slate-900 dark:text-slate-100">
-            {formatPaise(investedPaise)}
+            {formatPaise(portfolio?.invested_value_paise)}
           </div>
           <div className="text-[10px] text-slate-500">
-            Current: {formatPaise(currentValuationPaise)}
+            Current: {formatPaise(quotesAvailable ? currentValuationPaise : undefined)}
           </div>
         </div>
 
@@ -180,7 +180,7 @@ export default function PortfolioSummarySnapshot({
               isProfit ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
             }`}
           >
-            {formatPaise(unrealizedPnlPaise)}
+            {formatPaise(quotesAvailable ? unrealizedPnlPaise : undefined)}
           </div>
           <div className="text-[10px] font-bold font-tabular">
             <span
@@ -188,7 +188,7 @@ export default function PortfolioSummarySnapshot({
                 isProfit ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
               }
             >
-              {formatPercent(returnPercent)}
+              {quotesAvailable ? formatPercent(returnPercent) : "Unavailable"}
             </span>{" "}
             <span className="text-slate-400 font-normal">on open holdings</span>
           </div>
@@ -207,7 +207,7 @@ export default function PortfolioSummarySnapshot({
               isTotalProfit ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
             }`}
           >
-            {formatPaise(realizedPnlPaise)}
+            {formatPaise(portfolio?.realized_pnl_paise)}
           </div>
           <div className="text-[10px] text-slate-500 font-tabular">
             Net P&L:{" "}
@@ -216,7 +216,7 @@ export default function PortfolioSummarySnapshot({
                 isTotalProfit ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
               }`}
             >
-              {formatPaise(totalNetPnlPaise)}
+              {formatPaise(quotesAvailable ? totalNetPnlPaise : undefined)}
             </span>
           </div>
         </div>

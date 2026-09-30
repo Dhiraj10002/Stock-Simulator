@@ -45,3 +45,12 @@ func (h *NewsHandler) List(c *gin.Context) {
 	}
 	response.Success(c, http.StatusOK, "News retrieved successfully", articles)
 }
+
+func (h *NewsHandler) Status(c *gin.Context) {
+	status, err := h.service.Status()
+	if err != nil {
+		response.Error(c, http.StatusServiceUnavailable, "News ingestion status unavailable", nil)
+		return
+	}
+	response.Success(c, http.StatusOK, "News ingestion status", status)
+}

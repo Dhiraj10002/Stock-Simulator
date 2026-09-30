@@ -589,7 +589,7 @@ func (s *OrderService) MatchSymbol(symbol string) error {
 					break
 				}
 			} else if order.Status == model.OrderStatusOpen || order.Status == model.OrderStatusPending {
-				if limitSatisfied(&order, quote.PricePaise) {
+				if order.Type == model.OrderTypeMarket || order.Type == model.OrderTypeSLM || limitSatisfied(&order, quote.PricePaise) {
 					hasActionable = true
 					break
 				}
@@ -620,23 +620,15 @@ func (s *OrderService) MatchSymbol(symbol string) error {
 			}
 
 			if isTriggered {
-				if order.Type == model.OrderTypeSLM {
-					// SL-M: Triggers immediately into market execution
-					_ = s.repo.TriggerOrder(order.UUID, model.OrderStatusOpen)
-					_ = s.Execute(order.UserUUID.String(), order.UUID.String())
-					executedAny = true
-				} else if order.Type == model.OrderTypeSL {
-					// SL: Becomes an OPEN limit order
-					_ = s.repo.TriggerOrder(order.UUID, model.OrderStatusOpen)
-					order.Status = model.OrderStatusOpen
-					if limitSatisfied(&order, quote.PricePaise) {
-						_ = s.Execute(order.UserUUID.String(), order.UUID.String())
-						executedAny = true
-					}
+				if err := s.activateStop(order.UserUUID, order.UUID, quote.PricePaise); err != nil {
+					return err
 				}
+				_ = s.Execute(order.UserUUID.String(), order.UUID.String())
+				// Activation itself changes matcher state even without a fill.
+				executedAny = true
 			}
 		} else if order.Status == model.OrderStatusOpen || order.Status == model.OrderStatusPending {
-			if limitSatisfied(&order, quote.PricePaise) {
+			if order.Type == model.OrderTypeMarket || order.Type == model.OrderTypeSLM || limitSatisfied(&order, quote.PricePaise) {
 				_ = s.Execute(order.UserUUID.String(), order.UUID.String())
 				executedAny = true
 			}
@@ -718,47 +710,6 @@ func (s *OrderService) ClearHistory(userID string) (int64, error) {
 		return 0, fmt.Errorf("invalid user identity")
 	}
 	return s.repo.ClearHistory(userUUID)
-}
-
-func (s *OrderService) SquareOffPosition(userUUID, posUUID uuid.UUID) (*dto.OrderResponse, error) {
-	if database.GetDB() == nil {
-		return nil, errors.New("database not connected")
-	}
-
-	var position model.Position
-	if err := database.GetDB().Where("uuid = ? AND user_uuid = ?", posUUID, userUUID).First(&position).Error; err != nil {
-		return nil, fmt.Errorf("position not found: %w", err)
-	}
-
-	if position.Quantity == 0 {
-		return nil, fmt.Errorf("position is already closed")
-	}
-
-	// Idempotency: Check if there is already an active exit order for this position in flight
-	var existingExit model.Order
-	if err := database.GetDB().Where(
-		"user_uuid = ? AND symbol = ? AND product = ? AND reason = ? AND status IN (?)",
-		userUUID, position.Symbol, position.Product, model.OrderReasonSquareOff,
-		[]string{model.OrderStatusPending, model.OrderStatusOpen, model.OrderStatusTriggerPending},
-	).First(&existingExit).Error; err == nil {
-		return toResponse(&existingExit), nil
-	}
-
-	closeSide := model.OrderSideSell
-	if position.Quantity < 0 {
-		closeSide = model.OrderSideBuy
-	}
-
-	req := dto.CreateOrderRequest{
-		Symbol:   position.Symbol,
-		Side:     closeSide,
-		Type:     model.OrderTypeMarket,
-		Product:  position.Product,
-		Quantity: abs(position.Quantity),
-		Reason:   model.OrderReasonSquareOff,
-	}
-
-	return s.Create(userUUID.String(), req)
 }
 
 func toResponse(order *model.Order) *dto.OrderResponse {

@@ -48,6 +48,7 @@ const SECTORS = [
 
 function formatTimeAgo(isoString: string): string {
   try {
+    if (!isoString || !Number.isFinite(Date.parse(isoString))) return "Publication time unavailable";
     const diffMs = Date.now() - new Date(isoString).getTime();
     if (diffMs < 0) return "Just now";
     const minutes = Math.floor(diffMs / (1000 * 60));
@@ -82,6 +83,10 @@ export default function NewsDeskPage() {
     },
     refetchInterval: 30000,
     staleTime: 15000,
+  });
+
+  const {data: ingestion, isError: ingestionError} = useQuery<{status: string}>({
+    queryKey: ["news-ingestion-status"], queryFn: () => publicFetch("/news/status"), refetchInterval: 30000, retry: false,
   });
 
   // Calculate Sentiment Barometer Statistics
@@ -165,7 +170,7 @@ export default function NewsDeskPage() {
             <div className="flex items-center gap-2 mb-1">
               <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold tracking-wider uppercase bg-cyan-100/80 dark:bg-cyan-950/80 text-cyan-800 dark:text-cyan-400 border border-cyan-200 dark:border-cyan-800/60 flex items-center gap-1.5">
                 <Activity className="w-3 h-3 text-cyan-600 dark:text-cyan-400 animate-pulse" />
-                Live News Ingestion
+                News ingestion: {ingestionError ? "UNAVAILABLE" : ingestion?.status ?? "CHECKING"}
               </span>
               <span className="text-xs text-slate-500 dark:text-slate-400 font-mono">
                 Lexical Sentiment Classifier

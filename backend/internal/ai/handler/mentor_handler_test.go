@@ -3,6 +3,8 @@ package handler
 import (
 	"bytes"
 	"encoding/json"
+	orderDTO "github.com/Dhiraj10002/Stock-Simulator/backend/internal/order/dto"
+	orderService "github.com/Dhiraj10002/Stock-Simulator/backend/internal/order/service"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -22,6 +24,9 @@ func setupTestRouter() (*gin.Engine, *MentorHandler) {
 		GeminiModel:  "gemini-2.0-flash",
 	}
 	h := New(cfg)
+	h.Service().OrderPreview = func(_ string, req orderDTO.CreateOrderRequest) (*orderService.OrderPreview, error) {
+		return &orderService.OrderPreview{RequiredFundsPaise: 1492750, AvailableBalancePaise: 100000000, SufficientFunds: true}, nil
+	}
 
 	r := gin.New()
 	r.Use(func(c *gin.Context) {

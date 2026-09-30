@@ -724,6 +724,50 @@ paths:
         '404':
           description: Instrument not found
 
+  /orders/preview:
+    post:
+      summary: Validate and preview an order without placing it
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrderRequest'
+      responses:
+        '200':
+          description: Funds estimate using current wallet, position and configured product rules; execution revalidates
+        '400':
+          description: Invalid order or preview unavailable
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /portfolio/positions/{uuid}/squareoff:
+    post:
+      summary: Close the specified position with a durable retry key
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: uuid
+          required: true
+          schema: { type: string, format: uuid }
+        - in: header
+          name: Idempotency-Key
+          required: true
+          description: Reuse this key after a lost response. A terminal result is retained even after visible history is cleared.
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        '200':
+          description: Original exit order result; check status for EXECUTED, CANCELLED or PENDING
+        '400':
+          description: Invalid key, closed position, or execution currently unavailable
+        '409':
+          description: Key already belongs to another position
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
   /orders/squareoff-mis:
     post:
       summary: Square Off MIS Positions
@@ -1120,7 +1164,7 @@ components:
             current_value_paise: { type: integer, format: int64 }
             unrealized_pnl_paise: { type: integer, format: int64 }
             realized_pnl_paise: { type: integer, format: int64 }
-            daily_pnl_paise: { type: integer, format: int64 }
+            daily_pnl_paise: { type: integer, format: int64, nullable: true, description: "Null when a reliable session baseline is unavailable" }
             total_pnl_paise: { type: integer, format: int64 }
 
     PositionsResponse:
@@ -1141,7 +1185,7 @@ components:
           properties:
             realized_pnl_paise: { type: integer, format: int64 }
             unrealized_pnl_paise: { type: integer, format: int64 }
-            daily_pnl_paise: { type: integer, format: int64 }
+            daily_pnl_paise: { type: integer, format: int64, nullable: true, description: "Null when a reliable session baseline is unavailable" }
             total_pnl_paise: { type: integer, format: int64 }
 
     TradeItem:

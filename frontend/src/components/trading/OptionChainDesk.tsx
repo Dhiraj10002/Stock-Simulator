@@ -1,4 +1,5 @@
 "use client";
+import { useAccountWallet } from "@/hooks/useAccountWallet";
 
 import React, { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -17,7 +18,7 @@ import {
   Info,
   Flame,
 } from "lucide-react";
-import type { OptionChainResponse, OptionContract, ApiResponse, Instrument, Wallet } from "@/types";
+import type { OptionChainResponse, OptionContract, ApiResponse, Instrument } from "@/types";
 import FnoOrderModal from "@/components/trading/FnoOrderModal";
 
 type StrategyType =
@@ -129,49 +130,7 @@ export default function OptionChainDesk({ initialUnderlying = "NIFTY" }: OptionC
   const [isFnoModalOpen, setIsFnoModalOpen] = useState(false);
 
   // Fetch Wallet for Available Margin
-  const { data: wallet } = useQuery<Wallet>({
-    queryKey: ["wallet", token],
-    queryFn: async () => {
-      if (!token) {
-        return {
-          uuid: "",
-          cash_balance_paise: 100000000,
-          available_balance_paise: 100000000,
-          blocked_paise: 0,
-        };
-      }
-      try {
-        const res = await fetch(`${apiUrl}/wallet`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!res.ok) {
-          return {
-            uuid: "",
-            cash_balance_paise: 100000000,
-            available_balance_paise: 100000000,
-            blocked_paise: 0,
-          };
-        }
-        const json: ApiResponse<Wallet> = await res.json();
-        return (
-          json.data || {
-            uuid: "",
-            cash_balance_paise: 100000000,
-            available_balance_paise: 100000000,
-            blocked_paise: 0,
-          }
-        );
-      } catch {
-        return {
-          uuid: "",
-          cash_balance_paise: 100000000,
-          available_balance_paise: 100000000,
-          blocked_paise: 0,
-        };
-      }
-    },
-    enabled: !!token,
-  });
+  const { data: wallet } = useAccountWallet();
 
   // Open contextual F&O order modal for selected contract
   const handleSelectContract = (contract: OptionContract, side: "BUY" | "SELL") => {
@@ -1005,7 +964,7 @@ export default function OptionChainDesk({ initialUnderlying = "NIFTY" }: OptionC
         }}
         instrument={fnoModalInstrument}
         initialSide={fnoOrderSide}
-        availableBalancePaise={wallet?.available_balance_paise ?? 100000000}
+        availableBalancePaise={wallet?.available_balance_paise}
       />
     </div>
   );

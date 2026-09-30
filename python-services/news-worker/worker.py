@@ -181,11 +181,11 @@ def sentiment(title: str) -> tuple[str, int]:
 
 def published_at(value: str | None) -> str:
     if not value:
-        return datetime.now(timezone.utc).isoformat()
+        return ""
     try:
         return parsedate_to_datetime(value).astimezone(timezone.utc).isoformat()
     except (TypeError, ValueError):
-        return datetime.now(timezone.utc).isoformat()
+        return ""
 
 
 def matching_sectors(title: str) -> list[str]:
@@ -276,6 +276,11 @@ def main() -> None:
         try:
             load_symbol_aliases(client)
             items = fetch_all_feeds(rss_urls)
+            now = datetime.now(timezone.utc).isoformat()
+            health = {"last_poll": now, "poll_interval_seconds": interval}
+            if items:
+                health["last_success"] = now
+            client.hset("news:health", mapping=health)
             if items:
                 store(client, items, items_ttl, seen_ttl, max_items)
                 print(f"news worker: processed {len(items)} items", flush=True)

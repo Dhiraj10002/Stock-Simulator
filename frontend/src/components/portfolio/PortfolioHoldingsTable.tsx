@@ -76,7 +76,7 @@ export default function PortfolioHoldingsTable({
     const pnlPercent = invested > 0 ? (pnl / invested) * 100 : 0;
     const dayPercent = invested > 0 ? (dayChange / invested) * 100 : 0;
 
-    return { invested, current, pnl, pnlPercent, dayChange, dayPercent };
+    return { invested, current, pnl, pnlPercent, dayChange, dayPercent, quotesAvailable: filteredHoldings.every(h => h.quoteAvailable !== false), dailyAvailable: filteredHoldings.every(h => h.dayPnlAvailable !== false) };
   }, [filteredHoldings]);
 
   const handleSort = (field: SortField) => {
@@ -243,13 +243,13 @@ export default function PortfolioHoldingsTable({
 
                       {/* LTP */}
                       <td className="py-3.5 px-3 text-right font-black font-tabular text-slate-900 dark:text-slate-100">
-                        {formatPaise(h.ltpPaise)}
+                        {formatPaise(h.quoteAvailable === false ? undefined : h.ltpPaise)}
                       </td>
 
                       {/* Current Value & Weight Bar */}
                       <td className="py-3.5 px-3 text-right">
                         <div className="font-bold font-tabular text-slate-900 dark:text-slate-100">
-                          {formatPaise(h.currentValuePaise)}
+                          {formatPaise(h.quoteAvailable === false ? undefined : h.currentValuePaise)}
                         </div>
                         <div className="flex items-center justify-end gap-1.5 mt-1">
                           <div className="w-12 h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
@@ -278,7 +278,7 @@ export default function PortfolioHoldingsTable({
                           ) : (
                             <TrendingDown className="w-3 h-3" />
                           )}
-                          <span>{formatPaise(h.dayChangePaise)}</span>
+                          <span>{formatPaise(h.dayPnlAvailable === false ? undefined : h.dayChangePaise)}</span>
                         </div>
                         <div
                           className={`text-[10px] font-semibold ${
@@ -287,8 +287,8 @@ export default function PortfolioHoldingsTable({
                               : "text-rose-500 dark:text-rose-400"
                           }`}
                         >
-                          {isDayGain ? "+" : ""}
-                          {h.dayChangePercent.toFixed(2)}%
+                          {h.dayPnlAvailable !== false && isDayGain ? "+" : ""}
+                          {h.dayPnlAvailable === false ? "—" : `${h.dayChangePercent.toFixed(2)}%`}
                         </div>
                       </td>
 
@@ -301,8 +301,8 @@ export default function PortfolioHoldingsTable({
                               : "text-rose-600 dark:text-rose-400"
                           }`}
                         >
-                          {isGain ? "+" : ""}
-                          {formatPaise(h.unrealizedPnlPaise)}
+                          {h.quoteAvailable !== false && isGain ? "+" : ""}
+                          {formatPaise(h.quoteAvailable === false ? undefined : h.unrealizedPnlPaise)}
                         </div>
                         <span
                           className={`inline-block text-[10px] font-bold font-tabular px-1.5 py-0.2 rounded mt-0.5 ${
@@ -311,8 +311,8 @@ export default function PortfolioHoldingsTable({
                               : "bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-800/40"
                           }`}
                         >
-                          {isGain ? "+" : ""}
-                          {h.pnlPercent.toFixed(2)}%
+                          {h.quoteAvailable !== false && isGain ? "+" : ""}
+                          {h.quoteAvailable === false ? "—" : `${h.pnlPercent.toFixed(2)}%`}
                         </span>
                       </td>
 
@@ -355,7 +355,7 @@ export default function PortfolioHoldingsTable({
                     </span>
                   </td>
                   <td className="py-3 px-3 text-right font-black font-tabular text-slate-900 dark:text-slate-100 text-sm">
-                    {formatPaise(totals.current)}
+                    {formatPaise(totals.quotesAvailable ? totals.current : undefined)}
                   </td>
                   <td className="py-3 px-3 text-right">
                     <span
@@ -365,8 +365,8 @@ export default function PortfolioHoldingsTable({
                           : "text-rose-600 dark:text-rose-400"
                       }`}
                     >
-                      {totals.dayChange >= 0 ? "+" : ""}
-                      {formatPaise(totals.dayChange)}
+                      {totals.dailyAvailable && totals.dayChange >= 0 ? "+" : ""}
+                      {formatPaise(totals.dailyAvailable ? totals.dayChange : undefined)}
                     </span>
                   </td>
                   <td className="py-3 px-4 text-right">
@@ -377,9 +377,9 @@ export default function PortfolioHoldingsTable({
                           : "text-rose-600 dark:text-rose-400"
                       }`}
                     >
-                      {totals.pnl >= 0 ? "+" : ""}
-                      {formatPaise(totals.pnl)} ({totals.pnl >= 0 ? "+" : ""}
-                      {totals.pnlPercent.toFixed(2)}%)
+                      {totals.quotesAvailable && totals.pnl >= 0 ? "+" : ""}
+                      {formatPaise(totals.quotesAvailable ? totals.pnl : undefined)} ({totals.quotesAvailable && totals.pnl >= 0 ? "+" : ""}
+                      {totals.quotesAvailable ? totals.pnlPercent.toFixed(2) : "—"}%)
                     </span>
                   </td>
                   <td className="py-3 px-4"></td>

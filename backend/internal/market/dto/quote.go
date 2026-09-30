@@ -13,10 +13,12 @@ type QuoteResponse struct {
 }
 
 type CandleResponse struct {
-	Timestamp  int64 `json:"timestamp"`
-	OpenPaise  int64 `json:"open_paise"`
-	HighPaise  int64 `json:"high_paise"`
-	LowPaise   int64 `json:"low_paise"`
-	ClosePaise int64 `json:"close_paise"`
-	Volume     int64 `json:"volume"`
+	Source     string `json:"source"`
+	FeedMode   string `json:"feed_mode"`
+	Timestamp  int64  `json:"timestamp"`
+	OpenPaise  int64  `json:"open_paise"`
+	HighPaise  int64  `json:"high_paise"`
+	LowPaise   int64  `json:"low_paise"`
+	ClosePaise int64  `json:"close_paise"`
+	Volume     int64  `json:"volume"`
 }

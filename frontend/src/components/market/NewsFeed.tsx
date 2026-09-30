@@ -22,54 +22,6 @@ interface NewsFeedProps {
   onSelectSymbol?: (symbol: string) => void;
 }
 
-const FALLBACK_ARTICLES: Article[] = [
-  {
-    title: "Nifty 50 approaches record high led by banking and auto heavyweights",
-    url: "#",
-    source: "LiveMint",
-    published_at: new Date(Date.now() - 1000 * 60 * 18).toISOString(),
-    sentiment: "POSITIVE",
-    score: 0.85,
-    symbols: ["NIFTY 50", "HDFCBANK", "TATAMOTORS"],
-  },
-  {
-    title: "Reliance Retail expands footprint with 150 new tech-driven fulfillment hubs",
-    url: "#",
-    source: "Economic Times",
-    published_at: new Date(Date.now() - 1000 * 60 * 45).toISOString(),
-    sentiment: "POSITIVE",
-    score: 0.78,
-    symbols: ["RELIANCE"],
-  },
-  {
-    title: "IT sector faces margin headwinds ahead of Q3 earnings reports; select stocks slip",
-    url: "#",
-    source: "CNBC TV18",
-    published_at: new Date(Date.now() - 1000 * 60 * 95).toISOString(),
-    sentiment: "NEGATIVE",
-    score: -0.62,
-    symbols: ["TCS", "INFY", "WIPRO"],
-  },
-  {
-    title: "RBI maintains repo rate at 6.5%, highlights resilient domestic macroeconomic outlook",
-    url: "#",
-    source: "Moneycontrol",
-    published_at: new Date(Date.now() - 1000 * 60 * 160).toISOString(),
-    sentiment: "NEUTRAL",
-    score: 0.1,
-    symbols: ["BANKNIFTY", "SBIN", "ICICIBANK"],
-  },
-  {
-    title: "Tata Steel records robust European operational volumes, steel prices stabilize",
-    url: "#",
-    source: "Business Standard",
-    published_at: new Date(Date.now() - 1000 * 60 * 240).toISOString(),
-    sentiment: "POSITIVE",
-    score: 0.72,
-    symbols: ["TATASTEEL"],
-  },
-];
-
 export default function NewsFeed({
   token,
   apiUrl = getApiUrl(),
@@ -80,21 +32,21 @@ export default function NewsFeed({
   const setSelectedSymbol = useTradingStore((s) => s.setSelectedSymbol);
   const [filter, setFilter] = useState<"ALL" | "POSITIVE" | "NEGATIVE" | "NEUTRAL">("ALL");
 
-  const { data: articles = [], isLoading } = useQuery<Article[]>({
+  const { data: articles = [], isLoading, isError } = useQuery<Article[]>({
     queryKey: ["news", limit],
     queryFn: async () => {
       try {
         const res = await fetch(`${apiUrl}/news?limit=${limit}`, {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
         });
-        if (!res.ok) return FALLBACK_ARTICLES;
+        if (!res.ok) throw new Error("News feed unavailable");
         const json: ApiResponse<Article[]> = await res.json();
         if (json.data && json.data.length > 0) {
           return json.data;
         }
-        return FALLBACK_ARTICLES;
+        return [];
       } catch {
-        return FALLBACK_ARTICLES;
+        throw new Error("News feed unavailable");
       }
     },
     refetchInterval: 30000,
@@ -119,6 +71,7 @@ export default function NewsFeed({
 
   const formatTimeAgo = (isoString: string) => {
     try {
+      if (!isoString || !Number.isFinite(Date.parse(isoString))) return "Publication time unavailable";
       const diffMs = currentTime - new Date(isoString).getTime();
       const mins = Math.floor(diffMs / 60000);
       if (mins < 1) return "Just now";
@@ -168,7 +121,7 @@ export default function NewsFeed({
         ) : filteredArticles.length === 0 ? (
           <div className="p-8 text-center text-xs text-slate-500">
             <Filter className="w-6 h-6 text-slate-700 mx-auto mb-2 stroke-[1.5]" />
-            <span>No articles found for selected filter.</span>
+            <span>{isError ? "News feed unavailable. Try again shortly." : "No articles found for selected filter."}</span>
           </div>
         ) : (
           filteredArticles.map((art, idx) => {

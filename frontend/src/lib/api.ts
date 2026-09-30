@@ -26,47 +26,60 @@ export function clearAuthTokens(): void {
     localStorage.removeItem("stock-simulator-access-token");
     localStorage.removeItem("refresh_token");
     localStorage.removeItem("stock-simulator-refresh-token");
+    localStorage.removeItem("auth-refresh-attempt");
     window.dispatchEvent(new Event("auth-changed"));
   }
 }
 
-/** Try to refresh access token using stored refresh token. */
-export async function tryRefreshToken(): Promise<string | null> {
-  if (typeof window === "undefined") return null;
-  const refreshToken =
-    localStorage.getItem("stock-simulator-refresh-token") ||
-    localStorage.getItem("refresh_token");
-  if (!refreshToken) {
-    clearAuthTokens();
-    return null;
-  }
+let refreshInFlight: Promise<string | null> | null = null;
 
-  try {
-    const res = await fetch(`${API_URL}/auth/refresh`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refresh_token: refreshToken }),
-    });
-    if (res.ok) {
-      const data = await res.json();
-      if (data.success && data.data?.access_token) {
-        const newAccess = data.data.access_token as string;
-        localStorage.setItem("auth_token", newAccess);
-        localStorage.setItem("stock-simulator-access-token", newAccess);
-        if (data.data?.refresh_token) {
+/** Share one rotation per tab and serialize rotations across tabs when Web Locks is available. */
+export function tryRefreshToken(failedAccessToken = getAuthToken()): Promise<string | null> {
+  if (typeof window === "undefined") return Promise.resolve(null);
+  if (refreshInFlight) return refreshInFlight;
+  const rotate = async (): Promise<string | null> => {
+    if (getAuthToken() && getAuthToken() !== failedAccessToken) return getAuthToken();
+    const refreshToken = localStorage.getItem("stock-simulator-refresh-token") || localStorage.getItem("refresh_token");
+    if (!refreshToken) return null;
+    const attemptName = "auth-refresh-attempt";
+    let attempt: {token: string; key: string} | null = null;
+    try { attempt = JSON.parse(localStorage.getItem(attemptName) || "null"); } catch { /* create a new attempt */ }
+    if (!attempt || attempt.token !== refreshToken) {
+      attempt = {token: refreshToken, key: crypto.randomUUID()};
+      localStorage.setItem(attemptName, JSON.stringify(attempt));
+    }
+    const stillCurrent = () => (localStorage.getItem("stock-simulator-refresh-token") || localStorage.getItem("refresh_token")) === refreshToken;
+    try {
+      const res = await fetch(`${API_URL}/auth/refresh`, {
+        method: "POST",
+        headers: {"Content-Type": "application/json", "Idempotency-Key": attempt.key},
+        body: JSON.stringify({refresh_token: refreshToken}),
+      });
+      if (!stillCurrent()) return getAuthToken() || null; // logout or another login won
+      if (res.ok) {
+        const data = await res.json();
+        if (!stillCurrent()) return getAuthToken() || null;
+        if (data.success && data.data?.access_token && data.data?.refresh_token) {
+          localStorage.setItem("auth_token", data.data.access_token);
+          localStorage.setItem("stock-simulator-access-token", data.data.access_token);
           localStorage.setItem("stock-simulator-refresh-token", data.data.refresh_token);
           localStorage.setItem("refresh_token", data.data.refresh_token);
+          localStorage.removeItem(attemptName);
+          window.dispatchEvent(new Event("auth-changed"));
+          return data.data.access_token;
         }
-        window.dispatchEvent(new Event("auth-changed"));
-        return newAccess;
+      } else if (res.status === 401) {
+        clearAuthTokens();
       }
-    }
-  } catch {
-    // network failure
-  }
-
-  clearAuthTokens();
-  return null;
+    } catch { /* Keep the retry key and credentials after a lost response. */ }
+    return null;
+  };
+  const run = async () => typeof navigator !== "undefined" && navigator.locks
+    ? await navigator.locks.request("stock-simulator-auth-refresh", rotate)
+    : await rotate();
+  const pending = run().finally(() => { refreshInFlight = null; });
+  refreshInFlight = pending;
+  return pending;
 }
 
 /** Standard API response wrapper from the Go backend. */
@@ -193,7 +206,7 @@ export async function apiFetch<T>(
 
   // If 401 Unauthorized and we were authenticated, try token refresh once
   if (res.status === 401 && token) {
-    const newToken = await tryRefreshToken();
+    const newToken = await tryRefreshToken(token);
     if (newToken) {
       headers["Authorization"] = `Bearer ${newToken}`;
       res = await fetch(`${API_URL}${path}`, {
@@ -217,9 +230,6 @@ export async function apiFetch<T>(
       if (errBody?.errors) details = errBody.errors;
     } catch {
       // ignore JSON parse errors on error responses
-    }
-    if (res.status === 401) {
-      clearAuthTokens();
     }
     throw new ApiError(msg, res.status, { code, requestId, endpoint: path, details });
   }

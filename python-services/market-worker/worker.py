@@ -16,6 +16,7 @@ from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any
 import uuid
+from settlement_store import SettlementRecorder
 
 class SensitiveDataFilter(logging.Filter):
     """Redacts sensitive API keys, JWT tokens, and private keys from vendor and application logs."""
@@ -1033,6 +1034,7 @@ class QuoteWriter:
         self._daily_volume: dict[str, tuple[date, int]] = {}
         self.benchmark_prices = DEFAULT_BENCHMARK_PRICES_PAISE
         self._feed_mode = feed_mode
+        self.settlement_recorder = SettlementRecorder(os.getenv("DATABASE_URL", ""))
 
     @property
     def feed_mode(self) -> str:
@@ -1066,8 +1068,6 @@ class QuoteWriter:
 
         bucket = int(now.timestamp()) // 60
         quote_key, history_key = f"market:quote:{subscription.symbol}", f"market:history:{subscription.symbol}"
-        latest = self.client.lindex(history_key, 0)
-        candle = make_candle(latest, bucket, price_paise, self.volume_delta(subscription.symbol, now.date(), volume))
 
         symbols_to_write = [subscription.symbol]
         canonical = resolve_canonical_symbol(subscription.symbol)
@@ -1076,6 +1076,9 @@ class QuoteWriter:
                 symbols_to_write.append(alias)
         if canonical not in symbols_to_write:
             symbols_to_write.append(canonical)
+
+        for sym in symbols_to_write:
+            self.settlement_recorder.record(sym, price_paise, source, mode, now)
 
         t0 = time.perf_counter()
         with self.client.pipeline() as pipe:
@@ -1089,8 +1092,12 @@ class QuoteWriter:
                 pipe.expire(q_key, self.quote_ttl)
 
                 sym_latest = self.client.lindex(h_key, 0)
-                candle = make_candle(sym_latest, bucket, price_paise, self.volume_delta(sym, now.date(), volume))
-                if sym_latest and candle["timestamp"] == bucket * 60:
+                candle = make_candle(sym_latest, bucket, price_paise, self.volume_delta(sym, now.date(), volume), source, mode.upper())
+                try:
+                    same_bucket = json.loads(sym_latest).get("timestamp") == bucket * 60 if sym_latest else False
+                except (TypeError, ValueError):
+                    same_bucket = False
+                if same_bucket:
                     pipe.lset(h_key, 0, json.dumps(candle))
                 else:
                     pipe.lpush(h_key, json.dumps(candle))
@@ -1226,6 +1233,8 @@ def seed_historical_candles(client: redis.Redis, subscriptions: list[Subscriptio
                 "low_paise": low_paise,
                 "close_paise": close_paise,
                 "volume": vol,
+                "source": "seed",
+                "feed_mode": "SYNTHETIC",
             })
 
         try:
@@ -1258,12 +1267,12 @@ def paise(value: Any) -> int:
     return parsed
 
 
-def make_candle(latest: str | None, bucket: int, price_paise: int, volume: int) -> dict[str, int]:
+def make_candle(latest: str | None, bucket: int, price_paise: int, volume: int, source: str = "", feed_mode: str = "") -> dict:
     timestamp = bucket * 60
     if latest:
         try:
             candle = json.loads(latest)
-            if candle.get("timestamp") == timestamp:
+            if candle.get("timestamp") == timestamp and (not source or (candle.get("source") == source and candle.get("feed_mode") == feed_mode)):
                 candle["high_paise"] = max(integer(candle.get("high_paise")), price_paise)
                 candle["low_paise"] = min(integer(candle.get("low_paise")) or price_paise, price_paise)
                 candle["close_paise"] = price_paise
@@ -1272,7 +1281,7 @@ def make_candle(latest: str | None, bucket: int, price_paise: int, volume: int) 
         except (TypeError, ValueError, json.JSONDecodeError):
             pass
     return {"timestamp": timestamp, "open_paise": price_paise, "high_paise": price_paise,
-            "low_paise": price_paise, "close_paise": price_paise, "volume": volume}
+            "low_paise": price_paise, "close_paise": price_paise, "volume": volume, "source": source, "feed_mode": feed_mode}
 
 
 def has_angel_credentials() -> bool:

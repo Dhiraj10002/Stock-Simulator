@@ -1,4 +1,5 @@
 "use client";
+import { useAccountWallet } from "@/hooks/useAccountWallet";
 
 import React, { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
@@ -29,7 +30,7 @@ import {
 } from "lucide-react";
 import { formatPaise } from "@/lib/format";
 import { MASTER_STOCKS_CATALOG, SECTOR_CONSTITUENTS } from "@/components/dashboard/DashboardPage";
-import type { Wallet, Portfolio, ApiResponse } from "@/types";
+import type { Portfolio, ApiResponse } from "@/types";
 
 // ---------------------------------------------------------------------------
 // TYPES & DATASETS FOR STOCKS EXPLORE
@@ -201,50 +202,7 @@ export default function StocksExplorePage() {
   const apiUrl = getApiUrl();
 
   // 1. Fetch Wallet for Available Margin
-  const { data: wallet } = useQuery<Wallet>({
-    queryKey: ["wallet", token],
-    queryFn: async () => {
-      if (!token) {
-        return {
-          uuid: "",
-          cash_balance_paise: 100000000,
-          available_balance_paise: 100000000,
-          blocked_paise: 0,
-        };
-      }
-      try {
-        const res = await fetch(`${apiUrl}/wallet`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!res.ok) {
-          return {
-            uuid: "",
-            cash_balance_paise: 100000000,
-            available_balance_paise: 100000000,
-            blocked_paise: 0,
-          };
-        }
-        const json: ApiResponse<Wallet> = await res.json();
-        return (
-          json.data || {
-            uuid: "",
-            cash_balance_paise: 100000000,
-            available_balance_paise: 100000000,
-            blocked_paise: 0,
-          }
-        );
-      } catch {
-        return {
-          uuid: "",
-          cash_balance_paise: 100000000,
-          available_balance_paise: 100000000,
-          blocked_paise: 0,
-        };
-      }
-    },
-    enabled: !!token,
-    refetchInterval: token ? 5000 : false,
-  });
+  const { data: wallet } = useAccountWallet();
 
   // 2. Fetch Portfolio for Unrealized P&L
   const { data: portfolio } = useQuery<Portfolio>({
@@ -460,7 +418,7 @@ export default function StocksExplorePage() {
     });
   }, [liveCatalog]);
 
-  const availableBalance = wallet?.available_balance_paise ?? 100000000;
+  const availableBalance = wallet?.available_balance_paise;
   const unrealizedPnl = portfolio?.unrealized_pnl_paise ?? 0;
   const isProfit = unrealizedPnl >= 0;
   const positionsCount = portfolio?.positions?.length ?? 0;

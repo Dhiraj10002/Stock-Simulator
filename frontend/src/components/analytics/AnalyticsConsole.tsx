@@ -115,7 +115,7 @@ export default function AnalyticsConsole({
     isLoading: loadingPerformance,
     error: errorPerformance,
   } = useQuery<PerformanceOverview | null>({
-    queryKey: ["analytics-performance"],
+    queryKey: ["analytics-performance", token],
     queryFn: async () => {
       if (!token) return null;
       const res = await fetch(`${baseApi}/analytics/performance`, {
@@ -133,7 +133,7 @@ export default function AnalyticsConsole({
     isLoading: loadingCalendar,
     error: errorCalendar,
   } = useQuery<PnlCalendarResponse | null>({
-    queryKey: ["analytics-calendar", currentMonth],
+    queryKey: ["analytics-calendar", token, currentMonth],
     queryFn: async () => {
       if (!token) return null;
       const res = await fetch(`${baseApi}/analytics/pnl-calendar?month=${currentMonth}`, {
@@ -406,6 +406,8 @@ export default function AnalyticsConsole({
     const total = trades.length;
     return { total, delivery, intraday, fno };
   }, [trades]);
+
+  if (!token || !livePerformance || !liveCalendarData || error) return <p role="status" className="p-6 text-sm text-amber-700">{loading ? "Loading account analytics…" : "Account analytics unavailable. No balances or returns are estimated."}</p>;
 
   return (
     <div className="flex flex-col bg-white dark:bg-slate-900/90 border border-slate-200/90 dark:border-slate-800 rounded-3xl shadow-2xl shadow-slate-200/60 dark:shadow-slate-950/70 overflow-hidden transition-all duration-300">

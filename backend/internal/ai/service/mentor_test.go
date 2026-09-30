@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	orderDTO "github.com/Dhiraj10002/Stock-Simulator/backend/internal/order/dto"
+	orderService "github.com/Dhiraj10002/Stock-Simulator/backend/internal/order/service"
 	"strings"
 	"testing"
 
@@ -15,6 +17,9 @@ func TestMentorService_Analyze_RuleBasedFallback(t *testing.T) {
 		GeminiModel:  "gemini-2.0-flash",
 	}
 	svc := New(cfg)
+	svc.OrderPreview = func(_ string, req orderDTO.CreateOrderRequest) (*orderService.OrderPreview, error) {
+		return &orderService.OrderPreview{RequiredFundsPaise: 2500000, AvailableBalancePaise: 100000000, SufficientFunds: true}, nil
+	}
 
 	tests := []struct {
 		name     string
@@ -67,6 +72,9 @@ func TestMentorService_BuildRuleBasedCritique(t *testing.T) {
 		GeminiModel:  "gemini-2.0-flash",
 	}
 	svc := New(cfg)
+	svc.OrderPreview = func(_ string, req orderDTO.CreateOrderRequest) (*orderService.OrderPreview, error) {
+		return &orderService.OrderPreview{RequiredFundsPaise: 2500000, AvailableBalancePaise: 100000000, SufficientFunds: true}, nil
+	}
 
 	metrics := dto.CritiqueMetrics{
 		WinRate:                60.0,
@@ -112,6 +120,9 @@ func TestMentorService_PreTradeCheck(t *testing.T) {
 		GeminiModel:  "gemini-2.0-flash",
 	}
 	svc := New(cfg)
+	svc.OrderPreview = func(_ string, req orderDTO.CreateOrderRequest) (*orderService.OrderPreview, error) {
+		return &orderService.OrderPreview{RequiredFundsPaise: 2500000, AvailableBalancePaise: 100000000, SufficientFunds: true}, nil
+	}
 
 	// Test Slippage Warning on Market order > 50 qty + Missing SL warning on INTRADAY
 	req := dto.PreTradeCheckRequest{
@@ -217,6 +228,9 @@ func TestMentorService_AccountContextAndEducationalDisclaimers(t *testing.T) {
 		GeminiModel:  "gemini-2.0-flash",
 	}
 	svc := New(cfg)
+	svc.OrderPreview = func(_ string, req orderDTO.CreateOrderRequest) (*orderService.OrderPreview, error) {
+		return &orderService.OrderPreview{RequiredFundsPaise: 2500000, AvailableBalancePaise: 100000000, SufficientFunds: true}, nil
+	}
 
 	// Test educational disclaimer and live account context on portfolio risk query
 	ans, err := svc.Analyze(context.Background(), "31372e69-2088-45d8-a2d8-8607a58e3685", "How do I manage my portfolio risk and open positions?")
@@ -258,6 +272,9 @@ func TestMentorService_Critique_ZeroTradesCleanSlate(t *testing.T) {
 		GeminiModel:  "gemini-2.0-flash",
 	}
 	svc := New(cfg)
+	svc.OrderPreview = func(_ string, req orderDTO.CreateOrderRequest) (*orderService.OrderPreview, error) {
+		return &orderService.OrderPreview{RequiredFundsPaise: 2500000, AvailableBalancePaise: 100000000, SufficientFunds: true}, nil
+	}
 
 	metrics := dto.CritiqueMetrics{
 		WinRate:                66.7,
@@ -287,6 +304,9 @@ func TestMentorService_PreTradeCheck_DirectionalErrors(t *testing.T) {
 		GeminiModel:  "gemini-2.0-flash",
 	}
 	svc := New(cfg)
+	svc.OrderPreview = func(_ string, req orderDTO.CreateOrderRequest) (*orderService.OrderPreview, error) {
+		return &orderService.OrderPreview{RequiredFundsPaise: 2500000, AvailableBalancePaise: 100000000, SufficientFunds: true}, nil
+	}
 
 	// BUY order where Stop-Loss is ABOVE price (invalid direction)
 	req := dto.PreTradeCheckRequest{
@@ -332,6 +352,9 @@ func TestMentorService_FallbackOnInvalidApiKey(t *testing.T) {
 		GeminiModel:  "gemini-2.0-flash",
 	}
 	svc := New(cfg)
+	svc.OrderPreview = func(_ string, req orderDTO.CreateOrderRequest) (*orderService.OrderPreview, error) {
+		return &orderService.OrderPreview{RequiredFundsPaise: 2500000, AvailableBalancePaise: 100000000, SufficientFunds: true}, nil
+	}
 
 	ans, err := svc.Analyze(context.Background(), "31372e69-2088-45d8-a2d8-8607a58e3685", "What happens during 15:20 MIS square-off?")
 	if err != nil {

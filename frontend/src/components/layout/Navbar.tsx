@@ -1,4 +1,5 @@
 "use client";
+import { useAccountWallet } from "@/hooks/useAccountWallet";
 
 import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
@@ -56,7 +57,6 @@ const NAV_LINKS = [
 ];
 
 export default function Navbar({
-  availableBalancePaise = 100000000,
   unrealizedPnlPaise = 0,
   onResetSimulation,
   onSignOut,
@@ -66,6 +66,8 @@ export default function Navbar({
   const setSearchPaletteOpen = useUIStore((s) => s.setSearchPaletteOpen);
   const { theme, setTheme } = useTheme();
 
+  const { data: verifiedWallet } = useAccountWallet();
+  const availableBalancePaise = verifiedWallet?.available_balance_paise;
   const [clientMarketStatus, setClientMarketStatus] = useState(getIndianMarketStatus());
   const feedStatus = useMarketStore((s) => s.feedStatus);
   const serverMarketStatus = useMarketStore((s) => s.marketStatus);

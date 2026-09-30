@@ -14,15 +14,18 @@ import (
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/config"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/database"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
+	orderDTO "github.com/Dhiraj10002/Stock-Simulator/backend/internal/order/dto"
+	orderService "github.com/Dhiraj10002/Stock-Simulator/backend/internal/order/service"
 	"github.com/google/uuid"
 )
 
 const geminiGenerateContentURL = "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent"
 
 type MentorService struct {
-	apiKey string
-	model  string
-	client *http.Client
+	OrderPreview func(string, orderDTO.CreateOrderRequest) (*orderService.OrderPreview, error)
+	apiKey       string
+	model        string
+	client       *http.Client
 }
 
 type geminiRequest struct {
@@ -114,26 +117,23 @@ func (s *MentorService) PreTradeCheck(ctx context.Context, userID string, req dt
 		return nil, fmt.Errorf("invalid user ID")
 	}
 
-	var wallet model.Wallet
-	var positions []model.Position
-	db := database.GetDB()
-	if db != nil {
-		_ = db.Where("user_uuid = ?", userUUID).First(&wallet).Error
-		_ = db.Where("user_uuid = ? AND quantity <> 0", userUUID).Find(&positions).Error
+	if s.OrderPreview == nil {
+		return nil, fmt.Errorf("order preview unavailable")
 	}
-
-	availablePaise := wallet.AvailableBalancePaise()
-	turnoverPaise := req.Quantity * req.PricePaise
-
-	// Calculate required margin
-	var requiredMarginPaise int64
-	switch req.Product {
-	case "INTRADAY":
-		requiredMarginPaise = (turnoverPaise + 4) / 5 // 20% margin (5x leverage)
-	case "FNO":
-		requiredMarginPaise = (turnoverPaise + 4) / 5 // 20% margin
-	default: // "DELIVERY"
-		requiredMarginPaise = turnoverPaise // 100%
+	price := req.PricePaise
+	if req.Type == model.OrderTypeMarket || req.Type == model.OrderTypeSLM {
+		price = 0
+	}
+	preview, err := s.OrderPreview(userID, orderDTO.CreateOrderRequest{Symbol: req.Symbol, Side: req.Side, Product: req.Product, Type: req.Type, Quantity: req.Quantity, PricePaise: price, TriggerPricePaise: req.StopLossPaise})
+	if err != nil {
+		return nil, err
+	}
+	availablePaise, requiredMarginPaise := preview.AvailableBalancePaise, preview.RequiredFundsPaise
+	var positions []model.Position
+	if db := database.GetDB(); db != nil {
+		if err := db.Where("user_uuid = ? AND quantity <> 0", userUUID).Find(&positions).Error; err != nil {
+			return nil, err
+		}
 	}
 
 	// Calculate projected margin impact

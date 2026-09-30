@@ -179,20 +179,9 @@ func (s *PortfolioService) Get(userID string) (*dto.PortfolioResponse, error) {
 	if err != nil {
 		return nil, err
 	}
-	location, err := time.LoadLocation("Asia/Kolkata")
-	if err != nil {
-		location = time.UTC
-	}
-	now := s.now().In(location)
-	dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, location)
-	dailyRealized, err := s.realizedPnl(userUUID, dayStart)
-	if err != nil {
-		return nil, err
-	}
-	result.DailyPnlPaise, err = addPnl(result.UnrealizedPnlPaise, dailyRealized)
-	if err != nil {
-		return nil, err
-	}
+	// Lifetime unrealized P&L cannot establish daily performance. Until a
+	// persisted session baseline and intraday flows are available, return null.
+	result.DailyPnlPaise = nil
 	result.TotalPnlPaise, err = addPnl(result.UnrealizedPnlPaise, result.RealizedPnlPaise)
 	if err != nil {
 		return nil, err
@@ -219,6 +208,7 @@ func (s *PortfolioService) Pnl(userID string) (*dto.PortfolioResponse, error) {
 
 func toPositionResponse(position model.Position) dto.PositionResponse {
 	return dto.PositionResponse{
+		MarginBlockedPaise: position.MarginBlockedPaise,
 		UUID:               position.UUID.String(),
 		Symbol:             position.Symbol,
 		Product:            position.Product,

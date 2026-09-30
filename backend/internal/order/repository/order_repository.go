@@ -109,48 +109,31 @@ func (r *OrderRepository) CreateWithReservation(order *model.Order, reservation 
 }
 
 func (r *OrderRepository) List(userUUID uuid.UUID) ([]model.Order, error) {
-	// Automatically purge terminal orders (executed, cancelled, rejected) older than 24 hours asynchronously
+	// Automatically hide terminal orders (executed, cancelled, rejected) older than 24 hours asynchronously
 	// to avoid blocking read queries on high-latency remote database connections
 	go func() {
 		defer func() { _ = recover() }()
 		cutoff := time.Now().Add(-24 * time.Hour)
 		_ = database.GetDB().
-			Where("user_uuid = ? AND status IN ? AND created_at < ?",
+			Where("user_uuid = ? AND hidden_from_history = false AND status IN ? AND created_at < ?",
 				userUUID,
 				[]string{model.OrderStatusExecuted, model.OrderStatusCancelled, model.OrderStatusRejected},
 				cutoff).
-			Delete(&model.Order{}).Error
+			Model(&model.Order{}).Update("hidden_from_history", true).Error
 	}()
 
 	var orders []model.Order
 	err := database.GetDB().
-		Where("user_uuid = ?", userUUID).
+		Where("user_uuid = ? AND hidden_from_history = ?", userUUID, false).
 		Order("created_at DESC").
 		Find(&orders).Error
 	return orders, err
 }
 
+// Hide history without deleting financial records or durable retry keys.
 func (r *OrderRepository) ClearHistory(userUUID uuid.UUID) (int64, error) {
-	tx := database.GetDB().Begin()
-	defer func() {
-		if rec := recover(); rec != nil {
-			tx.Rollback()
-		}
-	}()
-
-	_ = tx.Where("user_uuid = ?", userUUID).Delete(&model.Trade{})
-
-	res := tx.Where("user_uuid = ? AND status IN ?",
-		userUUID,
-		[]string{model.OrderStatusExecuted, model.OrderStatusCancelled, model.OrderStatusRejected}).
-		Delete(&model.Order{})
-
-	if err := res.Error; err != nil {
-		tx.Rollback()
-		return 0, err
-	}
-
-	return res.RowsAffected, tx.Commit().Error
+	result := database.GetDB().Model(&model.Order{}).Where("user_uuid = ? AND hidden_from_history = ? AND status IN ?", userUUID, false, []string{model.OrderStatusExecuted, model.OrderStatusCancelled, model.OrderStatusRejected}).Update("hidden_from_history", true)
+	return result.RowsAffected, result.Error
 }
 
 func (r *OrderRepository) FindByUUID(userUUID, orderUUID uuid.UUID) (*model.Order, error) {

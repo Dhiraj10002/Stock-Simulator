@@ -1,4 +1,5 @@
 "use client";
+import { useAccountWallet } from "@/hooks/useAccountWallet";
 
 import React, { useState, useMemo } from "react";
 import Link from "next/link";
@@ -22,7 +23,7 @@ import {
   FileText,
   Trash2,
 } from "lucide-react";
-import type { Order, Trade, Wallet, Portfolio, ApiResponse } from "@/types";
+import type { Order, Trade, Portfolio, ApiResponse } from "@/types";
 
 type OrdersTab = "orders" | "trades" | "contract-note";
 
@@ -102,50 +103,7 @@ export default function OrdersPage() {
   });
 
   // 3. Fetch Wallet for Navbar margin
-  const { data: wallet } = useQuery<Wallet>({
-    queryKey: ["wallet", token],
-    queryFn: async () => {
-      if (!token) {
-        return {
-          uuid: "",
-          cash_balance_paise: 100000000,
-          available_balance_paise: 100000000,
-          blocked_paise: 0,
-        };
-      }
-      try {
-        const res = await fetch(`${apiUrl}/wallet`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!res.ok) {
-          return {
-            uuid: "",
-            cash_balance_paise: 100000000,
-            available_balance_paise: 100000000,
-            blocked_paise: 0,
-          };
-        }
-        const json: ApiResponse<Wallet> = await res.json();
-        return (
-          json.data || {
-            uuid: "",
-            cash_balance_paise: 100000000,
-            available_balance_paise: 100000000,
-            blocked_paise: 0,
-          }
-        );
-      } catch {
-        return {
-          uuid: "",
-          cash_balance_paise: 100000000,
-          available_balance_paise: 100000000,
-          blocked_paise: 0,
-        };
-      }
-    },
-    enabled: !!token,
-    refetchInterval: token ? 5000 : false,
-  });
+  const { data: wallet } = useAccountWallet();
 
   // 4. Fetch Portfolio for Navbar unrealized PnL
   const { data: portfolio } = useQuery<Portfolio>({

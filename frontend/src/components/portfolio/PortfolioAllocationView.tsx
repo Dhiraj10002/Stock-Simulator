@@ -29,7 +29,7 @@ interface PortfolioAllocationViewProps {
 export default function PortfolioAllocationView({
   holdings = [],
   positions = [],
-  availableMarginPaise = 100000000,
+  availableMarginPaise,
   token = "",
 }: PortfolioAllocationViewProps) {
   const [hoveredSegment, setHoveredSegment] = useState<string | null>(null);
@@ -43,7 +43,7 @@ export default function PortfolioAllocationView({
       const sym = p.symbol.toUpperCase();
       return p.product === "FNO" && sym.includes("FUT");
     })
-    .reduce((sum, p) => sum + (p.margin_blocked_paise || Math.abs(p.quantity * p.average_price_paise * 0.18)), 0);
+    .reduce((sum, p) => sum + (p.margin_blocked_paise ?? 0), 0);
 
   const optionsValuation = positions
     .filter((p) => {
@@ -54,7 +54,7 @@ export default function PortfolioAllocationView({
 
   const intradayValuation = positions
     .filter((p) => p.product === "INTRADAY")
-    .reduce((sum, p) => sum + (p.margin_blocked_paise || Math.abs(p.quantity * p.average_price_paise * 0.2)), 0);
+    .reduce((sum, p) => sum + (p.margin_blocked_paise ?? 0), 0);
 
   const totalCapital =
     equityValuation + futuresValuation + optionsValuation + intradayValuation + availableMarginPaise;

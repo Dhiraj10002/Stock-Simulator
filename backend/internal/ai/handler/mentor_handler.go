@@ -14,6 +14,8 @@ type MentorHandler struct{ service *service.MentorService }
 
 func New(cfg *config.Config) *MentorHandler { return &MentorHandler{service: service.New(cfg)} }
 
+func (h *MentorHandler) Service() *service.MentorService { return h.service }
+
 func (h *MentorHandler) Analyze(c *gin.Context) {
 	var request dto.MentorRequest
 	if err := c.ShouldBindJSON(&request); err != nil {

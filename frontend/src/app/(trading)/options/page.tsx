@@ -1,4 +1,5 @@
 "use client";
+import { useAccountWallet } from "@/hooks/useAccountWallet";
 
 import React, { useState } from "react";
 import Link from "next/link";
@@ -15,7 +16,7 @@ import {
 } from "lucide-react";
 import { formatPaise } from "@/lib/format";
 import { API_URL } from "@/lib/api";
-import type { Portfolio, Wallet, ApiResponse } from "@/types";
+import type { Portfolio, ApiResponse } from "@/types";
 
 export default function OptionsPage() {
   // Navigation tabs: Explore (Derivatives Hub) vs Option Chain vs Positions
@@ -36,50 +37,7 @@ export default function OptionsPage() {
   const apiUrl = API_URL;
 
   // 1. Fetch Wallet for Navbar available balance
-  const { data: wallet } = useQuery<Wallet>({
-    queryKey: ["wallet", token],
-    queryFn: async () => {
-      if (!token) {
-        return {
-          uuid: "",
-          cash_balance_paise: 100000000,
-          available_balance_paise: 100000000,
-          blocked_paise: 0,
-        };
-      }
-      try {
-        const res = await fetch(`${apiUrl}/wallet`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!res.ok) {
-          return {
-            uuid: "",
-            cash_balance_paise: 100000000,
-            available_balance_paise: 100000000,
-            blocked_paise: 0,
-          };
-        }
-        const json: ApiResponse<Wallet> = await res.json();
-        return (
-          json.data || {
-            uuid: "",
-            cash_balance_paise: 100000000,
-            available_balance_paise: 100000000,
-            blocked_paise: 0,
-          }
-        );
-      } catch {
-        return {
-          uuid: "",
-          cash_balance_paise: 100000000,
-          available_balance_paise: 100000000,
-          blocked_paise: 0,
-        };
-      }
-    },
-    enabled: !!token,
-    refetchInterval: token ? 5000 : false,
-  });
+  const { data: wallet } = useAccountWallet();
 
   // 2. Fetch Portfolio for Navbar unrealized PnL & Positions
   const { data: portfolio } = useQuery<Portfolio>({

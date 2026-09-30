@@ -7,14 +7,17 @@ import (
 )
 
 // RefreshSession stores only a hash of the refresh token so the token itself
-// is never persisted in PostgreSQL.
+// is never persisted in plaintext. Short-lived retry responses are encrypted.
 type RefreshSession struct {
-	ID        uint       `gorm:"primaryKey"`
-	UUID      uuid.UUID  `gorm:"type:uuid;default:gen_random_uuid();uniqueIndex"`
-	UserUUID  uuid.UUID  `gorm:"type:uuid;index;not null"`
-	TokenHash string     `gorm:"size:64;uniqueIndex;not null" json:"-"`
-	JTI       string     `gorm:"size:64;index" json:"-"`
-	ExpiresAt time.Time  `gorm:"not null"`
-	RevokedAt *time.Time `gorm:"index"`
-	CreatedAt time.Time
+	RetryKeyHash    string     `gorm:"size:64" json:"-"`
+	RetryCiphertext []byte     `json:"-"`
+	RetryUntil      *time.Time `json:"-"`
+	ID              uint       `gorm:"primaryKey"`
+	UUID            uuid.UUID  `gorm:"type:uuid;default:gen_random_uuid();uniqueIndex"`
+	UserUUID        uuid.UUID  `gorm:"type:uuid;index;not null"`
+	TokenHash       string     `gorm:"size:64;uniqueIndex;not null" json:"-"`
+	JTI             string     `gorm:"size:64;index" json:"-"`
+	ExpiresAt       time.Time  `gorm:"not null"`
+	RevokedAt       *time.Time `gorm:"index"`
+	CreatedAt       time.Time
 }

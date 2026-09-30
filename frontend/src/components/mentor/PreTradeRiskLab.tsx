@@ -4,6 +4,8 @@ import React, { useState, useMemo, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useTradingStore } from "@/stores/trading-store";
 import { formatPaise, formatPercent } from "@/lib/format";
+import { apiFetch } from "@/lib/api";
+import type { OrderPreview } from "@/hooks/useOrderPreview";
 import { getApiUrl } from "@/lib/config";
 import {
   ShieldAlert,
@@ -113,22 +115,7 @@ export default function PreTradeRiskLab({
 
   // Simulation Results
   const [simulating, setSimulating] = useState(false);
-  const [result, setResult] = useState<PreTradeCheckResponse | null>(() => {
-    return {
-      risk_level: "SAFE",
-      risk_score: 88,
-      required_margin_paise: 2985500, // ₹29,855.00
-      available_balance_paise: 100000000,
-      margin_impact_pct: 2.98,
-      concentration_impact_pct: 2.98,
-      risk_reward_ratio: 1.96,
-      warnings: [
-        "Ensure stop-loss trigger order is placed concurrently to prevent overnight slippage.",
-      ],
-      advice:
-        "Favorable asymmetric edge (1 : 1.96). Margin requirement is conservative (under 5% of available funds), giving your trade adequate breathing room without risking margin liquidation.",
-    };
-  });
+  const [result, setResult] = useState<PreTradeCheckResponse | null>(null);
   const [simError, setSimError] = useState<string | null>(null);
 
   // Apply a Stock Selection
@@ -176,116 +163,7 @@ export default function PreTradeRiskLab({
     e.preventDefault();
     setSimulating(true);
     setSimError(null);
-
-    const calculateClientRisk = (): PreTradeCheckResponse => {
-      const isBuy = side === "BUY";
-      const riskPerShare = isBuy ? (priceRupees - stopLossRupees) : (stopLossRupees - priceRupees);
-      const rewardPerShare = isBuy ? (targetRupees - priceRupees) : (priceRupees - targetRupees);
-
-      const absRisk = Math.abs(riskPerShare) || 1;
-      const absReward = Math.abs(rewardPerShare) || 1;
-      const rr = Number((absReward / absRisk).toFixed(2));
-
-      const targetMovePct = priceRupees > 0 ? (absReward / priceRupees) * 100 : 0;
-      const stopMovePct = priceRupees > 0 ? (absRisk / priceRupees) * 100 : 0;
-
-      let marginMultiplier = 1;
-      if (product === "INTRADAY") marginMultiplier = 0.2; // 5x leverage
-      else if (product === "FNO") marginMultiplier = 0.15; // derivative margin
-
-      const totalVal = priceRupees * quantity;
-      const requiredMarginPaise = Math.round(totalVal * marginMultiplier * 100);
-      const availablePaise = 100000000;
-      const marginImpactPct = Number(((requiredMarginPaise / availablePaise) * 100).toFixed(2));
-
-      let score = 85;
-      const warnings: string[] = [];
-      let circuitBreached = false;
-      let fantasySetup = false;
-
-      // 1. Direction Consistency
-      if (stopLossRupees > 0 && riskPerShare <= 0) {
-        warnings.push(`Invalid Stop-Loss: On a ${side} order, stop-loss price must be defensively ${isBuy ? "below" : "above"} your entry (₹${priceRupees.toFixed(2)}).`);
-        score -= 40;
-      }
-      if (targetRupees > 0 && rewardPerShare <= 0) {
-        warnings.push(`Invalid Target: On a ${side} order, target price must be favorably ${isBuy ? "above" : "below"} your entry (₹${priceRupees.toFixed(2)}).`);
-        score -= 40;
-      }
-
-      // 2. Circuit Limits & Realistic Volatility Bands
-      if (product === "INTRADAY" && targetMovePct > 20) {
-        circuitBreached = true;
-        warnings.push(`🚨 Circuit Limit Breach (+${targetMovePct.toFixed(1)}%): Exceeds NSE maximum daily price band (10%–20%). Intraday price cannot physically reach ₹${targetRupees.toFixed(2)} in a single session.`);
-        score -= 65;
-      } else if (product === "INTRADAY" && targetMovePct > 8) {
-        warnings.push(`⚠️ Aggressive Intraday Target (+${targetMovePct.toFixed(1)}%): Standard daily volatility (ATR) for ${symbol} is 1.2%–2.5%. A move > 8% intraday is statistically rare (< 0.5% of sessions).`);
-        score -= 25;
-      } else if (targetMovePct > 40) {
-        warnings.push(`⚠️ Unrealistic Horizon (+${targetMovePct.toFixed(1)}%): Target requires multi-quarter momentum. Disconnected from normal swing setups.`);
-        score -= 25;
-      }
-
-      // 3. Risk-to-Reward & Wishful Thinking Bias
-      if (circuitBreached || (rr > 8.0 && targetMovePct > 8)) {
-        fantasySetup = true;
-        warnings.push(`⚠️ Wishful Thinking Bias (1:${rr}): Setting an astronomical target (+${targetMovePct.toFixed(1)}%) against a narrow stop (${stopMovePct.toFixed(1)}%) has near-zero execution probability. Market noise will trigger the stop-loss before reaching the target.`);
-        score = Math.min(score, 28);
-      } else if (rr >= 1.8 && rr <= 4.5) {
-        score += 10;
-      } else if (rr >= 1.5) {
-        score += 5;
-      } else if (rr < 1.0) {
-        score -= 25;
-        warnings.push("Sub-optimal Risk-to-Reward ratio (< 1:1.0). Potential loss exceeds projected target gain.");
-      } else {
-        score -= 10;
-        warnings.push("Marginal Risk-to-Reward ratio (< 1:1.5). Long term mathematical expectancy is negative.");
-      }
-
-      // 4. Capital & Order Execution
-      if (marginImpactPct > 30) {
-        score -= 20;
-        warnings.push("High capital concentration: Order commits over 30% of your total account margin.");
-      } else if (marginImpactPct > 15) {
-        score -= 5;
-        warnings.push("Moderate leverage: Monitor position closely during peak market volatility (14:30 – 15:30 IST).");
-      }
-
-      if (orderType === "MARKET") {
-        score -= 5;
-        warnings.push("Market order selected: Susceptible to bid-ask spread slippage on fast candles. Prefer Limit orders.");
-      }
-
-      const clampedScore = Math.min(99, Math.max(15, score));
-      const riskLevel: "SAFE" | "MODERATE" | "HIGH_RISK" =
-        (circuitBreached || clampedScore < 55) ? "HIGH_RISK" : clampedScore >= 75 ? "SAFE" : "MODERATE";
-
-      let advice = "Disciplined setup with positive mathematical expectancy.";
-      if (circuitBreached) {
-        advice = `Critical Reality Check: An intraday target of ₹${targetRupees.toFixed(2)} (+${targetMovePct.toFixed(1)}%) on ${symbol} breaches Indian exchange daily circuit limits (10%–20%). Nifty 50 stocks trade within an average daily range (ATR) of 1.2%–2.5%. A disciplined intraday target for ${symbol} would be around ₹${(priceRupees * 1.018).toFixed(1)} (1.8% gain) with your ₹${stopLossRupees} stop-loss.`;
-      } else if (fantasySetup) {
-        advice = `Payoff Asymmetry Trap: While 1 : ${rr} looks attractive on paper, the probability of reaching a +${targetMovePct.toFixed(1)}% target before hitting a -${stopMovePct.toFixed(1)}% stop is statistically less than 0.5%. Recalibrate your target closer to market pivot levels.`;
-      } else if (riskLevel === "SAFE") {
-        advice = `Excellent trade symmetry for ${symbol}. Defined stop-loss caps risk effectively with a healthy 1 : ${rr} reward potential. Margin commitment (${marginImpactPct}%) is well within institutional safety limits.`;
-      } else if (riskLevel === "MODERATE") {
-        advice = `Acceptable setup for ${symbol}, but consider tightening your stop-loss or adjusting your target to align with institutional support/resistance levels.`;
-      } else {
-        advice = `Hazardous setup detected for ${symbol}. The parameters violate risk discipline or market volatility bands. Institutional guidance recommends reducing position size or recalibrating invalidation level.`;
-      }
-
-      return {
-        risk_level: riskLevel,
-        risk_score: clampedScore,
-        required_margin_paise: requiredMarginPaise,
-        available_balance_paise: availablePaise,
-        margin_impact_pct: marginImpactPct,
-        concentration_impact_pct: marginImpactPct,
-        risk_reward_ratio: rr,
-        warnings,
-        advice,
-      };
-    };
+    setResult(null);
 
     try {
       if (token) {
@@ -311,17 +189,23 @@ export default function PreTradeRiskLab({
 
         const json: ApiResponse<PreTradeCheckResponse> = await res.json();
         if (res.ok && json.success && json.data) {
-          setResult(json.data);
+          const preview = await apiFetch<OrderPreview>("/orders/preview", {method: "POST", body: JSON.stringify({
+            symbol, side, product, type: orderType, quantity,
+            price_paise: orderType === "MARKET" ? 0 : Math.round(priceRupees * 100),
+            trigger_price_paise: ["SL", "SL-M"].includes(orderType) ? Math.round(stopLossRupees * 100) : undefined,
+          })});
+          setResult({...json.data,
+            required_margin_paise: preview.required_funds_paise,
+            available_balance_paise: preview.available_balance_paise,
+            margin_impact_pct: preview.available_balance_paise > 0 ? preview.required_funds_paise / preview.available_balance_paise * 100 : 0,
+          });
           return;
         }
       }
 
-      // Seamless client-side simulation
-      setTimeout(() => {
-        setResult(calculateClientRisk());
-      }, 350);
-    } catch {
-      setResult(calculateClientRisk());
+      throw new Error("Risk analysis unavailable. Sign in and verify the instrument and prices.");
+    } catch (error) {
+      setSimError(error instanceof Error ? error.message : "Risk analysis unavailable");
     } finally {
       setSimulating(false);
     }

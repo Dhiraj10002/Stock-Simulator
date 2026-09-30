@@ -1,4 +1,5 @@
 "use client";
+import { useAccountWallet } from "@/hooks/useAccountWallet";
 
 import React, { useState, useMemo } from "react";
 import Link from "next/link";
@@ -17,7 +18,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { formatPaise } from "@/lib/format";
-import type { Wallet, Portfolio, ApiResponse } from "@/types";
+import type { Portfolio, ApiResponse } from "@/types";
 import FnoOrderModal from "@/components/trading/FnoOrderModal";
 import type { Instrument } from "@/types";
 
@@ -611,50 +612,7 @@ export default function FnoExplorePage({ onSelectOptionChain }: FnoExplorePagePr
   const apiUrl = API_URL;
 
   // Fetch Wallet
-  const { data: wallet } = useQuery<Wallet>({
-    queryKey: ["wallet", token],
-    queryFn: async () => {
-      if (!token) {
-        return {
-          uuid: "",
-          cash_balance_paise: 100000000,
-          available_balance_paise: 100000000,
-          blocked_paise: 0,
-        };
-      }
-      try {
-        const res = await fetch(`${apiUrl}/wallet`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!res.ok) {
-          return {
-            uuid: "",
-            cash_balance_paise: 100000000,
-            available_balance_paise: 100000000,
-            blocked_paise: 0,
-          };
-        }
-        const json: ApiResponse<Wallet> = await res.json();
-        return (
-          json.data || {
-            uuid: "",
-            cash_balance_paise: 100000000,
-            available_balance_paise: 100000000,
-            blocked_paise: 0,
-          }
-        );
-      } catch {
-        return {
-          uuid: "",
-          cash_balance_paise: 100000000,
-          available_balance_paise: 100000000,
-          blocked_paise: 0,
-        };
-      }
-    },
-    enabled: !!token,
-    refetchInterval: token ? 5000 : false,
-  });
+  const { data: wallet } = useAccountWallet();
 
   // Fetch Portfolio
   const { data: portfolio } = useQuery<Portfolio>({
@@ -702,7 +660,7 @@ export default function FnoExplorePage({ onSelectOptionChain }: FnoExplorePagePr
     refetchInterval: token ? 5000 : false,
   });
 
-  const availableBalance = wallet?.available_balance_paise ?? 100000000;
+  const availableBalance = wallet?.available_balance_paise;
   const unrealizedPnl = portfolio?.unrealized_pnl_paise ?? 0;
   const isProfit = unrealizedPnl >= 0;
   const fnoPositions = (portfolio?.positions ?? []).filter(

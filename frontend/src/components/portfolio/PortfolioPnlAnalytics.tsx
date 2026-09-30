@@ -6,7 +6,6 @@ import {
   TrendingUp,
   TrendingDown,
   Calendar,
-  Activity,
   Flame,
   Award,
   CheckCircle2,
@@ -70,7 +69,7 @@ export interface PnlCalendar {
 export interface PortfolioPnlAnalyticsProps {
   totalValuationPaise?: number;
   totalUnrealizedPnlPaise?: number;
-  availableBalancePaise?: number;
+  availableBalancePaise: number;
   totalInvestedPaise?: number;
   holdings?: HoldingItem[];
   positions?: Position[];
@@ -78,9 +77,8 @@ export interface PortfolioPnlAnalyticsProps {
 }
 
 export default function PortfolioPnlAnalytics({
-  totalValuationPaise = 70640800,
-  totalUnrealizedPnlPaise = 3495300,
-  availableBalancePaise = 100000000,
+  totalUnrealizedPnlPaise = 0,
+  availableBalancePaise,
   holdings = [],
   positions = [],
   token = "",
@@ -88,21 +86,21 @@ export default function PortfolioPnlAnalytics({
   // ---------------------------------------------------------------------------
   // Real Backend Data Queries
   // ---------------------------------------------------------------------------
-  const { data: perf } = useQuery<PerformanceOverview>({
+  const { data: perf, isError: perfError } = useQuery<PerformanceOverview>({
     queryKey: ["analytics-performance", token],
     queryFn: () => apiFetch<PerformanceOverview>("/analytics/performance"),
     enabled: !!token,
     refetchInterval: 10000,
   });
 
-  const { data: calData } = useQuery<PnlCalendar>({
+  const { data: calData, isError: calError } = useQuery<PnlCalendar>({
     queryKey: ["analytics-calendar", token],
     queryFn: () => apiFetch<PnlCalendar>("/analytics/pnl-calendar"),
     enabled: !!token,
     refetchInterval: 10000,
   });
 
-  const { data: liveTrades = [] } = useQuery<LiveTrade[]>({
+  const { data: liveTrades = [], isError: tradesError } = useQuery<LiveTrade[]>({
     queryKey: ["trades", token],
     queryFn: () => apiFetch<LiveTrade[]>("/trades"),
     enabled: !!token,
@@ -119,39 +117,14 @@ export default function PortfolioPnlAnalytics({
     // Group live trades by YYYY-MM-DD
     const tradesByDate = new Map<string, LiveTrade[]>();
     liveTrades.forEach((t) => {
-      const d = t.executed_at ? t.executed_at.slice(0, 10) : new Date().toISOString().slice(0, 10);
+      if (!t.executed_at) return;
+      const d = t.executed_at.slice(0, 10);
       const list = tradesByDate.get(d) || [];
       list.push(t);
       tradesByDate.set(d, list);
     });
 
     const dateMap = new Map<string, DayPnlRecord>();
-    const today = new Date();
-    const todayStr = today.toISOString().slice(0, 10);
-
-    // Build the last 10 weekday dates (Mon-Fri) ending at today
-    const tradingDates: string[] = [];
-    const cur = new Date(today);
-    while (tradingDates.length < 10) {
-      const dayOfWeek = cur.getDay();
-      if (dayOfWeek !== 0 && dayOfWeek !== 6) {
-        tradingDates.unshift(cur.toISOString().slice(0, 10));
-      }
-      cur.setDate(cur.getDate() - 1);
-    }
-
-    // Initialize baseline for the 10 recent trading days
-    tradingDates.forEach((dStr) => {
-      const dt = new Date(dStr);
-      dateMap.set(dStr, {
-        date: dStr,
-        dayName: dayNames[dt.getDay()],
-        pnlPaise: dStr === todayStr && totalUnrealizedPnlPaise !== 0 ? totalUnrealizedPnlPaise : 0,
-        tradesCount: 0,
-        isProfit: dStr === todayStr ? totalUnrealizedPnlPaise >= 0 : true,
-      });
-    });
-
     // Merge with calendar days from backend
     if (calData?.days && calData.days.length > 0) {
       calData.days.forEach((d) => {
@@ -172,7 +145,7 @@ export default function PortfolioPnlAnalytics({
       const dt = new Date(dateStr);
       const dayName = isNaN(dt.getTime()) ? "Day" : dayNames[dt.getDay()];
       const pnl = trList.reduce((acc, t) => acc + (t.realized_pnl_paise || 0), 0);
-      const finalPnl = pnl !== 0 ? pnl : (dateStr === todayStr ? totalUnrealizedPnlPaise : 0);
+      const finalPnl = pnl;
       dateMap.set(dateStr, {
         date: dateStr,
         dayName,
@@ -183,7 +156,7 @@ export default function PortfolioPnlAnalytics({
     });
 
     return Array.from(dateMap.values()).sort((a, b) => a.date.localeCompare(b.date));
-  }, [liveTrades, calData, totalUnrealizedPnlPaise]);
+  }, [liveTrades, calData]);
 
   // Selected calendar day
   const [selectedDayDate, setSelectedDayDate] = useState<string | null>(null);
@@ -218,22 +191,15 @@ export default function PortfolioPnlAnalytics({
     const winRate =
       perf && perf.total_trades > 0
         ? `${perf.win_rate_pct.toFixed(0)}%`
-        : totalTradesCount > 0
-        ? "100%"
-        : "0%";
+        : "Unavailable";
 
-    const bestDay =
-      perf?.largest_win_paise && perf.largest_win_paise > 0
-        ? perf.largest_win_paise
-        : totalUnrealizedPnlPaise > 0
-        ? totalUnrealizedPnlPaise
-        : 0;
+    const bestDay = perf?.largest_win_paise ?? 0;
 
     const worstDay = perf?.largest_loss_paise ? perf.largest_loss_paise : 0;
 
     return {
-      cumulativePnlPaise: realizedPnl !== 0 ? realizedPnl : totalUnrealizedPnlPaise,
-      pnlLabel: realizedPnl !== 0 ? "Booked Realized P&L" : "Net Unrealized MTM",
+      cumulativePnlPaise: perf ? realizedPnl : totalUnrealizedPnlPaise,
+      pnlLabel: perf ? "Booked Realized P&L" : "Net Unrealized MTM",
       pnlSubtext:
         realizedPnl !== 0
           ? `${totalTradesCount} closed executions`
@@ -242,11 +208,11 @@ export default function PortfolioPnlAnalytics({
       winRateSubtext:
         perf && perf.total_trades > 0
           ? `${winningTrades} wins of ${perf.total_trades} closed trades`
-          : `${totalTradesCount} orders filled with zero slippage`,
+          : "Closed-trade statistics unavailable",
       bestDayPaise: bestDay,
       bestDaySubtext: perf?.largest_win_symbol
         ? `${perf.largest_win_symbol} winning trade`
-        : "Active portfolio peak watermark",
+        : "No recorded winning trade",
       maxLossPaise: worstDay,
       maxLossSubtext: perf?.largest_loss_symbol
         ? `${perf.largest_loss_symbol} contained loss`
@@ -257,42 +223,12 @@ export default function PortfolioPnlAnalytics({
   // ---------------------------------------------------------------------------
   // Intraday Equity Curve Trajectory
   // ---------------------------------------------------------------------------
-  const equityCurvePoints = useMemo(() => {
-    // Live Equity Curve based on user's live portfolio equity
-    const currentEquityPaise = availableBalancePaise + totalValuationPaise;
-    const initialBasePaise = 100000000; // ₹10,00,000 initial virtual capital
-    const diff = currentEquityPaise - initialBasePaise;
-
-    return [
-      { time: "09:15", pnl: 0, balance: initialBasePaise },
-      { time: "10:30", pnl: Math.round(diff * 0.25), balance: Math.round(initialBasePaise + diff * 0.25) },
-      { time: "12:00", pnl: Math.round(diff * 0.55), balance: Math.round(initialBasePaise + diff * 0.55) },
-      { time: "13:30", pnl: Math.round(diff * 0.45), balance: Math.round(initialBasePaise + diff * 0.45) },
-      { time: "14:45", pnl: Math.round(diff * 0.85), balance: Math.round(initialBasePaise + diff * 0.85) },
-      { time: "15:28", pnl: diff, balance: currentEquityPaise },
-    ];
-  }, [availableBalancePaise, totalValuationPaise]);
-
-  const minBal = Math.min(...equityCurvePoints.map((p) => p.balance));
-  const maxBal = Math.max(...equityCurvePoints.map((p) => p.balance));
-  const range = maxBal - minBal || 1;
-
-  const points = equityCurvePoints
-    .map((pt, i) => {
-      const x = (i / (equityCurvePoints.length - 1 || 1)) * 360 + 20;
-      const y = 140 - ((pt.balance - minBal) / range) * 100;
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
-    })
-    .join(" ");
-
-  const peakEquityRupees = (maxBal / 100).toLocaleString("en-IN", {
-    maximumFractionDigits: 0,
-  });
-
-  const currentEquityRupees = ((availableBalancePaise + totalValuationPaise) / 100).toLocaleString(
+  const currentEquityRupees = (availableBalancePaise / 100).toLocaleString(
     "en-IN",
     { minimumFractionDigits: 2, maximumFractionDigits: 2 }
   );
+
+  if (!token || !perf || !calData || perfError || calError || tradesError) return <p role="status" className="p-4 text-sm text-amber-700">Account analytics loading or unavailable. Returns are shown only after verified data arrives.</p>;
 
   return (
     <div className="space-y-6">
@@ -308,7 +244,7 @@ export default function PortfolioPnlAnalytics({
           </span>
         </div>
         <span className="font-mono text-[11px] text-emerald-700 dark:text-emerald-400 font-bold">
-          Account Equity: ₹{currentEquityRupees}
+          Available Margin: ₹{currentEquityRupees}
         </span>
       </div>
 
@@ -353,11 +289,11 @@ export default function PortfolioPnlAnalytics({
           </span>
         </div>
 
-        {/* Best Day / Trade */}
+        {/* Largest Winning Trade */}
         <div className="p-4 rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 shadow-xs space-y-1">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-              Best Day / Trade
+              Largest Winning Trade
             </span>
             <TrendingUp className="w-4 h-4 text-emerald-500" />
           </div>
@@ -369,11 +305,11 @@ export default function PortfolioPnlAnalytics({
           </span>
         </div>
 
-        {/* Max Daily Loss */}
+        {/* Largest Losing Trade */}
         <div className="p-4 rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 shadow-xs space-y-1">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-              Max Daily Loss
+              Largest Losing Trade
             </span>
             <TrendingDown className="w-4 h-4 text-rose-500" />
           </div>
@@ -529,92 +465,8 @@ export default function PortfolioPnlAnalytics({
           )}
         </div>
 
-        {/* INTRADAY EQUITY CURVE (6 Cols) */}
-        <div className="lg:col-span-6 p-6 rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 shadow-sm space-y-5">
-          <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-            <div>
-              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-                <Activity className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
-                <span>Intraday Equity Curve</span>
-              </h3>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                Live account equity tracking (Cash + Position MTM)
-              </p>
-            </div>
-            <span className="text-xs font-mono font-bold text-cyan-600 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-950/60 px-2 py-0.5 rounded border border-cyan-200 dark:border-cyan-800/50">
-              09:15 - 15:30 IST
-            </span>
-          </div>
-
-          {/* SVG Sparkline Chart */}
-          <div className="w-full h-44 relative flex items-center justify-center">
-            <svg viewBox="0 0 400 160" className="w-full h-full overflow-visible">
-              <defs>
-                <linearGradient id="equityGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#06b6d4" stopOpacity="0.4" />
-                  <stop offset="100%" stopColor="#06b6d4" stopOpacity="0.0" />
-                </linearGradient>
-              </defs>
-
-              {/* Grid lines */}
-              <line
-                x1="20"
-                y1="40"
-                x2="380"
-                y2="40"
-                stroke="currentColor"
-                strokeOpacity="0.1"
-                strokeWidth="0.5"
-                strokeDasharray="3 3"
-              />
-              <line
-                x1="20"
-                y1="90"
-                x2="380"
-                y2="90"
-                stroke="currentColor"
-                strokeOpacity="0.1"
-                strokeWidth="0.5"
-                strokeDasharray="3 3"
-              />
-              <line
-                x1="20"
-                y1="140"
-                x2="380"
-                y2="140"
-                stroke="currentColor"
-                strokeOpacity="0.1"
-                strokeWidth="0.5"
-                strokeDasharray="3 3"
-              />
-
-              {/* Area */}
-              <polygon points={`20,140 ${points} 380,140`} fill="url(#equityGrad)" />
-
-              {/* Line */}
-              <polyline
-                fill="none"
-                stroke="#06b6d4"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                points={points}
-              />
-
-              {/* End Point Pulse */}
-              {equityCurvePoints.length > 0 && (
-                <circle cx="380" cy="40" r="4" fill="#06b6d4" className="animate-pulse" />
-              )}
-            </svg>
-          </div>
-
-          <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 font-mono pt-2 border-t border-slate-100 dark:border-slate-800">
-            <span>Market Open: 09:15</span>
-            <span className="text-emerald-600 dark:text-emerald-400 font-bold">
-              Peak: ₹{peakEquityRupees}
-            </span>
-            <span>Market Close: 15:30</span>
-          </div>
+        <div className="lg:col-span-6 p-6 rounded-2xl border border-slate-200 text-sm text-slate-500">
+          Intraday equity history is unavailable. A current balance cannot reconstruct the account’s earlier values.
         </div>
       </div>
     </div>

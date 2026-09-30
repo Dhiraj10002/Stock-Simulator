@@ -12,6 +12,8 @@ export interface HoldingItem {
   currentValuePaise: number;
   unrealizedPnlPaise: number;
   pnlPercent: number;
+  dayPnlAvailable?: boolean;
+  quoteAvailable?: boolean;
   dayChangePaise: number;
   dayChangePercent: number;
   weightPercent: number;
