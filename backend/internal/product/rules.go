@@ -26,7 +26,22 @@ type Rules struct {
 }
 
 func FromConfig(cfg *config.Config) Rules {
-	return Rules{MISLeverage: cfg.MISLeverage, FuturesMarginPercent: cfg.FuturesMarginPercent, OptionSellMarginPercent: cfg.OptionSellMarginPercent}
+	if cfg == nil {
+		return Rules{MISLeverage: 5, FuturesMarginPercent: 20, OptionSellMarginPercent: 30}
+	}
+	mis := cfg.MISLeverage
+	if mis <= 0 {
+		mis = 5
+	}
+	fut := cfg.FuturesMarginPercent
+	if fut <= 0 {
+		fut = 20
+	}
+	opt := cfg.OptionSellMarginPercent
+	if opt <= 0 {
+		opt = 30
+	}
+	return Rules{MISLeverage: mis, FuturesMarginPercent: fut, OptionSellMarginPercent: opt}
 }
 
 func (r Rules) Margin(product, instrumentType, side string, notional int64) (int64, error) {

@@ -151,6 +151,38 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+  /wallet/deposit:
+    post:
+      summary: Deposit Paper Trading Margin
+      description: Credits paper trading cash balance and logs a wallet transaction.
+      tags: [Wallet]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount_paise]
+              properties:
+                amount_paise:
+                  type: integer
+                  format: int64
+                  minimum: 1
+                  description: Amount in paise (1 INR = 100 paise)
+      responses:
+        '200':
+          description: Margin credited successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WalletResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
   /wallet/transactions:
     get:
       summary: List Wallet Transactions

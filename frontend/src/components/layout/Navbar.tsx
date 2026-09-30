@@ -142,12 +142,12 @@ export default function Navbar({
 
   // Indices — targeted symbol selectors prevent full navbar rerenders on unrelated ticks
   const niftyQuote = useSymbolQuote("NIFTY");
-  const niftyPrice = niftyQuote ? niftyQuote.price_paise : 2339450;
-  const niftyChange = niftyQuote?.change_percent ?? 0.35;
+  const niftyPrice = niftyQuote && niftyQuote.price_paise > 0 ? niftyQuote.price_paise : undefined;
+  const niftyChange = niftyQuote?.change_percent;
 
   const sensexQuote = useSymbolQuote("SENSEX");
-  const sensexPrice = sensexQuote ? sensexQuote.price_paise : 7473654;
-  const sensexChange = sensexQuote?.change_percent ?? 0.18;
+  const sensexPrice = sensexQuote && sensexQuote.price_paise > 0 ? sensexQuote.price_paise : undefined;
+  const sensexChange = sensexQuote?.change_percent;
 
   const isProfit = unrealizedPnlPaise >= 0;
 
@@ -200,32 +200,40 @@ export default function Navbar({
               <span className="font-bold text-slate-900 dark:text-slate-200 font-tabular">
                 {formatPaise(niftyPrice)}
               </span>
-              <span
-                className={`flex items-center text-[11px] font-semibold ${
-                  niftyChange >= 0
-                    ? "text-emerald-600 dark:text-emerald-400"
-                    : "text-rose-600 dark:text-rose-400"
-                }`}
-              >
-                {niftyChange >= 0 ? "+" : ""}
-                {niftyChange.toFixed(2)}%
-              </span>
+              {niftyChange !== undefined ? (
+                <span
+                  className={`flex items-center text-[11px] font-semibold ${
+                    niftyChange >= 0
+                      ? "text-emerald-600 dark:text-emerald-400"
+                      : "text-rose-600 dark:text-rose-400"
+                  }`}
+                >
+                  {niftyChange >= 0 ? "+" : ""}
+                  {niftyChange.toFixed(2)}%
+                </span>
+              ) : (
+                <span className="text-[11px] text-slate-400 font-mono">—</span>
+              )}
             </div>
             <div className="flex items-center gap-2 px-2.5 py-1 rounded-lg dark:bg-white/[0.03] dark:border dark:border-white/[0.05]">
               <span className="font-semibold text-slate-600 dark:text-slate-400">SENSEX</span>
               <span className="font-bold text-slate-900 dark:text-slate-200 font-tabular">
                 {formatPaise(sensexPrice)}
               </span>
-              <span
-                className={`flex items-center text-[11px] font-semibold ${
-                  sensexChange >= 0
-                    ? "text-emerald-600 dark:text-emerald-400"
-                    : "text-rose-600 dark:text-rose-400"
-                }`}
-              >
-                {sensexChange >= 0 ? "+" : ""}
-                {sensexChange.toFixed(2)}%
-              </span>
+              {sensexChange !== undefined ? (
+                <span
+                  className={`flex items-center text-[11px] font-semibold ${
+                    sensexChange >= 0
+                      ? "text-emerald-600 dark:text-emerald-400"
+                      : "text-rose-600 dark:text-rose-400"
+                  }`}
+                >
+                  {sensexChange >= 0 ? "+" : ""}
+                  {sensexChange.toFixed(2)}%
+                </span>
+              ) : (
+                <span className="text-[11px] text-slate-400 font-mono">—</span>
+              )}
             </div>
           </div>
         </div>

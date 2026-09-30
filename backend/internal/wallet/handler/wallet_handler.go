@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/config"
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/wallet/dto"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/wallet/service"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/pkg/response"
 	"github.com/gin-gonic/gin"
@@ -38,4 +39,18 @@ func (h *WalletHandler) Reset(c *gin.Context) {
 		return
 	}
 	response.Success(c, http.StatusOK, "Wallet reset successfully", wallet)
+}
+
+func (h *WalletHandler) Deposit(c *gin.Context) {
+	var req dto.DepositRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ErrorWithCode(c, http.StatusBadRequest, "INVALID_REQUEST", "Invalid deposit request: amount_paise is required and must be positive", nil)
+		return
+	}
+	wallet, err := h.service.Deposit(c.GetString("user_id"), req.AmountPaise)
+	if err != nil {
+		response.ErrorWithCode(c, http.StatusBadRequest, "DEPOSIT_FAILED", err.Error(), nil)
+		return
+	}
+	response.Success(c, http.StatusOK, "Margin deposit credited successfully", wallet)
 }

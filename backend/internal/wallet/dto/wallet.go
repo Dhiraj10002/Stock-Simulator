@@ -16,3 +16,7 @@ type TransactionResponse struct {
 	Note         string `json:"note"`
 	CreatedAt    string `json:"created_at"`
 }
+
+type DepositRequest struct {
+	AmountPaise int64 `json:"amount_paise" binding:"required"`
+}

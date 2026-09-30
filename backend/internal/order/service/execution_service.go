@@ -96,6 +96,9 @@ func (s *OrderService) Execute(userID, orderID string) error {
 		}
 		var position model.Position
 		positionErr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_uuid = ? AND symbol = ? AND product = ?", userUUID, order.Symbol, model.OrderProductDelivery).First(&position).Error
+		if positionErr != nil && !errors.Is(positionErr, gorm.ErrRecordNotFound) {
+			return positionErr
+		}
 
 		if staleExit(&order, &position) {
 			order.Status = model.OrderStatusCancelled

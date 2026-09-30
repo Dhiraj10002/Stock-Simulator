@@ -120,11 +120,14 @@ func (s *MentorService) PreTradeCheck(ctx context.Context, userID string, req dt
 	if s.OrderPreview == nil {
 		return nil, fmt.Errorf("order preview unavailable")
 	}
+	orderType := req.Type
 	price := req.PricePaise
-	if req.Type == model.OrderTypeMarket || req.Type == model.OrderTypeSLM {
+	if (req.Type == model.OrderTypeMarket || req.Type == model.OrderTypeSLM) && price > 0 {
+		orderType = model.OrderTypeLimit
+	} else if req.Type == model.OrderTypeMarket || req.Type == model.OrderTypeSLM {
 		price = 0
 	}
-	preview, err := s.OrderPreview(userID, orderDTO.CreateOrderRequest{Symbol: req.Symbol, Side: req.Side, Product: req.Product, Type: req.Type, Quantity: req.Quantity, PricePaise: price, TriggerPricePaise: req.StopLossPaise})
+	preview, err := s.OrderPreview(userID, orderDTO.CreateOrderRequest{Symbol: req.Symbol, Side: req.Side, Product: req.Product, Type: orderType, Quantity: req.Quantity, PricePaise: price, TriggerPricePaise: req.StopLossPaise})
 	if err != nil {
 		return nil, err
 	}

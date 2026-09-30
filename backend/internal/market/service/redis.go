@@ -558,9 +558,12 @@ func ValidateExecutableQuoteWithMode(quote *dto.QuoteResponse, now time.Time, al
 	if strings.TrimSpace(quote.UpdatedAt) == "" {
 		return fmt.Errorf("market quote has no update time")
 	}
-	updatedAt, err := time.Parse(time.RFC3339, quote.UpdatedAt)
+	updatedAt, err := time.Parse(time.RFC3339Nano, quote.UpdatedAt)
 	if err != nil {
-		return fmt.Errorf("market quote has an invalid update time")
+		updatedAt, err = time.Parse(time.RFC3339, quote.UpdatedAt)
+		if err != nil {
+			return fmt.Errorf("market quote has an invalid update time")
+		}
 	}
 	if updatedAt.After(now.Add(5 * time.Second)) {
 		return fmt.Errorf("market quote is in the future")

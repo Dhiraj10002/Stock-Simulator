@@ -51,12 +51,16 @@ func (s *OrderService) Preview(user string, request dto.CreateOrderRequest) (*Or
 		return nil, errors.New("invalid order value")
 	}
 	var wallet model.Wallet
-	if err := database.GetDB().Where("user_uuid = ?", id).First(&wallet).Error; err != nil {
-		return nil, err
+	if db := database.GetDB(); db != nil {
+		if err := db.Where("user_uuid = ?", id).First(&wallet).Error; err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, err
+		}
 	}
 	var position model.Position
-	if err := database.GetDB().Where("user_uuid = ? AND symbol = ? AND product = ?", id, order.Symbol, order.Product).First(&position).Error; err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, err
+	if db := database.GetDB(); db != nil {
+		if err := db.Where("user_uuid = ? AND symbol = ? AND product = ?", id, order.Symbol, order.Product).First(&position).Error; err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, err
+		}
 	}
 	required := int64(0)
 	if order.Product == model.OrderProductDelivery {

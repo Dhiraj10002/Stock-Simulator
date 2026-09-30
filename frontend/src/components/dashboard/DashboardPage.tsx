@@ -471,7 +471,7 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
     setResetting(true);
     try {
       if (token) {
-        await fetch(`${apiUrl}/portfolio/reset`, {
+        await fetch(`${apiUrl}/simulation/reset`, {
           method: "POST",
           headers: { Authorization: `Bearer ${token}` },
         });

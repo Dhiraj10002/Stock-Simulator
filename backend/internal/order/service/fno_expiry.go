@@ -123,9 +123,12 @@ func (s *OrderService) finalQuotePrice(symbol, expiry string) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	observed, err := time.Parse(time.RFC3339, quote.UpdatedAt)
+	observed, err := time.Parse(time.RFC3339Nano, quote.UpdatedAt)
 	if err != nil {
-		return 0, err
+		observed, err = time.Parse(time.RFC3339, quote.UpdatedAt)
+		if err != nil {
+			return 0, err
+		}
 	}
 	ref = model.SettlementReference{Symbol: symbol, SessionDate: day.Format("2006-01-02"), FeedMode: string(mode), Source: quote.Source, PricePaise: quote.PricePaise, ObservedAt: observed}
 	if err := validateSettlementReference(ref, day, mode); err != nil {
@@ -146,7 +149,7 @@ func (s *OrderService) finalQuotePrice(symbol, expiry string) (int64, error) {
 
 func validateSettlementReference(ref model.SettlementReference, day time.Time, mode marketDTO.FeedMode) error {
 	close := time.Date(day.Year(), day.Month(), day.Day(), 15, 30, 0, 0, day.Location())
-	if ref.PricePaise <= 0 || ref.FeedMode != string(mode) || ref.SessionDate != day.Format("2006-01-02") || !marketDTO.IsSourceExecutableInMode(marketDTO.NormalizeQuoteSource(ref.Source), mode) || ref.ObservedAt.Before(close.Add(-time.Minute)) || !ref.ObservedAt.Before(close) {
+	if ref.PricePaise <= 0 || ref.FeedMode != string(mode) || ref.SessionDate != day.Format("2006-01-02") || !marketDTO.IsSourceExecutableInMode(marketDTO.NormalizeQuoteSource(ref.Source), mode) || ref.ObservedAt.Before(close.Add(-time.Minute)) || ref.ObservedAt.After(close) {
 		return fmt.Errorf("valid closing-window settlement reference unavailable")
 	}
 	return nil

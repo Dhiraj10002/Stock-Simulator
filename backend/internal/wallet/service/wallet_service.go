@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/config"
@@ -153,6 +154,27 @@ func (s *WalletService) Reset(userID string) (*dto.WalletResponse, error) {
 		return nil, err
 	}
 	return toWalletResponse(wallet), nil
+}
+
+func (s *WalletService) Deposit(userID string, amountPaise int64) (*dto.WalletResponse, error) {
+	if amountPaise <= 0 {
+		return nil, errors.New("deposit amount must be positive")
+	}
+	if amountPaise > 1000000000 { // Max ₹1 Crore paper deposit per request
+		return nil, errors.New("deposit amount exceeds maximum allowed limit")
+	}
+	wallet, err := s.walletForUser(userID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.repo.Credit(wallet.UUID, amountPaise, "Paper trading margin deposit"); err != nil {
+		return nil, err
+	}
+	updated, err := s.walletForUser(userID)
+	if err != nil {
+		return nil, err
+	}
+	return toWalletResponse(updated), nil
 }
 
 func toWalletResponse(wallet *model.Wallet) *dto.WalletResponse {

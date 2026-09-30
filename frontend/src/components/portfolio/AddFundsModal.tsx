@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { formatPaise } from "@/lib/format";
 import { getApiUrl } from "@/lib/config";
+import { apiFetch } from "@/lib/api";
 import type { Wallet as WalletData } from "@/types";
 import WalletTransactionsTable from "./WalletTransactionsTable";
 
@@ -47,24 +48,24 @@ export default function AddFundsModal({
 
   const activeAmount = customAmount ? parseFloat(customAmount) || 0 : selectedAmount;
 
-  // Handle Add Paper Margin
+  // Handle Add Paper Margin via backend deposit endpoint
   const handleAddFunds = async () => {
     if (activeAmount <= 0) return;
     setIsAdding(true);
     setFeedback(null);
 
     try {
-      // If we don't have a direct backend deposit endpoint, we can call reset or update wallet
-      // Also update local mock / query cache
-      queryClient.setQueryData(["wallet"], (old: WalletData | undefined) => {
-        if (!old) return old;
-        const addPaise = activeAmount * 100;
-        return {
-          ...old,
-          cash_balance_paise: old.cash_balance_paise + addPaise,
-          available_balance_paise: old.available_balance_paise + addPaise,
-        };
+      const depositPaise = Math.round(activeAmount * 100);
+      await apiFetch<WalletData>("/wallet/deposit", {
+        method: "POST",
+        body: JSON.stringify({ amount_paise: depositPaise }),
       });
+
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["wallet"] }),
+        queryClient.invalidateQueries({ queryKey: ["wallet-transactions"] }),
+        queryClient.invalidateQueries({ queryKey: ["portfolio"] }),
+      ]);
 
       setFeedback({
         type: "success",
