@@ -12,7 +12,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { formatPaise, formatPercent } from "@/lib/format";
-import { useMultiSymbolQuotes } from "@/stores/market-store";
+import { useMultiSymbolQuotes, useTargetedSubscription } from "@/stores/market-store";
 import { resolveCanonicalSymbol } from "@/lib/alias";
 import type { Position } from "@/types";
 
@@ -50,6 +50,7 @@ export default function PositionsTable({
   const [bulkClosing, setBulkClosing] = useState(false);
 
   const positionSymbols = useMemo(() => positions.map((p) => p.symbol), [positions]);
+  useTargetedSubscription(positionSymbols);
   const quotes = useMultiSymbolQuotes(positionSymbols);
 
   // Normalize positions and reprice from live quote stream if available

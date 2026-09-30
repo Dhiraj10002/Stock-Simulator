@@ -191,7 +191,7 @@ export default function PortfolioPnlAnalytics({
     const winRate =
       perf && perf.total_trades > 0
         ? `${perf.win_rate_pct.toFixed(0)}%`
-        : "Unavailable";
+        : "—";
 
     const bestDay = perf?.largest_win_paise ?? 0;
 

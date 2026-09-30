@@ -112,7 +112,7 @@ func (s *PortfolioService) Get(userID string) (*dto.PortfolioResponse, error) {
 			quoteSource = quote.Source
 			isAvailable = true
 			if quote.UpdatedAt != "" {
-				if t, parseErr := time.Parse(time.RFC3339, quote.UpdatedAt); parseErr == nil {
+				if t, parseErr := marketDTO.ParseQuoteTime(quote.UpdatedAt); parseErr == nil {
 					if s.now().Sub(t) > 2*time.Minute {
 						quoteStatus = "STALE"
 						isStale = true

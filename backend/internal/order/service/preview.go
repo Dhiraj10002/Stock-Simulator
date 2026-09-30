@@ -3,8 +3,10 @@ package service
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/database"
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/calendar"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/order/dto"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/product"
@@ -25,7 +27,14 @@ type OrderPreview struct {
 // same transition and margin functions as execution; submission revalidates it.
 func (s *OrderService) Preview(user string, request dto.CreateOrderRequest) (*OrderPreview, error) {
 	var order model.Order
-	probe := &OrderService{repo: s.repo, market: s.market, rules: s.rules, nowFunc: s.nowFunc, executableQuoteFunc: s.executableQuoteFunc, instrumentFinder: s.instrumentFinder, createOrderFunc: func(o *model.Order) error { order = *o; return nil }}
+	previewNow := s.now
+	if err := calendar.ValidateNewOrderSession(s.now()); err != nil {
+		n := s.now()
+		previewNow = func() time.Time {
+			return time.Date(n.Year(), n.Month(), n.Day(), 11, 0, 0, 0, calendar.Location())
+		}
+	}
+	probe := &OrderService{repo: s.repo, market: s.market, rules: s.rules, nowFunc: previewNow, executableQuoteFunc: s.executableQuoteFunc, instrumentFinder: s.instrumentFinder, createOrderFunc: func(o *model.Order) error { order = *o; return nil }}
 	request.Reason = ""
 	if _, err := probe.Create(user, request); err != nil {
 		return nil, err

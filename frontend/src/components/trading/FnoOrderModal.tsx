@@ -11,6 +11,7 @@ import {
 import { formatPaise } from "@/lib/format";
 import { API_URL, apiFetch } from "@/lib/api";
 import type { Instrument } from "@/types";
+import { useSymbolQuote, useTargetedSubscription } from "@/stores/market-store";
 
 export interface FnoOrderModalProps {
   isOpen: boolean;
@@ -54,7 +55,11 @@ export default function FnoOrderModal({
 
   const apiUrl = API_URL;
 
-  // Live price state: fetched from backend when initial price is unavailable
+  // Active targeted WebSocket subscription while modal is open
+  useTargetedSubscription(isOpen && instrument?.symbol ? instrument.symbol : undefined);
+  const liveQuote = useSymbolQuote(isOpen && instrument?.symbol ? instrument.symbol : undefined);
+
+  // Live price state: fallback REST poll from backend if WebSocket tick is pending
   const [liveLtpPaise, setLiveLtpPaise] = React.useState<number>(0);
 
   React.useEffect(() => {
@@ -67,7 +72,7 @@ export default function FnoOrderModal({
       setFeedback(null);
       setLots(1);
       setSide(initialSide);
-      setLimitPrice(((instrument?.basePricePaise ?? 0) / 100).toFixed(2));
+      setLimitPrice("");
     });
     let inFlight = false;
     const refresh = async () => {
@@ -78,7 +83,6 @@ export default function FnoOrderModal({
         const body = res.ok ? await res.json() : null;
         if (!cancelled && body?.success && body?.data?.price_paise > 0) {
           setLiveLtpPaise(body.data.price_paise);
-          setLimitPrice((previous) => Number(previous) > 0 ? previous : (body.data.price_paise / 100).toFixed(2));
         }
       } catch { /* Keep unavailable until an authentic quote arrives. */ }
       finally { inFlight = false; }
@@ -90,7 +94,18 @@ export default function FnoOrderModal({
 
   const lotSize = instrument?.lotSize && instrument.lotSize > 0 ? instrument.lotSize : 1;
   const totalQuantity = lots * lotSize;
-  const effectivePricePaise = liveLtpPaise > 0 ? liveLtpPaise : (instrument?.basePricePaise ?? 0);
+  const effectivePricePaise =
+    liveQuote && liveQuote.price_paise > 0
+      ? liveQuote.price_paise
+      : liveLtpPaise > 0
+      ? liveLtpPaise
+      : (instrument?.basePricePaise ?? 0);
+
+  const effectiveChangePercent =
+    liveQuote && typeof liveQuote.change_percent === "number"
+      ? liveQuote.change_percent
+      : (instrument?.dayChangePercent ?? 0);
+
   const ltpRupees = effectivePricePaise / 100;
   const activePrice =
     orderType === "LIMIT" && parseFloat(limitPrice) > 0
@@ -200,7 +215,9 @@ export default function FnoOrderModal({
               <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-400">
                 {instrument.segment === "FUTURES" ? "FUTURES" : "OPTIONS"}
               </span>
-              <span className="text-xs text-slate-400 font-mono">NSE F&O</span>
+              <span className="text-xs text-slate-400 font-mono">
+                {instrument.exchange ? `${instrument.exchange} F&O` : "NSE F&O"}
+              </span>
             </div>
 
             <h2 className="text-xl font-black text-slate-900 dark:text-slate-100 tracking-tight mt-1.5 flex items-center gap-2">
@@ -218,12 +235,12 @@ export default function FnoOrderModal({
             </div>
             <div
               className={`text-xs font-bold font-tabular flex items-center justify-end gap-1 ${
-                (instrument.dayChangePercent ?? 0) >= 0
+                effectiveChangePercent >= 0
                   ? "text-emerald-600 dark:text-emerald-400"
                   : "text-rose-600 dark:text-rose-400"
               }`}
             >
-              <span>{(instrument.dayChangePercent ?? 0) >= 0 ? "+" : ""}{(instrument.dayChangePercent ?? 0).toFixed(2)}%</span>
+              <span>{effectiveChangePercent >= 0 ? "+" : ""}{effectiveChangePercent.toFixed(2)}%</span>
             </div>
             <button
               onClick={onClose}
@@ -367,7 +384,8 @@ export default function FnoOrderModal({
               <input
                 type="number"
                 step="0.05"
-                value={limitPrice}
+                value={limitPrice !== "" ? limitPrice : (ltpRupees > 0 ? ltpRupees.toFixed(2) : "")}
+                placeholder={ltpRupees > 0 ? ltpRupees.toFixed(2) : "0.00"}
                 onChange={(e) => setLimitPrice(e.target.value)}
                 className="w-full px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-bold font-tabular text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-500"
               />

@@ -1,7 +1,8 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { create } from "zustand";
 import { useShallow } from "zustand/shallow";
 import { Quote, Instrument } from "@/types";
+import { resolveCanonicalSymbol } from "@/lib/alias";
 
 export type MarketStatus = "PRE_OPEN" | "OPEN" | "POST_MARKET" | "CLOSED" | "HOLIDAY";
 export type ConnectionState = "connected" | "connecting" | "disconnected";
@@ -148,7 +149,8 @@ export const useSymbolQuote = (symbol: string | undefined): Quote | undefined =>
     if (!symbol) return undefined;
     const upper = symbol.toUpperCase();
     const clean = upper.replace("-EQ", "");
-    return state.quotes[clean] || state.quotes[upper];
+    const canonical = resolveCanonicalSymbol(clean);
+    return state.quotes[clean] || state.quotes[upper] || (canonical ? state.quotes[canonical] : undefined);
   });
 };
 
@@ -164,8 +166,14 @@ export const useMultiSymbolQuotes = (symbols: string[]): Record<string, Quote> =
       for (const sym of symbols) {
         const upper = sym.toUpperCase();
         const clean = upper.replace("-EQ", "");
-        const q = state.quotes[clean] || state.quotes[upper];
-        if (q) result[clean] = q;
+        const canonical = resolveCanonicalSymbol(clean);
+        const q = state.quotes[clean] || state.quotes[upper] || (canonical ? state.quotes[canonical] : undefined);
+        if (q) {
+          result[clean] = q;
+          result[upper] = q;
+          result[sym] = q;
+          if (canonical) result[canonical] = q;
+        }
       }
       return result;
     })
@@ -197,24 +205,54 @@ export const DEFAULT_BENCHMARK_SYMBOLS = ["NIFTY", "BANKNIFTY", "SENSEX"];
 /** Maximum concurrent symbol subscriptions per client to protect network and browser */
 export const MAX_CLIENT_SUBSCRIPTIONS = 50;
 
+const viewSubscriptions = new Map<string, number>();
+
+function registerSymbols(symbols: string[]): string[] {
+  for (const sym of symbols) {
+    viewSubscriptions.set(sym, (viewSubscriptions.get(sym) || 0) + 1);
+  }
+  return Array.from(viewSubscriptions.keys());
+}
+
+function unregisterSymbols(symbols: string[]): string[] {
+  for (const sym of symbols) {
+    const count = viewSubscriptions.get(sym) || 0;
+    if (count <= 1) {
+      viewSubscriptions.delete(sym);
+    } else {
+      viewSubscriptions.set(sym, count - 1);
+    }
+  }
+  return Array.from(viewSubscriptions.keys());
+}
+
 /**
  * Hook for views/pages to register active symbols they want live quotes for.
- * Automatically adds the symbols to activeViewSymbols on mount / update,
- * and clears them when the component unmounts.
+ * Uses reference counting so multiple mounted components (e.g. portfolio + modal)
+ * don't clobber each other's live quote subscriptions.
  */
 export const useTargetedSubscription = (symbols: string | string[] | undefined) => {
   const setActiveViewSymbols = useMarketStore((s) => s.setActiveViewSymbols);
 
-  useEffect(() => {
-    if (!symbols) return;
+  const symbolsKey = useMemo(() => {
+    if (!symbols) return "";
     const list = Array.isArray(symbols) ? symbols : [symbols];
-    const cleanList = list.map((s) => s.toUpperCase().trim()).filter(Boolean);
+    return Array.from(new Set(list.map((s) => s.toUpperCase().trim()).filter(Boolean))).sort().join(",");
+  }, [symbols]);
+
+  useEffect(() => {
+    if (!symbolsKey) return;
+    const cleanList = symbolsKey.split(",").filter(Boolean);
     if (cleanList.length === 0) return;
 
-    setActiveViewSymbols(cleanList);
+    const currentActive = registerSymbols(cleanList);
+    setActiveViewSymbols(currentActive);
+
     return () => {
-      setActiveViewSymbols([]);
+      const remainingActive = unregisterSymbols(cleanList);
+      setActiveViewSymbols(remainingActive);
     };
-  }, [symbols, setActiveViewSymbols]);
+  }, [symbolsKey, setActiveViewSymbols]);
 };
+
 

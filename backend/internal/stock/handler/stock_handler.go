@@ -116,7 +116,7 @@ func (h *Handler) Search(c *gin.Context) {
 	// Imported masters contain historical contracts and non-equity NSE securities.
 	dbQuery = dbQuery.Where("active = ?", true).
 		Where("instrument_type IN ?", []string{"", "EQ", "EQUITY", "INDEX", "AMXIDX", "FUTSTK", "FUTIDX", "OPTSTK", "OPTIDX"}).
-		Where("exchange_segment = 'NFO' OR instrument_type IN ('INDEX', 'AMXIDX') OR symbol NOT LIKE '%-%' OR symbol LIKE '%-EQ'")
+		Where("exchange_segment IN ('NFO', 'BFO') OR instrument_type IN ('INDEX', 'AMXIDX') OR symbol NOT LIKE '%-%' OR symbol LIKE '%-EQ'")
 	now := time.Now().In(calendar.Location())
 	cutoff := now.Format("2006-01-02")
 	if now.Hour() > 15 || (now.Hour() == 15 && now.Minute() >= 30) {

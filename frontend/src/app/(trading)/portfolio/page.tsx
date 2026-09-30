@@ -31,7 +31,7 @@ import {
   Receipt,
 } from "lucide-react";
 import { formatPaise } from "@/lib/format";
-import { useMultiSymbolQuotes } from "@/stores/market-store";
+import { useMultiSymbolQuotes, useTargetedSubscription } from "@/stores/market-store";
 import { resolveCanonicalSymbol } from "@/lib/alias";
 import { API_URL, apiFetch, extractApiDiagnostic, type ApiDiagnostic } from "@/lib/api";
 import ErrorDiagnosticModal from "@/components/ui/ErrorDiagnosticModal";
@@ -128,6 +128,7 @@ export default function PortfolioPage() {
     () => livePositions.map((p) => p.symbol),
     [livePositions]
   );
+  useTargetedSubscription(portfolioSymbols);
   const quotes = useMultiSymbolQuotes(portfolioSymbols);
 
   const rawLiveHoldings = livePositions.filter(
@@ -136,23 +137,40 @@ export default function PortfolioPage() {
   const totalLiveHoldingsCurrentPaise = rawLiveHoldings.reduce((sum, p) => {
     const canonical = resolveCanonicalSymbol(p.symbol);
     const liveQuote = quotes[p.symbol] || quotes[canonical];
-    const isAvail = !portfolioError && !p.is_quote_stale && (p.is_quote_available ?? false);
-    const ltpPaise = liveQuote?.price_paise || p.current_price_paise || (isAvail ? p.average_price_paise : 0);
+    const hasLiveQuote = !!(liveQuote && liveQuote.price_paise > 0);
+    const hasRecordedPrice = !!(p.current_price_paise && p.current_price_paise > 0);
+    const isAvail = !portfolioError && (hasLiveQuote || (p.is_quote_available ?? false) || hasRecordedPrice);
+    const ltpPaise = hasLiveQuote
+      ? liveQuote.price_paise
+      : hasRecordedPrice
+      ? p.current_price_paise
+      : (isAvail ? p.average_price_paise : 0);
     return sum + (isAvail ? ltpPaise * p.quantity : 0);
   }, 0);
 
   const activeHoldings: HoldingItem[] = rawLiveHoldings.map((p, idx) => {
     const canonical = resolveCanonicalSymbol(p.symbol);
     const liveQuote = quotes[p.symbol] || quotes[canonical];
-    const isAvail = !portfolioError && !p.is_quote_stale && (p.is_quote_available ?? false);
-    const ltpPaise = liveQuote?.price_paise || p.current_price_paise || (isAvail ? p.average_price_paise : 0);
+    const hasLiveQuote = !!(liveQuote && liveQuote.price_paise > 0);
+    const hasRecordedPrice = !!(p.current_price_paise && p.current_price_paise > 0);
+    const isAvail = !portfolioError && (hasLiveQuote || (p.is_quote_available ?? false) || hasRecordedPrice);
+    const ltpPaise = hasLiveQuote
+      ? liveQuote.price_paise
+      : hasRecordedPrice
+      ? p.current_price_paise
+      : (isAvail ? p.average_price_paise : 0);
     const prevClosePaise =
       liveQuote && liveQuote.change_paise !== undefined
         ? ltpPaise - liveQuote.change_paise
         : p.average_price_paise;
-    // No persisted session baseline is available; do not invent daily P&L.
-    const dayChangePaise = 0;
-    const dayChangePercent = 0;
+
+    const quoteChangePaise = liveQuote?.change_paise;
+    const hasDayChange = typeof quoteChangePaise === "number";
+    const dayChangePaise = hasDayChange ? quoteChangePaise * p.quantity : 0;
+    const dayChangePercent = hasDayChange
+      ? liveQuote?.change_percent ?? (prevClosePaise > 0 ? (quoteChangePaise / prevClosePaise) * 100 : 0)
+      : 0;
+    const dayPnlAvailable = isAvail && hasDayChange;
 
     const investedValuePaise =
       p.invested_value_paise || p.average_price_paise * p.quantity;
@@ -163,7 +181,7 @@ export default function PortfolioPage() {
         ? (unrealizedPnlPaise / investedValuePaise) * 100
         : 0;
 
-    const stockInfo = STOCK_INFO_MAP[p.symbol] || {
+    const stockInfo = STOCK_INFO_MAP[p.symbol] || STOCK_INFO_MAP[canonical] || {
       name: `${p.symbol} Equity`,
       sector: "Other" as const,
     };
@@ -187,7 +205,7 @@ export default function PortfolioPage() {
       currentValuePaise,
       unrealizedPnlPaise,
       pnlPercent,
-      dayPnlAvailable: false,
+      dayPnlAvailable,
       quoteAvailable: isAvail,
       dayChangePaise,
       dayChangePercent,
@@ -195,7 +213,45 @@ export default function PortfolioPage() {
     };
   });
 
-  const activePositions: Position[] = livePositions.filter((p) => p.product !== "DELIVERY" || p.quantity < 0);
+  const activePositions: Position[] = useMemo(() => {
+    return livePositions
+      .filter((p) => p.product !== "DELIVERY" || p.quantity < 0)
+      .map((p) => {
+        const canonical = resolveCanonicalSymbol(p.symbol);
+        const liveQuote = quotes[p.symbol] || quotes[canonical];
+        const hasLiveQuote = !!(liveQuote && liveQuote.price_paise > 0);
+        const hasRecordedPrice = !!(p.current_price_paise && p.current_price_paise > 0);
+        const isAvail = !portfolioError && (hasLiveQuote || (p.is_quote_available ?? false) || hasRecordedPrice);
+        const currentPricePaise = hasLiveQuote
+          ? liveQuote.price_paise
+          : hasRecordedPrice
+          ? p.current_price_paise
+          : (isAvail ? p.average_price_paise : 0);
+
+        const qty = p.quantity;
+        const avg = p.average_price_paise;
+        let currentValuePaise = p.current_value_paise;
+        let unrealizedPnlPaise = p.unrealized_pnl_paise;
+
+        if (isAvail && currentPricePaise > 0) {
+          currentValuePaise = Math.abs(qty) * currentPricePaise;
+          if (qty < 0) {
+            unrealizedPnlPaise = (avg - currentPricePaise) * Math.abs(qty);
+          } else {
+            unrealizedPnlPaise = (currentPricePaise - avg) * qty;
+          }
+        }
+
+        return {
+          ...p,
+          current_price_paise: currentPricePaise,
+          current_value_paise: currentValuePaise,
+          unrealized_pnl_paise: unrealizedPnlPaise,
+          is_quote_available: isAvail,
+          quote_status: hasLiveQuote ? ("FRESH" as const) : p.quote_status,
+        };
+      });
+  }, [livePositions, quotes, portfolioError]);
 
   // Financial calculations
   const holdingsCurrentVal = activeHoldings.reduce((sum, h) => sum + h.currentValuePaise, 0);
@@ -217,11 +273,21 @@ export default function PortfolioPage() {
     totalInvestedPaise > 0 ? (totalUnrealizedPnlPaise / totalInvestedPaise) * 100 : 0;
   const isOverallProfit = totalUnrealizedPnlPaise >= 0;
 
-  // Daily P&L needs a session baseline plus intraday cash flows. Until the
-  // backend supplies that metric, display unavailable (not lifetime P&L).
-  const dayPnlPaise: number | undefined = undefined;
-  const isDayProfit = false;
-  const valuationAvailable = !!portfolio && !portfolioError && livePositions.every(p => p.is_quote_available && !p.is_quote_stale);
+  const holdingsDayPnlPaise = activeHoldings.reduce(
+    (sum, h) => sum + (h.dayPnlAvailable ? h.dayChangePaise : 0),
+    0
+  );
+  const anyHoldingDayPnlAvailable = activeHoldings.some((h) => h.dayPnlAvailable);
+  const dayPnlPaise: number | undefined = anyHoldingDayPnlAvailable
+    ? holdingsDayPnlPaise
+    : (portfolio?.daily_pnl_paise !== null && portfolio?.daily_pnl_paise !== undefined ? portfolio.daily_pnl_paise : undefined);
+  const isDayProfit = (dayPnlPaise ?? 0) >= 0;
+  const dayPnlPercent =
+    totalInvestedPaise > 0 && dayPnlPaise !== undefined
+      ? (dayPnlPaise / totalInvestedPaise) * 100
+      : undefined;
+
+  const valuationAvailable = !!portfolio && !portfolioError && (livePositions.length === 0 || totalValuationPaise > 0 || totalInvestedPaise > 0);
   const availableBalancePaise = walletError ? undefined : wallet?.available_balance_paise;
   const blockedMarginPaise = walletError ? undefined : wallet?.blocked_paise;
 
@@ -330,12 +396,11 @@ export default function PortfolioPage() {
     <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-150">
       <Navbar
         availableBalancePaise={availableBalancePaise}
-        unrealizedPnlPaise={0}
+        unrealizedPnlPaise={totalUnrealizedPnlPaise}
       />
 
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
         {(!portfolio || portfolioError || availableBalancePaise === undefined) && <p role="status" className="p-3 text-sm text-amber-700">Account data is loading or unavailable. Balances and returns are shown only when verified.</p>}
-        <p className="text-xs text-slate-500">Daily P&amp;L is unavailable until a reliable session baseline is recorded.</p>
 
         {/* ===================================================================== */}
         {/* TOP HEADER & INSTITUTIONAL ACTIONS BAR                                */}
@@ -476,8 +541,7 @@ export default function PortfolioPage() {
                     : "bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-400"
                 }`}
               >
-                {isDayProfit ? "+" : ""}
-                Unavailable
+                {dayPnlPercent !== undefined ? `${isDayProfit && dayPnlPercent > 0 ? "+" : ""}${dayPnlPercent.toFixed(2)}%` : "—"}
               </span>
             </span>
             <div
@@ -485,8 +549,7 @@ export default function PortfolioPage() {
                 isDayProfit ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
               }`}
             >
-              {isDayProfit ? "+" : ""}
-              {formatPaise(dayPnlPaise)}
+              {dayPnlPaise !== undefined ? `${isDayProfit && dayPnlPaise > 0 ? "+" : ""}${formatPaise(dayPnlPaise)}` : "—"}
             </div>
             <div className="text-[11px] text-slate-400">
               Today&apos;s mark-to-market swing

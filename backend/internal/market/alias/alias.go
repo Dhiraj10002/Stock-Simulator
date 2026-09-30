@@ -12,10 +12,20 @@ import (
 )
 
 var defaultAliases = map[string]string{
-	"ZOMATO":     "ETERNAL",
-	"TATAMOTORS": "TMPV",
-	"LTI":        "LTIM",
-	"MINDTREE":   "LTIM",
+	"ZOMATO":            "ETERNAL",
+	"TATAMOTORS":        "TMPV",
+	"LTI":               "LTIM",
+	"MINDTREE":          "LTIM",
+	"NIFTY 50":          "NIFTY",
+	"NIFTY50":           "NIFTY",
+	"BANK NIFTY":        "BANKNIFTY",
+	"NIFTY BANK":        "BANKNIFTY",
+	"BSE SENSEX":        "SENSEX",
+	"SENSEX 30":         "SENSEX",
+	"NIFTY FIN SERVICE": "FINNIFTY",
+	"FINNIFTY":          "FINNIFTY",
+	"NIFTY MID SELECT":  "MIDCPNIFTY",
+	"MIDCPNIFTY":        "MIDCPNIFTY",
 }
 
 // Manager maintains dynamic symbol alias mappings with thread-safety.

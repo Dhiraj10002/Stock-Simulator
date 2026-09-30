@@ -185,7 +185,7 @@ func (s *Service) collectValidEquityQuotes(ctx context.Context) ([]dto.MarketMov
 			continue
 		}
 
-		updatedAt, parseErr := time.Parse(time.RFC3339, updatedAtStr)
+		updatedAt, parseErr := dto.ParseQuoteTime(updatedAtStr)
 		if parseErr != nil || now.Sub(updatedAt) > maxExecutableQuoteAge {
 			continue
 		}

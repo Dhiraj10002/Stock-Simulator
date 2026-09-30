@@ -9,6 +9,7 @@ import (
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/calendar"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/order/dto"
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/product"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -105,6 +106,30 @@ func (s *OrderService) SquareOffPosition(user, positionID uuid.UUID, keys ...str
 		}
 		if position.Quantity == 0 {
 			return errors.New("position is already closed")
+		}
+		if position.Product == model.OrderProductFNO {
+			var inst *model.Instrument
+			if instRow, instErr := s.repo.FindInstrument(position.Symbol); instErr == nil && instRow != nil {
+				inst = instRow
+			} else if synth, synthErr := product.ParseSyntheticFNOContract(position.Symbol); synthErr == nil && synth != nil {
+				inst = synth
+			}
+			if inst != nil && isExpired(inst.Expiry, s.now()) {
+				kind, kErr := product.ValidateFNOInstrument(*inst, abs(position.Quantity))
+				if kErr == nil {
+					settlementPrice, pErr := s.expiryPrice(*inst, kind)
+					if pErr != nil {
+						settlementPrice = position.CurrentPricePaise
+					}
+					if err := s.settleExpiredPosition(position.UUID, settlementPrice, kind); err == nil {
+						var settledOrder model.Order
+						if err := tx.Where("user_uuid = ? AND symbol = ? AND reason = ?", user, position.Symbol, model.OrderReasonFNOExpiry).Order("created_at DESC").First(&settledOrder).Error; err == nil {
+							order = settledOrder
+							return nil
+						}
+					}
+				}
+			}
 		}
 		side := model.OrderSideSell
 		if position.Quantity < 0 {

@@ -4,7 +4,7 @@ import { useAccountWallet } from "@/hooks/useAccountWallet";
 import React, { useState, useMemo } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
-import { useMultiSymbolQuotes } from "@/stores/market-store";
+import { useMultiSymbolQuotes, useTargetedSubscription } from "@/stores/market-store";
 import { API_URL } from "@/lib/api";
 import {
   TrendingUp,
@@ -560,6 +560,7 @@ export default function FnoExplorePage({ onSelectOptionChain }: FnoExplorePagePr
     []
   );
   const quotes = useMultiSymbolQuotes(fnoQuoteSymbols);
+  useTargetedSubscription(fnoQuoteSymbols);
 
   // Filter state for Top Traded Underlyings
   const [underlyingFilter, setUnderlyingFilter] = useState<"ALL" | "INDICES" | "EQUITY">("ALL");

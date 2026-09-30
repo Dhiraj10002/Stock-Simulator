@@ -17,7 +17,7 @@ import (
 func main() {
 	sourceFlag := flag.String("source", service.OfficialScripMasterURL, "Official HTTPS scrip master URL or reviewed local JSON file")
 	batchSizeFlag := flag.Int("batch-size", 500, "Number of instruments to upsert per database transaction")
-	segmentsFlag := flag.String("segments", "NSE,NFO,BSE", "Comma-separated exchange segments to sync")
+	segmentsFlag := flag.String("segments", "NSE,NFO,BFO,BSE", "Comma-separated exchange segments to sync")
 	underlyingsFlag := flag.String("underlyings", "", "Optional comma-separated list of underlyings to filter")
 	seedOnlyFlag := flag.Bool("seed-defaults", false, "Seed built-in canonical instruments without downloading remote scrip master")
 	flag.Parse()

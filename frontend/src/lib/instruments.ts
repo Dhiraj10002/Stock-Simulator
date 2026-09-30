@@ -41,29 +41,36 @@ export async function fetchInstruments(params?: FetchInstrumentsParams): Promise
     return cachePromise;
   }
 
-  const doFetch = async (): Promise<Instrument[]> => {
-    try {
-      const res = await fetch(url);
-      if (!res.ok) {
-        throw new Error(`Failed to fetch instruments: ${res.statusText}`);
-      }
-      const json = await res.json();
-      if (json.success && Array.isArray(json.data)) {
-        const list: Instrument[] = json.data.map(normalizeInstrument);
-        if (isFullList && list.length > 0) {
-          cachedInstruments = list;
+  const doFetch = async (retries = 3, baseDelayMs = 600): Promise<Instrument[]> => {
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        const res = await fetch(url);
+        if (!res.ok) {
+          throw new Error(`Failed to fetch instruments: ${res.statusText}`);
         }
-        return list;
-      }
-      return [];
-    } catch (err) {
-      console.warn("fetchInstruments error:", err);
-      return cachedInstruments || [];
-    } finally {
-      if (isFullList) {
-        cachePromise = null;
+        const json = await res.json();
+        if (json.success && Array.isArray(json.data)) {
+          const list: Instrument[] = json.data.map(normalizeInstrument);
+          if (isFullList && list.length > 0) {
+            cachedInstruments = list;
+          }
+          return list;
+        }
+        return [];
+      } catch (err) {
+        if (attempt < retries) {
+          await new Promise((resolve) => setTimeout(resolve, baseDelayMs * Math.pow(1.5, attempt)));
+          continue;
+        }
+        console.warn("fetchInstruments error after retries:", err);
+        return cachedInstruments || [];
+      } finally {
+        if (attempt === retries && isFullList) {
+          cachePromise = null;
+        }
       }
     }
+    return cachedInstruments || [];
   };
 
   if (isFullList) {

@@ -45,8 +45,12 @@ export default function PortfolioSummarySnapshot({
   const realizedPnlPaise = portfolio?.realized_pnl_paise ?? 0;
   const totalNetPnlPaise = unrealizedPnlPaise + realizedPnlPaise;
 
-  const quotesAvailable = !!portfolio && portfolio.positions.every(p => p.is_quote_available && !p.is_quote_stale);
-  const totalPortfolioValuePaise = !quotesAvailable ? undefined : currentValuationPaise;
+  const quotesAvailable = !!portfolio && (
+    portfolio.positions.length === 0 ||
+    portfolio.positions.some(p => p.is_quote_available || (p.current_price_paise && p.current_price_paise > 0)) ||
+    currentValuationPaise > 0
+  );
+  const totalPortfolioValuePaise = portfolio ? currentValuationPaise : undefined;
 
   const returnPercent =
     investedPaise > 0 ? (unrealizedPnlPaise / investedPaise) * 100 : 0;
@@ -54,7 +58,9 @@ export default function PortfolioSummarySnapshot({
   const isTotalProfit = totalNetPnlPaise >= 0;
 
   const positionsCount = portfolio?.positions?.length ?? 0;
-  const valuationStatus = portfolio?.valuation_status ?? "DEGRADED";
+  const valuationStatus = portfolio?.valuation_status && portfolio.valuation_status !== "DEGRADED"
+    ? portfolio.valuation_status
+    : (quotesAvailable ? "REALTIME" : "DEGRADED");
 
   const statusBadge = {
     REALTIME: {
@@ -180,7 +186,7 @@ export default function PortfolioSummarySnapshot({
               isProfit ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
             }`}
           >
-            {formatPaise(quotesAvailable ? unrealizedPnlPaise : undefined)}
+            {formatPaise(portfolio ? unrealizedPnlPaise : undefined)}
           </div>
           <div className="text-[10px] font-bold font-tabular">
             <span
@@ -188,7 +194,7 @@ export default function PortfolioSummarySnapshot({
                 isProfit ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
               }
             >
-              {quotesAvailable ? formatPercent(returnPercent) : "Unavailable"}
+              {portfolio ? formatPercent(returnPercent) : "—"}
             </span>{" "}
             <span className="text-slate-400 font-normal">on open holdings</span>
           </div>
@@ -216,7 +222,7 @@ export default function PortfolioSummarySnapshot({
                 isTotalProfit ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
               }`}
             >
-              {formatPaise(quotesAvailable ? totalNetPnlPaise : undefined)}
+              {formatPaise(portfolio ? totalNetPnlPaise : undefined)}
             </span>
           </div>
         </div>

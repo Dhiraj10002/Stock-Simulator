@@ -178,7 +178,7 @@ var workerHTTPClient = &http.Client{
 	Timeout: 3 * time.Second,
 }
 
-func (s *Service) fetchLiveFromWorker(symbol string) (*dto.QuoteResponse, error) {
+func (s *Service) FetchLiveFromWorker(symbol string) (*dto.QuoteResponse, error) {
 	baseURL := s.WorkerURL()
 	if baseURL == "" || baseURL == "disabled" || baseURL == "none" {
 		return nil, fmt.Errorf("market worker integration is disabled")
@@ -202,9 +202,13 @@ func (s *Service) fetchLiveFromWorker(symbol string) (*dto.QuoteResponse, error)
 	return &quote, nil
 }
 
+func (s *Service) fetchLiveFromWorker(symbol string) (*dto.QuoteResponse, error) {
+	return s.FetchLiveFromWorker(symbol)
+}
+
 func fetchLiveFromWorker(symbol string) (*dto.QuoteResponse, error) {
 	var s *Service
-	return s.fetchLiveFromWorker(symbol)
+	return s.FetchLiveFromWorker(symbol)
 }
 
 func (s *Service) SetQuote(symbol string, pricePaise int64, volume int64) error {
@@ -433,7 +437,7 @@ func (s *Service) CurrentQuote(symbol string) (*dto.QuoteResponse, error) {
 	if !ok || strings.TrimSpace(updatedAtStr) == "" {
 		return nil, ErrQuoteStale
 	}
-	updatedAt, parseErr := time.Parse(time.RFC3339, updatedAtStr)
+	updatedAt, parseErr := dto.ParseQuoteTime(updatedAtStr)
 	if parseErr != nil || time.Since(updatedAt) > maxExecutableQuoteAge {
 		return nil, ErrQuoteStale
 	}
@@ -477,6 +481,12 @@ func IsSeededSource(source string) bool {
 // must never determine money movement, even if a price field happens to be present.
 func (s *Service) ExecutableQuote(symbol string) (*dto.QuoteResponse, error) {
 	quote, err := s.CurrentQuote(symbol)
+	if (errors.Is(err, ErrQuoteNotFound) || errors.Is(err, ErrQuoteStale)) && s.FeedMode() == dto.FeedModeLive {
+		if wQuote, wErr := s.FetchLiveFromWorker(symbol); wErr == nil && wQuote != nil && wQuote.PricePaise > 0 {
+			quote = wQuote
+			err = nil
+		}
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -510,7 +520,7 @@ func ValidateExecutableQuoteWithFeedMode(quote *dto.QuoteResponse, now time.Time
 	if strings.TrimSpace(quote.UpdatedAt) == "" {
 		return fmt.Errorf("market quote has no update time")
 	}
-	updatedAt, err := time.Parse(time.RFC3339, quote.UpdatedAt)
+	updatedAt, err := dto.ParseQuoteTime(quote.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("market quote has an invalid update time")
 	}
@@ -558,12 +568,9 @@ func ValidateExecutableQuoteWithMode(quote *dto.QuoteResponse, now time.Time, al
 	if strings.TrimSpace(quote.UpdatedAt) == "" {
 		return fmt.Errorf("market quote has no update time")
 	}
-	updatedAt, err := time.Parse(time.RFC3339Nano, quote.UpdatedAt)
+	updatedAt, err := dto.ParseQuoteTime(quote.UpdatedAt)
 	if err != nil {
-		updatedAt, err = time.Parse(time.RFC3339, quote.UpdatedAt)
-		if err != nil {
-			return fmt.Errorf("market quote has an invalid update time")
-		}
+		return fmt.Errorf("market quote has an invalid update time")
 	}
 	if updatedAt.After(now.Add(5 * time.Second)) {
 		return fmt.Errorf("market quote is in the future")

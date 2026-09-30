@@ -76,7 +76,10 @@ export default function PortfolioHoldingsTable({
     const pnlPercent = invested > 0 ? (pnl / invested) * 100 : 0;
     const dayPercent = invested > 0 ? (dayChange / invested) * 100 : 0;
 
-    return { invested, current, pnl, pnlPercent, dayChange, dayPercent, quotesAvailable: filteredHoldings.every(h => h.quoteAvailable !== false), dailyAvailable: filteredHoldings.every(h => h.dayPnlAvailable !== false) };
+    const hasAnyQuotes = filteredHoldings.length === 0 || filteredHoldings.some(h => h.quoteAvailable !== false || h.ltpPaise > 0);
+    const hasAnyDaily = filteredHoldings.length === 0 || filteredHoldings.some(h => h.dayPnlAvailable !== false);
+
+    return { invested, current, pnl, pnlPercent, dayChange, dayPercent, quotesAvailable: hasAnyQuotes, dailyAvailable: hasAnyDaily };
   }, [filteredHoldings]);
 
   const handleSort = (field: SortField) => {
@@ -243,13 +246,13 @@ export default function PortfolioHoldingsTable({
 
                       {/* LTP */}
                       <td className="py-3.5 px-3 text-right font-black font-tabular text-slate-900 dark:text-slate-100">
-                        {formatPaise(h.quoteAvailable === false ? undefined : h.ltpPaise)}
+                        {formatPaise(h.ltpPaise > 0 ? h.ltpPaise : (h.quoteAvailable === false ? undefined : h.ltpPaise))}
                       </td>
 
                       {/* Current Value & Weight Bar */}
                       <td className="py-3.5 px-3 text-right">
                         <div className="font-bold font-tabular text-slate-900 dark:text-slate-100">
-                          {formatPaise(h.quoteAvailable === false ? undefined : h.currentValuePaise)}
+                          {formatPaise(h.currentValuePaise > 0 ? h.currentValuePaise : (h.quoteAvailable === false ? undefined : h.currentValuePaise))}
                         </div>
                         <div className="flex items-center justify-end gap-1.5 mt-1">
                           <div className="w-12 h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">

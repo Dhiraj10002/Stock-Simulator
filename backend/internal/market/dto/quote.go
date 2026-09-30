@@ -1,5 +1,11 @@
 package dto
 
+import (
+	"errors"
+	"strings"
+	"time"
+)
+
 type QuoteResponse struct {
 	Symbol            string  `json:"symbol"`
 	PricePaise        int64   `json:"price_paise"`
@@ -21,4 +27,16 @@ type CandleResponse struct {
 	LowPaise   int64  `json:"low_paise"`
 	ClosePaise int64  `json:"close_paise"`
 	Volume     int64  `json:"volume"`
+}
+
+// ParseQuoteTime parses an ISO8601/RFC3339 timestamp with or without fractional seconds.
+func ParseQuoteTime(raw string) (time.Time, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return time.Time{}, errors.New("empty timestamp")
+	}
+	if t, err := time.Parse(time.RFC3339Nano, raw); err == nil {
+		return t, nil
+	}
+	return time.Parse(time.RFC3339, raw)
 }

@@ -16,7 +16,7 @@ import type { Instrument } from "@/types";
 import { formatPaise, formatPercent } from "@/lib/format";
 import { useTradingStore } from "@/stores/trading-store";
 import { useUIStore } from "@/stores/ui-store";
-import { useMarketStore, useMultiSymbolQuotes } from "@/stores/market-store";
+import { useMarketStore, useMultiSymbolQuotes, useTargetedSubscription } from "@/stores/market-store";
 import { apiFetch } from "@/lib/api";
 import { fetchBatchQuotes } from "@/lib/quoteService";
 import type { StockSearchResult } from "@/types";
@@ -173,6 +173,7 @@ export default function SearchModal() {
     () => (apiResults || []).map((r) => r.symbol),
     [apiResults]
   );
+  useTargetedSubscription(isSearchPaletteOpen ? searchResultSymbols : undefined);
   const marketQuotes = useMultiSymbolQuotes(searchResultSymbols);
 
   // Retry as the worker subscribes to newly searched instruments.

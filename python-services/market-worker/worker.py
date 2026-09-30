@@ -108,7 +108,7 @@ install_log_sanitizer()
 
 INSTRUMENT_MASTER_URL = "https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json"
 LOCAL_CACHE_PATH = "/tmp/OpenAPIScripMaster.json"
-EXCHANGE_TYPES = {"NSE": 1, "NFO": 2, "BSE": 3, "MCX": 5, "NCDEX": 7}
+EXCHANGE_TYPES = {"NSE": 1, "NFO": 2, "BSE": 3, "BFO": 4, "MCX": 5, "NCDEX": 7}
 
 FALLBACK_INSTRUMENT_MASTER = [
     {"token": "2885", "symbol": "RELIANCE-EQ", "name": "RELIANCE", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "5.000000"},
@@ -363,7 +363,7 @@ def init_global_token_map() -> None:
                     name = d.get("name", "").strip().upper()
                     if name:
                         GLOBAL_TOKEN_MAP[name] = d
-                elif exch == "NFO":
+                elif exch in ("NFO", "BFO"):
                     sym = d.get("symbol", "").strip().upper()
                     if sym:
                         GLOBAL_TOKEN_MAP[sym] = d
@@ -415,13 +415,18 @@ def fetch_quote_for_symbol(symbol: str) -> dict[str, Any] | None:
 
     token = None
     exch = "NSE"
+    inst_type = ""
     if info:
         token = info.get("token")
         exch = info.get("exch_seg") or "NSE"
+        inst_type = info.get("instrumenttype") or ""
 
     if GLOBAL_SMART_API and token:
         try:
-            trading_symbol = info.get("symbol") or f"{clean_sym}-EQ"
+            if exch in ("NFO", "BFO") or "FUT" in inst_type or "OPT" in inst_type:
+                trading_symbol = info.get("symbol") or clean_sym
+            else:
+                trading_symbol = info.get("symbol") or f"{clean_sym}-EQ"
             res = GLOBAL_SMART_API.ltpData(exch, trading_symbol, token)
             if isinstance(res, dict) and res.get("status") is True:
                 data = res.get("data") or {}
@@ -1372,7 +1377,7 @@ def run_feed(store: InstrumentStore, writer: QuoteWriter, control: FeedControl) 
                                 continue
                         except (ValueError, TypeError):
                             pass
-                    trading_symbol = item.symbol if item.exchange_segment == "NFO" else item.symbol + "-EQ"
+                    trading_symbol = item.symbol if item.exchange_segment in ("NFO", "BFO") else item.symbol + "-EQ"
                     snapshot_attempts[item.symbol] = time.monotonic()
                     result = smart_api.ltpData(item.exchange_segment, trading_symbol, item.token)
                     data = result.get("data") or {}

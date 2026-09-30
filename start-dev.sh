@@ -163,7 +163,17 @@ if [ "$MODE" != "--light" ] && [ "$MODE" != "-l" ]; then
   PIDS+=($!)
 fi
 
-# 7. Start Next.js Frontend on port 3000
+# 7. Wait briefly for Go Backend to be ready on port 8080
+echo "[-] Waiting for Go Backend to be ready on port 8080..."
+for i in {1..40}; do
+  if nc -z localhost 8080 2>/dev/null || curl -s http://localhost:8080/health >/dev/null 2>&1; then
+    echo "[✓] Go Backend is ready."
+    break
+  fi
+  sleep 0.25
+done
+
+# 8. Start Next.js Frontend on port 3000
 echo "[*] Starting Next.js Frontend on http://localhost:3000..."
 (
   cd "$ROOT_DIR/frontend"

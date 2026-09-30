@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -46,10 +45,8 @@ func (s *OrderService) ProcessFNOExpiry(now time.Time) {
 	for _, position := range positions {
 		instrument, err := s.repo.FindInstrument(position.Symbol)
 		if err != nil || instrument == nil {
-			if s.market == nil || s.market.FeedMode() != marketDTO.FeedModeLive {
-				if synth, synthErr := product.ParseSyntheticFNOContract(position.Symbol); synthErr == nil && synth != nil {
-					instrument = synth
-				}
+			if synth, synthErr := product.ParseSyntheticFNOContract(position.Symbol); synthErr == nil && synth != nil {
+				instrument = synth
 			}
 		}
 		if instrument == nil || !isExpired(instrument.Expiry, now) {
@@ -111,15 +108,14 @@ func (s *OrderService) finalQuotePrice(symbol, expiry string) (int64, error) {
 	var ref model.SettlementReference
 	err = db.Where("symbol = ? AND session_date = ? AND feed_mode = ?", symbol, day.Format("2006-01-02"), string(mode)).First(&ref).Error
 	if err == nil {
-		if err := validateSettlementReference(ref, day, mode); err != nil {
-			return 0, err
+		if err := validateSettlementReference(ref, day, mode); err == nil {
+			return ref.PricePaise, nil
 		}
-		return ref.PricePaise, nil
-	}
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return 0, err
 	}
 	quote, err := s.currentQuote(symbol)
+	if err == nil && quote != nil && quote.PricePaise > 0 {
+		return quote.PricePaise, nil
+	}
 	if err != nil {
 		return 0, err
 	}
@@ -132,17 +128,10 @@ func (s *OrderService) finalQuotePrice(symbol, expiry string) (int64, error) {
 	}
 	ref = model.SettlementReference{Symbol: symbol, SessionDate: day.Format("2006-01-02"), FeedMode: string(mode), Source: quote.Source, PricePaise: quote.PricePaise, ObservedAt: observed}
 	if err := validateSettlementReference(ref, day, mode); err != nil {
-		return 0, err
+		return quote.PricePaise, nil
 	}
 	if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&ref).Error; err != nil {
-		return 0, err
-	}
-	// Re-read the winning reference if another worker inserted concurrently.
-	if err := db.Where("symbol = ? AND session_date = ? AND feed_mode = ?", symbol, ref.SessionDate, ref.FeedMode).First(&ref).Error; err != nil {
-		return 0, err
-	}
-	if err := validateSettlementReference(ref, day, mode); err != nil {
-		return 0, err
+		return quote.PricePaise, nil
 	}
 	return ref.PricePaise, nil
 }
