@@ -145,9 +145,12 @@ CREATE INDEX IF NOT EXISTS idx_instruments_version_tradable ON instruments (snap
 ```
 
 #### Acceptance Criteria
-- [ ] No contract row is ever hard deleted (preserves foreign key relations with historical orders, trades, and settlement references).
-- [ ] Only contracts with `is_tradable = TRUE` from the currently active version are searchable or executable in `LIVE` mode.
-- [ ] Expired contracts are automatically set to `is_tradable = FALSE` at 15:30 IST on their expiry date.
+- [x] No contract row is ever hard deleted (preserves foreign key relations with historical orders, trades, and settlement references).
+- [x] Only contracts with `is_tradable = TRUE` from the currently active version are searchable or executable in `LIVE` mode.
+- [x] Expired contracts are automatically set to `is_tradable = FALSE` at 15:30 IST on their expiry date.
+- [x] Staged snapshots with duplicate token detection, segment validation, and atomic version activation implemented.
+- [x] Snapshot API endpoints `/instruments/snapshots/active`, `/instruments/snapshots`, `/instruments/master/status` exposed and tested.
+
 
 ---
 
