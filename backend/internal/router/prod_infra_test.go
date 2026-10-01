@@ -309,11 +309,19 @@ func TestProdInfra_Health_And_Readiness_Endpoints(t *testing.T) {
 	env := setupTradingLifecycleEnv(t)
 	defer env.cleanup()
 
+	redisURL := "redis://127.0.0.1:6380/0"
+	if env != nil && env.redis != nil && env.redis.Options() != nil {
+		addr := env.redis.Options().Addr
+		if !strings.HasPrefix(addr, "redis://") {
+			addr = "redis://" + addr
+		}
+		redisURL = addr
+	}
 	cfg := &config.Config{
 		AppEnv:             "production",
 		CORSAllowedOrigins: "*",
 		JWTSecret:          "test-secret",
-		RedisURL:           "redis://127.0.0.1:6380/0",
+		RedisURL:           redisURL,
 	}
 	r := Setup(context.Background(), cfg)
 

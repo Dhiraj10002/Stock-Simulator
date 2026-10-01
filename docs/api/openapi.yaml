@@ -592,16 +592,22 @@ paths:
 
   /ready:
     get:
-      summary: Readiness Check
-      description: Returns service readiness status for load balancers and orchestrators.
+      summary: Multi-Subsystem Readiness Check
+      description: Returns multi-subsystem readiness status across DB, Redis, Market Feed, Master, and Calendar for load balancers and orchestrators.
       tags: [System]
       responses:
         '200':
-          description: Service is ready
+          description: All critical systems operational
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SuccessResponse'
+                $ref: '#/components/schemas/ReadinessResponse'
+        '503':
+          description: One or more subsystems are degraded or unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadinessResponse'
 
   /market/status:
     get:
@@ -1564,6 +1570,58 @@ components:
             entries:
               type: array
               items: { $ref: '#/components/schemas/WalletTransactionItem' }
+
+    ReadinessResponse:
+      type: object
+      properties:
+        ready: { type: boolean, example: true }
+        status: { type: string, enum: [OPERATIONAL, DEGRADED, UNAVAILABLE], example: "OPERATIONAL" }
+        timestamp: { type: string, format: date-time, example: "2026-10-01T15:30:00+05:30" }
+        services:
+          type: object
+          properties:
+            database:
+              type: object
+              properties:
+                status: { type: string, enum: [UP, DOWN], example: "UP" }
+                latency_ms: { type: number, example: 1.2 }
+                connection_pool:
+                  type: object
+                  properties:
+                    open: { type: integer, example: 8 }
+                    in_use: { type: integer, example: 2 }
+                    idle: { type: integer, example: 6 }
+                error: { type: string }
+            redis:
+              type: object
+              properties:
+                status: { type: string, enum: [UP, DOWN], example: "UP" }
+                latency_ms: { type: number, example: 0.8 }
+                mode: { type: string, example: "STANDALONE" }
+                error: { type: string }
+            market_feed:
+              type: object
+              properties:
+                status: { type: string, enum: [UP, DEGRADED, DOWN], example: "UP" }
+                mode: { type: string, enum: [LIVE, SYNTHETIC], example: "LIVE" }
+                supervisor_state: { type: string, example: "CONNECTED" }
+                last_tick_age_seconds: { type: number, nullable: true, example: 1.4 }
+                subscribed_tokens_count: { type: integer, example: 1420 }
+                error: { type: string }
+            instrument_master:
+              type: object
+              properties:
+                status: { type: string, enum: [UP, DOWN], example: "UP" }
+                active_version: { type: string, example: "20261001-0800" }
+                total_tradable: { type: integer, example: 18450 }
+                error: { type: string }
+            calendar:
+              type: object
+              properties:
+                status: { type: string, enum: [UP, DOWN], example: "UP" }
+                market_state: { type: string, enum: [OPEN, CLOSED, HOLIDAY, PRE_OPEN, POST_MARKET], example: "OPEN" }
+                session_closes_at: { type: string, format: date-time, example: "2026-10-01T15:30:00+05:30" }
+                mis_cutoff_at: { type: string, format: date-time, example: "2026-10-01T15:20:00+05:30" }
 
   responses:
     BadRequest:

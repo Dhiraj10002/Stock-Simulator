@@ -1218,7 +1218,8 @@ def publish_feed_state(
     feed_provider: str,
     feed_state: str,
     is_synthetic: bool = False,
-    last_tick: str | None = None
+    last_tick: str | None = None,
+    subscribed_tokens_count: int | None = None,
 ) -> dict[str, Any]:
     now_iso = datetime.now(timezone.utc).isoformat()
     market_event_id = f"mkt_feed_{int(time.time() * 1000)}_{uuid.uuid4().hex[:6]}"
@@ -1231,6 +1232,8 @@ def publish_feed_state(
     }
     if last_tick:
         state_payload["last_tick"] = last_tick
+    if subscribed_tokens_count is not None:
+        state_payload["subscribed_tokens_count"] = subscribed_tokens_count
     try:
         mapping = {
             "market_event_id": market_event_id,
@@ -1241,6 +1244,8 @@ def publish_feed_state(
         }
         if last_tick:
             mapping["last_tick"] = last_tick
+        if subscribed_tokens_count is not None:
+            mapping["subscribed_tokens_count"] = str(subscribed_tokens_count)
         client.hset("market:feed_state", mapping=mapping)
         event = {
             "type": "feed_status",
@@ -1428,7 +1433,7 @@ class SyntheticFeed:
 
     def run(self) -> None:
         if self.writer and getattr(self.writer, "client", None):
-            publish_feed_state(self.writer.client, feed_provider="synthetic", feed_state="LIVE", is_synthetic=True)
+            publish_feed_state(self.writer.client, feed_provider="synthetic", feed_state="LIVE", is_synthetic=True, subscribed_tokens_count=len(self.subscriptions))
         print(f"market worker: synthetic GBM feed started for {len(self.subscriptions)} symbols ({','.join(s.symbol for s in self.subscriptions)})", flush=True)
         while not self._stop_event.is_set():
             try:
@@ -1614,7 +1619,7 @@ def run_feed(store: InstrumentStore, writer: QuoteWriter, control: FeedControl) 
 
     def on_open(_wsapp: Any) -> None:
         if writer and getattr(writer, "client", None):
-            publish_feed_state(writer.client, feed_provider="angel_one", feed_state="LIVE", is_synthetic=False)
+            publish_feed_state(writer.client, feed_provider="angel_one", feed_state="LIVE", is_synthetic=False, subscribed_tokens_count=len(store.subscriptions()))
         grouped: dict[int, list[str]] = {}
         for item in store.subscriptions():
             grouped.setdefault(item.exchange_type, []).append(item.token)

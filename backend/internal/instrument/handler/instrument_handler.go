@@ -30,6 +30,15 @@ func NewWithService(svc *service.Service) *Handler {
 	return &Handler{svc: svc}
 }
 
+// Service returns the underlying instrument Service.
+func (h *Handler) Service() *service.Service {
+	if h == nil {
+		return nil
+	}
+	return h.svc
+}
+
+
 // List handles GET /api/v1/instruments.
 func (h *Handler) List(c *gin.Context) {
 	q := strings.TrimSpace(c.Query("q"))

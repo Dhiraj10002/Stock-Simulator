@@ -286,12 +286,14 @@ class SensitiveDataFilterTest(unittest.TestCase):
             feed_provider="angel_one",
             feed_state="CONNECTED",
             is_synthetic=False,
-            last_tick="2026-09-25T10:00:00Z"
+            last_tick="2026-09-25T10:00:00Z",
+            subscribed_tokens_count=1420
         )
         self.assertIn("market_event_id", state)
         self.assertTrue(state["market_event_id"].startswith("mkt_feed_"))
         self.assertEqual(state["feed_state"], "CONNECTED")
         self.assertEqual(state["last_tick"], "2026-09-25T10:00:00Z")
+        self.assertEqual(state["subscribed_tokens_count"], 1420)
         self.assertFalse(state["is_synthetic"])
 
         # Check Redis publish was called
@@ -301,6 +303,7 @@ class SensitiveDataFilterTest(unittest.TestCase):
         published = json.loads(args[1])
         self.assertEqual(published["feed_state"], "CONNECTED")
         self.assertEqual(published["last_tick"], "2026-09-25T10:00:00Z")
+        self.assertEqual(published["subscribed_tokens_count"], 1420)
 
 
 class FeedSupervisorTest(unittest.TestCase):

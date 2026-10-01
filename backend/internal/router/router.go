@@ -169,6 +169,15 @@ func Setup(ctx context.Context, cfg *config.Config, opts ...SetupOption) *gin.En
 		panic(err)
 	}
 
+	healthHandler.SetDB(database.GetDB())
+	if market != nil && market.Service() != nil {
+		healthHandler.SetMarketService(market.Service())
+		healthHandler.SetRedisClient(market.Service().Client())
+	}
+	if instruments != nil {
+		healthHandler.SetInstrumentService(instruments.Service())
+	}
+
 	api := r.Group("/api/v1")
 	var rateLimiter *middleware.RateLimiter
 	if cfg.RateLimitEnabled {

@@ -720,12 +720,14 @@ func (s *Service) FeedStatus(ctx context.Context) (*dto.FeedStatusResponse, erro
 		}, nil
 	}
 	isSynthetic := strings.ToLower(strings.TrimSpace(res["is_synthetic"])) == "true"
+	subscribedCount, _ := strconv.Atoi(res["subscribed_tokens_count"])
 	return &dto.FeedStatusResponse{
-		FeedProvider: res["feed_provider"],
-		FeedState:    res["feed_state"],
-		IsSynthetic:  isSynthetic,
-		LastTick:     res["last_tick"],
-		UpdatedAt:    res["updated_at"],
+		FeedProvider:          res["feed_provider"],
+		FeedState:             res["feed_state"],
+		IsSynthetic:           isSynthetic,
+		LastTick:              res["last_tick"],
+		UpdatedAt:             res["updated_at"],
+		SubscribedTokensCount: subscribedCount,
 	}, nil
 }
 

@@ -206,9 +206,11 @@ The current `/ready` endpoint only checks database connectivity (`pingDB`). Howe
 ```
 
 #### Acceptance Criteria
-- [ ] If Redis is unreachable, `/ready` returns HTTP 503 with `"ready": false`.
-- [ ] In `LIVE` mode, if `last_tick_age_seconds > 60` during regular market hours (09:15–15:30 IST on a trading weekday), `/ready` reports degraded feed status.
-- [ ] Outside market hours, aged ticks do not fail readiness; the calendar state reports `"market_state": "CLOSED"`.
+- [x] If Redis is unreachable, `/ready` returns HTTP 503 with `"ready": false`.
+- [x] In `LIVE` mode, if `last_tick_age_seconds > 60` during regular market hours (09:15–15:30 IST on a trading weekday), `/ready` reports degraded feed status.
+- [x] Outside market hours, aged ticks do not fail readiness; the calendar state reports `"market_state": "CLOSED"`.
+- [x] Multi-subsystem health check inspecting Database, Redis, Market Feed, Instrument Master, and Calendar.
+- [x] OpenAPI specification updated for `/ready` endpoint with `ReadinessResponse` schema.
 
 ---
 
