@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -99,7 +100,7 @@ func TestExpiredManualExitUsesArchiveWithOneConnection(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Exec("SET statement_timeout = 0")
-	symbol := "ARCHIVE" + uuid.NewString()
+	symbol := "ARCHIVE" + strings.ToUpper(uuid.NewString()[:18])
 	inst := model.Instrument{Token: fmt.Sprint(time.Now().UnixNano()), Symbol: symbol, Name: symbol, InstrumentType: "FUTSTK", ExchangeSegment: "NFO", Expiry: "24SEP2026", LotSize: 10, TickSize: "0.05"}
 	if err := db.Create(&inst).Error; err != nil {
 		t.Fatal(err)

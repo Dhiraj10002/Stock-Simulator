@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -23,7 +24,7 @@ func TestCachedOptionPriceIsStaleDisplayOnly(t *testing.T) {
 	defer market.Client().Close()
 	market.SetFeedMode(marketDTO.FeedModeLive)
 	market.SetInstrumentFinder(func(string) (bool, error) { return true, nil })
-	symbol := "DISPLAY" + uuid.NewString() + "CE"
+	symbol := "DISPLAY" + strings.ToUpper(uuid.NewString()[:18]) + "CE"
 	key := "market:quote:" + symbol
 	// Quote keys use the same source/identity contract as the actual worker.
 	if err := client.HSet(context.Background(), key, map[string]any{"symbol": symbol, "price_paise": "12500", "updated_at": time.Now().Add(-time.Hour).UTC().Format(time.RFC3339), "source": "angelone_live", "open_interest": "0", "previous_close_paise": "12500", "day_change_available": "true", "change_paise": "0", "change_percent": "0"}).Err(); err != nil {
