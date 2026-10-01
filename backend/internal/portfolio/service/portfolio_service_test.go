@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -12,6 +13,7 @@ import (
 	marketDTO "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/dto"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
 	"github.com/google/uuid"
+	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
@@ -22,23 +24,115 @@ var (
 
 func getTestDB(t *testing.T) *gorm.DB {
 	databaseURL := os.Getenv("TEST_DATABASE_URL")
-	if databaseURL == "" {
-		t.Skip("TEST_DATABASE_URL is required for PostgreSQL integration tests")
+	if databaseURL != "" {
+		testDBOnce.Do(func() {
+			if err := database.Connect(&config.Config{DatabaseURL: databaseURL}); err != nil {
+				t.Fatalf("connect test database: %v", err)
+			}
+			db := database.GetDB()
+			if err := db.AutoMigrate(
+				&model.Wallet{},
+				&model.WalletTransaction{},
+				&model.Position{},
+				&model.Order{},
+				&model.Trade{},
+				&model.AccountDailySnapshot{},
+			); err != nil {
+				t.Fatalf("migrate test database: %v", err)
+			}
+			testDB = db
+		})
+		if testDB == nil {
+			t.Fatal("test database not initialized")
+		}
+		return testDB
 	}
-	testDBOnce.Do(func() {
-		if err := database.Connect(&config.Config{DatabaseURL: databaseURL}); err != nil {
-			t.Fatalf("connect test database: %v", err)
-		}
-		db := database.GetDB()
-		if err := db.AutoMigrate(&model.Wallet{}, &model.WalletTransaction{}, &model.Position{}, &model.Order{}, &model.Trade{}); err != nil {
-			t.Fatalf("migrate test database: %v", err)
-		}
-		testDB = db
+
+	dbPath := filepath.Join(t.TempDir(), "test_portfolio.db")
+	db, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to open sqlite test db: %v", err)
+	}
+
+	createTables := `
+	CREATE TABLE IF NOT EXISTS wallets (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		uuid TEXT UNIQUE,
+		user_uuid TEXT UNIQUE,
+		cash_balance_paise INTEGER NOT NULL DEFAULT 0,
+		blocked_paise INTEGER NOT NULL DEFAULT 0,
+		created_at DATETIME,
+		updated_at DATETIME
+	);
+	CREATE TABLE IF NOT EXISTS wallet_transactions (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		uuid TEXT UNIQUE,
+		wallet_uuid TEXT,
+		type TEXT,
+		amount_paise INTEGER,
+		balance_paise INTEGER,
+		blocked_paise INTEGER DEFAULT 0,
+		note TEXT,
+		created_at DATETIME
+	);
+	CREATE TABLE IF NOT EXISTS positions (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		uuid TEXT UNIQUE,
+		user_uuid TEXT,
+		symbol TEXT,
+		product TEXT DEFAULT 'DELIVERY',
+		instrument_type TEXT,
+		underlying_symbol TEXT,
+		quantity INTEGER DEFAULT 0,
+		average_price_paise INTEGER DEFAULT 0,
+		cost_basis_paise INTEGER DEFAULT 0,
+		realized_pnl_paise INTEGER DEFAULT 0,
+		margin_blocked_paise INTEGER DEFAULT 0,
+		square_off_state TEXT,
+		settlement_state TEXT,
+		current_price_paise INTEGER DEFAULT 0,
+		created_at DATETIME,
+		updated_at DATETIME
+	);
+	CREATE TABLE IF NOT EXISTS trades (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		uuid TEXT UNIQUE,
+		order_uuid TEXT,
+		user_uuid TEXT,
+		symbol TEXT,
+		side TEXT,
+		quantity INTEGER,
+		price_paise INTEGER,
+		total_paise INTEGER,
+		product TEXT DEFAULT 'DELIVERY',
+		source TEXT DEFAULT 'USER',
+		reason TEXT,
+		realized_pnl_paise INTEGER DEFAULT 0,
+		tag TEXT,
+		notes TEXT,
+		executed_at DATETIME
+	);
+	CREATE TABLE IF NOT EXISTS account_daily_snapshots (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		user_uuid TEXT NOT NULL,
+		session_date TEXT NOT NULL,
+		opening_cash_paise INTEGER NOT NULL,
+		opening_holdings_value_paise INTEGER NOT NULL,
+		opening_equity_paise INTEGER NOT NULL,
+		net_cash_inflows_paise INTEGER NOT NULL DEFAULT 0,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		UNIQUE(user_uuid, session_date)
+	);`
+
+	if err := db.Exec(createTables).Error; err != nil {
+		t.Fatalf("failed to create sqlite tables: %v", err)
+	}
+
+	database.SetDBForTesting(db)
+	t.Cleanup(func() {
+		database.SetDBForTesting(nil)
 	})
-	if testDB == nil {
-		t.Fatal("test database not initialized")
-	}
-	return testDB
+	return db
 }
 
 func TestPortfolioService_DisplayDecouplingFromExecutableFreshness(t *testing.T) {
@@ -452,3 +546,283 @@ func TestPortfolioService_FNO_PositionsRepricingAndQuoteStates(t *testing.T) {
 		}
 	})
 }
+
+func TestPortfolioService_DailyPnl_IntradayRoundTripTrade(t *testing.T) {
+	db := getTestDB(t)
+
+	userUUID := uuid.New()
+	walletUUID := uuid.New()
+	t.Cleanup(func() {
+		db.Where("user_uuid = ?", userUUID).Delete(&model.AccountDailySnapshot{})
+		db.Where("user_uuid = ?", userUUID).Delete(&model.Trade{})
+		db.Where("user_uuid = ?", userUUID).Delete(&model.Position{})
+		db.Where("wallet_uuid = ?", walletUUID).Delete(&model.WalletTransaction{})
+		db.Where("user_uuid = ?", userUUID).Delete(&model.Wallet{})
+	})
+
+	loc, _ := time.LoadLocation("Asia/Kolkata")
+	openTime := time.Date(2026, 9, 16, 9, 15, 0, 0, loc)
+	trade1Time := time.Date(2026, 9, 16, 10, 0, 0, 0, loc)
+	trade2Time := time.Date(2026, 9, 16, 11, 0, 0, 0, loc)
+	checkTime := time.Date(2026, 9, 16, 12, 0, 0, 0, loc)
+
+	// User registered yesterday with ₹10,00,000 opening capital
+	wallet := model.Wallet{
+		UUID:             walletUUID,
+		UserUUID:         userUUID,
+		CashBalancePaise: 100100000, // ₹10,01,000 (after making ₹1,000 profit today)
+		BlockedPaise:     0,
+		CreatedAt:        openTime.Add(-24 * time.Hour),
+	}
+	if err := db.Create(&wallet).Error; err != nil {
+		t.Fatalf("create wallet: %v", err)
+	}
+
+	snap := model.AccountDailySnapshot{
+		UserUUID:                  userUUID,
+		SessionDate:               "2026-09-16",
+		OpeningCashPaise:          100000000, // ₹10,00,000
+		OpeningHoldingsValuePaise: 0,
+		OpeningEquityPaise:        100000000,
+		NetCashInflowsPaise:       0,
+		CreatedAt:                 openTime,
+	}
+	if err := db.Create(&snap).Error; err != nil {
+		t.Fatalf("create snapshot: %v", err)
+	}
+
+	// Intraday round-trip trade: BUY 10 RELIANCE at ₹2,500, SELL 10 at ₹2,600 (Profit: ₹1,000 / 100,000 paise)
+	t1 := model.Trade{
+		UUID:             uuid.New(),
+		OrderUUID:        uuid.New(),
+		UserUUID:         userUUID,
+		Symbol:           "RELIANCE",
+		Side:             model.OrderSideBuy,
+		Quantity:         10,
+		PricePaise:       250000,
+		TotalPaise:       2500000,
+		RealizedPnlPaise: 0,
+		ExecutedAt:       trade1Time,
+	}
+	t2 := model.Trade{
+		UUID:             uuid.New(),
+		OrderUUID:        uuid.New(),
+		UserUUID:         userUUID,
+		Symbol:           "RELIANCE",
+		Side:             model.OrderSideSell,
+		Quantity:         10,
+		PricePaise:       260000,
+		TotalPaise:       2600000,
+		RealizedPnlPaise: 100000,
+		ExecutedAt:       trade2Time,
+	}
+	if err := db.Create(&t1).Error; err != nil {
+		t.Fatalf("create t1: %v", err)
+	}
+	if err := db.Create(&t2).Error; err != nil {
+		t.Fatalf("create t2: %v", err)
+	}
+
+	svc := New(nil)
+	svc.SetNowFunc(func() time.Time { return checkTime })
+
+	res, err := svc.Get(userUUID.String())
+	if err != nil {
+		t.Fatalf("Get() failed: %v", err)
+	}
+
+	if res.DailyPnlPaise == nil {
+		t.Fatal("expected DailyPnlPaise to be non-nil")
+	}
+	if *res.DailyPnlPaise != 100000 {
+		t.Errorf("expected daily P&L of +100000 paise (+₹1,000), got %d", *res.DailyPnlPaise)
+	}
+	if res.DailyPnlPercent == nil {
+		t.Fatal("expected DailyPnlPercent to be non-nil")
+	}
+	if *res.DailyPnlPercent != 0.1 {
+		t.Errorf("expected daily P&L %% to be 0.1%%, got %f", *res.DailyPnlPercent)
+	}
+}
+
+func TestPortfolioService_DailyPnl_DepositDoesNotInflatePnl(t *testing.T) {
+	db := getTestDB(t)
+
+	userUUID := uuid.New()
+	walletUUID := uuid.New()
+	t.Cleanup(func() {
+		db.Where("user_uuid = ?", userUUID).Delete(&model.AccountDailySnapshot{})
+		db.Where("user_uuid = ?", userUUID).Delete(&model.Trade{})
+		db.Where("user_uuid = ?", userUUID).Delete(&model.Position{})
+		db.Where("wallet_uuid = ?", walletUUID).Delete(&model.WalletTransaction{})
+		db.Where("user_uuid = ?", userUUID).Delete(&model.Wallet{})
+	})
+
+	loc, _ := time.LoadLocation("Asia/Kolkata")
+	openTime := time.Date(2026, 9, 16, 9, 15, 0, 0, loc)
+	depositTime := time.Date(2026, 9, 16, 11, 30, 0, 0, loc)
+	checkTime := time.Date(2026, 9, 16, 12, 0, 0, 0, loc)
+
+	// User had ₹10,00,000 opening cash, then deposited ₹5,00,000 (50,000,000 paise) at 11:30
+	wallet := model.Wallet{
+		UUID:             walletUUID,
+		UserUUID:         userUUID,
+		CashBalancePaise: 150000000, // ₹15,00,000
+		BlockedPaise:     0,
+		CreatedAt:        openTime.Add(-24 * time.Hour),
+	}
+	if err := db.Create(&wallet).Error; err != nil {
+		t.Fatalf("create wallet: %v", err)
+	}
+
+	snap := model.AccountDailySnapshot{
+		UserUUID:                  userUUID,
+		SessionDate:               "2026-09-16",
+		OpeningCashPaise:          100000000, // ₹10,00,000
+		OpeningHoldingsValuePaise: 0,
+		OpeningEquityPaise:        100000000,
+		NetCashInflowsPaise:       50000000, // ₹5,00,000 deposit recorded
+		CreatedAt:                 openTime,
+	}
+	if err := db.Create(&snap).Error; err != nil {
+		t.Fatalf("create snapshot: %v", err)
+	}
+
+	wTx := model.WalletTransaction{
+		UUID:         uuid.New(),
+		WalletUUID:   wallet.UUID,
+		Type:         model.WalletTransactionCredit,
+		AmountPaise:  50000000,
+		BalancePaise: 150000000,
+		Note:         "Paper trading margin deposit",
+		CreatedAt:    depositTime,
+	}
+	if err := db.Create(&wTx).Error; err != nil {
+		t.Fatalf("create deposit tx: %v", err)
+	}
+
+	svc := New(nil)
+	svc.SetNowFunc(func() time.Time { return checkTime })
+
+	res, err := svc.Get(userUUID.String())
+	if err != nil {
+		t.Fatalf("Get() failed: %v", err)
+	}
+
+	if res.DailyPnlPaise == nil {
+		t.Fatal("expected DailyPnlPaise to be non-nil")
+	}
+	// Hard requirement: Deposit must NOT artificially register as trading profit!
+	if *res.DailyPnlPaise != 0 {
+		t.Errorf("expected daily P&L of 0 paise after deposit without trades, got %d", *res.DailyPnlPaise)
+	}
+	if res.DailyPnlPercent == nil {
+		t.Fatal("expected DailyPnlPercent to be non-nil")
+	}
+	if *res.DailyPnlPercent != 0.0 {
+		t.Errorf("expected daily P&L %% to be 0.0%%, got %f", *res.DailyPnlPercent)
+	}
+}
+
+func TestPortfolioService_DailyPnl_OvernightPositionReflectsPreviousClose(t *testing.T) {
+	db := getTestDB(t)
+
+	userUUID := uuid.New()
+	walletUUID := uuid.New()
+	t.Cleanup(func() {
+		db.Where("user_uuid = ?", userUUID).Delete(&model.AccountDailySnapshot{})
+		db.Where("user_uuid = ?", userUUID).Delete(&model.Trade{})
+		db.Where("user_uuid = ?", userUUID).Delete(&model.Position{})
+		db.Where("wallet_uuid = ?", walletUUID).Delete(&model.WalletTransaction{})
+		db.Where("user_uuid = ?", userUUID).Delete(&model.Wallet{})
+	})
+
+	loc, _ := time.LoadLocation("Asia/Kolkata")
+	openTime := time.Date(2026, 9, 16, 9, 15, 0, 0, loc)
+	checkTime := time.Date(2026, 9, 16, 12, 0, 0, 0, loc)
+
+	// User has ₹5,00,000 cash and held 100 shares of TATASTEEL overnight
+	// Bought historically at ₹100 (10,000 paise).
+	// Yesterday's close (PreviousClose) was ₹120 (12,000 paise).
+	// Today's live LTP is ₹130 (13,000 paise).
+	wallet := model.Wallet{
+		UUID:             walletUUID,
+		UserUUID:         userUUID,
+		CashBalancePaise: 50000000, // ₹5,00,000
+		BlockedPaise:     0,
+		CreatedAt:        openTime.Add(-48 * time.Hour),
+	}
+	if err := db.Create(&wallet).Error; err != nil {
+		t.Fatalf("create wallet: %v", err)
+	}
+
+	pos := model.Position{
+		UUID:              uuid.New(),
+		UserUUID:          userUUID,
+		Symbol:            "TATASTEEL",
+		Product:           model.OrderProductDelivery,
+		Quantity:          100,
+		AveragePricePaise: 10000,   // ₹100 entry
+		CostBasisPaise:    1000000, // ₹10,000 total invested
+		CurrentPricePaise: 12000,
+		CreatedAt:         openTime.Add(-48 * time.Hour),
+	}
+	if err := db.Create(&pos).Error; err != nil {
+		t.Fatalf("create pos: %v", err)
+	}
+
+	// At 09:15 baseline:
+	// Opening holdings = 100 * 12,000 = 1,200,000 paise (₹12,000)
+	// Opening equity = 50,000,000 + 1,200,000 = 51,200,000 paise
+	snap := model.AccountDailySnapshot{
+		UserUUID:                  userUUID,
+		SessionDate:               "2026-09-16",
+		OpeningCashPaise:          50000000,
+		OpeningHoldingsValuePaise: 1200000,
+		OpeningEquityPaise:        51200000,
+		NetCashInflowsPaise:       0,
+		CreatedAt:                 openTime,
+	}
+	if err := db.Create(&snap).Error; err != nil {
+		t.Fatalf("create snapshot: %v", err)
+	}
+
+	svc := New(nil)
+	svc.SetNowFunc(func() time.Time { return checkTime })
+	svc.SetCurrentQuoteFunc(func(symbol string) (*marketDTO.QuoteResponse, error) {
+		return &marketDTO.QuoteResponse{
+			Symbol:             "TATASTEEL",
+			PricePaise:         13000, // LTP = ₹130
+			PreviousClosePaise: 12000, // PrevClose = ₹120
+			Source:             "angelone_live",
+			UpdatedAt:          checkTime.Add(-10 * time.Second).UTC().Format(time.RFC3339),
+		}, nil
+	})
+
+	res, err := svc.Get(userUUID.String())
+	if err != nil {
+		t.Fatalf("Get() failed: %v", err)
+	}
+
+	// Lifetime Unrealized P&L: (130 - 100) * 100 = +₹3,000 (300,000 paise)
+	if res.UnrealizedPnlPaise != 300000 {
+		t.Errorf("expected lifetime unrealized P&L 300000 paise, got %d", res.UnrealizedPnlPaise)
+	}
+
+	// True Daily P&L: (130 - 120) * 100 = +₹1,000 (100,000 paise against previous close!)
+	if res.DailyPnlPaise == nil {
+		t.Fatal("expected DailyPnlPaise to be non-nil")
+	}
+	if *res.DailyPnlPaise != 100000 {
+		t.Errorf("expected daily P&L to reflect previous close (+100000 paise), got %d", *res.DailyPnlPaise)
+	}
+
+	// Daily P&L % = (100,000 / 51,200,000) * 100 = +0.20%
+	if res.DailyPnlPercent == nil {
+		t.Fatal("expected DailyPnlPercent to be non-nil")
+	}
+	if *res.DailyPnlPercent != 0.2 {
+		t.Errorf("expected daily P&L %% to be 0.2%%, got %f", *res.DailyPnlPercent)
+	}
+}
+

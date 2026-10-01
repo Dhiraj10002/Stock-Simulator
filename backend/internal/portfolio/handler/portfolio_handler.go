@@ -15,6 +15,10 @@ func New(market *marketService.Service) *PortfolioHandler {
 	return &PortfolioHandler{service: service.New(market)}
 }
 
+func (h *PortfolioHandler) Service() *service.PortfolioService {
+	return h.service
+}
+
 func (h *PortfolioHandler) Get(c *gin.Context) {
 	data, err := h.service.Get(c.GetString("user_id"))
 	if err != nil {

@@ -3,12 +3,16 @@ package service
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/config"
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/database"
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/calendar"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/wallet/dto"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/wallet/repository"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 type WalletService struct {
@@ -169,6 +173,12 @@ func (s *WalletService) Deposit(userID string, amountPaise int64) (*dto.WalletRe
 	}
 	if err := s.repo.Credit(wallet.UUID, amountPaise, "Paper trading margin deposit"); err != nil {
 		return nil, err
+	}
+	if db := database.GetDB(); db != nil {
+		todayStr := time.Now().In(calendar.Location()).Format("2006-01-02")
+		_ = db.Model(&model.AccountDailySnapshot{}).
+			Where("user_uuid = ? AND session_date = ?", wallet.UserUUID, todayStr).
+			UpdateColumn("net_cash_inflows_paise", gorm.Expr("net_cash_inflows_paise + ?", amountPaise)).Error
 	}
 	updated, err := s.walletForUser(userID)
 	if err != nil {

@@ -250,9 +250,11 @@ $$\text{Account Value} = \text{Cash Balance} + \sum (\text{Position Quantity} \t
    - If no opening snapshot exists (e.g. new user registered today), opening equity equals initial deposit and daily P&L is calculated from registration timestamp.
 
 #### Acceptance Criteria
-- [ ] Intraday trades that are opened and closed within the same day correctly reflect in `daily_pnl_paise` via realized gains/losses.
-- [ ] Deposits made during trading hours increase cash balance but do **not** artificially register as trading profit.
-- [ ] Overnight positions reflect their daily change against previous session close, not their original entry price.
+- [x] Intraday trades that are opened and closed within the same day correctly reflect in `daily_pnl_paise` via realized gains/losses.
+- [x] Deposits made during trading hours increase cash balance but do **not** artificially register as trading profit (`net_cash_inflows_paise` tracking and deposit isolation).
+- [x] Overnight positions reflect their daily change against previous session close, not their original entry price.
+- [x] Background scheduler (`RunSessionSnapshotScheduler`) taking 09:15 IST opening snapshots for active users, backed by on-demand lazy snapshot initialization in `EnsureSessionSnapshot`.
+- [x] `DailyPnlPercent` calculation exposed in `dto.PortfolioResponse` and OpenAPI specification.
 
 ---
 

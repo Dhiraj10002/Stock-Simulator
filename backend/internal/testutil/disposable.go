@@ -106,6 +106,7 @@ func RequireDisposableDB(t *testing.T) *gorm.DB {
 			&model.Instrument{},
 			&model.InstrumentSnapshot{},
 			&model.RiskEvent{},
+			&model.AccountDailySnapshot{},
 		); err != nil {
 			disposableDBErr = fmt.Errorf("migrate disposable database: %w", err)
 			return

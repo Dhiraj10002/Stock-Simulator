@@ -26,6 +26,7 @@ type PortfolioResponse struct {
 	UnrealizedPnlPaise int64              `json:"unrealized_pnl_paise"`
 	RealizedPnlPaise   int64              `json:"realized_pnl_paise"`
 	DailyPnlPaise      *int64             `json:"daily_pnl_paise"`
+	DailyPnlPercent    *float64           `json:"daily_pnl_percent,omitempty"`
 	TotalPnlPaise      int64              `json:"total_pnl_paise"`
 	ValuationStatus    string             `json:"valuation_status,omitempty"` // "REALTIME", "STALE", "DEGRADED"
 }

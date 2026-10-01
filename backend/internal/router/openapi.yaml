@@ -1264,6 +1264,7 @@ components:
             unrealized_pnl_paise: { type: integer, format: int64 }
             realized_pnl_paise: { type: integer, format: int64 }
             daily_pnl_paise: { type: integer, format: int64, nullable: true, description: "Null when a reliable session baseline is unavailable" }
+            daily_pnl_percent: { type: number, format: double, nullable: true, description: "Percentage return for current trading day against opening equity baseline" }
             total_pnl_paise: { type: integer, format: int64 }
 
     PositionsResponse:
@@ -1285,6 +1286,7 @@ components:
             realized_pnl_paise: { type: integer, format: int64 }
             unrealized_pnl_paise: { type: integer, format: int64 }
             daily_pnl_paise: { type: integer, format: int64, nullable: true, description: "Null when a reliable session baseline is unavailable" }
+            daily_pnl_percent: { type: number, format: double, nullable: true, description: "Percentage return for current trading day against opening equity baseline" }
             total_pnl_paise: { type: integer, format: int64 }
 
     TradeItem:

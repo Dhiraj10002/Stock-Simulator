@@ -281,9 +281,11 @@ export default function PortfolioPage() {
     : (portfolio?.daily_pnl_paise !== null && portfolio?.daily_pnl_paise !== undefined ? portfolio.daily_pnl_paise : undefined);
   const isDayProfit = (dayPnlPaise ?? 0) >= 0;
   const dayPnlPercent =
-    totalInvestedPaise > 0 && dayPnlPaise !== undefined
-      ? (dayPnlPaise / totalInvestedPaise) * 100
-      : undefined;
+    isPositionsTab && portfolio?.daily_pnl_percent !== undefined && portfolio?.daily_pnl_percent !== null
+      ? portfolio.daily_pnl_percent
+      : (totalInvestedPaise > 0 && dayPnlPaise !== undefined
+        ? (dayPnlPaise / totalInvestedPaise) * 100
+        : undefined);
 
   const valuationAvailable = !!portfolio && !portfolioError && (livePositions.length === 0 || totalValuationPaise > 0 || totalInvestedPaise > 0);
   const availableBalancePaise = walletError ? undefined : wallet?.available_balance_paise;

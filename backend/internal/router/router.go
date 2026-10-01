@@ -152,6 +152,7 @@ func Setup(ctx context.Context, cfg *config.Config, opts ...SetupOption) *gin.En
 	if database.GetDB() != nil {
 		go orders.RunProductLifecycle(ctx)
 		go orders.RunExpirySettlement(ctx)
+		go portfolio.Service().RunSessionSnapshotScheduler(ctx)
 	}
 	marketWS := marketWebsocket.New(market.Service(), cfg.CORSAllowedOrigins, cfg.IsProduction())
 	instruments := instrumentHandler.New()

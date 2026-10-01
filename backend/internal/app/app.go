@@ -73,6 +73,7 @@ func (a *App) RunWithContext(ctx context.Context) error {
 			&model.InstrumentSnapshot{},
 			&model.RiskEvent{},
 			&model.WatchlistItem{},
+			&model.AccountDailySnapshot{},
 		); err != nil {
 			return err
 		}

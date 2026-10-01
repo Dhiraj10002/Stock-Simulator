@@ -1,12 +1,14 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math"
 	"time"
 	_ "time/tzdata"
 
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/calendar"
 	marketDTO "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/dto"
 	marketService "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/service"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
@@ -79,6 +81,145 @@ func (s *PortfolioService) realizedPnl(userUUID uuid.UUID, from time.Time) (int6
 		return s.repo.RealizedPnl(userUUID, from)
 	}
 	return 0, nil
+}
+
+// EnsureSessionSnapshot retrieves or captures the 09:15 IST opening equity snapshot for a user.
+func (s *PortfolioService) EnsureSessionSnapshot(userUUID uuid.UUID, now time.Time) (*model.AccountDailySnapshot, error) {
+	if s.repo == nil {
+		return nil, fmt.Errorf("portfolio repository not configured")
+	}
+
+	todayStr := now.In(calendar.Location()).Format("2006-01-02")
+	snap, err := s.repo.FindDailySnapshot(userUUID, todayStr)
+	if err == nil && snap != nil {
+		return snap, nil
+	}
+
+	wallet, err := s.repo.FindWallet(userUUID)
+	if err != nil {
+		return nil, err
+	}
+
+	sessionOpen, _, _ := calendar.SessionBounds(now)
+	isNewUserToday := !wallet.CreatedAt.Before(sessionOpen)
+
+	var openingCash int64
+	var openingHoldings int64
+	var openingEquity int64
+	var netInflows int64
+
+	if isNewUserToday {
+		// If user registered today after session open, baseline is established at registration
+		depositsToday, _ := s.repo.GetDepositsSince(userUUID, wallet.CreatedAt)
+		tradesToday, _ := s.repo.GetTradesSince(userUUID, wallet.CreatedAt)
+
+		var tradesCashDelta int64
+		for _, tr := range tradesToday {
+			if tr.Side == model.OrderSideBuy {
+				tradesCashDelta += tr.TotalPaise
+			} else if tr.Side == model.OrderSideSell {
+				tradesCashDelta -= tr.TotalPaise
+			}
+		}
+
+		openingCash = wallet.CashBalancePaise - depositsToday + tradesCashDelta
+		openingHoldings = 0
+		openingEquity = openingCash - wallet.BlockedPaise
+		if openingEquity <= 0 {
+			openingEquity = 100000000 // ₹10 Lakhs default
+		}
+		netInflows = depositsToday
+	} else {
+		// User registered before today; calculate baseline at today's 09:15 session open
+		depositsToday, _ := s.repo.GetDepositsSince(userUUID, sessionOpen)
+		tradesToday, _ := s.repo.GetTradesSince(userUUID, sessionOpen)
+
+		var tradesCashDelta int64
+		tradesQtyBySymbol := make(map[string]int64)
+		for _, tr := range tradesToday {
+			if tr.Side == model.OrderSideBuy {
+				tradesCashDelta += tr.TotalPaise
+				tradesQtyBySymbol[tr.Symbol] += tr.Quantity
+			} else if tr.Side == model.OrderSideSell {
+				tradesCashDelta -= tr.TotalPaise
+				tradesQtyBySymbol[tr.Symbol] -= tr.Quantity
+			}
+		}
+
+		openingCash = wallet.CashBalancePaise - depositsToday + tradesCashDelta
+
+		positions, _ := s.listPositions(userUUID)
+		for _, pos := range positions {
+			overnightQty := pos.Quantity - tradesQtyBySymbol[pos.Symbol]
+			if overnightQty <= 0 {
+				continue
+			}
+			prevClose := int64(0)
+			if q, qErr := s.currentQuote(pos.Symbol); qErr == nil && q != nil && q.PreviousClosePaise > 0 {
+				prevClose = q.PreviousClosePaise
+			} else if pos.CurrentPricePaise > 0 {
+				prevClose = pos.CurrentPricePaise
+			} else {
+				prevClose = pos.AveragePricePaise
+			}
+			openingHoldings += overnightQty * prevClose
+		}
+
+		openingEquity = openingCash + openingHoldings - wallet.BlockedPaise
+		if openingEquity <= 0 {
+			openingEquity = wallet.CashBalancePaise
+		}
+		netInflows = depositsToday
+	}
+
+	newSnapshot := &model.AccountDailySnapshot{
+		UserUUID:                  userUUID,
+		SessionDate:               todayStr,
+		OpeningCashPaise:          openingCash,
+		OpeningHoldingsValuePaise: openingHoldings,
+		OpeningEquityPaise:        openingEquity,
+		NetCashInflowsPaise:       netInflows,
+		CreatedAt:                 now,
+	}
+
+	if saveErr := s.repo.CreateDailySnapshot(newSnapshot); saveErr != nil {
+		if existing, findErr := s.repo.FindDailySnapshot(userUUID, todayStr); findErr == nil && existing != nil {
+			return existing, nil
+		}
+	}
+
+	return newSnapshot, nil
+}
+
+// ProcessSessionOpenSnapshots records 09:15 IST opening equity snapshots for all active users.
+func (s *PortfolioService) ProcessSessionOpenSnapshots(now time.Time) {
+	if !calendar.IsMarketOpen(now) {
+		return
+	}
+	if s.repo == nil {
+		return
+	}
+	userUUIDs, err := s.repo.ListActiveUserUUIDs()
+	if err != nil || len(userUUIDs) == 0 {
+		return
+	}
+	for _, uUUID := range userUUIDs {
+		_, _ = s.EnsureSessionSnapshot(uUUID, now)
+	}
+}
+
+// RunSessionSnapshotScheduler periodically processes opening snapshots during trading sessions.
+func (s *PortfolioService) RunSessionSnapshotScheduler(ctx context.Context) {
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
+	for {
+		s.ProcessSessionOpenSnapshots(s.now())
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
 }
 
 func (s *PortfolioService) Get(userID string) (*dto.PortfolioResponse, error) {
@@ -179,9 +320,33 @@ func (s *PortfolioService) Get(userID string) (*dto.PortfolioResponse, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Lifetime unrealized P&L cannot establish daily performance. Until a
-	// persisted session baseline and intraday flows are available, return null.
-	result.DailyPnlPaise = nil
+
+	// Calculate true Daily Account P&L based on session baseline (09:15 IST)
+	if snap, snapErr := s.EnsureSessionSnapshot(userUUID, s.now()); snapErr == nil && snap != nil {
+		wallet, wErr := s.repo.FindWallet(userUUID)
+		cash := int64(0)
+		blocked := int64(0)
+		if wErr == nil && wallet != nil {
+			cash = wallet.CashBalancePaise
+			blocked = wallet.BlockedPaise
+		}
+		currentAccountValue := cash + result.CurrentValuePaise - blocked
+		totalInflows := snap.NetCashInflowsPaise
+
+		dailyPnl := currentAccountValue - snap.OpeningEquityPaise - totalInflows
+		result.DailyPnlPaise = &dailyPnl
+
+		if snap.OpeningEquityPaise > 0 {
+			pct := math.Round((float64(dailyPnl)/float64(snap.OpeningEquityPaise))*10000) / 100
+			result.DailyPnlPercent = &pct
+		} else {
+			zero := 0.0
+			result.DailyPnlPercent = &zero
+		}
+	} else {
+		result.DailyPnlPaise = nil
+	}
+
 	result.TotalPnlPaise, err = addPnl(result.UnrealizedPnlPaise, result.RealizedPnlPaise)
 	if err != nil {
 		return nil, err

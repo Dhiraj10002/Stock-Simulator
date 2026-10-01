@@ -75,6 +75,7 @@ func getLifecycleTestDB(t *testing.T) *gorm.DB {
 		&model.RefreshSession{},
 		&model.WatchlistItem{},
 		&model.SimulationReset{},
+		&model.AccountDailySnapshot{},
 	)
 	if err != nil {
 		t.Fatalf("failed to run database automigrate: %v", err)
