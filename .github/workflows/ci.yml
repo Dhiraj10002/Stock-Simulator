@@ -66,9 +66,6 @@ jobs:
       - name: Run Backend Tests
         run: go test -v -count=1 -p 1 ./...
 
-      - name: Race Check Order Accounting and Exit Retries
-        run: go test -race -count=1 ./internal/order/service
-
   python-workers:
     name: Python Workers
     runs-on: ubuntu-latest

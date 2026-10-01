@@ -268,16 +268,3 @@ func (h *Handler) Sectors(c *gin.Context) {
 	}
 	response.Success(c, http.StatusOK, "Market sectors retrieved successfully", sectors)
 }
-
-func (h *Handler) Calendar(c *gin.Context) {
-	year := time.Now().In(calendar.Location()).Year()
-	if raw := c.Query("year"); raw != "" {
-		parsed, err := strconv.Atoi(raw)
-		if err != nil || parsed < 2000 || parsed > 2100 {
-			response.Error(c, http.StatusBadRequest, "Invalid calendar year", "INVALID_YEAR")
-			return
-		}
-		year = parsed
-	}
-	response.Success(c, http.StatusOK, "Exchange calendar", calendar.Snapshot(year))
-}

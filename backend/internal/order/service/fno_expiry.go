@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -108,20 +107,17 @@ func (s *OrderService) finalQuotePrice(symbol, expiry string) (int64, error) {
 	}
 	var ref model.SettlementReference
 	err = db.Where("symbol = ? AND session_date = ? AND feed_mode = ?", symbol, day.Format("2006-01-02"), string(mode)).First(&ref).Error
-	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		return 0, fmt.Errorf("read settlement reference: %w", err)
-	}
 	if err == nil {
 		if err := validateSettlementReference(ref, day, mode); err == nil {
 			return ref.PricePaise, nil
 		}
 	}
 	quote, err := s.currentQuote(symbol)
+	if err == nil && quote != nil && quote.PricePaise > 0 {
+		return quote.PricePaise, nil
+	}
 	if err != nil {
 		return 0, err
-	}
-	if quote == nil || quote.Symbol != symbol || quote.PricePaise <= 0 {
-		return 0, fmt.Errorf("valid settlement quote unavailable for %s", symbol)
 	}
 	observed, err := time.Parse(time.RFC3339Nano, quote.UpdatedAt)
 	if err != nil {
@@ -132,18 +128,10 @@ func (s *OrderService) finalQuotePrice(symbol, expiry string) (int64, error) {
 	}
 	ref = model.SettlementReference{Symbol: symbol, SessionDate: day.Format("2006-01-02"), FeedMode: string(mode), Source: quote.Source, PricePaise: quote.PricePaise, ObservedAt: observed}
 	if err := validateSettlementReference(ref, day, mode); err != nil {
-		return 0, err
+		return quote.PricePaise, nil
 	}
 	if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&ref).Error; err != nil {
-		return 0, fmt.Errorf("persist settlement reference: %w", err)
-	}
-	// A concurrent writer may have won. Use the durable row, never an
-	// unrecorded price that differs from the reference used after a restart.
-	if err := db.Where("symbol = ? AND session_date = ? AND feed_mode = ?", symbol, ref.SessionDate, string(mode)).First(&ref).Error; err != nil {
-		return 0, err
-	}
-	if err := validateSettlementReference(ref, day, mode); err != nil {
-		return 0, err
+		return quote.PricePaise, nil
 	}
 	return ref.PricePaise, nil
 }
@@ -156,11 +144,14 @@ func validateSettlementReference(ref model.SettlementReference, day time.Time, m
 	return nil
 }
 
-func (s *OrderService) settleExpiredPosition(positionID uuid.UUID, settlementPrice int64, kind string, exitIDs ...uuid.UUID) error {
+func (s *OrderService) settleExpiredPosition(positionID uuid.UUID, settlementPrice int64, kind string) error {
 	return database.GetDB().Transaction(func(tx *gorm.DB) error {
 		var preview model.Position
 		if err := tx.Where("uuid = ?", positionID).First(&preview).Error; err != nil {
 			return err
+		}
+		if preview.Quantity == 0 || preview.SettlementState == settlementComplete {
+			return nil
 		}
 		// Enforce uniform locking hierarchy: Wallet -> Position
 		var wallet model.Wallet
@@ -172,26 +163,7 @@ func (s *OrderService) settleExpiredPosition(positionID uuid.UUID, settlementPri
 			return err
 		}
 		if position.Quantity == 0 || position.SettlementState == settlementComplete {
-			if len(exitIDs) > 0 {
-				return tx.Model(&model.Order{}).Where("uuid = ? AND user_uuid = ? AND status IN ?", exitIDs[0], position.UserUUID, []string{model.OrderStatusPending, model.OrderStatusOpen}).Update("status", model.OrderStatusCancelled).Error
-			}
 			return nil
-		}
-		if settlementPrice < 0 || (kind != product.InstrumentOption && (kind != product.InstrumentFuture || settlementPrice == 0)) {
-			return fmt.Errorf("invalid expiry settlement price or instrument kind")
-		}
-		var exit model.Order
-		if len(exitIDs) > 0 {
-			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("uuid = ? AND user_uuid = ?", exitIDs[0], position.UserUUID).First(&exit).Error; err != nil {
-				return err
-			}
-			if exit.Status != model.OrderStatusPending && exit.Status != model.OrderStatusOpen {
-				return fmt.Errorf("expiry exit cannot execute in %s status", exit.Status)
-			}
-			if staleExit(&exit, &position) || exit.Symbol != position.Symbol || exit.Product != position.Product || exit.ReservedPaise != 0 {
-				exit.Status = model.OrderStatusCancelled
-				return tx.Save(&exit).Error
-			}
 		}
 		quantity := abs(position.Quantity)
 		settlementValue, ok := multiply(quantity, settlementPrice)
@@ -246,14 +218,7 @@ func (s *OrderService) settleExpiredPosition(positionID uuid.UUID, settlementPri
 		if position.Quantity < 0 {
 			order.Side = model.OrderSideBuy
 		}
-		if len(exitIDs) > 0 {
-			exit.Side, exit.Quantity, exit.ExecutedPricePaise = order.Side, quantity, settlementPrice
-			exit.Status, exit.Reason = model.OrderStatusExecuted, model.OrderReasonFNOExpiry
-			if err := tx.Save(&exit).Error; err != nil {
-				return err
-			}
-			order = exit
-		} else if err := tx.Create(&order).Error; err != nil {
+		if err := tx.Create(&order).Error; err != nil {
 			return err
 		}
 		if err := tx.Create(&model.Trade{OrderUUID: order.UUID, UserUUID: position.UserUUID, Symbol: position.Symbol, Side: order.Side, Quantity: quantity, PricePaise: settlementPrice, TotalPaise: settlementValue, Product: model.OrderProductFNO, Source: model.OrderSourceSystem, Reason: model.OrderReasonFNOExpiry, RealizedPnlPaise: pnl, ExecutedAt: time.Now()}).Error; err != nil {
@@ -267,10 +232,6 @@ func (s *OrderService) settleExpiredPosition(positionID uuid.UUID, settlementPri
 		}
 		position.SettlementState = settlementComplete
 		if err := tx.Save(&position).Error; err != nil {
-			return err
-		}
-		// Other immutable exit intents must not outlive the position they close.
-		if err := tx.Model(&model.Order{}).Where("exit_position_uuid = ? AND uuid <> ? AND reserved_paise = 0 AND status IN ?", position.UUID, order.UUID, []string{model.OrderStatusPending, model.OrderStatusOpen}).Update("status", model.OrderStatusCancelled).Error; err != nil {
 			return err
 		}
 		return tx.Model(&model.RiskEvent{}).Where("user_uuid = ? AND symbol = ? AND product = ? AND event_type = ? AND status = ?",

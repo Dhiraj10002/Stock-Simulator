@@ -2,7 +2,6 @@ package calendar
 
 import (
 	"fmt"
-	"sort"
 	"time"
 )
 
@@ -18,26 +17,19 @@ var (
 	}()
 
 	// nseHolidays stores recognized NSE holidays in YYYY-MM-DD format.
-	// Versioned from NSE/CMTR/71775 and NSE/FAOP/71777 (2025-12-12).
-	// Special-session timing must be separately verified before enabling trading.
+	// Can be extended dynamically or via configuration.
 	nseHolidays = map[string]string{
 		"2026-01-26": "Republic Day",
 		"2026-03-03": "Holi",
-		"2026-03-26": "Shri Ram Navami",
-		"2026-03-31": "Shri Mahavir Jayanti",
-		"2026-03-21": "Id-Ul-Fitr (Ramadan Eid)",
-		"2026-02-15": "Mahashivratri",
+		"2026-03-20": "Id-Ul-Fitr (Ramadan Eid)",
 		"2026-04-03": "Good Friday",
 		"2026-04-14": "Dr. Baba Saheb Ambedkar Jayanti",
 		"2026-05-01": "Maharashtra Day",
-		"2026-05-28": "Bakri Id",
-		"2026-06-26": "Muharram",
-		"2026-09-14": "Ganesh Chaturthi",
+		"2026-05-27": "Bakri Id",
 		"2026-08-15": "Independence Day",
 		"2026-10-02": "Mahatma Gandhi Jayanti",
 		"2026-10-20": "Dussehra",
-		"2026-11-08": "Diwali Laxmi Pujan (special-session times pending)",
-		"2026-11-10": "Diwali-Balipratipada",
+		"2026-11-08": "Diwali Balipratipada",
 		"2026-11-24": "Prakash Gurpurb Sri Guru Nanak Dev",
 		"2026-12-25": "Christmas",
 	}
@@ -79,9 +71,6 @@ func SessionBounds(t time.Time) (marketOpen, misCutoff, marketClose time.Time) {
 // in regular trading session (09:15 to 15:30 IST, Monday through Friday,
 // excluding exchange holidays).
 func IsMarketOpen(t time.Time) bool {
-	if t.In(istLocation).Year() != 2026 {
-		return false
-	}
 	if IsWeekend(t) {
 		return false
 	}
@@ -99,9 +88,6 @@ func IsMarketOpen(t time.Time) bool {
 // - Existing open limit orders remain open across sessions and are not rejected here.
 func ValidateNewOrderSession(t time.Time) error {
 	ist := t.In(istLocation)
-	if ist.Year() != 2026 {
-		return fmt.Errorf("verified exchange calendar unavailable for %d", ist.Year())
-	}
 	if IsWeekend(ist) {
 		return fmt.Errorf("market is closed on weekends; regular trading hours are Monday to Friday 09:15 to 15:30 IST")
 	}
@@ -130,36 +116,4 @@ func ValidateMISCutoff(t time.Time) error {
 		return fmt.Errorf("MIS orders are not accepted after 15:20 IST (current time: %s)", ist.Format("15:04:05 IST"))
 	}
 	return nil
-}
-
-// Snapshot is shared by the dashboard and order-session policy. A future year
-// is unavailable until a new sourced calendar is installed.
-type Holiday struct {
-	Date          string `json:"date"`
-	Occasion      string `json:"occasion"`
-	SessionStatus string `json:"session_status"`
-}
-type CalendarSnapshot struct {
-	Year      int       `json:"year"`
-	Available bool      `json:"available"`
-	Exchange  string    `json:"exchange"`
-	SourceURL string    `json:"source_url"`
-	Version   string    `json:"version"`
-	Holidays  []Holiday `json:"holidays"`
-}
-
-func Snapshot(year int) CalendarSnapshot {
-	result := CalendarSnapshot{Year: year, Available: year == 2026, Exchange: "NSE cash and equity derivatives", Version: "NSE-CMTR-71775-FAOP-71777", SourceURL: "https://nsearchives.nseindia.com/content/circulars/CMTR71775.pdf", Holidays: []Holiday{}}
-	if !result.Available {
-		return result
-	}
-	for day, name := range nseHolidays {
-		status := "CLOSED"
-		if day == "2026-11-08" {
-			status = "SPECIAL_TIMES_UNCONFIRMED"
-		}
-		result.Holidays = append(result.Holidays, Holiday{Date: day, Occasion: name, SessionStatus: status})
-	}
-	sort.Slice(result.Holidays, func(i, j int) bool { return result.Holidays[i].Date < result.Holidays[j].Date })
-	return result
 }

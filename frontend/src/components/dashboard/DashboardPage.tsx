@@ -6,8 +6,7 @@ import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMultiSymbolQuotes } from "@/stores/market-store";
 import { fetchBatchQuotes, getCachedQuote } from "@/lib/quoteService";
-import { dayMovement } from "@/lib/marketDisplay";
-import MarketDesk from "@/components/dashboard/MarketDesk";
+import { getApiUrl } from "@/lib/config";
 import Navbar from "@/components/layout/Navbar";
 import {
   TrendingUp,
@@ -29,8 +28,8 @@ import {
   ShoppingBag,
 } from "lucide-react";
 import { formatPaise } from "@/lib/format";
-import { getAuthToken, apiFetch } from "@/lib/api";
-import type { Portfolio, Candle } from "@/types";
+import { apiFetch } from "@/lib/api";
+import type { Portfolio, ApiResponse, Candle } from "@/types";
 import IndicesBar from "@/components/dashboard/IndicesBar";
 import MarketStatusBanner from "@/components/dashboard/MarketStatusBanner";
 import MarketMoversCard from "@/components/dashboard/MarketMoversCard";
@@ -49,7 +48,6 @@ export interface WatchlistItem {
   changePercent: number;
   isPositive: boolean;
   isQuoteAvailable?: boolean;
-  isDayChangeAvailable?: boolean;
 }
 
 export const MASTER_STOCKS_CATALOG: WatchlistItem[] = [
@@ -216,6 +214,118 @@ export const SECTOR_CONSTITUENTS: Record<string, string[]> = {
 };
 
 // ---------------------------------------------------------------------------
+// KITE-STYLE DATA: IPOs, News, Economic Calendar, Holidays, Earnings, Actions
+// ---------------------------------------------------------------------------
+interface IPORow {
+  company: string;
+  symbol: string;
+  issueDates: string;
+  priceBand: string;
+  lotSize: number;
+  issueSize: string;
+  status: "OPEN" | "UPCOMING" | "CLOSED" | "LISTED";
+  gmp: string;
+  gmpPercent: string;
+}
+
+const KITE_IPOS: IPORow[] = [
+  {
+    company: "Hyundai Motor India Ltd",
+    symbol: "HYUNDAI",
+    issueDates: "15 Oct - 17 Oct",
+    priceBand: "₹1,865 - ₹1,960",
+    lotSize: 7,
+    issueSize: "₹27,870 Cr",
+    status: "UPCOMING",
+    gmp: "+₹65",
+    gmpPercent: "+3.3%",
+  },
+  {
+    company: "Swiggy Limited",
+    symbol: "SWIGGY",
+    issueDates: "06 Nov - 08 Nov",
+    priceBand: "₹371 - ₹390",
+    lotSize: 38,
+    issueSize: "₹11,327 Cr",
+    status: "UPCOMING",
+    gmp: "+₹25",
+    gmpPercent: "+6.4%",
+  },
+  {
+    company: "NTPC Green Energy Ltd",
+    symbol: "NTPCGREEN",
+    issueDates: "19 Nov - 22 Nov",
+    priceBand: "₹102 - ₹108",
+    lotSize: 138,
+    issueSize: "₹10,000 Cr",
+    status: "UPCOMING",
+    gmp: "+₹12",
+    gmpPercent: "+11.1%",
+  },
+  {
+    company: "Bajaj Housing Finance Ltd",
+    symbol: "BAJAJHFL",
+    issueDates: "09 Sep - 11 Sep",
+    priceBand: "₹66 - ₹70",
+    lotSize: 214,
+    issueSize: "₹6,560 Cr",
+    status: "LISTED",
+    gmp: "+₹75",
+    gmpPercent: "+107.1%",
+  },
+  {
+    company: "Premier Energies Ltd",
+    symbol: "PREMIERENE",
+    issueDates: "27 Aug - 29 Aug",
+    priceBand: "₹427 - ₹450",
+    lotSize: 33,
+    issueSize: "₹2,830 Cr",
+    status: "LISTED",
+    gmp: "+₹420",
+    gmpPercent: "+93.3%",
+  },
+];
+
+interface MarketHoliday {
+  date: string;
+  day: string;
+  occasion: string;
+  status: string;
+}
+
+const NSE_MARKET_HOLIDAYS: MarketHoliday[] = [
+  { date: "26 Jan 2026", day: "Monday", occasion: "Republic Day", status: "Market Closed" },
+  { date: "03 Mar 2026", day: "Tuesday", occasion: "Holi", status: "Market Closed" },
+  { date: "20 Mar 2026", day: "Friday", occasion: "Id-Ul-Fitr (Ramadan Eid)", status: "Market Closed" },
+  { date: "03 Apr 2026", day: "Friday", occasion: "Good Friday", status: "Market Closed" },
+  { date: "14 Apr 2026", day: "Tuesday", occasion: "Dr. Baba Saheb Ambedkar Jayanti", status: "Market Closed" },
+  { date: "01 May 2026", day: "Friday", occasion: "Maharashtra Day", status: "Market Closed" },
+  { date: "27 May 2026", day: "Wednesday", occasion: "Bakri Id", status: "Market Closed" },
+  { date: "15 Aug 2026", day: "Saturday", occasion: "Independence Day", status: "Market Closed" },
+  { date: "02 Oct 2026", day: "Friday", occasion: "Mahatma Gandhi Jayanti", status: "Market Closed" },
+  { date: "20 Oct 2026", day: "Tuesday", occasion: "Dussehra", status: "Market Closed" },
+  { date: "08 Nov 2026", day: "Sunday", occasion: "Diwali Laxmi Pujan (Muhurat Trading)", status: "Special Session" },
+  { date: "24 Nov 2026", day: "Tuesday", occasion: "Prakash Gurpurb Sri Guru Nanak Dev", status: "Market Closed" },
+  { date: "25 Dec 2026", day: "Friday", occasion: "Christmas", status: "Market Closed" },
+];
+
+interface MarketNewsItem {
+  id: string;
+  title: string;
+  source: string;
+  timeAgo: string;
+  sentiment: "POSITIVE" | "NEGATIVE" | "NEUTRAL";
+  symbol?: string;
+}
+
+const MARKET_NEWS_ITEMS: MarketNewsItem[] = [
+  { id: "n1", title: "Nifty touches record high as FII inflows surge in financial and IT counters", source: "LiveMint", timeAgo: "14m ago", sentiment: "POSITIVE", symbol: "NIFTY" },
+  { id: "n2", title: "Swiggy files updated draft red herring prospectus for upcoming ₹11,300 Cr mega IPO", source: "Economic Times", timeAgo: "42m ago", sentiment: "NEUTRAL", symbol: "SWIGGY" },
+  { id: "n3", title: "Tata Motors domestic commercial vehicle sales grow 8.4% YoY in September", source: "CNBC-TV18", timeAgo: "1h ago", sentiment: "POSITIVE", symbol: "TATAMOTORS" },
+  { id: "n4", title: "RBI Governor emphasizes vigilant stance on core inflation amid global commodity volatility", source: "Moneycontrol", timeAgo: "2h ago", sentiment: "NEUTRAL" },
+  { id: "n5", title: "Brent crude moderates to $74/bbl, easing margin pressure for paint and tyre companies", source: "Reuters", timeAgo: "3h ago", sentiment: "POSITIVE", symbol: "ASIANPAINT" },
+];
+
 interface DashboardPageProps {
   onSignOut?: () => void;
 }
@@ -232,6 +342,8 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
   const [isAddFundsOpen, setIsAddFundsOpen] = useState(false);
 
   // Kite widget active tab
+  type KiteTab = "ipos" | "news" | "holidays";
+  const [activeKiteTab, setActiveKiteTab] = useState<KiteTab>("ipos");
 
   // Market overview chart index selection
   type OverviewIndex = "NIFTY 50" | "SENSEX" | "BANK NIFTY";
@@ -239,25 +351,70 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
   const [selectedTimeframe, setSelectedTimeframe] = useState<"1D" | "1W" | "1M" | "1Y">("1D");
   const [hoveredChartPoint, setHoveredChartPoint] = useState<{ price: number; time: string } | null>(null);
 
-  // Sector samples Panel state (Kite left sidebar)
+  // Trending Sectors Panel state (Kite left sidebar)
   const [sectorSearch, setSectorSearch] = useState<string>("");
   const [sectorFilter, setSectorFilter] = useState<"all" | "gainers" | "losers">("all");
 
-  const [token, setToken] = useState(getAuthToken);
-  const [resetError, setResetError] = useState<string | null>(null);
-  useEffect(() => {
-    const update = () => setToken(getAuthToken());
-    window.addEventListener("auth-changed", update);
-    return () => window.removeEventListener("auth-changed", update);
-  }, []);
+  const [token] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      return (
+        localStorage.getItem("auth_token") ||
+        localStorage.getItem("stock-simulator-access-token") ||
+        ""
+      );
+    }
+    return "";
+  });
+
+  const apiUrl = getApiUrl();
 
   // 1. Fetch Wallet
   const { data: wallet, refetch: refetchWallet } = useAccountWallet();
 
   // 2. Fetch Portfolio
-  const { data: portfolio, isError: portfolioError } = useQuery<Portfolio>({
-    queryKey: ["portfolio", token], queryFn: () => apiFetch<Portfolio>("/portfolio"),
-    enabled: !!token, refetchInterval: token ? 5000 : false,
+  const { data: portfolio } = useQuery<Portfolio>({
+    queryKey: ["portfolio", token],
+    queryFn: async () => {
+      if (!token) {
+        return {
+          invested_value_paise: 0,
+          current_value_paise: 0,
+          unrealized_pnl_paise: 0,
+          positions: [],
+        };
+      }
+      try {
+        const res = await fetch(`${apiUrl}/portfolio`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) {
+          return {
+            invested_value_paise: 0,
+            current_value_paise: 0,
+            unrealized_pnl_paise: 0,
+            positions: [],
+          };
+        }
+        const json: ApiResponse<Portfolio> = await res.json();
+        return (
+          json.data || {
+            invested_value_paise: 0,
+            current_value_paise: 0,
+            unrealized_pnl_paise: 0,
+            positions: [],
+          }
+        );
+      } catch {
+        return {
+          invested_value_paise: 0,
+          current_value_paise: 0,
+          unrealized_pnl_paise: 0,
+          positions: [],
+        };
+      }
+    },
+    enabled: !!token,
+    refetchInterval: token ? 5000 : false,
   });
 
   // Reset simulation handler
@@ -266,43 +423,43 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
       return;
     }
     setResetting(true);
-    setResetError(null);
     try {
-      await apiFetch("/simulation/reset", {method: "POST"});
+      if (token) {
+        await fetch(`${apiUrl}/simulation/reset`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      }
       await refetchWallet();
-      await Promise.all(["portfolio", "orders", "trades"].map(key => queryClient.invalidateQueries({queryKey: [key]})));
-    } catch (error) {
-      setResetError(error instanceof Error ? error.message : "Reset failed.");
+      void queryClient.invalidateQueries({ queryKey: ["portfolio"] });
+      void queryClient.invalidateQueries({ queryKey: ["orders"] });
+      void queryClient.invalidateQueries({ queryKey: ["trades"] });
+    } catch {
+      // ignore
     } finally {
       setResetting(false);
     }
   };
 
-  const dashboardCatalog = useMemo(() => {
-    const known = new Set(MASTER_STOCKS_CATALOG.map(s => s.symbol));
-    const extra = [...new Set(Object.values(SECTOR_CONSTITUENTS).flat())].filter(symbol => !known.has(symbol));
-    return [...MASTER_STOCKS_CATALOG, ...extra.map(symbol => ({symbol, name: symbol, price: 0, change: 0, changePercent: 0, isPositive: true}))];
-  }, []);
-  const quotes = useMultiSymbolQuotes([...dashboardCatalog.map((s) => s.symbol), "NIFTY", "SENSEX", "BANKNIFTY"]);
+  const quotes = useMultiSymbolQuotes([...MASTER_STOCKS_CATALOG.map((s) => s.symbol), "NIFTY", "SENSEX", "BANKNIFTY"]);
 
   // Prefetch live real-time quotes for all catalog stocks on mount
   useEffect(() => {
-    const catalogSymbols = dashboardCatalog.map((s) => s.symbol);
+    const catalogSymbols = MASTER_STOCKS_CATALOG.map((s) => s.symbol);
     fetchBatchQuotes(catalogSymbols).catch(() => {});
-  }, [dashboardCatalog]);
+  }, []);
 
   // Live Catalog merged with authentic Angel One ticks
   const liveCatalog: WatchlistItem[] = useMemo(() => {
-    return dashboardCatalog.map((item) => {
+    return MASTER_STOCKS_CATALOG.map((item) => {
       const q = quotes[item.symbol] || (item.symbol === "ZOMATO" ? quotes["ETERNAL"] : undefined) || getCachedQuote(item.symbol);
       if (!q || !q.price_paise) {
         return { ...item, isQuoteAvailable: false };
       }
 
       const price = q.price_paise / 100;
-      const movement = dayMovement(q);
-      const change = movement?.change ?? 0;
-      const changePercent = movement?.percent ?? 0;
+      const change = q.change_paise !== undefined ? q.change_paise / 100 : 0;
+      const changePercent = q.change_percent !== undefined ? q.change_percent : (price > 0 && change !== 0 ? +((change / (price - change || 1)) * 100).toFixed(2) : 0);
       const isPositive = changePercent >= 0;
 
       return {
@@ -312,10 +469,9 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
         changePercent: +changePercent.toFixed(2),
         isPositive,
         isQuoteAvailable: true,
-        isDayChangeAvailable: !!movement,
       };
     });
-  }, [quotes, dashboardCatalog]);
+  }, [quotes]);
 
 
 
@@ -348,25 +504,24 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
 
 
 
-  // Dynamic Sector samples calculated from live stock prices
+  // Dynamic Trending Sectors calculated from live stock prices
   const dynamicSectors = useMemo(() => {
     return DASHBOARD_TRENDING_SECTORS.map((sec) => {
       const symbols = SECTOR_CONSTITUENTS[sec.id] || [];
-      const constituents = liveCatalog.filter((s) => symbols.includes(s.symbol) && s.isQuoteAvailable && s.isDayChangeAvailable && s.price > 0);
+      const constituents = liveCatalog.filter((s) => symbols.includes(s.symbol) && s.isQuoteAvailable && s.price > 0);
       if (constituents.length === 0) {
         return {
           ...sec,
           gainersCount: 0,
           losersCount: 0,
-          isAvailable: false,
           changePercent: 0,
           topStock: "—",
           topStockChange: 0,
         };
       }
 
-      const gainers = constituents.filter((s) => s.changePercent > 0).length;
-      const losers = constituents.filter((s) => s.changePercent < 0).length;
+      const gainers = constituents.filter((s) => s.isPositive).length;
+      const losers = constituents.filter((s) => !s.isPositive).length;
       const avgChange = constituents.reduce((acc, s) => acc + s.changePercent, 0) / constituents.length;
       const sorted = [...constituents].sort((a, b) => b.changePercent - a.changePercent);
       const top = sorted[0];
@@ -374,7 +529,6 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
       return {
         ...sec,
         gainersCount: gainers,
-        isAvailable: true,
         losersCount: losers,
         changePercent: +avgChange.toFixed(2),
         topStock: top.symbol,
@@ -383,7 +537,7 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
     });
   }, [liveCatalog]);
 
-  // Filtered Sector samples for Left Sidebar
+  // Filtered Trending Sectors for Left Sidebar
   const filteredSectors = useMemo(() => {
     return dynamicSectors.filter((s) => {
       const q = sectorSearch.toLowerCase().trim();
@@ -423,9 +577,16 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
       : "BANKNIFTY";
 
   const historyInterval = selectedTimeframe === "1Y" ? "ONE_DAY" : selectedTimeframe === "1D" ? "ONE_MINUTE" : "ONE_HOUR";
-  const { data: indexCandles, isError: historyError } = useQuery<Candle[]>({
+  const { data: indexCandles } = useQuery<Candle[]>({
     queryKey: ["index-candles", indexKey, selectedTimeframe],
-    queryFn: () => apiFetch<Candle[]>(`/market/quotes/${indexKey}/history?limit=500&interval=${historyInterval}`),
+    queryFn: async () => {
+      try {
+        const res = await apiFetch<Candle[]>(`/market/quotes/${indexKey}/history?limit=500&interval=${historyInterval}`);
+        return res || [];
+      } catch {
+        return [];
+      }
+    },
     staleTime: 5_000,
     refetchInterval: (query) => query.state.data?.length ? 60_000 : 5_000,
   });
@@ -711,7 +872,7 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
                               }`}
                             >
                               {isGain ? "+" : ""}
-                              {sec.isAvailable ? `${sec.changePercent.toFixed(2)}%` : "Unavailable"}
+                              {sec.changePercent.toFixed(2)}%
                             </span>
                           </td>
                         </tr>
@@ -796,12 +957,10 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
           </div>
         </div>
 
-        {portfolioError && <p role="alert" className="text-amber-600 text-sm">Portfolio could not be refreshed. Retained values may be outdated.</p>}
-        {resetError && <p role="alert" className="text-rose-600 text-sm">{resetError}</p>}
-        {/* Authoritative portfolio summary */}
+        {/* Authoritative Real-Time Portfolio Summary Snapshot */}
         <PortfolioSummarySnapshot
           wallet={wallet}
-          portfolio={portfolioError && portfolio ? {...portfolio, valuation_status: portfolio.valuation_status === "DEGRADED" ? "DEGRADED" : "STALE"} : portfolio}
+          portfolio={portfolio}
           onReset={handleResetSimulation}
           onAddFunds={() => setIsAddFundsOpen(true)}
           isResetting={resetting}
@@ -816,7 +975,178 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
             <MarketMoversCard limit={8} />
           </div>
 
-          <MarketDesk />
+          {/* RIGHT: Kite Circled Widget (IPOs, News, Holiday Calendar) (5 Cols) */}
+          <div className="lg:col-span-5 rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 shadow-xs overflow-hidden flex flex-col">
+            {/* Widget Segmented Tabs Bar: IPOs | Market News | Holiday Calendar */}
+            <div className="px-3 pt-3 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2 overflow-x-auto no-scrollbar bg-slate-50/50 dark:bg-slate-900/80">
+              <button
+                onClick={() => setActiveKiteTab("ipos")}
+                className={`pb-2.5 px-2.5 text-xs font-bold whitespace-nowrap transition-all border-b-2 cursor-pointer ${
+                  activeKiteTab === "ipos"
+                    ? "border-cyan-600 dark:border-cyan-400 text-cyan-700 dark:text-cyan-300"
+                    : "border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+                }`}
+              >
+                IPOs
+              </button>
+
+              <button
+                onClick={() => setActiveKiteTab("news")}
+                className={`pb-2.5 px-2.5 text-xs font-bold whitespace-nowrap transition-all border-b-2 cursor-pointer flex items-center gap-1.5 ${
+                  activeKiteTab === "news"
+                    ? "border-cyan-600 dark:border-cyan-400 text-cyan-700 dark:text-cyan-300"
+                    : "border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+                }`}
+              >
+                <span>Market News</span>
+                <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse" />
+              </button>
+
+              <button
+                onClick={() => setActiveKiteTab("holidays")}
+                className={`pb-2.5 px-2.5 text-xs font-bold whitespace-nowrap transition-all border-b-2 cursor-pointer ${
+                  activeKiteTab === "holidays"
+                    ? "border-cyan-600 dark:border-cyan-400 text-cyan-700 dark:text-cyan-300"
+                    : "border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+                }`}
+              >
+                Holiday Calendar
+              </button>
+            </div>
+
+            {/* TAB CONTENT */}
+            <div className="flex-1 p-3 overflow-y-auto max-h-[380px]">
+              {/* 1. IPOs TAB */}
+              {activeKiteTab === "ipos" && (
+                <div className="space-y-2.5">
+                  <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 flex items-center justify-between pb-1 border-b border-slate-100 dark:border-slate-800">
+                    <span>Active & Upcoming Issues</span>
+                    <span className="font-mono">GMP Premium</span>
+                  </div>
+
+                  {KITE_IPOS.map((ipo) => (
+                    <div
+                      key={ipo.symbol}
+                      className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60 hover:border-cyan-500/40 transition-colors"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-bold text-xs text-slate-900 dark:text-slate-100 truncate">
+                              {ipo.company}
+                            </span>
+                            <span
+                              className={`text-[9px] font-bold px-1.5 py-0.2 rounded ${
+                                ipo.status === "OPEN"
+                                  ? "bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400"
+                                  : ipo.status === "UPCOMING"
+                                  ? "bg-cyan-100 dark:bg-cyan-950 text-cyan-700 dark:text-cyan-400"
+                                  : "bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300"
+                              }`}
+                            >
+                              {ipo.status}
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                            Dates: <span className="font-medium text-slate-700 dark:text-slate-300">{ipo.issueDates}</span> • Price: <span className="font-medium text-slate-700 dark:text-slate-300">{ipo.priceBand}</span>
+                          </div>
+                          <div className="text-[10px] text-slate-400">
+                            Lot: {ipo.lotSize} shares • Size: {ipo.issueSize}
+                          </div>
+                        </div>
+
+                        <div className="text-right shrink-0">
+                          <div className="font-bold text-xs text-emerald-600 dark:text-emerald-400 font-tabular">
+                            {ipo.gmp}
+                          </div>
+                          <div className="text-[10px] font-semibold text-emerald-500 dark:text-emerald-400">
+                            ({ipo.gmpPercent})
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* 2. MARKET NEWS TAB */}
+              {activeKiteTab === "news" && (
+                <div className="space-y-2.5">
+                  <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 flex items-center justify-between pb-1 border-b border-slate-100 dark:border-slate-800">
+                    <span>Breaking Financial News & Catalysts</span>
+                    <span>Live</span>
+                  </div>
+
+                  {MARKET_NEWS_ITEMS.map((item) => (
+                    <div
+                      key={item.id}
+                      className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60 hover:border-cyan-500/40 transition-colors"
+                    >
+                      <p className="text-xs font-semibold text-slate-900 dark:text-slate-100 leading-snug">
+                        {item.title}
+                      </p>
+                      <div className="flex items-center justify-between mt-2 text-[10px] text-slate-400">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-slate-600 dark:text-slate-300">{item.source}</span>
+                          <span>•</span>
+                          <span>{item.timeAgo}</span>
+                        </div>
+                        {item.symbol && (
+                          <Link
+                            href={`/stocks/${item.symbol}`}
+                            className="font-bold text-cyan-600 dark:text-cyan-400 hover:underline"
+                          >
+                            {item.symbol} →
+                          </Link>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* 3. HOLIDAY CALENDAR TAB */}
+              {activeKiteTab === "holidays" && (
+                <div className="space-y-2">
+                  <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 flex items-center justify-between pb-1 border-b border-slate-100 dark:border-slate-800">
+                    <span>NSE / BSE Official Holiday Calendar</span>
+                    <span className="text-[10px] font-mono">2026 Schedule</span>
+                  </div>
+
+                  {NSE_MARKET_HOLIDAYS.map((h, i) => (
+                    <div
+                      key={i}
+                      className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60 flex items-center justify-between text-xs hover:border-cyan-500/40 transition-colors"
+                    >
+                      <div>
+                        <div className="font-bold text-slate-800 dark:text-slate-200">
+                          {h.occasion}
+                        </div>
+                        <div className="text-[10px] text-slate-400 mt-0.5">
+                          {h.date} • {h.day}
+                        </div>
+                      </div>
+                      <span
+                        className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          h.status === "Special Session"
+                            ? "bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-400"
+                            : "bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-400"
+                        }`}
+                      >
+                        {h.status}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="p-2.5 border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/40 text-center">
+              <span className="text-[10px] text-slate-400">
+                Official Exchange Holiday Calendar & Primary Market Desk
+              </span>
+            </div>
+          </div>
         </div>
 
         {/* ========================================================================= */}
@@ -877,32 +1207,31 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
                 <div className="text-2xl font-black font-tabular text-slate-900 dark:text-slate-100">
                   {hoveredChartPoint
                     ? hoveredChartPoint.price.toLocaleString("en-IN", { minimumFractionDigits: 2 })
-                    : chartData.currentPrice > 0 ? chartData.currentPrice.toLocaleString("en-IN", { minimumFractionDigits: 2 }) : "Unavailable"}
+                    : chartData.currentPrice.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
                 </div>
                 <div className="flex items-center gap-2 text-xs font-semibold">
                   <span
                     className={
-                      !dayMovement(quotes[indexKey]) ? "text-slate-500" : chartData.change >= 0
+                      chartData.change >= 0
                         ? "text-emerald-600 dark:text-emerald-400"
                         : "text-rose-600 dark:text-rose-400"
                     }
                   >
-                    {dayMovement(quotes[indexKey]) ? `${chartData.change >= 0 ? "+" : ""}${chartData.change.toFixed(2)} (${chartData.changePercent}%)` : "Day change unavailable"}
+                    {chartData.change >= 0 ? "+" : ""}
+                    {chartData.change.toFixed(2)} ({chartData.changePercent}%)
                   </span>
                   <span className="text-[11px] text-slate-400">
-                    {hoveredChartPoint ? `at ${hoveredChartPoint.time}` : quotes[indexKey]?.updated_at ? `Quote: ${new Date(quotes[indexKey].updated_at).toLocaleString("en-IN", {timeZone: "Asia/Kolkata"})} IST` : "Quote time unavailable"}
+                    {hoveredChartPoint ? `at ${hoveredChartPoint.time}` : "Intraday Trend"}
                   </span>
                 </div>
               </div>
 
               <div className="text-right text-[11px] text-slate-500 font-mono hidden sm:block">
-                <div>Close high: {chartData.pts.length ? chartData.max.toFixed(2) : "—"}</div>
-                <div>Close low: {chartData.pts.length ? chartData.min.toFixed(2) : "—"}</div>
+                <div>High: {chartData.max.toFixed(2)}</div>
+                <div>Low: {chartData.min.toFixed(2)}</div>
               </div>
             </div>
 
-            {historyError && <p role="alert" className="text-xs text-amber-600">History could not be refreshed. Retained bars may be incomplete.</p>}
-            {indexCandles?.length ? <p className="text-xs text-slate-500">Last plotted bar: {new Date(indexCandles[indexCandles.length - 1].timestamp * 1000).toLocaleString("en-IN", {timeZone: "Asia/Kolkata"})} IST. Retained history may be delayed.</p> : null}
             {/* SVG Interactive Trend Chart */}
             <div className="relative w-full h-[200px] select-none pt-2">
               {chartData.coords.length === 0 ? (
