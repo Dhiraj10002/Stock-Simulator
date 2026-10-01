@@ -2,9 +2,15 @@ package service
 
 import (
 	"math"
+	"strings"
 	"testing"
+	"time"
 
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/config"
+	marketDTO "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/dto"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/order/dto"
+	"github.com/google/uuid"
 )
 
 func TestSettlementArithmetic(t *testing.T) {
@@ -370,5 +376,115 @@ func TestCalculateCircuitLimits(t *testing.T) {
 	lcZero, _ := calculateCircuitLimits(1, model.OrderProductDelivery)
 	if lcZero != 5 {
 		t.Fatalf("expected min tick 5 paise, got %d", lcZero)
+	}
+}
+
+func TestResolveCircuitLimits_RealExchangeLimits(t *testing.T) {
+	// 1. When live quote contains real broker/exchange circuit limits (e.g. 5% surveillance band)
+	realQuote := &marketDTO.QuoteResponse{
+		Symbol:             "ZOMATO",
+		PricePaise:         20500, // LTP: ₹205.00
+		PreviousClosePaise: 20000, // PrevClose: ₹200.00
+		LowerCircuitPaise:  19000, // Real 5% exchange lower circuit: ₹190.00
+		UpperCircuitPaise:  21000, // Real 5% exchange upper circuit: ₹210.00
+	}
+
+	lc, uc := resolveCircuitLimits(realQuote, model.OrderProductDelivery)
+	// Must strictly use real exchange limits (19000, 21000) instead of naive 10%
+	if lc != 19000 || uc != 21000 {
+		t.Fatalf("expected real exchange circuit limits (19000, 21000), got (%d, %d)", lc, uc)
+	}
+
+	// 2. When real circuit limits are missing, fall back to official price band applied to PreviousClose
+	fallbackQuote := &marketDTO.QuoteResponse{
+		Symbol:             "RELIANCE",
+		PricePaise:         260000, // LTP ₹2,600
+		PreviousClosePaise: 250000, // PrevClose ₹2,500
+		LowerCircuitPaise:  0,
+		UpperCircuitPaise:  0,
+	}
+	lcFb, ucFb := resolveCircuitLimits(fallbackQuote, model.OrderProductDelivery)
+	// 10% on previous close 250,000 -> [225,000, 275,000]
+	if lcFb != 225000 || ucFb != 275000 {
+		t.Fatalf("expected fallback circuit limits on prev close (225000, 275000), got (%d, %d)", lcFb, ucFb)
+	}
+
+	// 3. F&O fallback is 20% on previous close
+	lcFno, ucFno := resolveCircuitLimits(fallbackQuote, model.OrderProductFNO)
+	if lcFno != 200000 || ucFno != 300000 {
+		t.Fatalf("expected F&O 20%% circuit limits (200000, 300000), got (%d, %d)", lcFno, ucFno)
+	}
+}
+
+func TestOrderService_CircuitBreakerEnforcement_RealExchangeLimits(t *testing.T) {
+	// Tests order validation against real circuit limits vs naive ±10% bands
+	orderSvc := New(nil, &config.Config{})
+	loc, _ := time.LoadLocation("Asia/Kolkata")
+	tradingTime := time.Date(2026, 9, 16, 10, 0, 0, 0, loc)
+	orderSvc.SetNowFunc(func() time.Time { return tradingTime })
+
+	// Quote with real exchange limits (5% band on ₹200.00: [19000, 21000])
+	orderSvc.SetCurrentQuoteFunc(func(symbol string) (*marketDTO.QuoteResponse, error) {
+		return &marketDTO.QuoteResponse{
+			Symbol:             "ZOMATO",
+			PricePaise:         20500, // LTP ₹205.00
+			PreviousClosePaise: 20000,
+			LowerCircuitPaise:  19000, // ₹190.00
+			UpperCircuitPaise:  21000, // ₹210.00
+			Source:             "angelone_live",
+			UpdatedAt:          tradingTime.UTC().Format(time.RFC3339),
+		}, nil
+	})
+
+	userUUID := uuid.New()
+
+	// 1. Order at ₹218.00 would pass naive ±10% on LTP (20500 + 2050 = 22550)
+	// but MUST FAIL against real exchange upper circuit limit (₹210.00)
+	_, err := orderSvc.Create(userUUID.String(), dto.CreateOrderRequest{
+		Symbol:     "ZOMATO",
+		Side:       model.OrderSideBuy,
+		Type:       model.OrderTypeLimit,
+		Product:    model.OrderProductDelivery,
+		Quantity:   10,
+		PricePaise: 21800, // ₹218.00 > ₹210.00
+	})
+	if err == nil {
+		t.Fatal("expected order to be rejected when exceeding real exchange upper circuit")
+	}
+	if !strings.Contains(err.Error(), "exceeds daily upper circuit limit of ₹210.00") {
+		t.Fatalf("expected error mentioning upper circuit limit of ₹210.00, got: %v", err)
+	}
+
+	// 2. Order below real lower circuit (e.g. ₹185.00 < ₹190.00)
+	_, err = orderSvc.Create(userUUID.String(), dto.CreateOrderRequest{
+		Symbol:     "ZOMATO",
+		Side:       model.OrderSideSell,
+		Type:       model.OrderTypeLimit,
+		Product:    model.OrderProductDelivery,
+		Quantity:   10,
+		PricePaise: 18500, // ₹185.00 < ₹190.00
+	})
+	if err == nil {
+		t.Fatal("expected order to be rejected when falling below real exchange lower circuit")
+	}
+	if !strings.Contains(err.Error(), "falls below daily lower circuit limit of ₹190.00") {
+		t.Fatalf("expected error mentioning lower circuit limit of ₹190.00, got: %v", err)
+	}
+
+	// 3. Stop-Loss Trigger Price exceeding upper circuit
+	_, err = orderSvc.Create(userUUID.String(), dto.CreateOrderRequest{
+		Symbol:           "ZOMATO",
+		Side:             model.OrderSideBuy,
+		Type:             model.OrderTypeSL,
+		Product:          model.OrderProductDelivery,
+		Quantity:         10,
+		PricePaise:       20800, // Valid limit price
+		TriggerPricePaise: 21500, // Trigger price ₹215.00 > ₹210.00
+	})
+	if err == nil {
+		t.Fatal("expected SL order to be rejected when trigger price exceeds real upper circuit")
+	}
+	if !strings.Contains(err.Error(), "trigger price ₹215.00 exceeds daily upper circuit limit of ₹210.00") {
+		t.Fatalf("expected trigger price error, got: %v", err)
 	}
 }

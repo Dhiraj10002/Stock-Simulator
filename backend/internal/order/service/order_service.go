@@ -34,6 +34,7 @@ type OrderService struct {
 	rules               product.Rules
 	nowFunc             func() time.Time
 	executableQuoteFunc func(symbol string) (*marketDTO.QuoteResponse, error)
+	currentQuoteFunc    func(symbol string) (*marketDTO.QuoteResponse, error)
 	instrumentFinder    func(symbol string) (*model.Instrument, error)
 	createOrderFunc     func(order *model.Order) error
 	activeSymbolsMu     sync.RWMutex
@@ -61,6 +62,10 @@ func (s *OrderService) SetExecutableQuoteFunc(fn func(symbol string) (*marketDTO
 	s.executableQuoteFunc = fn
 }
 
+func (s *OrderService) SetCurrentQuoteFunc(fn func(symbol string) (*marketDTO.QuoteResponse, error)) {
+	s.currentQuoteFunc = fn
+}
+
 func (s *OrderService) SetInstrumentFinder(fn func(symbol string) (*model.Instrument, error)) {
 	s.instrumentFinder = fn
 }
@@ -80,6 +85,9 @@ func (s *OrderService) executableQuote(symbol string) (*marketDTO.QuoteResponse,
 }
 
 func (s *OrderService) currentQuote(symbol string) (*marketDTO.QuoteResponse, error) {
+	if s.currentQuoteFunc != nil {
+		return s.currentQuoteFunc(symbol)
+	}
 	if s.executableQuoteFunc != nil {
 		return s.executableQuoteFunc(symbol)
 	}
@@ -220,17 +228,24 @@ func (s *OrderService) Create(userID string, request dto.CreateOrderRequest) (*d
 		}
 	}
 
-	// Circuit Breaker Validation against Daily Price Bands (±10% equity, ±20% F&O)
-	if (request.Type == model.OrderTypeLimit || request.Type == model.OrderTypeSL) && request.PricePaise > 0 {
-		curQuote, qErr := s.currentQuote(request.Symbol)
-		if qErr == nil && curQuote != nil && curQuote.PricePaise > 0 {
-			refPrice := curQuote.PricePaise
-			lc, uc := calculateCircuitLimits(refPrice, request.Product)
+	// Circuit Breaker Validation against Daily Price Bands (Real Exchange Limits or fallback bands)
+	curQuote, qErr := s.currentQuote(request.Symbol)
+	if qErr == nil && curQuote != nil && (curQuote.PricePaise > 0 || curQuote.LowerCircuitPaise > 0) {
+		lc, uc := resolveCircuitLimits(curQuote, request.Product)
+		if (request.Type == model.OrderTypeLimit || request.Type == model.OrderTypeSL) && request.PricePaise > 0 {
 			if request.PricePaise > uc {
 				return nil, fmt.Errorf("limit price ₹%.2f exceeds daily upper circuit limit of ₹%.2f", float64(request.PricePaise)/100, float64(uc)/100)
 			}
 			if request.PricePaise < lc {
 				return nil, fmt.Errorf("limit price ₹%.2f falls below daily lower circuit limit of ₹%.2f", float64(request.PricePaise)/100, float64(lc)/100)
+			}
+		}
+		if (request.Type == model.OrderTypeSL || request.Type == model.OrderTypeSLM) && request.TriggerPricePaise > 0 {
+			if request.TriggerPricePaise > uc {
+				return nil, fmt.Errorf("trigger price ₹%.2f exceeds daily upper circuit limit of ₹%.2f", float64(request.TriggerPricePaise)/100, float64(uc)/100)
+			}
+			if request.TriggerPricePaise < lc {
+				return nil, fmt.Errorf("trigger price ₹%.2f falls below daily lower circuit limit of ₹%.2f", float64(request.TriggerPricePaise)/100, float64(lc)/100)
 			}
 		}
 	}
@@ -505,6 +520,21 @@ func basePathPrice(price int64) int64 {
 
 func isSupportedProduct(product string) bool {
 	return product == model.OrderProductDelivery || product == model.OrderProductIntraday || product == model.OrderProductFNO
+}
+
+func resolveCircuitLimits(quote *marketDTO.QuoteResponse, product string) (lowerCircuit int64, upperCircuit int64) {
+	if quote != nil && quote.LowerCircuitPaise > 0 && quote.UpperCircuitPaise > 0 {
+		return quote.LowerCircuitPaise, quote.UpperCircuitPaise
+	}
+
+	refPrice := int64(0)
+	if quote != nil && quote.PreviousClosePaise > 0 {
+		refPrice = quote.PreviousClosePaise
+	} else if quote != nil && quote.PricePaise > 0 {
+		refPrice = quote.PricePaise
+	}
+
+	return calculateCircuitLimits(refPrice, product)
 }
 
 func calculateCircuitLimits(refPricePaise int64, product string) (lowerCircuit int64, upperCircuit int64) {

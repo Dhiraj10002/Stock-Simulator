@@ -589,6 +589,8 @@ def fetch_quote_for_symbol(symbol: str) -> dict[str, Any] | None:
                 stamp = broker_quote_time(data.get("exchFeedTime"))
                 if ltp_paise <= 0 or stamp is None:
                     return None
+                lower_c = rupees_to_paise(data.get("lowerCircuit") or data.get("lower_circuit") or data.get("lower_circuit_limit"))
+                upper_c = rupees_to_paise(data.get("upperCircuit") or data.get("upper_circuit") or data.get("upper_circuit_limit"))
                 quote = {
                     "symbol": symbol, "price_paise": ltp_paise,
                     "previous_close_paise": close_paise,
@@ -596,13 +598,19 @@ def fetch_quote_for_symbol(symbol: str) -> dict[str, Any] | None:
                     "volume": integer(data.get("tradeVolume")),
                     "source": "angelone_live", "updated_at": stamp.isoformat()
                 }
+                if lower_c > 0:
+                    quote["lower_circuit_paise"] = lower_c
+                if upper_c > 0:
+                    quote["upper_circuit_paise"] = upper_c
                 if close_paise > 0:
                     quote["change_paise"] = ltp_paise - close_paise
                     quote["change_percent"] = round((ltp_paise - close_paise) * 100 / close_paise, 2)
                 if GLOBAL_WRITER:
                     sub = Subscription(symbol, str(token), exch, EXCHANGE_TYPES[exch])
                     GLOBAL_WRITER.write(sub, ltp_paise, quote["volume"], source="angelone_live",
-                                        previous_close_paise=close_paise, event_time=stamp, build_history=False, open_interest=integer(data.get("opnInterest")))
+                                        previous_close_paise=close_paise, event_time=stamp, build_history=False,
+                                        open_interest=integer(data.get("opnInterest")),
+                                        lower_circuit_paise=lower_c, upper_circuit_paise=upper_c)
                 return quote
         except Exception as e:
             print(f"market worker: error fetching live quote for {symbol} from Angel One: {e}", flush=True)
@@ -1276,7 +1284,8 @@ class QuoteWriter:
 
     def write(self, subscription: Subscription, price_paise: int, volume: int, source: str = "synthetic",
               previous_close_paise: int = 0, event_time: datetime | None = None,
-              build_history: bool = True, open_interest: int = 0) -> None:
+              build_history: bool = True, open_interest: int = 0,
+              lower_circuit_paise: int = 0, upper_circuit_paise: int = 0) -> None:
         mode = self.feed_mode
         if mode == "live" and source != "angelone_live":
             print(f"market worker: rejected non-live quote write to Redis in LIVE mode (source={source}, symbol={subscription.symbol})", flush=True)
@@ -1308,6 +1317,17 @@ class QuoteWriter:
             "source": source,
             "updated_at": now.isoformat()
         }
+        if lower_circuit_paise > 0:
+            quote["lower_circuit_paise"] = lower_circuit_paise
+        elif benchmark > 0:
+            pct = 0.20 if any(k in subscription.symbol for k in ("FUT", "CE", "PE")) else 0.10
+            quote["lower_circuit_paise"] = max(5, int(benchmark * (1 - pct)))
+
+        if upper_circuit_paise > 0:
+            quote["upper_circuit_paise"] = upper_circuit_paise
+        elif benchmark > 0:
+            pct = 0.20 if any(k in subscription.symbol for k in ("FUT", "CE", "PE")) else 0.10
+            quote["upper_circuit_paise"] = int(benchmark * (1 + pct))
 
         bucket = int(now.timestamp()) // 60
         quote_key, history_key = f"market:quote:{subscription.symbol}", f"market:history:{subscription.symbol}"
@@ -1640,9 +1660,12 @@ def run_feed(store: InstrumentStore, writer: QuoteWriter, control: FeedControl) 
             stamp = broker_quote_time(message.get("exchange_timestamp"))
             if stamp is None:
                 return
+            lower_c = paise(message.get("lower_circuit_limit") or message.get("lower_circuit") or message.get("lowerCircuit"))
+            upper_c = paise(message.get("upper_circuit_limit") or message.get("upper_circuit") or message.get("upperCircuit"))
             writer.write(subscription, price_paise, volume, source="angelone_live",
                          previous_close_paise=paise(message.get("closed_price")), event_time=stamp,
-                         open_interest=integer(message.get("open_interest")))
+                         open_interest=integer(message.get("open_interest")),
+                         lower_circuit_paise=lower_c, upper_circuit_paise=upper_c)
         except (ValueError, redis.RedisError) as error:
             print(f"market worker: discarded Angel One tick: {error}", flush=True)
 

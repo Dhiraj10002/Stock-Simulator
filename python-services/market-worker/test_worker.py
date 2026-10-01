@@ -909,3 +909,27 @@ class BrokerHistoryIntegrationBoundaryTest(unittest.TestCase):
         with patch.object(worker, "broker_call", side_effect=lambda call: call()):
             self.assertFalse(worker.backfill_history(writer, api, worker.Subscription("NIFTY", "99926000", "NSE", 1), "ONE_MINUTE"))
         client.pipeline.assert_not_called()
+
+
+class CircuitLimitIngestionTest(unittest.TestCase):
+    def test_writer_stores_real_circuit_limits(self):
+        client = MagicMock()
+        writer = worker.QuoteWriter(client, 300, 86400, 500, feed_mode="live")
+        sub = worker.Subscription("ZOMATO", "1234", "NSE", 1)
+        now = worker.datetime.now(worker.timezone.utc)
+
+        writer.write(sub, price_paise=20500, volume=1000, source="angelone_live",
+                     previous_close_paise=20000, event_time=now,
+                     lower_circuit_paise=19000, upper_circuit_paise=21000)
+
+        pipe = client.pipeline.return_value.__enter__.return_value
+        found_hset = False
+        for call in pipe.hset.call_args_list:
+            mapping = call.kwargs.get("mapping", {})
+            if mapping.get("symbol") == "ZOMATO":
+                self.assertEqual(mapping.get("lower_circuit_paise"), 19000)
+                self.assertEqual(mapping.get("upper_circuit_paise"), 21000)
+                found_hset = True
+                break
+        self.assertTrue(found_hset, "expected ZOMATO quote to be stored in Redis with circuit limits")
+

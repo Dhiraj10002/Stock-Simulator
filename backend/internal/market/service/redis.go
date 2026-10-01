@@ -315,6 +315,14 @@ func (s *Service) rawCachedQuote(symbol string) (*dto.QuoteResponse, error) {
 	openInterest, _ := strconv.ParseInt(values["open_interest"], 10, 64)
 	previousClose, _ := strconv.ParseInt(values["previous_close_paise"], 10, 64)
 	dayAvailable, _ := strconv.ParseBool(values["day_change_available"])
+	var lowerCircuit int64
+	var upperCircuit int64
+	if lc, ok := values["lower_circuit_paise"]; ok {
+		lowerCircuit, _ = strconv.ParseInt(lc, 10, 64)
+	}
+	if uc, ok := values["upper_circuit_paise"]; ok {
+		upperCircuit, _ = strconv.ParseInt(uc, 10, 64)
+	}
 	return &dto.QuoteResponse{
 		OpenInterest:       openInterest,
 		PreviousClosePaise: previousClose,
@@ -323,6 +331,8 @@ func (s *Service) rawCachedQuote(symbol string) (*dto.QuoteResponse, error) {
 		PricePaise:         price,
 		ChangePaise:        changePaise,
 		ChangePercent:      changePercent,
+		LowerCircuitPaise:  lowerCircuit,
+		UpperCircuitPaise:  upperCircuit,
 		Volume:             volume,
 		Source:             values["source"],
 		UpdatedAt:          values["updated_at"],
