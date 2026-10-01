@@ -952,3 +952,54 @@ func TestCurrentQuote_Phase2_ExplicitFeedModes(t *testing.T) {
 		}
 	})
 }
+
+func TestCachedQuoteRejectsCrossModeOrIneligibleStaleSource(t *testing.T) {
+	svc := getTestRedis(t)
+	ctx := t.Context()
+	client := svc.Client()
+
+	svc.SetFeedMode(dto.FeedModeLive)
+	symbol := "STALE_SYNTHETIC_CACHE"
+	stale := time.Now().Add(-10 * time.Minute).UTC().Format(time.RFC3339)
+	if err := client.HSet(ctx, quoteKey(symbol), map[string]interface{}{
+		"price_paise": "12345",
+		"source":      "synthetic_gbm",
+		"updated_at":  stale,
+	}).Err(); err != nil {
+		t.Fatal(err)
+	}
+	defer client.Del(ctx, quoteKey(symbol))
+
+	_, err := svc.CachedQuote(symbol)
+	if err == nil {
+		t.Fatal("expected stale synthetic quote to be rejected in LIVE display mode")
+	}
+	if !errors.Is(err, ErrQuoteIneligible) {
+		t.Fatalf("expected ErrQuoteIneligible, got %v", err)
+	}
+}
+
+func TestCachedQuoteRejectsFutureTimestamp(t *testing.T) {
+	svc := getTestRedis(t)
+	ctx := t.Context()
+	client := svc.Client()
+
+	svc.SetFeedMode(dto.FeedModeLive)
+	symbol := "FUTURE_STALE_CACHE"
+	if err := client.HSet(ctx, quoteKey(symbol), map[string]interface{}{
+		"price_paise": "12345",
+		"source":      "angelone_live",
+		"updated_at":  time.Now().Add(2 * time.Minute).UTC().Format(time.RFC3339),
+	}).Err(); err != nil {
+		t.Fatal(err)
+	}
+	defer client.Del(ctx, quoteKey(symbol))
+
+	_, err := svc.CachedQuote(symbol)
+	if err == nil {
+		t.Fatal("expected future-dated cached quote to be rejected")
+	}
+	if !errors.Is(err, ErrQuoteIneligible) {
+		t.Fatalf("expected ErrQuoteIneligible, got %v", err)
+	}
+}
