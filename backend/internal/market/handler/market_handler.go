@@ -59,14 +59,6 @@ func (h *Handler) Quote(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, err.Error(), nil)
 		return
 	}
-	if quote != nil && quote.PricePaise > 0 {
-		band := (quote.PricePaise * 10) / 100
-		quote.LowerCircuitPaise = quote.PricePaise - band
-		if quote.LowerCircuitPaise < 5 {
-			quote.LowerCircuitPaise = 5
-		}
-		quote.UpperCircuitPaise = quote.PricePaise + band
-	}
 	response.Success(c, http.StatusOK, "Market quote retrieved successfully", quote)
 }
 
@@ -114,7 +106,7 @@ func (h *Handler) History(c *gin.Context) {
 		}
 		limit = parsed
 	}
-	candles, err := h.service.HistoricalQuotes(c.Param("symbol"), limit)
+	candles, err := h.service.HistoricalQuotes(c.Param("symbol"), limit, c.Query("interval"))
 	if err != nil {
 		if errors.Is(err, service.ErrInstrumentNotFound) {
 			response.Error(c, http.StatusNotFound, "Instrument not found in canonical master", "INSTRUMENT_NOT_FOUND")

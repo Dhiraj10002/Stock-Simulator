@@ -160,12 +160,10 @@ export default function PortfolioPage() {
       ? p.current_price_paise
       : (isAvail ? p.average_price_paise : 0);
     const prevClosePaise =
-      liveQuote && liveQuote.change_paise !== undefined
-        ? ltpPaise - liveQuote.change_paise
-        : p.average_price_paise;
+      liveQuote?.previous_close_paise ?? 0;
 
     const quoteChangePaise = liveQuote?.change_paise;
-    const hasDayChange = typeof quoteChangePaise === "number";
+    const hasDayChange = liveQuote?.day_change_available === true && typeof quoteChangePaise === "number";
     const dayChangePaise = hasDayChange ? quoteChangePaise * p.quantity : 0;
     const dayChangePercent = hasDayChange
       ? liveQuote?.change_percent ?? (prevClosePaise > 0 ? (quoteChangePaise / prevClosePaise) * 100 : 0)
@@ -277,8 +275,8 @@ export default function PortfolioPage() {
     (sum, h) => sum + (h.dayPnlAvailable ? h.dayChangePaise : 0),
     0
   );
-  const anyHoldingDayPnlAvailable = activeHoldings.some((h) => h.dayPnlAvailable);
-  const dayPnlPaise: number | undefined = anyHoldingDayPnlAvailable
+  const anyHoldingDayPnlAvailable = activeHoldings.length > 0 && activeHoldings.every((h) => h.dayPnlAvailable);
+  const dayPnlPaise: number | undefined = !isPositionsTab && anyHoldingDayPnlAvailable
     ? holdingsDayPnlPaise
     : (portfolio?.daily_pnl_paise !== null && portfolio?.daily_pnl_paise !== undefined ? portfolio.daily_pnl_paise : undefined);
   const isDayProfit = (dayPnlPaise ?? 0) >= 0;
@@ -418,7 +416,7 @@ export default function PortfolioPage() {
               <span>Real-time Mark-to-Market across Delivery Demat (CNC), Intraday (MIS), and F&O derivatives.</span>
               <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
               <span className="text-[11px] font-mono text-emerald-600 dark:text-emerald-400 font-bold">
-                Live Sync
+                {portfolio?.valuation_status === "REALTIME" ? "Live Sync" : "Valuation stale / unavailable"}
               </span>
             </p>
           </div>
@@ -533,7 +531,7 @@ export default function PortfolioPage() {
           {/* 3. Today's Day P&L */}
           <div className="p-5 rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 shadow-xs space-y-2 group hover:border-cyan-500/40 transition-all">
             <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 flex items-center justify-between">
-              <span>1-Day P&L</span>
+              <span>Holdings Day Movement</span>
               <span
                 className={`text-[10px] font-bold px-1.5 py-0.2 rounded font-tabular ${
                   isDayProfit
@@ -552,7 +550,7 @@ export default function PortfolioPage() {
               {dayPnlPaise !== undefined ? `${isDayProfit && dayPnlPaise > 0 ? "+" : ""}${formatPaise(dayPnlPaise)}` : "—"}
             </div>
             <div className="text-[11px] text-slate-400">
-              Today&apos;s mark-to-market swing
+              Current holdings × price change since previous close
             </div>
           </div>
 

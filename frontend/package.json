@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "tsx --test src/lib/*.test.*"
+    "test": "node --import tsx --test src/lib/*.test.*"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.9.1",

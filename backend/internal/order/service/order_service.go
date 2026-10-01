@@ -198,6 +198,12 @@ func (s *OrderService) Create(userID string, request dto.CreateOrderRequest) (*d
 		}
 	}
 
+	if instrument != nil {
+		if err := product.ValidateInstrumentProduct(*instrument, request.Product); err != nil {
+			return nil, err
+		}
+	}
+
 	// Stop-Loss Directional Validation against current quote
 	if request.Type == model.OrderTypeSL || request.Type == model.OrderTypeSLM {
 		curQuote, qErr := s.currentQuote(request.Symbol)

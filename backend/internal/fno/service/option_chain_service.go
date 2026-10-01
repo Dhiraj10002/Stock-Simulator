@@ -52,6 +52,7 @@ func (s *OptionChainService) GetOptionChain(symbol, expiry string) (*dto.OptionC
 		}
 	}
 
+	mode := s.feedMode()
 	db := database.GetDB()
 
 	// 2. Override lot size from database underlying instrument if available and positive
@@ -67,23 +68,41 @@ func (s *OptionChainService) GetOptionChain(symbol, expiry string) (*dto.OptionC
 	// 3. Check for real NFO option contracts in database
 	var nfoInstruments []model.Instrument
 	if db != nil {
-		q := db.Where("(UPPER(underlying_symbol) = ? OR UPPER(name) = ?) AND exchange_segment = 'NFO' AND (option_type = 'CE' OR option_type = 'PE' OR symbol LIKE '%CE' OR symbol LIKE '%PE')", symbol, symbol)
+		q := db.Where("(UPPER(underlying_symbol) = ? OR UPPER(name) = ?) AND exchange_segment IN ('NFO', 'BFO') AND (option_type = 'CE' OR option_type = 'PE' OR symbol LIKE '%CE' OR symbol LIKE '%PE')", symbol, symbol)
+		if mode == marketDto.FeedModeLive {
+			q = q.Where("active = ? AND token ~ '^[0-9]+$'", true)
+		}
 		if expiry != "" {
 			q = q.Where("expiry = ?", expiry)
 		}
 		_ = q.Find(&nfoInstruments).Error
 	}
 
+	if mode == marketDto.FeedModeLive {
+		eligible := nfoInstruments[:0]
+		for _, inst := range nfoInstruments {
+			end, err := product.ParseContractExpiry(inst.Expiry)
+			if err == nil && end.After(time.Now()) {
+				eligible = append(eligible, inst)
+			}
+		}
+		nfoInstruments = eligible
+	}
 	spotPaise := spec.DefaultSpotPaise
+	if mode != marketDto.FeedModeSynthetic {
+		spotPaise = 0
+	}
 	if s.market != nil {
-		if quote, err := s.market.CurrentQuote(symbol); err == nil && quote != nil && quote.PricePaise > 0 {
+		if quote, err := s.market.CachedQuote(symbol); err == nil && quote != nil && quote.PricePaise > 0 {
 			spotPaise = quote.PricePaise
 		}
 	}
 	spotRupees := float64(spotPaise) / 100.0
 
-	mode := s.feedMode()
-
+	if mode != marketDto.FeedModeSynthetic && (len(nfoInstruments) == 0 || spotPaise <= 0) {
+		return &dto.OptionChainResponse{UnderlyingSymbol: symbol, ExpiryDate: expiry, SpotPricePaise: spotPaise,
+			FeedMode: string(mode), Strikes: []dto.StrikeRow{}}, nil
+	}
 	// Branch A: Real NFO option contracts found in database
 	if len(nfoInstruments) > 0 {
 		resp, err := s.buildFromRealInstruments(symbol, expiry, spotPaise, spotRupees, nfoInstruments, spec, mode)
@@ -248,7 +267,7 @@ func (s *OptionChainService) buildFromRealInstruments(
 				if s.market != nil {
 					if q, err := s.market.CurrentQuote(pair.call.Symbol); err == nil && q != nil && q.PricePaise > 0 {
 						cePrice = q.PricePaise
-						callOI = q.Volume
+						callOI = q.OpenInterest
 						isAvailable = true
 						quoteStatus = string(q.Source)
 					}
@@ -301,7 +320,7 @@ func (s *OptionChainService) buildFromRealInstruments(
 				if s.market != nil {
 					if q, err := s.market.CurrentQuote(pair.put.Symbol); err == nil && q != nil && q.PricePaise > 0 {
 						pePrice = q.PricePaise
-						putOI = q.Volume
+						putOI = q.OpenInterest
 						isAvailable = true
 						quoteStatus = string(q.Source)
 					}
@@ -423,13 +442,13 @@ func (s *OptionChainService) buildSimulationChain(
 			if s.market != nil {
 				if q, err := s.market.CurrentQuote(ceSymbol); err == nil && q != nil && q.PricePaise > 0 {
 					cePrice = q.PricePaise
-					callOI = q.Volume
+					callOI = q.OpenInterest
 					ceAvailable = true
 					ceQuoteStatus = string(q.Source)
 				}
 				if q, err := s.market.CurrentQuote(peSymbol); err == nil && q != nil && q.PricePaise > 0 {
 					pePrice = q.PricePaise
-					putOI = q.Volume
+					putOI = q.OpenInterest
 					peAvailable = true
 					peQuoteStatus = string(q.Source)
 				}

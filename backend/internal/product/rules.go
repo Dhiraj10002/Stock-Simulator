@@ -111,3 +111,19 @@ func percentage(notional, percent int64) (int64, error) {
 	}
 	return notional * percent / 100, nil
 }
+
+// ValidateInstrumentProduct keeps cash indices view-only and derivatives out of cash products.
+func ValidateInstrumentProduct(instrument model.Instrument, orderProduct string) error {
+	kind := strings.ToUpper(strings.TrimSpace(instrument.InstrumentType))
+	if kind == "INDEX" || kind == "AMXIDX" || strings.HasPrefix(instrument.Token, "999") {
+		return fmt.Errorf("cash indices are view-only; trade an eligible ETF or derivative contract")
+	}
+	derivative := classifyInstrument(kind) != ""
+	if derivative && orderProduct != model.OrderProductFNO {
+		return fmt.Errorf("derivative contracts require FNO product")
+	}
+	if !derivative && orderProduct == model.OrderProductFNO {
+		return fmt.Errorf("FNO product requires a derivative contract")
+	}
+	return nil
+}

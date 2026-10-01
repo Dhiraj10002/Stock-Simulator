@@ -286,14 +286,20 @@ func (s *Service) rawCachedQuote(symbol string) (*dto.QuoteResponse, error) {
 	if v, ok := values["volume"]; ok {
 		volume, _ = strconv.ParseInt(v, 10, 64)
 	}
+	openInterest, _ := strconv.ParseInt(values["open_interest"], 10, 64)
+	previousClose, _ := strconv.ParseInt(values["previous_close_paise"], 10, 64)
+	dayAvailable, _ := strconv.ParseBool(values["day_change_available"])
 	return &dto.QuoteResponse{
-		Symbol:        symbol,
-		PricePaise:    price,
-		ChangePaise:   changePaise,
-		ChangePercent: changePercent,
-		Volume:        volume,
-		Source:        values["source"],
-		UpdatedAt:     values["updated_at"],
+		OpenInterest:       openInterest,
+		PreviousClosePaise: previousClose,
+		DayChangeAvailable: dayAvailable && previousClose > 0,
+		Symbol:             symbol,
+		PricePaise:         price,
+		ChangePaise:        changePaise,
+		ChangePercent:      changePercent,
+		Volume:             volume,
+		Source:             values["source"],
+		UpdatedAt:          values["updated_at"],
 	}, nil
 }
 
@@ -454,14 +460,20 @@ func (s *Service) CurrentQuote(symbol string) (*dto.QuoteResponse, error) {
 	if v, ok := values["volume"]; ok {
 		volume, _ = strconv.ParseInt(v, 10, 64)
 	}
+	openInterest, _ := strconv.ParseInt(values["open_interest"], 10, 64)
+	previousClose, _ := strconv.ParseInt(values["previous_close_paise"], 10, 64)
+	dayAvailable, _ := strconv.ParseBool(values["day_change_available"])
 	return &dto.QuoteResponse{
-		Symbol:        symbol,
-		PricePaise:    price,
-		ChangePaise:   changePaise,
-		ChangePercent: changePercent,
-		Volume:        volume,
-		Source:        source,
-		UpdatedAt:     values["updated_at"],
+		OpenInterest:       openInterest,
+		PreviousClosePaise: previousClose,
+		DayChangeAvailable: dayAvailable && previousClose > 0,
+		Symbol:             symbol,
+		PricePaise:         price,
+		ChangePaise:        changePaise,
+		ChangePercent:      changePercent,
+		Volume:             volume,
+		Source:             source,
+		UpdatedAt:          values["updated_at"],
 	}, nil
 }
 
@@ -593,10 +605,17 @@ func validateExecutableQuote(quote *dto.QuoteResponse, now time.Time) error {
 	return ValidateExecutableQuoteWithMode(quote, now, false)
 }
 
-func (s *Service) HistoricalQuotes(symbol string, limit int) ([]dto.CandleResponse, error) {
+func (s *Service) HistoricalQuotes(symbol string, limit int, intervals ...string) ([]dto.CandleResponse, error) {
 	symbol = strings.ToUpper(strings.TrimSpace(symbol))
 	if symbol == "" {
 		return nil, fmt.Errorf("symbol is required")
+	}
+	interval := "ONE_MINUTE"
+	if len(intervals) > 0 && intervals[0] != "" {
+		interval = intervals[0]
+	}
+	if interval != "ONE_MINUTE" && interval != "ONE_HOUR" && interval != "ONE_DAY" {
+		return nil, fmt.Errorf("unsupported historical interval")
 	}
 	if s.instrumentFinder != nil {
 		found, err := s.instrumentFinder(symbol)
@@ -621,7 +640,17 @@ func (s *Service) HistoricalQuotes(symbol string, limit int) ([]dto.CandleRespon
 			return nil, ErrQuoteUnavailable
 		}
 	}
-	items, err := s.client.LRange(ctx, historyKey(symbol), 0, int64(limit-1)).Result()
+	symbol = alias.ResolveCanonicalSymbol(symbol)
+	key := historyKey(symbol)
+	if interval != "ONE_MINUTE" {
+		key += ":" + interval
+	}
+	if s.FeedMode() == dto.FeedModeLive {
+		if err := s.client.ZAdd(ctx, "market:history:demand", redis.Z{Score: float64(time.Now().Unix()), Member: symbol + "|" + interval}).Err(); err != nil {
+			return nil, fmt.Errorf("%w: %v", cache.ErrUnavailable, err)
+		}
+	}
+	items, err := s.client.LRange(ctx, key, 0, int64(limit-1)).Result()
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", cache.ErrUnavailable, err)
 	}
