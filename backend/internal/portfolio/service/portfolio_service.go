@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -83,15 +84,50 @@ func (s *PortfolioService) realizedPnl(userUUID uuid.UUID, from time.Time) (int6
 	return 0, nil
 }
 
+func (s *PortfolioService) cacheSnapshotToRedis(snap *model.AccountDailySnapshot) {
+	if s.market == nil || s.market.Client() == nil || snap == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	key := fmt.Sprintf("portfolio:snapshot:%s:%s", snap.UserUUID.String(), snap.SessionDate)
+	if data, err := json.Marshal(snap); err == nil {
+		_ = s.market.Client().Set(ctx, key, data, 24*time.Hour).Err()
+	}
+}
+
+func (s *PortfolioService) getSnapshotFromRedis(userUUID uuid.UUID, sessionDate string) *model.AccountDailySnapshot {
+	if s.market == nil || s.market.Client() == nil {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	key := fmt.Sprintf("portfolio:snapshot:%s:%s", userUUID.String(), sessionDate)
+	data, err := s.market.Client().Get(ctx, key).Bytes()
+	if err != nil {
+		return nil
+	}
+	var snap model.AccountDailySnapshot
+	if err := json.Unmarshal(data, &snap); err == nil {
+		return &snap
+	}
+	return nil
+}
+
 // EnsureSessionSnapshot retrieves or captures the 09:15 IST opening equity snapshot for a user.
 func (s *PortfolioService) EnsureSessionSnapshot(userUUID uuid.UUID, now time.Time) (*model.AccountDailySnapshot, error) {
+	todayStr := now.In(calendar.Location()).Format("2006-01-02")
+
 	if s.repo == nil {
+		if cached := s.getSnapshotFromRedis(userUUID, todayStr); cached != nil {
+			return cached, nil
+		}
 		return nil, fmt.Errorf("portfolio repository not configured")
 	}
 
-	todayStr := now.In(calendar.Location()).Format("2006-01-02")
 	snap, err := s.repo.FindDailySnapshot(userUUID, todayStr)
 	if err == nil && snap != nil {
+		s.cacheSnapshotToRedis(snap)
 		return snap, nil
 	}
 
@@ -184,10 +220,12 @@ func (s *PortfolioService) EnsureSessionSnapshot(userUUID uuid.UUID, now time.Ti
 
 	if saveErr := s.repo.CreateDailySnapshot(newSnapshot); saveErr != nil {
 		if existing, findErr := s.repo.FindDailySnapshot(userUUID, todayStr); findErr == nil && existing != nil {
+			s.cacheSnapshotToRedis(existing)
 			return existing, nil
 		}
 	}
 
+	s.cacheSnapshotToRedis(newSnapshot)
 	return newSnapshot, nil
 }
 
