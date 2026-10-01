@@ -160,7 +160,7 @@ func ParseSyntheticFNOContract(symbol string) (*model.Instrument, error) {
 	return &model.Instrument{Symbol: clean, DisplaySymbol: clean, Name: underlying,
 		Underlying: underlying, UnderlyingSymbol: underlying, Exchange: "NFO", ExchangeSegment: "NFO",
 		Token: "SYNTH_" + clean, InstrumentType: instType, Expiry: expiry.Format("2006-01-02"),
-		Strike: fmt.Sprintf("%.6f", strike), OptionType: optionType, LotSize: spec.LotSize, TickSize: spec.TickSize, Active: true}, nil
+		Strike: fmt.Sprintf("%.6f", strike), OptionType: optionType, LotSize: spec.LotSize, TickSize: spec.TickSize, Active: true, IsTradable: true}, nil
 }
 
 func IsSyntheticContract(symbol string) bool {

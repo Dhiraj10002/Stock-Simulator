@@ -11,12 +11,27 @@ from datetime import date
 
 from unittest.mock import MagicMock
 
-for mod in ["psycopg", "pyotp", "redis", "websocket", "SmartApi", "SmartApi.smartWebSocketV2"]:
+class DummySmartWebSocketV2:
+    ROOT_URI = "wss://mock"
+    HEART_BEAT_INTERVAL = 30
+    def on_open(self, *a, **k): pass
+    def on_error(self, *a, **k): pass
+    def on_close(self, *a, **k): pass
+    def _on_data(self, *a, **k): pass
+    def _on_ping(self, *a, **k): pass
+    def _on_pong(self, *a, **k): pass
+
+for mod in ["psycopg", "pyotp", "redis", "websocket", "SmartApi"]:
     if mod not in sys.modules:
         try:
             __import__(mod)
         except ImportError:
             sys.modules[mod] = MagicMock()
+
+if "SmartApi.smartWebSocketV2" not in sys.modules:
+    mock_sw = MagicMock()
+    mock_sw.SmartWebSocketV2 = DummySmartWebSocketV2
+    sys.modules["SmartApi.smartWebSocketV2"] = mock_sw
 
 SPEC = importlib.util.spec_from_file_location("market_worker", pathlib.Path(__file__).with_name("worker.py"))
 worker = importlib.util.module_from_spec(SPEC)

@@ -88,6 +88,9 @@ func (s *OrderService) Preview(user string, request dto.CreateOrderRequest) (*Or
 			if inst == nil {
 				return nil, errors.New("instrument not found")
 			}
+			if inst.SnapshotVersion != "" && (!inst.IsTradable || !inst.Active) {
+				return nil, fmt.Errorf("instrument %q is not tradable in active master snapshot", order.Symbol)
+			}
 			kind, err = product.ValidateFNOInstrument(*inst, order.Quantity)
 			if err != nil {
 				return nil, err

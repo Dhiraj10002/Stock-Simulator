@@ -31,7 +31,7 @@ func main() {
 	}
 
 	db := database.GetDB()
-	if err := db.AutoMigrate(&model.Instrument{}); err != nil {
+	if err := db.AutoMigrate(&model.Instrument{}, &model.InstrumentSnapshot{}); err != nil {
 		log.Fatalf("Failed to migrate instruments schema: %v", err)
 	}
 

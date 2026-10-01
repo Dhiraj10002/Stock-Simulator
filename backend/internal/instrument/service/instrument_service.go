@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -23,41 +24,41 @@ import (
 
 // DefaultCanonicalInstruments are the core institutional instruments supported by the platform.
 var DefaultCanonicalInstruments = []model.Instrument{
-	{ID: 1, Symbol: "RELIANCE", DisplaySymbol: "RELIANCE", Name: "Reliance Industries", Underlying: "RELIANCE", Token: "2885", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "EQUITY", LotSize: 1, TickSize: "0.05", Active: true},
-	{ID: 2, Symbol: "TCS", DisplaySymbol: "TCS", Name: "Tata Consultancy Services", Underlying: "TCS", Token: "11536", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "EQUITY", LotSize: 1, TickSize: "0.05", Active: true},
-	{ID: 3, Symbol: "INFY", DisplaySymbol: "INFY", Name: "Infosys Ltd", Underlying: "INFY", Token: "1594", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "EQUITY", LotSize: 1, TickSize: "0.05", Active: true},
-	{ID: 4, Symbol: "HDFCBANK", DisplaySymbol: "HDFCBANK", Name: "HDFC Bank Ltd", Underlying: "HDFCBANK", Token: "1333", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "EQUITY", LotSize: 1, TickSize: "0.05", Active: true},
-	{ID: 5, Symbol: "TATAMOTORS", DisplaySymbol: "TATAMOTORS", Name: "Tata Motors Ltd", Underlying: "TATAMOTORS", Token: "3456", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "EQUITY", LotSize: 1, TickSize: "0.05", Active: true},
-	{ID: 6, Symbol: "BHARTIARTL", DisplaySymbol: "BHARTIARTL", Name: "Bharti Airtel Ltd", Underlying: "BHARTIARTL", Token: "10604", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "EQUITY", LotSize: 1, TickSize: "0.05", Active: true},
-	{ID: 7, Symbol: "ETERNAL", DisplaySymbol: "ETERNAL", Name: "Eternal (formerly Zomato)", Underlying: "ETERNAL", Token: "5097", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "EQUITY", LotSize: 1, TickSize: "0.05", Active: true},
-	{ID: 9, Symbol: "SUZLON", DisplaySymbol: "SUZLON", Name: "Suzlon Energy Ltd", Underlying: "SUZLON", Token: "772", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "EQUITY", LotSize: 1, TickSize: "0.05", Active: true},
-	{ID: 10, Symbol: "TRENT", DisplaySymbol: "TRENT", Name: "Trent Ltd", Underlying: "TRENT", Token: "1964", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "EQUITY", LotSize: 1, TickSize: "0.05", Active: true},
-	{ID: 11, Symbol: "ADANIENT", DisplaySymbol: "ADANIENT", Name: "Adani Enterprises Ltd", Underlying: "ADANIENT", Token: "25", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "EQUITY", LotSize: 1, TickSize: "0.05", Active: true},
-	{ID: 12, Symbol: "YESBANK", DisplaySymbol: "YESBANK", Name: "Yes Bank Ltd", Underlying: "YESBANK", Token: "11915", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "EQUITY", LotSize: 1, TickSize: "0.05", Active: true},
-	{ID: 13, Symbol: "BEL", DisplaySymbol: "BEL", Name: "Bharat Electronics Ltd", Underlying: "BEL", Token: "383", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "EQUITY", LotSize: 1, TickSize: "0.05", Active: true},
-	{ID: 14, Symbol: "SBIN", DisplaySymbol: "SBIN", Name: "State Bank of India", Underlying: "SBIN", Token: "3045", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "EQUITY", LotSize: 1, TickSize: "0.05", Active: true},
-	{ID: 15, Symbol: "ICICIBANK", DisplaySymbol: "ICICIBANK", Name: "ICICI Bank Ltd", Underlying: "ICICIBANK", Token: "4963", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "EQUITY", LotSize: 1, TickSize: "0.05", Active: true},
-	{ID: 16, Symbol: "ATGL", DisplaySymbol: "ATGL", Name: "Adani Total Gas Ltd", Underlying: "ATGL", Token: "14927", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "EQUITY", LotSize: 1, TickSize: "0.05", Active: true},
-	{ID: 17, Symbol: "POONAWALLA", DisplaySymbol: "POONAWALLA", Name: "Poonawalla Fincorp", Underlying: "POONAWALLA", Token: "2837", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "EQUITY", LotSize: 1, TickSize: "0.05", Active: true},
-	{ID: 18, Symbol: "TATACHEM", DisplaySymbol: "TATACHEM", Name: "Tata Chemicals Ltd", Underlying: "TATACHEM", Token: "3405", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "EQUITY", LotSize: 1, TickSize: "0.05", Active: true},
-	{ID: 19, Symbol: "TATAPOWER", DisplaySymbol: "TATAPOWER", Name: "Tata Power Co Ltd", Underlying: "TATAPOWER", Token: "3426", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "EQUITY", LotSize: 1, TickSize: "0.05", Active: true},
-	{ID: 20, Symbol: "PRAJIND", DisplaySymbol: "PRAJIND", Name: "Praj Industries Ltd", Underlying: "PRAJIND", Token: "2705", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "EQUITY", LotSize: 1, TickSize: "0.05", Active: true},
-	{ID: 21, Symbol: "BAJFINANCE", DisplaySymbol: "BAJFINANCE", Name: "Bajaj Finance Ltd", Underlying: "BAJFINANCE", Token: "317", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "EQUITY", LotSize: 1, TickSize: "0.05", Active: true},
-	{ID: 22, Symbol: "AXISBANK", DisplaySymbol: "AXISBANK", Name: "Axis Bank Ltd", Underlying: "AXISBANK", Token: "5900", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "EQUITY", LotSize: 1, TickSize: "0.05", Active: true},
-	{ID: 23, Symbol: "KOTAKBANK", DisplaySymbol: "KOTAKBANK", Name: "Kotak Mahindra Bank", Underlying: "KOTAKBANK", Token: "1922", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "EQUITY", LotSize: 1, TickSize: "0.05", Active: true},
-	{ID: 24, Symbol: "APARINDS", DisplaySymbol: "APARINDS", Name: "Apar Industries Ltd", Underlying: "APARINDS", Token: "10794", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "EQUITY", LotSize: 1, TickSize: "0.05", Active: true},
-	{ID: 25, Symbol: "MARUTI", DisplaySymbol: "MARUTI", Name: "Maruti Suzuki India", Underlying: "MARUTI", Token: "10999", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "EQUITY", LotSize: 1, TickSize: "0.05", Active: true},
+	{ID: 1, Symbol: "RELIANCE", DisplaySymbol: "RELIANCE", Name: "Reliance Industries", Underlying: "RELIANCE", Token: "2885", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "EQUITY", LotSize: 1, TickSize: "0.05", Active: true, IsTradable: true},
+	{ID: 2, Symbol: "TCS", DisplaySymbol: "TCS", Name: "Tata Consultancy Services", Underlying: "TCS", Token: "11536", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "EQUITY", LotSize: 1, TickSize: "0.05", Active: true, IsTradable: true},
+	{ID: 3, Symbol: "INFY", DisplaySymbol: "INFY", Name: "Infosys Ltd", Underlying: "INFY", Token: "1594", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "EQUITY", LotSize: 1, TickSize: "0.05", Active: true, IsTradable: true},
+	{ID: 4, Symbol: "HDFCBANK", DisplaySymbol: "HDFCBANK", Name: "HDFC Bank Ltd", Underlying: "HDFCBANK", Token: "1333", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "EQUITY", LotSize: 1, TickSize: "0.05", Active: true, IsTradable: true},
+	{ID: 5, Symbol: "TATAMOTORS", DisplaySymbol: "TATAMOTORS", Name: "Tata Motors Ltd", Underlying: "TATAMOTORS", Token: "3456", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "EQUITY", LotSize: 1, TickSize: "0.05", Active: true, IsTradable: true},
+	{ID: 6, Symbol: "BHARTIARTL", DisplaySymbol: "BHARTIARTL", Name: "Bharti Airtel Ltd", Underlying: "BHARTIARTL", Token: "10604", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "EQUITY", LotSize: 1, TickSize: "0.05", Active: true, IsTradable: true},
+	{ID: 7, Symbol: "ETERNAL", DisplaySymbol: "ETERNAL", Name: "Eternal (formerly Zomato)", Underlying: "ETERNAL", Token: "5097", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "EQUITY", LotSize: 1, TickSize: "0.05", Active: true, IsTradable: true},
+	{ID: 9, Symbol: "SUZLON", DisplaySymbol: "SUZLON", Name: "Suzlon Energy Ltd", Underlying: "SUZLON", Token: "772", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "EQUITY", LotSize: 1, TickSize: "0.05", Active: true, IsTradable: true},
+	{ID: 10, Symbol: "TRENT", DisplaySymbol: "TRENT", Name: "Trent Ltd", Underlying: "TRENT", Token: "1964", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "EQUITY", LotSize: 1, TickSize: "0.05", Active: true, IsTradable: true},
+	{ID: 11, Symbol: "ADANIENT", DisplaySymbol: "ADANIENT", Name: "Adani Enterprises Ltd", Underlying: "ADANIENT", Token: "25", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "EQUITY", LotSize: 1, TickSize: "0.05", Active: true, IsTradable: true},
+	{ID: 12, Symbol: "YESBANK", DisplaySymbol: "YESBANK", Name: "Yes Bank Ltd", Underlying: "YESBANK", Token: "11915", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "EQUITY", LotSize: 1, TickSize: "0.05", Active: true, IsTradable: true},
+	{ID: 13, Symbol: "BEL", DisplaySymbol: "BEL", Name: "Bharat Electronics Ltd", Underlying: "BEL", Token: "383", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "EQUITY", LotSize: 1, TickSize: "0.05", Active: true, IsTradable: true},
+	{ID: 14, Symbol: "SBIN", DisplaySymbol: "SBIN", Name: "State Bank of India", Underlying: "SBIN", Token: "3045", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "EQUITY", LotSize: 1, TickSize: "0.05", Active: true, IsTradable: true},
+	{ID: 15, Symbol: "ICICIBANK", DisplaySymbol: "ICICIBANK", Name: "ICICI Bank Ltd", Underlying: "ICICIBANK", Token: "4963", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "EQUITY", LotSize: 1, TickSize: "0.05", Active: true, IsTradable: true},
+	{ID: 16, Symbol: "ATGL", DisplaySymbol: "ATGL", Name: "Adani Total Gas Ltd", Underlying: "ATGL", Token: "14927", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "EQUITY", LotSize: 1, TickSize: "0.05", Active: true, IsTradable: true},
+	{ID: 17, Symbol: "POONAWALLA", DisplaySymbol: "POONAWALLA", Name: "Poonawalla Fincorp", Underlying: "POONAWALLA", Token: "2837", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "EQUITY", LotSize: 1, TickSize: "0.05", Active: true, IsTradable: true},
+	{ID: 18, Symbol: "TATACHEM", DisplaySymbol: "TATACHEM", Name: "Tata Chemicals Ltd", Underlying: "TATACHEM", Token: "3405", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "EQUITY", LotSize: 1, TickSize: "0.05", Active: true, IsTradable: true},
+	{ID: 19, Symbol: "TATAPOWER", DisplaySymbol: "TATAPOWER", Name: "Tata Power Co Ltd", Underlying: "TATAPOWER", Token: "3426", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "EQUITY", LotSize: 1, TickSize: "0.05", Active: true, IsTradable: true},
+	{ID: 20, Symbol: "PRAJIND", DisplaySymbol: "PRAJIND", Name: "Praj Industries Ltd", Underlying: "PRAJIND", Token: "2705", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "EQUITY", LotSize: 1, TickSize: "0.05", Active: true, IsTradable: true},
+	{ID: 21, Symbol: "BAJFINANCE", DisplaySymbol: "BAJFINANCE", Name: "Bajaj Finance Ltd", Underlying: "BAJFINANCE", Token: "317", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "EQUITY", LotSize: 1, TickSize: "0.05", Active: true, IsTradable: true},
+	{ID: 22, Symbol: "AXISBANK", DisplaySymbol: "AXISBANK", Name: "Axis Bank Ltd", Underlying: "AXISBANK", Token: "5900", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "EQUITY", LotSize: 1, TickSize: "0.05", Active: true, IsTradable: true},
+	{ID: 23, Symbol: "KOTAKBANK", DisplaySymbol: "KOTAKBANK", Name: "Kotak Mahindra Bank", Underlying: "KOTAKBANK", Token: "1922", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "EQUITY", LotSize: 1, TickSize: "0.05", Active: true, IsTradable: true},
+	{ID: 24, Symbol: "APARINDS", DisplaySymbol: "APARINDS", Name: "Apar Industries Ltd", Underlying: "APARINDS", Token: "10794", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "EQUITY", LotSize: 1, TickSize: "0.05", Active: true, IsTradable: true},
+	{ID: 25, Symbol: "MARUTI", DisplaySymbol: "MARUTI", Name: "Maruti Suzuki India", Underlying: "MARUTI", Token: "10999", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "EQUITY", LotSize: 1, TickSize: "0.05", Active: true, IsTradable: true},
 	// Indices
-	{ID: 26, Symbol: "NIFTY", DisplaySymbol: "NIFTY 50", Name: "NIFTY 50", Underlying: "NIFTY", Token: "99926000", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "INDEX", LotSize: 25, TickSize: "0.05", Active: true},
-	{ID: 27, Symbol: "BANKNIFTY", DisplaySymbol: "NIFTY BANK", Name: "NIFTY BANK", Underlying: "BANKNIFTY", Token: "99926009", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "INDEX", LotSize: 15, TickSize: "0.05", Active: true},
-	{ID: 28, Symbol: "FINNIFTY", DisplaySymbol: "NIFTY FINANCIAL", Name: "NIFTY FINANCIAL SERVICES", Underlying: "FINNIFTY", Token: "99926037", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "INDEX", LotSize: 25, TickSize: "0.05", Active: true},
-	{ID: 29, Symbol: "MIDCPNIFTY", DisplaySymbol: "NIFTY MIDCAP SELECT", Name: "NIFTY MIDCAP SELECT", Underlying: "MIDCPNIFTY", Token: "99926074", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "INDEX", LotSize: 50, TickSize: "0.05", Active: true},
-	{ID: 30, Symbol: "SENSEX", DisplaySymbol: "BSE SENSEX", Name: "BSE SENSEX", Underlying: "SENSEX", Token: "99919000", Exchange: "BSE", ExchangeSegment: "BSE", InstrumentType: "INDEX", LotSize: 10, TickSize: "0.05", Active: true},
+	{ID: 26, Symbol: "NIFTY", DisplaySymbol: "NIFTY 50", Name: "NIFTY 50", Underlying: "NIFTY", Token: "99926000", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "INDEX", LotSize: 25, TickSize: "0.05", Active: true, IsTradable: true},
+	{ID: 27, Symbol: "BANKNIFTY", DisplaySymbol: "NIFTY BANK", Name: "NIFTY BANK", Underlying: "BANKNIFTY", Token: "99926009", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "INDEX", LotSize: 15, TickSize: "0.05", Active: true, IsTradable: true},
+	{ID: 28, Symbol: "FINNIFTY", DisplaySymbol: "NIFTY FINANCIAL", Name: "NIFTY FINANCIAL SERVICES", Underlying: "FINNIFTY", Token: "99926037", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "INDEX", LotSize: 25, TickSize: "0.05", Active: true, IsTradable: true},
+	{ID: 29, Symbol: "MIDCPNIFTY", DisplaySymbol: "NIFTY MIDCAP SELECT", Name: "NIFTY MIDCAP SELECT", Underlying: "MIDCPNIFTY", Token: "99926074", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "INDEX", LotSize: 50, TickSize: "0.05", Active: true, IsTradable: true},
+	{ID: 30, Symbol: "SENSEX", DisplaySymbol: "BSE SENSEX", Name: "BSE SENSEX", Underlying: "SENSEX", Token: "99919000", Exchange: "BSE", ExchangeSegment: "BSE", InstrumentType: "INDEX", LotSize: 10, TickSize: "0.05", Active: true, IsTradable: true},
 	// Benchmark Derivatives
-	{ID: 31, Symbol: "NIFTY24SEPFUT", DisplaySymbol: "NIFTY SEP FUT", Name: "NIFTY 50 Futures", Underlying: "NIFTY", Token: "NFO_NIFTY_FUT", Exchange: "NFO", ExchangeSegment: "NFO", InstrumentType: "FUTIDX", Expiry: "2026-09-24", LotSize: 25, TickSize: "0.05", Active: true},
-	{ID: 32, Symbol: "BANKNIFTY24SEPFUT", DisplaySymbol: "BANKNIFTY SEP FUT", Name: "BANKNIFTY Futures", Underlying: "BANKNIFTY", Token: "NFO_BN_FUT", Exchange: "NFO", ExchangeSegment: "NFO", InstrumentType: "FUTIDX", Expiry: "2026-09-24", LotSize: 15, TickSize: "0.05", Active: true},
-	{ID: 33, Symbol: "RELIANCE24SEPFUT", DisplaySymbol: "RELIANCE SEP FUT", Name: "RELIANCE Futures", Underlying: "RELIANCE", Token: "NFO_REL_FUT", Exchange: "NFO", ExchangeSegment: "NFO", InstrumentType: "FUTSTK", Expiry: "2026-09-24", LotSize: 250, TickSize: "0.05", Active: true},
-	{ID: 34, Symbol: "TCS24SEPFUT", DisplaySymbol: "TCS SEP FUT", Name: "TCS Futures", Underlying: "TCS", Token: "NFO_TCS_FUT", Exchange: "NFO", ExchangeSegment: "NFO", InstrumentType: "FUTSTK", Expiry: "2026-09-24", LotSize: 175, TickSize: "0.05", Active: true},
+	{ID: 31, Symbol: "NIFTY24SEPFUT", DisplaySymbol: "NIFTY SEP FUT", Name: "NIFTY 50 Futures", Underlying: "NIFTY", Token: "NFO_NIFTY_FUT", Exchange: "NFO", ExchangeSegment: "NFO", InstrumentType: "FUTIDX", Expiry: "2026-09-24", LotSize: 25, TickSize: "0.05", Active: true, IsTradable: true},
+	{ID: 32, Symbol: "BANKNIFTY24SEPFUT", DisplaySymbol: "BANKNIFTY SEP FUT", Name: "BANKNIFTY Futures", Underlying: "BANKNIFTY", Token: "NFO_BN_FUT", Exchange: "NFO", ExchangeSegment: "NFO", InstrumentType: "FUTIDX", Expiry: "2026-09-24", LotSize: 15, TickSize: "0.05", Active: true, IsTradable: true},
+	{ID: 33, Symbol: "RELIANCE24SEPFUT", DisplaySymbol: "RELIANCE SEP FUT", Name: "RELIANCE Futures", Underlying: "RELIANCE", Token: "NFO_REL_FUT", Exchange: "NFO", ExchangeSegment: "NFO", InstrumentType: "FUTSTK", Expiry: "2026-09-24", LotSize: 250, TickSize: "0.05", Active: true, IsTradable: true},
+	{ID: 34, Symbol: "TCS24SEPFUT", DisplaySymbol: "TCS SEP FUT", Name: "TCS Futures", Underlying: "TCS", Token: "NFO_TCS_FUT", Exchange: "NFO", ExchangeSegment: "NFO", InstrumentType: "FUTSTK", Expiry: "2026-09-24", LotSize: 175, TickSize: "0.05", Active: true, IsTradable: true},
 }
 
 // Service provides access to authoritative canonical instruments.
@@ -226,24 +227,29 @@ func ToCanonicalInstrument(inst model.Instrument) dto.InstrumentResponse {
 	tickSize = math.Round(tickSize*10000) / 10000
 
 	active := inst.Active
-	if !active && inst.Symbol != "" {
-		active = true
+	isTradable := inst.IsTradable
+	if !active {
+		isTradable = false
+	} else if !inst.IsTradable && inst.SnapshotVersion == "" {
+		isTradable = true
 	}
 
 	return dto.InstrumentResponse{
-		ID:             inst.ID,
-		Symbol:         inst.Symbol,
-		DisplaySymbol:  displaySymbol,
-		Exchange:       exchange,
-		Token:          inst.Token,
-		InstrumentType: instType,
-		Underlying:     underlying,
-		Expiry:         inst.Expiry,
-		Strike:         strike,
-		OptionType:     optType,
-		LotSize:        lotSize,
-		TickSize:       tickSize,
-		Active:         active,
+		ID:              inst.ID,
+		Symbol:          inst.Symbol,
+		DisplaySymbol:   displaySymbol,
+		Exchange:        exchange,
+		Token:           inst.Token,
+		InstrumentType:  instType,
+		Underlying:      underlying,
+		Expiry:          inst.Expiry,
+		Strike:          strike,
+		OptionType:      optType,
+		LotSize:         lotSize,
+		TickSize:        tickSize,
+		Active:          active,
+		IsTradable:      isTradable,
+		SnapshotVersion: inst.SnapshotVersion,
 	}
 }
 
@@ -270,7 +276,7 @@ func (s *Service) List(query, exchange, instrumentType, underlying string, activ
 
 	tx := db.Model(&model.Instrument{})
 	if activeOnly {
-		tx = tx.Where("active = ? OR active IS NULL", true)
+		tx = tx.Where("(active = ? OR active IS NULL) AND (is_tradable = ? OR is_tradable IS NULL)", true, true)
 	}
 	if exchange != "" && exchange != "ALL" {
 		tx = tx.Where("exchange = ? OR exchange_segment = ?", exchange, exchange)
@@ -294,7 +300,7 @@ func (s *Service) List(query, exchange, instrumentType, underlying string, activ
 	}
 
 	var results []model.Instrument
-	if err := tx.Limit(limit).Find(&results).Error; err != nil {
+	if err := tx.Order("is_tradable DESC, active DESC, id ASC").Limit(limit).Find(&results).Error; err != nil {
 		return nil, err
 	}
 
@@ -317,7 +323,8 @@ func (s *Service) GetBySymbol(symbol string) (*dto.InstrumentResponse, error) {
 
 	if db != nil {
 		var inst model.Instrument
-		err := db.Where("UPPER(symbol) = ? OR UPPER(symbol) = ? OR UPPER(symbol) = ?", clean, cleanNoEq, cleanNoEq+"-EQ").First(&inst).Error
+		err := db.Where("UPPER(symbol) = ? OR UPPER(symbol) = ? OR UPPER(symbol) = ?", clean, cleanNoEq, cleanNoEq+"-EQ").
+			Order("is_tradable DESC, active DESC, id DESC").First(&inst).Error
 		if err == nil {
 			resp := ToCanonicalInstrument(inst)
 			return &resp, nil
@@ -325,7 +332,8 @@ func (s *Service) GetBySymbol(symbol string) (*dto.InstrumentResponse, error) {
 
 		canonical := alias.ResolveCanonicalSymbol(cleanNoEq)
 		if canonical != "" && canonical != cleanNoEq {
-			err = db.Where("UPPER(symbol) = ? OR UPPER(symbol) = ?", canonical, canonical+"-EQ").First(&inst).Error
+			err = db.Where("UPPER(symbol) = ? OR UPPER(symbol) = ?", canonical, canonical+"-EQ").
+				Order("is_tradable DESC, active DESC, id DESC").First(&inst).Error
 			if err == nil {
 				resp := ToCanonicalInstrument(inst)
 				return &resp, nil
@@ -352,7 +360,7 @@ func (s *Service) filterDefaults(query, exchange, instrumentType, underlying str
 	uUpper := strings.ToUpper(strings.TrimSpace(underlying))
 
 	for _, inst := range DefaultCanonicalInstruments {
-		if activeOnly && !inst.Active {
+		if activeOnly && (!inst.Active || !inst.IsTradable) {
 			continue
 		}
 		if exUpper != "" && exUpper != "ALL" && !strings.EqualFold(inst.Exchange, exUpper) && !strings.EqualFold(inst.ExchangeSegment, exUpper) {
@@ -541,12 +549,46 @@ func ParseAngelScripItem(raw AngelScripItem) (*model.Instrument, bool) {
 		ExchangeSegment:  segment,
 		TickSize:         tickSize,
 		Active:           true,
+		IsTradable:       true,
 	}, true
 }
 
-// SyncFromReader streams an Angel One scrip master JSON array and batch upserts into PostgreSQL.
-func (s *Service) SyncFromReader(ctx context.Context, r io.Reader, opts ...SyncOptions) (*SyncStats, error) {
+// ParseExpiryDate parses Indian market expiry strings (e.g. "24SEP2026", "2026-09-24", "24-09-2026") into a 15:30 IST timestamp.
+func ParseExpiryDate(expiry string, loc *time.Location) (time.Time, error) {
+	clean := strings.ToUpper(strings.TrimSpace(expiry))
+	if clean == "" {
+		return time.Time{}, fmt.Errorf("empty expiry date")
+	}
+	if loc == nil {
+		loc = time.FixedZone("IST", 5*3600+1800)
+	}
+	layouts := []string{
+		"02Jan2006",
+		"02JAN2006",
+		"2006-01-02",
+		"02-01-2006",
+		"02-Jan-2006",
+		"02-JAN-2006",
+	}
+	for _, layout := range layouts {
+		if t, err := time.ParseInLocation(layout, clean, loc); err == nil {
+			return time.Date(t.Year(), t.Month(), t.Day(), 15, 30, 0, 0, loc), nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("unrecognized expiry date layout: %s", expiry)
+}
+
+// StageSnapshot parses and validates instruments from reader, saves them with snapshot_version,
+// and records a STAGED InstrumentSnapshot.
+func (s *Service) StageSnapshot(ctx context.Context, version, source string, r io.Reader, opts ...SyncOptions) (*model.InstrumentSnapshot, *SyncStats, error) {
 	start := time.Now()
+	if version == "" {
+		version = fmt.Sprintf("master-%s", time.Now().UTC().Format("20060102-150405"))
+	}
+	if source == "" {
+		source = "angelone_openapi"
+	}
+
 	batchSize := 500
 	var targetSegments map[string]bool
 	var targetUnderlyings map[string]bool
@@ -574,14 +616,21 @@ func (s *Service) SyncFromReader(ctx context.Context, r io.Reader, opts ...SyncO
 	// Consume leading bracket '['
 	t, err := dec.Token()
 	if err != nil {
-		return nil, fmt.Errorf("failed reading json stream opening: %w", err)
+		return nil, nil, fmt.Errorf("failed reading json stream opening: %w", err)
 	}
 	if delim, ok := t.(json.Delim); !ok || delim != '[' {
-		return nil, fmt.Errorf("expected json array opening '[' but got %v", t)
+		return nil, nil, fmt.Errorf("expected json array opening '[' but got %v", t)
 	}
 
 	stats := &SyncStats{}
 	var batch []model.Instrument
+	seenTokens := make(map[string]bool)
+	var validationErrors []string
+
+	eqCount := 0
+	futCount := 0
+	optCount := 0
+	idxCount := 0
 
 	flushBatch := func() error {
 		if len(batch) == 0 {
@@ -593,11 +642,11 @@ func (s *Service) SyncFromReader(ctx context.Context, r io.Reader, opts ...SyncO
 				DoUpdates: clause.AssignmentColumns([]string{
 					"symbol", "display_symbol", "exchange", "name", "underlying", "underlying_symbol",
 					"expiry", "strike", "option_type", "lot_size", "instrument_type",
-					"tick_size", "active", "updated_at",
+					"tick_size", "active", "snapshot_version", "is_tradable", "updated_at",
 				}),
 			}).Create(&batch).Error
 			if err != nil {
-				return fmt.Errorf("failed upserting instrument batch: %w", err)
+				return fmt.Errorf("failed staging instrument batch: %w", err)
 			}
 		}
 		stats.TotalUpserted += len(batch)
@@ -605,16 +654,21 @@ func (s *Service) SyncFromReader(ctx context.Context, r io.Reader, opts ...SyncO
 		return nil
 	}
 
+	loc, _ := time.LoadLocation("Asia/Kolkata")
+	if loc == nil {
+		loc = time.FixedZone("IST", 5*3600+1800)
+	}
+
 	for dec.More() {
 		select {
 		case <-ctx.Done():
-			return stats, ctx.Err()
+			return nil, stats, ctx.Err()
 		default:
 		}
 
 		var raw AngelScripItem
 		if err := dec.Decode(&raw); err != nil {
-			return stats, fmt.Errorf("failed decoding scrip item: %w", err)
+			return nil, stats, fmt.Errorf("failed decoding scrip item: %w", err)
 		}
 		stats.TotalProcessed++
 
@@ -633,10 +687,56 @@ func (s *Service) SyncFromReader(ctx context.Context, r io.Reader, opts ...SyncO
 			continue
 		}
 
+		// Check duplicate tokens within the same exchange segment
+		tokenKey := fmt.Sprintf("%s:%s", inst.ExchangeSegment, inst.Token)
+		if seenTokens[tokenKey] {
+			if len(validationErrors) < 100 {
+				validationErrors = append(validationErrors, fmt.Sprintf("duplicate token %s for symbol %s", tokenKey, inst.Symbol))
+			}
+			stats.TotalSkipped++
+			continue
+		}
+		seenTokens[tokenKey] = true
+
+		// Check contract specifications for derivatives
+		if inst.ExchangeSegment == "NFO" || inst.ExchangeSegment == "BFO" {
+			rawLot, _ := strconv.ParseInt(raw.LotSize, 10, 64)
+			if rawLot <= 0 {
+				if len(validationErrors) < 100 {
+					validationErrors = append(validationErrors, fmt.Sprintf("invalid lot size %d for derivative %s", rawLot, inst.Symbol))
+				}
+				stats.TotalSkipped++
+				continue
+			}
+			if inst.Expiry != "" {
+				if _, err := ParseExpiryDate(inst.Expiry, loc); err != nil {
+					if len(validationErrors) < 100 {
+						validationErrors = append(validationErrors, fmt.Sprintf("invalid expiry format %q for derivative %s", inst.Expiry, inst.Symbol))
+					}
+				}
+			}
+		}
+
+		// Tally instrument categories
+		switch inst.InstrumentType {
+		case "EQUITY":
+			eqCount++
+		case "FUTSTK", "FUTIDX":
+			futCount++
+		case "OPTSTK", "OPTIDX":
+			optCount++
+		case "INDEX":
+			idxCount++
+		}
+
+		inst.SnapshotVersion = version
+		inst.IsTradable = true
+		inst.Active = true
+
 		batch = append(batch, *inst)
 		if len(batch) >= batchSize {
 			if err := flushBatch(); err != nil {
-				return stats, err
+				return nil, stats, err
 			}
 		}
 	}
@@ -645,10 +745,206 @@ func (s *Service) SyncFromReader(ctx context.Context, r io.Reader, opts ...SyncO
 	_, _ = dec.Token()
 
 	if err := flushBatch(); err != nil {
-		return stats, err
+		return nil, stats, err
 	}
 
 	stats.DurationMs = time.Since(start).Milliseconds()
+
+	valErrorsJoined := strings.Join(validationErrors, "\n")
+	snapshot := &model.InstrumentSnapshot{
+		Version:          version,
+		Source:           source,
+		TotalInstruments: stats.TotalUpserted,
+		EquityCount:      eqCount,
+		FuturesCount:     futCount,
+		OptionsCount:     optCount,
+		IndexCount:       idxCount,
+		Status:           model.SnapshotStatusStaged,
+		ValidationErrors: valErrorsJoined,
+		CreatedAt:        time.Now(),
+		UpdatedAt:        time.Now(),
+	}
+
+	if s.db != nil {
+		if err := s.db.WithContext(ctx).Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "version"}},
+			DoUpdates: clause.AssignmentColumns([]string{
+				"total_instruments", "equity_count", "futures_count", "options_count", "index_count",
+				"status", "validation_errors", "updated_at",
+			}),
+		}).Create(snapshot).Error; err != nil {
+			return nil, stats, fmt.Errorf("failed saving staged snapshot record: %w", err)
+		}
+	}
+
+	return snapshot, stats, nil
+}
+
+// ActivateSnapshot atomically activates a staged snapshot and soft-retires contracts not in the new snapshot version.
+func (s *Service) ActivateSnapshot(ctx context.Context, version string) (*model.InstrumentSnapshot, error) {
+	if s.db == nil {
+		return &model.InstrumentSnapshot{
+			Version: version,
+			Status:  model.SnapshotStatusActive,
+		}, nil
+	}
+
+	var snapshot model.InstrumentSnapshot
+	now := time.Now()
+
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("version = ?", version).First(&snapshot).Error; err != nil {
+			return fmt.Errorf("snapshot %s not found: %w", version, err)
+		}
+
+		// 1. Soft-retire older instruments not in this version: preserve rows, mark is_tradable = false, active = false
+		if err := tx.Model(&model.Instrument{}).
+			Where("snapshot_version IS DISTINCT FROM ?", version).
+			Updates(map[string]interface{}{"is_tradable": false, "active": false}).Error; err != nil {
+			return fmt.Errorf("failed soft-retiring older instruments: %w", err)
+		}
+
+		// 2. Ensure current snapshot instruments are active and tradable
+		if err := tx.Model(&model.Instrument{}).
+			Where("snapshot_version = ?", version).
+			Updates(map[string]interface{}{"is_tradable": true, "active": true}).Error; err != nil {
+			return fmt.Errorf("failed activating new instruments: %w", err)
+		}
+
+		// 3. Retire previous active snapshot(s)
+		if err := tx.Model(&model.InstrumentSnapshot{}).
+			Where("status = ? AND version != ?", model.SnapshotStatusActive, version).
+			Updates(map[string]interface{}{"status": model.SnapshotStatusRetired, "updated_at": now}).Error; err != nil {
+			return fmt.Errorf("failed retiring previous active snapshot: %w", err)
+		}
+
+		// 4. Activate current snapshot
+		snapshot.Status = model.SnapshotStatusActive
+		snapshot.ActivatedAt = &now
+		snapshot.UpdatedAt = now
+		if err := tx.Save(&snapshot).Error; err != nil {
+			return fmt.Errorf("failed marking snapshot as active: %w", err)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &snapshot, nil
+}
+
+// GetActiveSnapshot returns the currently active instrument snapshot metadata.
+func (s *Service) GetActiveSnapshot(ctx context.Context) (*model.InstrumentSnapshot, error) {
+	if s.db == nil {
+		return &model.InstrumentSnapshot{
+			Version:          "builtin-canonical",
+			Source:           "memory",
+			TotalInstruments: len(DefaultCanonicalInstruments),
+			EquityCount:      24,
+			FuturesCount:     4,
+			OptionsCount:     0,
+			IndexCount:       5,
+			Status:           model.SnapshotStatusActive,
+		}, nil
+	}
+
+	var snap model.InstrumentSnapshot
+	err := s.db.WithContext(ctx).Where("status = ?", model.SnapshotStatusActive).Order("activated_at DESC, id DESC").First(&snap).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			var count int64
+			_ = s.db.WithContext(ctx).Model(&model.Instrument{}).Where("active = ? AND is_tradable = ?", true, true).Count(&count).Error
+			return &model.InstrumentSnapshot{
+				Version:          "initial-master",
+				Source:           "database",
+				TotalInstruments: int(count),
+				Status:           model.SnapshotStatusActive,
+			}, nil
+		}
+		return nil, err
+	}
+	return &snap, nil
+}
+
+// ListSnapshots returns the history of instrument snapshots.
+func (s *Service) ListSnapshots(ctx context.Context, limit int) ([]model.InstrumentSnapshot, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	if s.db == nil {
+		return []model.InstrumentSnapshot{
+			{
+				Version:          "builtin-canonical",
+				Source:           "memory",
+				TotalInstruments: len(DefaultCanonicalInstruments),
+				EquityCount:      24,
+				FuturesCount:     4,
+				OptionsCount:     0,
+				IndexCount:       5,
+				Status:           model.SnapshotStatusActive,
+			},
+		}, nil
+	}
+	var snaps []model.InstrumentSnapshot
+	err := s.db.WithContext(ctx).Order("id DESC").Limit(limit).Find(&snaps).Error
+	return snaps, err
+}
+
+// ExpireInstruments checks all active derivatives with an expiry date and soft-retires those whose expiry has elapsed.
+func (s *Service) ExpireInstruments(ctx context.Context, asOf time.Time) (int64, error) {
+	if s.db == nil {
+		return 0, nil
+	}
+	loc, err := time.LoadLocation("Asia/Kolkata")
+	if err != nil {
+		loc = time.FixedZone("IST", 5*3600+1800)
+	}
+
+	var derivatives []model.Instrument
+	err = s.db.WithContext(ctx).
+		Where("is_tradable = ? AND expiry != '' AND exchange_segment IN ('NFO', 'BFO')", true).
+		Find(&derivatives).Error
+	if err != nil {
+		return 0, err
+	}
+
+	asOfIST := asOf.In(loc)
+	var expiredIDs []uint
+
+	for _, inst := range derivatives {
+		expDate, err := ParseExpiryDate(inst.Expiry, loc)
+		if err == nil {
+			if asOfIST.After(expDate) || asOfIST.Equal(expDate) {
+				expiredIDs = append(expiredIDs, inst.ID)
+			}
+		}
+	}
+
+	if len(expiredIDs) == 0 {
+		return 0, nil
+	}
+
+	res := s.db.WithContext(ctx).Model(&model.Instrument{}).
+		Where("id IN ?", expiredIDs).
+		Updates(map[string]interface{}{"is_tradable": false, "active": false})
+	return res.RowsAffected, res.Error
+}
+
+// SyncFromReader streams an Angel One scrip master JSON array, stages a versioned snapshot, and atomically activates it.
+func (s *Service) SyncFromReader(ctx context.Context, r io.Reader, opts ...SyncOptions) (*SyncStats, error) {
+	version := fmt.Sprintf("master-%s", time.Now().UTC().Format("20060102-150405"))
+	snapshot, stats, err := s.StageSnapshot(ctx, version, "angelone_openapi", r, opts...)
+	if err != nil {
+		return stats, err
+	}
+	if s.db != nil && snapshot != nil {
+		if _, err := s.ActivateSnapshot(ctx, version); err != nil {
+			return stats, fmt.Errorf("failed activating snapshot %s: %w", version, err)
+		}
+	}
 	return stats, nil
 }
 

@@ -199,6 +199,9 @@ func (s *OrderService) Create(userID string, request dto.CreateOrderRequest) (*d
 	}
 
 	if instrument != nil {
+		if instrument.SnapshotVersion != "" && (!instrument.IsTradable || !instrument.Active) {
+			return nil, fmt.Errorf("instrument %q is not tradable in active master snapshot", request.Symbol)
+		}
 		if err := product.ValidateInstrumentProduct(*instrument, request.Product); err != nil {
 			return nil, err
 		}

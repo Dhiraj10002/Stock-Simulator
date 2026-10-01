@@ -735,6 +735,67 @@ paths:
               schema:
                 $ref: '#/components/schemas/InstrumentsListResponse'
 
+  /instruments/snapshots/active:
+    get:
+      summary: Get Active Instrument Snapshot
+      description: Returns version and metadata for the currently active instrument master snapshot.
+      tags: [Instruments]
+      responses:
+        '200':
+          description: Active snapshot metadata
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  message: { type: string }
+                  data:
+                    $ref: '#/components/schemas/InstrumentSnapshot'
+
+  /instruments/snapshots:
+    get:
+      summary: List Instrument Snapshots
+      description: Returns historical record of imported instrument master snapshots.
+      tags: [Instruments]
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, default: 20 }
+      responses:
+        '200':
+          description: List of instrument snapshots
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  message: { type: string }
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/InstrumentSnapshot'
+
+  /instruments/master/status:
+    get:
+      summary: Get Instrument Master Status
+      description: Returns operational status, active version, and breakdown of equity and derivative contracts.
+      tags: [Instruments]
+      responses:
+        '200':
+          description: Master status retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  message: { type: string }
+                  data:
+                    type: object
+
   /instruments/{symbol}:
     get:
       summary: Get Instrument By Symbol
@@ -1564,6 +1625,22 @@ components:
             entries:
               type: array
               items: { $ref: '#/components/schemas/WalletTransactionItem' }
+
+    InstrumentSnapshot:
+      type: object
+      properties:
+        id: { type: integer }
+        version: { type: string, example: "master-20261001-120000" }
+        source: { type: string, example: "angelone_openapi" }
+        total_instruments: { type: integer, example: 17878 }
+        equity_count: { type: integer, example: 2540 }
+        futures_count: { type: integer, example: 450 }
+        options_count: { type: integer, example: 14800 }
+        index_count: { type: integer, example: 88 }
+        status: { type: string, enum: [STAGED, ACTIVE, RETIRED, FAILED], example: "ACTIVE" }
+        validation_errors: { type: string }
+        activated_at: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
 
   responses:
     BadRequest:

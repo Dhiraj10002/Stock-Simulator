@@ -22,6 +22,8 @@ type Instrument struct {
 	ExchangeSegment  string    `gorm:"column:exchange_segment;size:16;not null;uniqueIndex:idx_instruments_token_exchange,priority:2;index;index:idx_instruments_seg_active,priority:1" json:"exchange_segment"`
 	TickSize         string    `gorm:"column:tick_size;size:32;default:'0.05'" json:"tick_size"`
 	Active           bool      `gorm:"column:active;not null;default:true;index;index:idx_instruments_seg_active,priority:2" json:"active"`
+	SnapshotVersion  string    `gorm:"column:snapshot_version;size:64;index;index:idx_instruments_version_tradable,priority:1" json:"snapshot_version,omitempty"`
+	IsTradable       bool      `gorm:"column:is_tradable;not null;default:true;index;index:idx_instruments_version_tradable,priority:2" json:"is_tradable"`
 	CreatedAt        time.Time `json:"created_at"`
 	UpdatedAt        time.Time `json:"updated_at"`
 }

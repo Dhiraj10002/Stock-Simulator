@@ -6,7 +6,9 @@ import (
 	"strings"
 
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/database"
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/instrument/dto"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/instrument/service"
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/pkg/response"
 	"github.com/gin-gonic/gin"
 )
@@ -74,3 +76,91 @@ func (h *Handler) GetBySymbol(c *gin.Context) {
 
 	response.Success(c, http.StatusOK, "Instrument retrieved successfully", inst)
 }
+
+// GetActiveSnapshot handles GET /api/v1/instruments/snapshots/active.
+func (h *Handler) GetActiveSnapshot(c *gin.Context) {
+	snap, err := h.svc.GetActiveSnapshot(c.Request.Context())
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, "failed to get active instrument snapshot", err.Error())
+		return
+	}
+	resp := formatSnapshotResponse(snap)
+	response.Success(c, http.StatusOK, "Active instrument snapshot retrieved successfully", resp)
+}
+
+// ListSnapshots handles GET /api/v1/instruments/snapshots.
+func (h *Handler) ListSnapshots(c *gin.Context) {
+	limitStr := strings.TrimSpace(c.Query("limit"))
+	limit := 20
+	if limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
+			limit = l
+		}
+	}
+
+	snaps, err := h.svc.ListSnapshots(c.Request.Context(), limit)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, "failed to list instrument snapshots", err.Error())
+		return
+	}
+
+	out := make([]dto.SnapshotResponse, len(snaps))
+	for i, s := range snaps {
+		out[i] = formatSnapshotResponse(&s)
+	}
+	response.Success(c, http.StatusOK, "Instrument snapshots retrieved successfully", out)
+}
+
+// GetMasterStatus handles GET /api/v1/instruments/master/status.
+func (h *Handler) GetMasterStatus(c *gin.Context) {
+	snap, err := h.svc.GetActiveSnapshot(c.Request.Context())
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, "failed to get master status", err.Error())
+		return
+	}
+
+	var activatedStr *string
+	if snap.ActivatedAt != nil {
+		s := snap.ActivatedAt.Format("2006-01-02T15:04:05Z07:00")
+		activatedStr = &s
+	}
+
+	resp := gin.H{
+		"active_version":    snap.Version,
+		"source":            snap.Source,
+		"status":            snap.Status,
+		"total_instruments": snap.TotalInstruments,
+		"equity_count":      snap.EquityCount,
+		"futures_count":     snap.FuturesCount,
+		"options_count":     snap.OptionsCount,
+		"index_count":       snap.IndexCount,
+		"activated_at":      activatedStr,
+	}
+	response.Success(c, http.StatusOK, "Instrument master status retrieved successfully", resp)
+}
+
+func formatSnapshotResponse(snap *model.InstrumentSnapshot) dto.SnapshotResponse {
+	if snap == nil {
+		return dto.SnapshotResponse{}
+	}
+	var actAt *string
+	if snap.ActivatedAt != nil {
+		s := snap.ActivatedAt.Format("2006-01-02T15:04:05Z07:00")
+		actAt = &s
+	}
+	return dto.SnapshotResponse{
+		ID:               snap.ID,
+		Version:          snap.Version,
+		Source:           snap.Source,
+		TotalInstruments: snap.TotalInstruments,
+		EquityCount:      snap.EquityCount,
+		FuturesCount:     snap.FuturesCount,
+		OptionsCount:     snap.OptionsCount,
+		IndexCount:       snap.IndexCount,
+		Status:           snap.Status,
+		ValidationErrors: snap.ValidationErrors,
+		ActivatedAt:      actAt,
+		CreatedAt:        snap.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+	}
+}
+

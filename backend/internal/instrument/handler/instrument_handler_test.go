@@ -30,6 +30,9 @@ func TestInstrumentHandler(t *testing.T) {
 
 	r := gin.New()
 	r.GET("/api/v1/instruments", h.List)
+	r.GET("/api/v1/instruments/snapshots/active", h.GetActiveSnapshot)
+	r.GET("/api/v1/instruments/snapshots", h.ListSnapshots)
+	r.GET("/api/v1/instruments/master/status", h.GetMasterStatus)
 	r.GET("/api/v1/instruments/:symbol", h.GetBySymbol)
 
 	t.Run("List returns canonical instruments with authoritative identity", func(t *testing.T) {
@@ -138,4 +141,67 @@ func TestInstrumentHandler(t *testing.T) {
 		}
 	})
 
+	t.Run("GetActiveSnapshot returns active snapshot metadata", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/instruments/snapshots/active", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+		}
+		var resp struct {
+			Success bool                 `json:"success"`
+			Data    dto.SnapshotResponse `json:"data"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+		if resp.Data.Status != "ACTIVE" {
+			t.Errorf("expected ACTIVE status, got %s", resp.Data.Status)
+		}
+		if resp.Data.TotalInstruments <= 0 {
+			t.Errorf("expected positive total instruments, got %d", resp.Data.TotalInstruments)
+		}
+	})
+
+	t.Run("ListSnapshots returns snapshot collection", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/instruments/snapshots", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+		}
+		var resp struct {
+			Success bool                   `json:"success"`
+			Data    []dto.SnapshotResponse `json:"data"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+		if len(resp.Data) == 0 {
+			t.Errorf("expected at least 1 snapshot in list")
+		}
+	})
+
+	t.Run("GetMasterStatus returns comprehensive master status", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/instruments/master/status", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+		}
+		var resp struct {
+			Success bool                   `json:"success"`
+			Data    map[string]interface{} `json:"data"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+		if resp.Data["status"] != "ACTIVE" {
+			t.Errorf("expected status ACTIVE, got %v", resp.Data["status"])
+		}
+	})
 }
+

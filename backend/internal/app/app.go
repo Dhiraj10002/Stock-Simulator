@@ -70,6 +70,7 @@ func (a *App) RunWithContext(ctx context.Context) error {
 			&model.Trade{},
 			&model.SimulationReset{},
 			&model.Instrument{},
+			&model.InstrumentSnapshot{},
 			&model.RiskEvent{},
 			&model.WatchlistItem{},
 		); err != nil {
@@ -86,9 +87,13 @@ func (a *App) RunWithContext(ctx context.Context) error {
 			_ = database.GetDB().AutoMigrate(&model.RefreshSession{})
 			logger.Info("Auto-migrated RefreshSession model (JTI column)")
 		}
-		if !database.GetDB().Migrator().HasColumn(&model.Instrument{}, "Active") || !database.GetDB().Migrator().HasColumn(&model.Instrument{}, "Exchange") {
+		if !database.GetDB().Migrator().HasColumn(&model.Instrument{}, "Active") || !database.GetDB().Migrator().HasColumn(&model.Instrument{}, "Exchange") || !database.GetDB().Migrator().HasColumn(&model.Instrument{}, "IsTradable") {
 			_ = database.GetDB().AutoMigrate(&model.Instrument{})
-			logger.Info("Auto-migrated Instrument model (Exchange & Active columns)")
+			logger.Info("Auto-migrated Instrument model (Exchange, Active & IsTradable columns)")
+		}
+		if !database.GetDB().Migrator().HasTable(&model.InstrumentSnapshot{}) {
+			_ = database.GetDB().AutoMigrate(&model.InstrumentSnapshot{})
+			logger.Info("Auto-migrated InstrumentSnapshot table")
 		}
 	}
 

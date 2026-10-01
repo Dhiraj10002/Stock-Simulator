@@ -943,28 +943,63 @@ class InstrumentStore:
     def _upsert_bg(self, rows: list[dict[str, Any]]) -> None:
         try:
             import psycopg
+            from datetime import timezone
+            snapshot_ver = f"mw-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}"
+
+            init_ddl = """
+                CREATE TABLE IF NOT EXISTS instrument_snapshots (
+                    id BIGSERIAL PRIMARY KEY,
+                    version VARCHAR(64) NOT NULL UNIQUE,
+                    source VARCHAR(64) NOT NULL DEFAULT 'market_worker',
+                    total_instruments INT NOT NULL DEFAULT 0,
+                    equity_count INT NOT NULL DEFAULT 0,
+                    futures_count INT NOT NULL DEFAULT 0,
+                    options_count INT NOT NULL DEFAULT 0,
+                    index_count INT NOT NULL DEFAULT 0,
+                    status VARCHAR(32) NOT NULL DEFAULT 'STAGED',
+                    validation_errors TEXT,
+                    activated_at TIMESTAMPTZ,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                );
+                ALTER TABLE instruments ADD COLUMN IF NOT EXISTS snapshot_version VARCHAR(64);
+                ALTER TABLE instruments ADD COLUMN IF NOT EXISTS is_tradable BOOLEAN NOT NULL DEFAULT TRUE;
+                CREATE INDEX IF NOT EXISTS idx_instruments_version_tradable ON instruments (snapshot_version, is_tradable);
+            """
+
             statement = """
-                INSERT INTO instruments (token, symbol, display_symbol, exchange, name, underlying, underlying_symbol, expiry, strike, option_type, lot_size, instrument_type, exchange_segment, tick_size, active, created_at, updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, true, NOW(), NOW())
+                INSERT INTO instruments (token, symbol, display_symbol, exchange, name, underlying, underlying_symbol, expiry, strike, option_type, lot_size, instrument_type, exchange_segment, tick_size, active, snapshot_version, is_tradable, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, true, %s, true, NOW(), NOW())
                 ON CONFLICT (token, exchange_segment) DO UPDATE SET
                     symbol = EXCLUDED.symbol, display_symbol = EXCLUDED.display_symbol, exchange = EXCLUDED.exchange,
                     name = EXCLUDED.name, underlying = EXCLUDED.underlying, underlying_symbol = EXCLUDED.underlying_symbol,
                     expiry = EXCLUDED.expiry, strike = EXCLUDED.strike, lot_size = EXCLUDED.lot_size,
                     option_type = EXCLUDED.option_type, instrument_type = EXCLUDED.instrument_type,
-                    tick_size = EXCLUDED.tick_size, active = EXCLUDED.active, updated_at = NOW()
+                    tick_size = EXCLUDED.tick_size, active = true, is_tradable = true,
+                    snapshot_version = EXCLUDED.snapshot_version, updated_at = NOW()
             """
             values = []
+            seen_tokens = set()
             target_names = set(s.upper() for s in self.symbols) | {
                 "NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "SENSEX",
                 "RELIANCE", "TCS", "INFY", "HDFCBANK", "TATAMOTORS", "TMPV",
                 "BHARTIARTL", "SBIN", "ICICIBANK", "KOTAKBANK", "AXISBANK",
                 "BAJFINANCE", "MARUTI", "LT", "ITC", "SUNPHARMA", "TATASTEEL"
             }
+            eq_cnt = 0
+            fut_cnt = 0
+            opt_cnt = 0
+            idx_cnt = 0
+
             for row in rows:
                 token, segment = clean(row.get("token")), clean(row.get("exch_seg"))
                 if not token or not segment:
                     continue
                 if segment not in ("NSE", "NFO", "BSE", "BFO"):
+                    continue
+
+                tok_key = (token, segment)
+                if tok_key in seen_tokens:
                     continue
 
                 name = clean(row.get("name")).upper()
@@ -1035,22 +1070,52 @@ class InstrumentStore:
                     elif inst_type in ("", "EQ"):
                         inst_type = "EQUITY"
 
+                if inst_type == "EQUITY":
+                    eq_cnt += 1
+                elif inst_type in ("FUTSTK", "FUTIDX"):
+                    fut_cnt += 1
+                elif inst_type in ("OPTSTK", "OPTIDX"):
+                    opt_cnt += 1
+                elif inst_type == "INDEX":
+                    idx_cnt += 1
+
                 disp_sym = format_display_symbol(symbol, clean(row.get("expiry")), strike, opt_type, name)
+                seen_tokens.add(tok_key)
 
                 values.append((
                     token, symbol, disp_sym, segment, name, underlying, underlying,
                     clean(row.get("expiry")), strike, opt_type, lotsize,
-                    inst_type, segment, tick_size
+                    inst_type, segment, tick_size, snapshot_ver
                 ))
 
             if not values:
                 return
+
             with psycopg.connect(self.database_url, connect_timeout=5) as connection:
                 with connection.cursor() as cursor:
+                    cursor.execute(init_ddl)
+                    # Stage snapshot row
+                    cursor.execute("""
+                        INSERT INTO instrument_snapshots (version, source, total_instruments, equity_count, futures_count, options_count, index_count, status, created_at, updated_at)
+                        VALUES (%s, 'market_worker', %s, %s, %s, %s, %s, 'STAGED', NOW(), NOW())
+                        ON CONFLICT (version) DO NOTHING
+                    """, (snapshot_ver, len(values), eq_cnt, fut_cnt, opt_cnt, idx_cnt))
+
                     for start in range(0, len(values), 1000):
                         cursor.executemany(statement, values[start:start + 1000])
+
+                    # Atomically activate new snapshot and soft-retire removed/older instruments
+                    cursor.execute("UPDATE instruments SET is_tradable = false, active = false WHERE snapshot_version IS DISTINCT FROM %s", (snapshot_ver,))
+                    cursor.execute("UPDATE instrument_snapshots SET status = 'RETIRED' WHERE status = 'ACTIVE'")
+                    cursor.execute("""
+                        UPDATE instrument_snapshots
+                        SET status = 'ACTIVE', activated_at = NOW(), total_instruments = %s,
+                            equity_count = %s, futures_count = %s, options_count = %s, index_count = %s, updated_at = NOW()
+                        WHERE version = %s
+                    """, (len(values), eq_cnt, fut_cnt, opt_cnt, idx_cnt, snapshot_ver))
+
                 connection.commit()
-            print(f"market worker: successfully synced {len(values)} instruments to DB in background", flush=True)
+            print(f"market worker: successfully staged and activated snapshot {snapshot_ver} with {len(values)} instruments (eq={eq_cnt}, fno={fut_cnt+opt_cnt}, idx={idx_cnt})", flush=True)
         except Exception as error:
             print(f"market worker: database background upsert skipped/failed: {error}", flush=True)
 
