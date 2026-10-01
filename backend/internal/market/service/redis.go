@@ -270,6 +270,32 @@ func (s *Service) rawCachedQuote(symbol string) (*dto.QuoteResponse, error) {
 	if len(values) == 0 {
 		return nil, ErrQuoteNotFound
 	}
+
+	// CachedQuote is display-only, but it must preserve the active feed-mode
+	// and source provenance contract. A stale value from a different provider
+	// or simulation mode must not become visible in the current display.
+	mode := s.FeedMode()
+	if mode == dto.FeedModeUnavailable {
+		return nil, ErrQuoteUnavailable
+	}
+	source := values["source"]
+	normSource := dto.NormalizeQuoteSource(source)
+	allowSeeded := s.AllowSeededQuotes()
+	if !dto.IsSourceExecutableInMode(normSource, mode) {
+		if !(allowSeeded && mode == dto.FeedModeSynthetic && normSource == dto.QuoteSourceSeed) {
+			return nil, fmt.Errorf("%w: cached quote source %q is not eligible for %s feed mode", ErrQuoteIneligible, source, mode)
+		}
+	}
+
+	updatedAtStr := strings.TrimSpace(values["updated_at"])
+	if updatedAtStr == "" {
+		return nil, ErrQuoteStale
+	}
+	updatedAt, err := dto.ParseQuoteTime(updatedAtStr)
+	if err != nil || updatedAt.After(time.Now().Add(5*time.Second)) {
+		return nil, fmt.Errorf("%w: cached quote timestamp is invalid", ErrQuoteIneligible)
+	}
+
 	price, err := strconv.ParseInt(values["price_paise"], 10, 64)
 	if err != nil || price <= 0 {
 		return nil, fmt.Errorf("invalid stored quote")

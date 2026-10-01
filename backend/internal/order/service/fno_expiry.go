@@ -39,8 +39,12 @@ func (s *OrderService) RunExpirySettlement(ctx context.Context) {
 }
 
 func (s *OrderService) ProcessFNOExpiry(now time.Time) {
+	db := database.GetDB()
+	if db == nil {
+		return
+	}
 	var positions []model.Position
-	if err := database.GetDB().Where("product = ? AND quantity <> 0 AND (settlement_state IS NULL OR settlement_state <> ?)", model.OrderProductFNO, settlementComplete).Find(&positions).Error; err != nil {
+	if err := db.Where("product = ? AND quantity <> 0 AND (settlement_state IS NULL OR settlement_state <> ?)", model.OrderProductFNO, settlementComplete).Find(&positions).Error; err != nil {
 		return
 	}
 	for _, position := range positions {
@@ -50,7 +54,11 @@ func (s *OrderService) ProcessFNOExpiry(now time.Time) {
 				instrument = synth
 			}
 		}
-		if instrument == nil || !isExpired(instrument.Expiry, now) {
+		if instrument == nil {
+			s.recordExpiryRisk(position, fmt.Errorf("expired F&O instrument is missing from the canonical instrument master"))
+			continue
+		}
+		if !isExpired(instrument.Expiry, now) {
 			continue
 		}
 		kind, err := product.ValidateFNOInstrument(*instrument, abs(position.Quantity))
@@ -279,14 +287,18 @@ func (s *OrderService) settleExpiredPosition(positionID uuid.UUID, settlementPri
 }
 
 func (s *OrderService) recordExpiryRisk(position model.Position, cause error) {
-	_ = database.GetDB().Model(&model.Position{}).Where("uuid = ?", position.UUID).Update("settlement_state", riskStatusPending).Error
-	var event model.RiskEvent
-	query := database.GetDB().Where("user_uuid = ? AND symbol = ? AND product = ? AND event_type = ?", position.UserUUID, position.Symbol, position.Product, riskEventFNOExpiry).First(&event)
-	if query.Error == nil {
-		_ = database.GetDB().Model(&event).Updates(map[string]any{"status": riskStatusPending, "message": cause.Error()}).Error
+	db := database.GetDB()
+	if db == nil {
 		return
 	}
-	_ = database.GetDB().Create(&model.RiskEvent{UserUUID: position.UserUUID, Symbol: position.Symbol, Product: position.Product, EventType: riskEventFNOExpiry, Status: riskStatusPending, Message: cause.Error()}).Error
+	_ = db.Model(&model.Position{}).Where("uuid = ?", position.UUID).Update("settlement_state", riskStatusPending).Error
+	var event model.RiskEvent
+	query := db.Where("user_uuid = ? AND symbol = ? AND product = ? AND event_type = ?", position.UserUUID, position.Symbol, position.Product, riskEventFNOExpiry).First(&event)
+	if query.Error == nil {
+		_ = db.Model(&event).Updates(map[string]any{"status": riskStatusPending, "message": cause.Error()}).Error
+		return
+	}
+	_ = db.Create(&model.RiskEvent{UserUUID: position.UserUUID, Symbol: position.Symbol, Product: position.Product, EventType: riskEventFNOExpiry, Status: riskStatusPending, Message: cause.Error()}).Error
 }
 
 func isExpired(value string, now time.Time) bool {
