@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/database"
-	marketDTO "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/dto"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/product"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/pkg/logger"
@@ -47,21 +46,7 @@ func (s *OrderService) Execute(userID, orderID string) error {
 	quote, err := s.executableQuote(pendingOrder.Symbol)
 	redisDuration := time.Since(redisStart)
 	if err != nil {
-		if s.executableQuoteFunc == nil && (pendingOrder.Reason == model.OrderReasonSquareOff || pendingOrder.Reason == model.OrderReasonMISSquareOff) && pendingOrder.ExitPositionUUID != nil {
-			var exitPos model.Position
-			if errPos := database.GetDB().Where("uuid = ?", *pendingOrder.ExitPositionUUID).First(&exitPos).Error; errPos == nil && exitPos.CurrentPricePaise > 0 {
-				quote = &marketDTO.QuoteResponse{
-					Symbol:     pendingOrder.Symbol,
-					PricePaise: exitPos.CurrentPricePaise,
-					Source:     "position_mark_fallback",
-					UpdatedAt:  s.now().UTC().Format(time.RFC3339Nano),
-				}
-				err = nil
-			}
-		}
-		if err != nil {
-			return err
-		}
+		return err
 	}
 	if err := s.activateStop(userUUID, orderUUID, quote.PricePaise); err != nil {
 		return err
@@ -257,31 +242,8 @@ func (s *OrderService) executeMarginProduct(userUUID, orderUUID uuid.UUID, pendi
 	if len(execStarts) > 0 {
 		execStart = execStarts[0]
 	}
-	redisStart := time.Now()
-	quote, err := s.executableQuote(pending.Symbol)
-	redisDuration := time.Since(redisStart)
-	if err != nil {
-		if s.executableQuoteFunc == nil && (pending.Reason == model.OrderReasonSquareOff || pending.Reason == model.OrderReasonMISSquareOff) && pending.ExitPositionUUID != nil {
-			var exitPos model.Position
-			if errPos := database.GetDB().Where("uuid = ?", *pending.ExitPositionUUID).First(&exitPos).Error; errPos == nil && exitPos.CurrentPricePaise > 0 {
-				quote = &marketDTO.QuoteResponse{
-					Symbol:     pending.Symbol,
-					PricePaise: exitPos.CurrentPricePaise,
-					Source:     "position_mark_fallback",
-					UpdatedAt:  s.now().UTC().Format(time.RFC3339Nano),
-				}
-				err = nil
-			}
-		}
-		if err != nil {
-			return err
-		}
-	}
-
-	if err := s.activateStop(userUUID, orderUUID, quote.PricePaise); err != nil {
-		return err
-	}
 	instrumentType, underlying := "", ""
+	var err error
 	if pending.Product == model.OrderProductFNO {
 		instrument, err := s.repo.FindInstrument(pending.Symbol)
 		if err != nil || instrument == nil {
@@ -294,14 +256,15 @@ func (s *OrderService) executeMarginProduct(userUUID, orderUUID uuid.UUID, pendi
 		}
 		if isExpired(instrument.Expiry, s.now()) {
 			if (pending.Reason == model.OrderReasonSquareOff || pending.Reason == model.OrderReasonMISSquareOff) && pending.ExitPositionUUID != nil {
-				kind, kErr := product.ValidateFNOInstrument(*instrument, pending.Quantity)
-				if kErr == nil {
-					settlementPrice, pErr := s.expiryPrice(*instrument, kind)
-					if pErr != nil {
-						settlementPrice = quote.PricePaise
-					}
-					return s.settleExpiredPosition(*pending.ExitPositionUUID, settlementPrice, kind)
+				kind, err := product.ValidateFNOInstrument(*instrument, pending.Quantity)
+				if err != nil {
+					return err
 				}
+				settlementPrice, err := s.expiryPrice(*instrument, kind)
+				if err != nil {
+					return err
+				}
+				return s.settleExpiredPosition(*pending.ExitPositionUUID, settlementPrice, kind, orderUUID)
 			}
 			return fmt.Errorf("cannot execute expired contract %s (expiry: %s)", pending.Symbol, instrument.Expiry)
 		}
@@ -310,6 +273,15 @@ func (s *OrderService) executeMarginProduct(userUUID, orderUUID uuid.UUID, pendi
 			return err
 		}
 		underlying = instrument.UnderlyingSymbol
+	}
+	redisStart := time.Now()
+	quote, err := s.executableQuote(pending.Symbol)
+	redisDuration := time.Since(redisStart)
+	if err != nil {
+		return err
+	}
+	if err := s.activateStop(userUUID, orderUUID, quote.PricePaise); err != nil {
+		return err
 	}
 	var executedPricePaise int64
 	dbStart := time.Now()

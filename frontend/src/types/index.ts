@@ -215,6 +215,13 @@ export type RiskOverview = {
 };
 
 export type OptionContract = {
+  updated_at?: string;
+  quote_source?: string;
+  is_quote_stale?: boolean;
+  day_change_available?: boolean;
+  change_paise?: number;
+  change_percent?: number;
+  analytics_source?: string;
   symbol: string;
   option_type: "CE" | "PE";
   strike_price_paise: number;
