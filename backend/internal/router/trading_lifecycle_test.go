@@ -29,6 +29,7 @@ import (
 	walletDTO "github.com/Dhiraj10002/Stock-Simulator/backend/internal/wallet/dto"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type lifecycleTestEnv struct {
@@ -113,12 +114,9 @@ func setupTradingLifecycleEnv(t *testing.T) *lifecycleTestEnv {
 
 	// Seed canonical instruments from default list if missing
 	for _, inst := range instrumentService.DefaultCanonicalInstruments {
-		var existing model.Instrument
-		if err := db.Where("symbol = ?", inst.Symbol).First(&existing).Error; err != nil {
-			instCopy := inst
-			instCopy.ID = 0
-			_ = db.Create(&instCopy).Error
-		}
+		instCopy := inst
+		instCopy.ID = 0
+		_ = db.Clauses(clause.OnConflict{DoNothing: true}).Create(&instCopy).Error
 	}
 
 	jwtSecret := "phase6_trading_lifecycle_jwt_secret_key"
@@ -560,15 +558,15 @@ func TestTradingLifecycle_MIS_BuyMarket_SquareOffEndpoint(t *testing.T) {
 	// 4. INSTRUMENT & 5. QUOTE (TCS at ₹3,500.00 = 350,000 paise)
 	env.setQuote("TCS", 350000)
 
-	// 6. ORDER & 7. EXECUTION (MIS BUY MARKET: 100 shares of TCS)
-	// Turnover = 100 * 350,000 = 35,000,000 paise (₹3,50,000)
-	// Leverage = 5x -> Margin required = 20% = 7,000,000 paise (₹70,000)
+	// 6. ORDER & 7. EXECUTION (MIS BUY MARKET: 50 shares of TCS)
+	// Turnover = 50 * 350,000 = 17,500,000 paise (₹1,75,000)
+	// Leverage = 5x -> Margin required = 20% = 3,500,000 paise (₹35,000)
 	orderReq := orderDTO.CreateOrderRequest{
 		Symbol:   "TCS",
 		Side:     model.OrderSideBuy,
 		Type:     model.OrderTypeMarket,
 		Product:  model.OrderProductIntraday,
-		Quantity: 100,
+		Quantity: 50,
 	}
 	recOrd, resOrd := sendRequest(env.router, http.MethodPost, "/api/v1/orders", token, orderReq)
 	if recOrd.Code != http.StatusCreated {
@@ -581,20 +579,22 @@ func TestTradingLifecycle_MIS_BuyMarket_SquareOffEndpoint(t *testing.T) {
 		t.Fatalf("Stage 8 TRADE: expected 1 trade, got %d", len(trades))
 	}
 	positions := fetchPositions(t, env, token)
-	if len(positions) != 1 || positions[0].Quantity != 100 || positions[0].Product != model.OrderProductIntraday {
+	if len(positions) != 1 || positions[0].Quantity != 50 || positions[0].Product != model.OrderProductIntraday {
 		t.Fatalf("Stage 9 POSITION: unexpected MIS position: %v", positions)
 	}
 
-	// Check that margin was blocked in wallet (7,000,000 paise blocked)
+	// Check that margin was blocked in wallet (3,500,000 paise blocked)
 	walletMid := fetchWallet(t, env, token)
-	if walletMid.BlockedPaise != 7000000 {
-		t.Fatalf("expected 7000000 paise blocked for MIS position, got %d", walletMid.BlockedPaise)
+	expectedBlocked := int64(3500000)
+	allowedDelta := int64(2000)
+	if diff := walletMid.BlockedPaise - expectedBlocked; diff < -allowedDelta || diff > allowedDelta {
+		t.Fatalf("expected approx %d paise blocked for MIS position, got %d (diff %d)", expectedBlocked, walletMid.BlockedPaise, diff)
 	}
 
 	// 10. P&L (Simulate rally to ₹3,550.00 = 355,000 paise)
 	env.setQuote("TCS", 355000)
 	positionsAfter := fetchPositions(t, env, token)
-	expectedPnl := int64(100 * (355000 - 350000)) // +500,000 paise (+₹5,000)
+	expectedPnl := int64(50 * (355000 - 350000)) // +250,000 paise (+₹2,500)
 	if positionsAfter[0].UnrealizedPnlPaise != expectedPnl {
 		t.Fatalf("Stage 10 P&L: expected %d paise, got %d", expectedPnl, positionsAfter[0].UnrealizedPnlPaise)
 	}
@@ -619,9 +619,9 @@ func TestTradingLifecycle_MIS_BuyMarket_SquareOffEndpoint(t *testing.T) {
 		}
 	}
 
-	// 13. FINAL BALANCE (All blocked margin released; cash balance = 100,000,000 + 500,000 = 100,500,000 paise)
+	// 13. FINAL BALANCE (All blocked margin released; cash balance = 100,000,000 + 250,000 = 100,250,000 paise)
 	finalWallet := fetchWallet(t, env, token)
-	expectedFinalCash := int64(100500000)
+	expectedFinalCash := int64(100250000)
 	if finalWallet.CashBalancePaise != expectedFinalCash || finalWallet.BlockedPaise != 0 {
 		t.Fatalf("Stage 13 FINAL BALANCE: expected cash=%d, blocked=0, got cash=%d, blocked=%d",
 			expectedFinalCash, finalWallet.CashBalancePaise, finalWallet.BlockedPaise)

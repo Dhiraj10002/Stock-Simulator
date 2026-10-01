@@ -16,6 +16,10 @@ func TestRegression_ExpiryReferenceSurvivesCacheLoss(t *testing.T) {
 	s.SetExecutableQuoteFunc(func(string) (*marketDTO.QuoteResponse, error) { return nil, errors.New("Redis cache lost") })
 	day := time.Date(2026, 9, 24, 0, 0, 0, 0, calendar.Location())
 	ref := model.SettlementReference{Symbol: "EXPIRYARCHIVE", SessionDate: "2026-09-24", FeedMode: "LIVE", Source: "angelone_live", PricePaise: 12000, ObservedAt: day.Add(15*time.Hour + 29*time.Minute + 55*time.Second)}
+	db.Where("symbol = ?", ref.Symbol).Delete(&model.SettlementReference{})
+	t.Cleanup(func() {
+		db.Where("symbol = ?", ref.Symbol).Delete(&model.SettlementReference{})
+	})
 	if err := db.Create(&ref).Error; err != nil {
 		t.Fatal(err)
 	}

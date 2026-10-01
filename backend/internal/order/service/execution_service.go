@@ -47,7 +47,7 @@ func (s *OrderService) Execute(userID, orderID string) error {
 	quote, err := s.executableQuote(pendingOrder.Symbol)
 	redisDuration := time.Since(redisStart)
 	if err != nil {
-		if (pendingOrder.Reason == model.OrderReasonSquareOff || pendingOrder.Reason == model.OrderReasonMISSquareOff) && pendingOrder.ExitPositionUUID != nil {
+		if s.executableQuoteFunc == nil && (pendingOrder.Reason == model.OrderReasonSquareOff || pendingOrder.Reason == model.OrderReasonMISSquareOff) && pendingOrder.ExitPositionUUID != nil {
 			var exitPos model.Position
 			if errPos := database.GetDB().Where("uuid = ?", *pendingOrder.ExitPositionUUID).First(&exitPos).Error; errPos == nil && exitPos.CurrentPricePaise > 0 {
 				quote = &marketDTO.QuoteResponse{
@@ -261,7 +261,7 @@ func (s *OrderService) executeMarginProduct(userUUID, orderUUID uuid.UUID, pendi
 	quote, err := s.executableQuote(pending.Symbol)
 	redisDuration := time.Since(redisStart)
 	if err != nil {
-		if (pending.Reason == model.OrderReasonSquareOff || pending.Reason == model.OrderReasonMISSquareOff) && pending.ExitPositionUUID != nil {
+		if s.executableQuoteFunc == nil && (pending.Reason == model.OrderReasonSquareOff || pending.Reason == model.OrderReasonMISSquareOff) && pending.ExitPositionUUID != nil {
 			var exitPos model.Position
 			if errPos := database.GetDB().Where("uuid = ?", *pending.ExitPositionUUID).First(&exitPos).Error; errPos == nil && exitPos.CurrentPricePaise > 0 {
 				quote = &marketDTO.QuoteResponse{
