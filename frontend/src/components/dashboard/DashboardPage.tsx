@@ -286,24 +286,6 @@ const KITE_IPOS: IPORow[] = [
   },
 ];
 
-interface EconomicEvent {
-  date: string;
-  event: string;
-  previous: string;
-  forecast?: string;
-  impact: "HIGH" | "MEDIUM" | "LOW";
-}
-
-const ECONOMIC_CALENDAR_EVENTS: EconomicEvent[] = [
-  { date: "23 Sept, Wed", event: "Broad Money Supply (M3)", forecast: "-", previous: "10.4% YoY", impact: "LOW" },
-  { date: "25 Sept, Fri", event: "FX Reserves (USD)", forecast: "780.78", previous: "US$ bn", impact: "MEDIUM" },
-  { date: "27 Sept, Sun", event: "Bank Deposit Growth", forecast: "17.76", previous: "YoY%", impact: "LOW" },
-  { date: "27 Sept, Sun", event: "Bank Credit Growth", forecast: "19.08", previous: "YoY%", impact: "LOW" },
-  { date: "28 Sept, Mon", event: "Industrial Production", forecast: "6.67", previous: "YoY%", impact: "MEDIUM" },
-  { date: "09 Oct, Wed", event: "RBI MPC Repo Rate Decision", forecast: "6.50%", previous: "6.50%", impact: "HIGH" },
-  { date: "12 Oct, Sat", event: "Consumer Price Inflation (CPI)", forecast: "3.65%", previous: "3.54%", impact: "HIGH" },
-];
-
 interface MarketHoliday {
   date: string;
   day: string;
@@ -312,45 +294,19 @@ interface MarketHoliday {
 }
 
 const NSE_MARKET_HOLIDAYS: MarketHoliday[] = [
+  { date: "26 Jan 2026", day: "Monday", occasion: "Republic Day", status: "Market Closed" },
+  { date: "03 Mar 2026", day: "Tuesday", occasion: "Holi", status: "Market Closed" },
+  { date: "20 Mar 2026", day: "Friday", occasion: "Id-Ul-Fitr (Ramadan Eid)", status: "Market Closed" },
+  { date: "03 Apr 2026", day: "Friday", occasion: "Good Friday", status: "Market Closed" },
+  { date: "14 Apr 2026", day: "Tuesday", occasion: "Dr. Baba Saheb Ambedkar Jayanti", status: "Market Closed" },
+  { date: "01 May 2026", day: "Friday", occasion: "Maharashtra Day", status: "Market Closed" },
+  { date: "27 May 2026", day: "Wednesday", occasion: "Bakri Id", status: "Market Closed" },
+  { date: "15 Aug 2026", day: "Saturday", occasion: "Independence Day", status: "Market Closed" },
   { date: "02 Oct 2026", day: "Friday", occasion: "Mahatma Gandhi Jayanti", status: "Market Closed" },
-  { date: "21 Oct 2026", day: "Wednesday", occasion: "Dussehra", status: "Market Closed" },
-  { date: "01 Nov 2026", day: "Sunday", occasion: "Diwali Laxmi Pujan (Muhurat Trading 18:15)", status: "Special Session" },
-  { date: "02 Nov 2026", day: "Monday", occasion: "Diwali Balipratipada", status: "Market Closed" },
-  { date: "15 Nov 2026", day: "Sunday", occasion: "Guru Nanak Jayanti", status: "Market Closed" },
+  { date: "20 Oct 2026", day: "Tuesday", occasion: "Dussehra", status: "Market Closed" },
+  { date: "08 Nov 2026", day: "Sunday", occasion: "Diwali Laxmi Pujan (Muhurat Trading)", status: "Special Session" },
+  { date: "24 Nov 2026", day: "Tuesday", occasion: "Prakash Gurpurb Sri Guru Nanak Dev", status: "Market Closed" },
   { date: "25 Dec 2026", day: "Friday", occasion: "Christmas", status: "Market Closed" },
-];
-
-interface EarningsEvent {
-  symbol: string;
-  company: string;
-  date: string;
-  period: string;
-  consensusEps: string;
-}
-
-const EARNINGS_CALENDAR_EVENTS: EarningsEvent[] = [
-  { symbol: "TCS", company: "Tata Consultancy Services", date: "10 Oct 2026", period: "Q2 FY27", consensusEps: "₹33.50" },
-  { symbol: "INFY", company: "Infosys Ltd", date: "17 Oct 2026", period: "Q2 FY27", consensusEps: "₹15.80" },
-  { symbol: "HDFCBANK", company: "HDFC Bank Ltd", date: "19 Oct 2026", period: "Q2 FY27", consensusEps: "₹22.40" },
-  { symbol: "RELIANCE", company: "Reliance Industries", date: "21 Oct 2026", period: "Q2 FY27", consensusEps: "₹28.20" },
-  { symbol: "ICICIBANK", company: "ICICI Bank Ltd", date: "24 Oct 2026", period: "Q2 FY27", consensusEps: "₹16.50" },
-  { symbol: "ITC", company: "ITC Limited", date: "28 Oct 2026", period: "Q2 FY27", consensusEps: "₹4.30" },
-];
-
-interface CorporateAction {
-  symbol: string;
-  company: string;
-  type: "DIVIDEND" | "BONUS" | "SPLIT";
-  details: string;
-  exDate: string;
-}
-
-const CORPORATE_ACTIONS_EVENTS: CorporateAction[] = [
-  { symbol: "TCS", company: "Tata Consultancy Services", type: "DIVIDEND", details: "Interim Dividend ₹10.00 / share", exDate: "18 Oct 2026" },
-  { symbol: "ITC", company: "ITC Ltd", type: "DIVIDEND", details: "Final Dividend ₹7.50 / share", exDate: "24 Oct 2026" },
-  { symbol: "TATAMOTORS", company: "Tata Motors Ltd", type: "SPLIT", details: "Sub-division from ₹2 to ₹1 face value", exDate: "02 Nov 2026" },
-  { symbol: "BHARTIARTL", company: "Bharti Airtel Ltd", type: "DIVIDEND", details: "Interim Dividend ₹8.00 / share", exDate: "05 Nov 2026" },
-  { symbol: "WIPRO", company: "Wipro Limited", type: "BONUS", details: "Bonus Issue 1:1", exDate: "12 Nov 2026" },
 ];
 
 interface MarketNewsItem {
@@ -386,11 +342,8 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
   const [isAddFundsOpen, setIsAddFundsOpen] = useState(false);
 
   // Kite widget active tab
-  type KiteTab = "ipos" | "news" | "economic" | "earnings";
-  const showDemoData = process.env.NEXT_PUBLIC_SHOW_DEMO_DATA === "true";
-  const [activeKiteTab, setActiveKiteTab] = useState<KiteTab>("economic");
-  const [calendarSubView, setCalendarSubView] = useState<"economic" | "holidays">("economic");
-  const [earningsSubView, setEarningsSubView] = useState<"earnings" | "actions">("earnings");
+  type KiteTab = "ipos" | "news" | "holidays";
+  const [activeKiteTab, setActiveKiteTab] = useState<KiteTab>("ipos");
 
   // Market overview chart index selection
   type OverviewIndex = "NIFTY 50" | "SENSEX" | "BANK NIFTY";
@@ -1022,9 +975,9 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
             <MarketMoversCard limit={8} />
           </div>
 
-          {/* RIGHT: Kite Circled Widget (IPOs, News, Economic Calendar + Holidays, Earnings + Actions) (5 Cols) */}
+          {/* RIGHT: Kite Circled Widget (IPOs, News, Holiday Calendar) (5 Cols) */}
           <div className="lg:col-span-5 rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 shadow-xs overflow-hidden flex flex-col">
-            {/* Widget Segmented Tabs Bar (exact Kite style: IPOs | Economic Calendar | Earnings Calendar) */}
+            {/* Widget Segmented Tabs Bar: IPOs | Market News | Holiday Calendar */}
             <div className="px-3 pt-3 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2 overflow-x-auto no-scrollbar bg-slate-50/50 dark:bg-slate-900/80">
               <button
                 onClick={() => setActiveKiteTab("ipos")}
@@ -1050,34 +1003,19 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
               </button>
 
               <button
-                onClick={() => setActiveKiteTab("economic")}
+                onClick={() => setActiveKiteTab("holidays")}
                 className={`pb-2.5 px-2.5 text-xs font-bold whitespace-nowrap transition-all border-b-2 cursor-pointer ${
-                  activeKiteTab === "economic"
+                  activeKiteTab === "holidays"
                     ? "border-cyan-600 dark:border-cyan-400 text-cyan-700 dark:text-cyan-300"
                     : "border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
                 }`}
               >
-                Economic Calendar
-              </button>
-
-              <button
-                onClick={() => setActiveKiteTab("earnings")}
-                className={`pb-2.5 px-2.5 text-xs font-bold whitespace-nowrap transition-all border-b-2 cursor-pointer ${
-                  activeKiteTab === "earnings"
-                    ? "border-cyan-600 dark:border-cyan-400 text-cyan-700 dark:text-cyan-300"
-                    : "border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
-                }`}
-              >
-                Earnings & Actions
+                Holiday Calendar
               </button>
             </div>
 
             {/* TAB CONTENT */}
             <div className="flex-1 p-3 overflow-y-auto max-h-[380px]">
-              {!showDemoData && <div className="p-4 text-sm text-slate-400">
-                No verified data source is connected for this calendar desk.
-                <Link href="/news" className="block mt-2 text-cyan-400">View sourced market news</Link>
-              </div>}
               {/* 1. IPOs TAB */}
               {activeKiteTab === "ipos" && (
                 <div className="space-y-2.5">
@@ -1086,7 +1024,7 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
                     <span className="font-mono">GMP Premium</span>
                   </div>
 
-                  {(showDemoData ? KITE_IPOS : []).map((ipo) => (
+                  {KITE_IPOS.map((ipo) => (
                     <div
                       key={ipo.symbol}
                       className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60 hover:border-cyan-500/40 transition-colors"
@@ -1139,7 +1077,7 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
                     <span>Live</span>
                   </div>
 
-                  {(showDemoData ? MARKET_NEWS_ITEMS : []).map((item) => (
+                  {MARKET_NEWS_ITEMS.map((item) => (
                     <div
                       key={item.id}
                       className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60 hover:border-cyan-500/40 transition-colors"
@@ -1167,205 +1105,45 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
                 </div>
               )}
 
-              {/* 3. ECONOMIC CALENDAR & HOLIDAYS TAB */}
-              {activeKiteTab === "economic" && (
-                <div className="space-y-3">
-                  {/* Sub-selector: Economic Releases vs Exchange Holidays */}
-                  <div className="flex items-center gap-1.5 p-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs font-semibold">
-                    <button
-                      onClick={() => setCalendarSubView("economic")}
-                      className={`flex-1 py-1 rounded-md transition-all text-center cursor-pointer ${
-                        calendarSubView === "economic"
-                          ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs"
-                          : "text-slate-500 hover:text-slate-800 dark:hover:text-white"
-                      }`}
-                    >
-                      Macro Indicators
-                    </button>
-                    <button
-                      onClick={() => setCalendarSubView("holidays")}
-                      className={`flex-1 py-1 rounded-md transition-all text-center cursor-pointer ${
-                        calendarSubView === "holidays"
-                          ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs"
-                          : "text-slate-500 hover:text-slate-800 dark:hover:text-white"
-                      }`}
-                    >
-                      🏖️ Trading Holidays
-                    </button>
+              {/* 3. HOLIDAY CALENDAR TAB */}
+              {activeKiteTab === "holidays" && (
+                <div className="space-y-2">
+                  <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 flex items-center justify-between pb-1 border-b border-slate-100 dark:border-slate-800">
+                    <span>NSE / BSE Official Holiday Calendar</span>
+                    <span className="text-[10px] font-mono">2026 Schedule</span>
                   </div>
 
-                  {calendarSubView === "economic" ? (
-                    <div className="divide-y divide-slate-100 dark:divide-slate-800/80">
-                      <div className="grid grid-cols-12 text-[10px] font-bold text-slate-400 uppercase tracking-wider pb-1">
-                        <span className="col-span-4">Date</span>
-                        <span className="col-span-5">Event</span>
-                        <span className="col-span-3 text-right">Forecast / Prev</span>
-                      </div>
-
-                      {(showDemoData ? ECONOMIC_CALENDAR_EVENTS : []).map((item, idx) => (
-                        <div
-                          key={idx}
-                          className="grid grid-cols-12 py-2 items-center text-xs hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors"
-                        >
-                          <span className="col-span-4 text-slate-500 dark:text-slate-400 font-medium text-[11px]">
-                            {item.date}
-                          </span>
-                          <div className="col-span-5 flex items-center gap-1.5">
-                            <span
-                              className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                                item.impact === "HIGH"
-                                  ? "bg-rose-500"
-                                  : item.impact === "MEDIUM"
-                                  ? "bg-amber-500"
-                                  : "bg-blue-400"
-                              }`}
-                            />
-                            <span className="font-semibold text-slate-800 dark:text-slate-200 truncate">
-                              {item.event}
-                            </span>
-                          </div>
-                          <div className="col-span-3 text-right text-[11px] font-mono text-slate-600 dark:text-slate-400">
-                            {item.forecast !== "-" ? item.forecast : item.previous}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 pb-1 border-b border-slate-100 dark:border-slate-800">
-                        NSE / BSE Official Holiday Calendar
-                      </div>
-
-                      {(showDemoData ? NSE_MARKET_HOLIDAYS : []).map((h, i) => (
-                        <div
-                          key={i}
-                          className="p-2 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60 flex items-center justify-between text-xs"
-                        >
-                          <div>
-                            <div className="font-bold text-slate-800 dark:text-slate-200">
-                              {h.occasion}
-                            </div>
-                            <div className="text-[10px] text-slate-400">
-                              {h.date} ({h.day})
-                            </div>
-                          </div>
-                          <span
-                            className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                              h.status === "Special Session"
-                                ? "bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-400"
-                                : "bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-400"
-                            }`}
-                          >
-                            {h.status}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* 4. EARNINGS CALENDAR & CORPORATE ACTIONS TAB */}
-              {activeKiteTab === "earnings" && (
-                <div className="space-y-3">
-                  {/* Sub-selector: Results vs Corporate Actions */}
-                  <div className="flex items-center gap-1.5 p-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs font-semibold">
-                    <button
-                      onClick={() => setEarningsSubView("earnings")}
-                      className={`flex-1 py-1 rounded-md transition-all text-center cursor-pointer ${
-                        earningsSubView === "earnings"
-                          ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs"
-                          : "text-slate-500 hover:text-slate-800 dark:hover:text-white"
-                      }`}
+                  {NSE_MARKET_HOLIDAYS.map((h, i) => (
+                    <div
+                      key={i}
+                      className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60 flex items-center justify-between text-xs hover:border-cyan-500/40 transition-colors"
                     >
-                      Quarterly Results
-                    </button>
-                    <button
-                      onClick={() => setEarningsSubView("actions")}
-                      className={`flex-1 py-1 rounded-md transition-all text-center cursor-pointer ${
-                        earningsSubView === "actions"
-                          ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs"
-                          : "text-slate-500 hover:text-slate-800 dark:hover:text-white"
-                      }`}
-                    >
-                      Corporate Actions
-                    </button>
-                  </div>
-
-                  {earningsSubView === "earnings" ? (
-                    <div className="divide-y divide-slate-100 dark:divide-slate-800/80">
-                      {(showDemoData ? EARNINGS_CALENDAR_EVENTS : []).map((e) => (
-                        <div
-                          key={e.symbol}
-                          className="py-2.5 flex items-center justify-between text-xs hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors"
-                        >
-                          <div>
-                            <div className="flex items-center gap-1.5">
-                              <span className="font-bold text-slate-900 dark:text-slate-100">
-                                {e.symbol}
-                              </span>
-                              <span className="text-[10px] text-slate-400 font-mono">
-                                ({e.period})
-                              </span>
-                            </div>
-                            <div className="text-[10px] text-slate-400">
-                              {e.company}
-                            </div>
-                          </div>
-
-                          <div className="text-right">
-                            <div className="font-semibold text-cyan-600 dark:text-cyan-400 font-tabular">
-                              {e.date}
-                            </div>
-                            <div className="text-[10px] text-slate-400">
-                              Est. EPS: {e.consensusEps}
-                            </div>
-                          </div>
+                      <div>
+                        <div className="font-bold text-slate-800 dark:text-slate-200">
+                          {h.occasion}
                         </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      {(showDemoData ? CORPORATE_ACTIONS_EVENTS : []).map((a, i) => (
-                        <div
-                          key={i}
-                          className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60"
-                        >
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                              <span className="font-bold text-xs text-slate-900 dark:text-slate-100">
-                                {a.symbol}
-                              </span>
-                              <span
-                                className={`text-[9px] font-bold px-1.5 py-0.2 rounded ${
-                                  a.type === "DIVIDEND"
-                                    ? "bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400"
-                                    : a.type === "SPLIT"
-                                    ? "bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-400"
-                                    : "bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-400"
-                                }`}
-                              >
-                                {a.type}
-                              </span>
-                            </div>
-                            <span className="text-[10px] text-slate-500 font-mono">
-                              Ex-Date: {a.exDate}
-                            </span>
-                          </div>
-                          <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-1">
-                            {a.details}
-                          </p>
+                        <div className="text-[10px] text-slate-400 mt-0.5">
+                          {h.date} • {h.day}
                         </div>
-                      ))}
+                      </div>
+                      <span
+                        className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          h.status === "Special Session"
+                            ? "bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-400"
+                            : "bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-400"
+                        }`}
+                      >
+                        {h.status}
+                      </span>
                     </div>
-                  )}
+                  ))}
                 </div>
               )}
             </div>
 
             <div className="p-2.5 border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/40 text-center">
               <span className="text-[10px] text-slate-400">
-                {showDemoData ? "Demo entries — illustrative data only" : "Calendar, IPO and earnings feed unavailable"}
+                Official Exchange Holiday Calendar & Primary Market Desk
               </span>
             </div>
           </div>
