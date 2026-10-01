@@ -16,7 +16,7 @@ func TestReportsService_ContractNoteAndLedgerIntegration(t *testing.T) {
 	userUUID := uuid.New()
 	user := model.User{
 		UUID:  userUUID,
-		Email: "reports_test@example.com",
+		Email: "reports_test_" + userUUID.String() + "@example.com",
 		Name:  "Test Trader",
 	}
 	if err := db.Create(&user).Error; err != nil {
@@ -32,6 +32,13 @@ func TestReportsService_ContractNoteAndLedgerIntegration(t *testing.T) {
 	if err := db.Create(&wallet).Error; err != nil {
 		t.Fatalf("create wallet: %v", err)
 	}
+
+	t.Cleanup(func() {
+		db.Unscoped().Where("user_uuid = ?", userUUID).Delete(&model.Trade{})
+		db.Unscoped().Where("wallet_uuid = ?", wallet.UUID).Delete(&model.WalletTransaction{})
+		db.Unscoped().Where("user_uuid = ?", userUUID).Delete(&model.Wallet{})
+		db.Unscoped().Where("uuid = ?", userUUID).Delete(&model.User{})
+	})
 
 	ist := getISTLocation()
 	tradeDay := time.Date(2026, 9, 29, 11, 0, 0, 0, ist)

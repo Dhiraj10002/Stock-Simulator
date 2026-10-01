@@ -20,7 +20,7 @@ jobs:
         ports:
           - 5433:5432
         options: >-
-          --health-cmd pg_isready
+          --health-cmd "pg_isready -U postgres"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -39,11 +39,17 @@ jobs:
     env:
       TEST_DATABASE_URL: "postgresql://postgres:postgres@localhost:5433/testdb?sslmode=disable"
       TEST_REDIS_URL: "redis://localhost:6380/0"
+      PGUSER: "postgres"
+      PGPASSWORD: "postgres"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version: '1.25.x'
+          cache-dependency-path: backend/go.sum
+
+      - name: Download Go dependencies
+        run: go mod download
 
       - name: Check formatting (gofmt)
         run: |
@@ -58,7 +64,7 @@ jobs:
         run: go vet ./...
 
       - name: Run Backend Tests
-        run: go test -v -count=1 ./...
+        run: go test -v -count=1 -p 1 ./...
 
   python-workers:
     name: Python Workers

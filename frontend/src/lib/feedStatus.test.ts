@@ -1,7 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createRequire } from "node:module";
-const { getAuthoritativeFeedStatus } = createRequire(import.meta.url)("./feedStatus.ts");
+import { getAuthoritativeFeedStatus } from "./feedStatus";
 
 test("feedStatus: Angel One live feed with open market", () => {
   const result = getAuthoritativeFeedStatus(
