@@ -52,6 +52,13 @@ func TestFNOExpiry_EndToEndSettlement(t *testing.T) {
 
 	ist := calendar.Location()
 	expiryDateStr := "2026-09-24"
+	// The settlement path now persists its validated reference. Keep repeated
+	// disposable runs from reading an archive created by an earlier run.
+	clearReferences := func() {
+		db.Where("symbol IN ? AND session_date = ?", []string{"NIFTY", "NIFTY24SEP26FUT"}, expiryDateStr).Delete(&model.SettlementReference{})
+	}
+	clearReferences()
+	t.Cleanup(clearReferences)
 	expiryTime := time.Date(2026, 9, 24, 15, 35, 0, 0, ist)
 	quoteTimeStr := time.Date(2026, 9, 24, 15, 29, 55, 0, ist).Format(time.RFC3339)
 

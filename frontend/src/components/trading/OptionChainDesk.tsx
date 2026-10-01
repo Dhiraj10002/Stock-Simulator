@@ -1,6 +1,7 @@
 "use client";
 import { useAccountWallet } from "@/hooks/useAccountWallet";
 
+import { canTradeOption } from "@/lib/marketDisplay";
 import React, { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTradingStore } from "@/stores/trading-store";
@@ -134,6 +135,7 @@ export default function OptionChainDesk({ initialUnderlying = "NIFTY" }: OptionC
 
   // Open contextual F&O order modal for selected contract
   const handleSelectContract = (contract: OptionContract, side: "BUY" | "SELL") => {
+    if (!canTradeOption(contract)) { setExecutionError("A fresh market quote is required to trade this contract."); return; }
     setSelectedSymbol(contract.symbol);
     const inst: Instrument = {
       id: contract.symbol,
@@ -805,7 +807,7 @@ export default function OptionChainDesk({ initialUnderlying = "NIFTY" }: OptionC
                           isCallItm ? "bg-emerald-950/15" : ""
                         }`}
                       >
-                        {row.call.iv.toFixed(1)}%
+                        <span title="Black-Scholes estimate using assumed volatility">{row.call.iv.toFixed(1)}% (model)</span>
                       </td>
 
                       {/* Call Delta */}
@@ -835,7 +837,11 @@ export default function OptionChainDesk({ initialUnderlying = "NIFTY" }: OptionC
                         {row.call.is_available === false || row.call.ltp_paise <= 0 ? (
                           <span className="text-slate-500 font-mono text-[11px] font-normal">UNAVAILABLE</span>
                         ) : (
-                          formatPaise(row.call.ltp_paise)
+                          <span title={row.call.updated_at}>
+                            {formatPaise(row.call.ltp_paise)}
+                            {row.call.is_quote_stale && <small className="block text-amber-400">STALE</small>}
+                            <small className="block text-slate-400">{row.call.day_change_available ? `${(row.call.change_percent ?? 0).toFixed(2)}%` : "Day change unavailable"}</small>
+                          </span>
                         )}
                       </td>
 
@@ -847,6 +853,7 @@ export default function OptionChainDesk({ initialUnderlying = "NIFTY" }: OptionC
                       >
                         <div className="flex items-center justify-center gap-1">
                           <button
+                            disabled={!canTradeOption(row.call)}
                             onClick={() => handleSelectContract(row.call, "BUY")}
                             className="px-2 py-0.5 rounded bg-emerald-500/15 hover:bg-emerald-500 text-emerald-400 hover:text-slate-950 text-[10px] font-bold border border-emerald-500/30 transition-all"
                             title="Buy Call"
@@ -854,6 +861,7 @@ export default function OptionChainDesk({ initialUnderlying = "NIFTY" }: OptionC
                             B
                           </button>
                           <button
+                            disabled={!canTradeOption(row.call)}
                             onClick={() => handleSelectContract(row.call, "SELL")}
                             className="px-2 py-0.5 rounded bg-rose-500/15 hover:bg-rose-500 text-rose-400 hover:text-slate-950 text-[10px] font-bold border border-rose-500/30 transition-all"
                             title="Sell Call"
@@ -883,6 +891,7 @@ export default function OptionChainDesk({ initialUnderlying = "NIFTY" }: OptionC
                       >
                         <div className="flex items-center justify-center gap-1">
                           <button
+                            disabled={!canTradeOption(row.put)}
                             onClick={() => handleSelectContract(row.put, "BUY")}
                             className="px-2 py-0.5 rounded bg-emerald-500/15 hover:bg-emerald-500 text-emerald-400 hover:text-slate-950 text-[10px] font-bold border border-emerald-500/30 transition-all"
                             title="Buy Put"
@@ -890,6 +899,7 @@ export default function OptionChainDesk({ initialUnderlying = "NIFTY" }: OptionC
                             B
                           </button>
                           <button
+                            disabled={!canTradeOption(row.put)}
                             onClick={() => handleSelectContract(row.put, "SELL")}
                             className="px-2 py-0.5 rounded bg-rose-500/15 hover:bg-rose-500 text-rose-400 hover:text-slate-950 text-[10px] font-bold border border-rose-500/30 transition-all"
                             title="Sell Put"
@@ -908,7 +918,11 @@ export default function OptionChainDesk({ initialUnderlying = "NIFTY" }: OptionC
                         {row.put.is_available === false || row.put.ltp_paise <= 0 ? (
                           <span className="text-slate-500 font-mono text-[11px] font-normal">UNAVAILABLE</span>
                         ) : (
-                          formatPaise(row.put.ltp_paise)
+                          <span title={row.put.updated_at}>
+                            {formatPaise(row.put.ltp_paise)}
+                            {row.put.is_quote_stale && <small className="block text-amber-400">STALE</small>}
+                            <small className="block text-slate-400">{row.put.day_change_available ? `${(row.put.change_percent ?? 0).toFixed(2)}%` : "Day change unavailable"}</small>
+                          </span>
                         )}
                       </td>
 
@@ -936,7 +950,7 @@ export default function OptionChainDesk({ initialUnderlying = "NIFTY" }: OptionC
                           isPutItm ? "bg-rose-950/15" : ""
                         }`}
                       >
-                        {row.put.iv.toFixed(1)}%
+                        <span title="Black-Scholes estimate using assumed volatility">{row.put.iv.toFixed(1)}% (model)</span>
                       </td>
 
                       {/* Put OI */}

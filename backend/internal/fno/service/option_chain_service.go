@@ -107,12 +107,17 @@ func (s *OptionChainService) GetOptionChain(symbol, expiry string) (*dto.OptionC
 	if len(nfoInstruments) > 0 {
 		resp, err := s.buildFromRealInstruments(symbol, expiry, spotPaise, spotRupees, nfoInstruments, spec, mode)
 		if err == nil && resp != nil && len(resp.Strikes) > 0 {
+			s.annotateDisplay(resp)
 			return resp, nil
 		}
 	}
 
 	// Branch B: Fallback / Simulation generation using unified authoritative specs
-	return s.buildSimulationChain(symbol, expiry, spotPaise, spotRupees, spec, mode)
+	resp, err := s.buildSimulationChain(symbol, expiry, spotPaise, spotRupees, spec, mode)
+	if err == nil && resp != nil {
+		s.annotateDisplay(resp)
+	}
+	return resp, err
 }
 
 func parseExpiryDate(exp string) time.Time {
@@ -265,7 +270,7 @@ func (s *OptionChainService) buildFromRealInstruments(
 			if mode == marketDto.FeedModeLive {
 				// LIVE mode: strictly read live quotes from Redis. Never write/seed to Redis!
 				if s.market != nil {
-					if q, err := s.market.CurrentQuote(pair.call.Symbol); err == nil && q != nil && q.PricePaise > 0 {
+					if q, err := s.market.CachedQuote(pair.call.Symbol); err == nil && q != nil && q.PricePaise > 0 {
 						cePrice = q.PricePaise
 						callOI = q.OpenInterest
 						isAvailable = true
@@ -318,7 +323,7 @@ func (s *OptionChainService) buildFromRealInstruments(
 			if mode == marketDto.FeedModeLive {
 				// LIVE mode: strictly read live quotes from Redis. Never write/seed to Redis!
 				if s.market != nil {
-					if q, err := s.market.CurrentQuote(pair.put.Symbol); err == nil && q != nil && q.PricePaise > 0 {
+					if q, err := s.market.CachedQuote(pair.put.Symbol); err == nil && q != nil && q.PricePaise > 0 {
 						pePrice = q.PricePaise
 						putOI = q.OpenInterest
 						isAvailable = true
@@ -440,13 +445,13 @@ func (s *OptionChainService) buildSimulationChain(
 			// In LIVE mode: only serve live quotes if they exist in Redis.
 			// NEVER fabricate prices or write to Redis via SetQuote!
 			if s.market != nil {
-				if q, err := s.market.CurrentQuote(ceSymbol); err == nil && q != nil && q.PricePaise > 0 {
+				if q, err := s.market.CachedQuote(ceSymbol); err == nil && q != nil && q.PricePaise > 0 {
 					cePrice = q.PricePaise
 					callOI = q.OpenInterest
 					ceAvailable = true
 					ceQuoteStatus = string(q.Source)
 				}
-				if q, err := s.market.CurrentQuote(peSymbol); err == nil && q != nil && q.PricePaise > 0 {
+				if q, err := s.market.CachedQuote(peSymbol); err == nil && q != nil && q.PricePaise > 0 {
 					pePrice = q.PricePaise
 					putOI = q.OpenInterest
 					peAvailable = true
@@ -594,4 +599,29 @@ func nextExpiryThursday() string {
 	}
 	nextThursday := now.AddDate(0, 0, daysUntilThursday)
 	return nextThursday.Format("02-Jan-2006")
+}
+
+// Cached prices are suitable for display only; execution still validates its
+// own live quote. Availability and freshness are separate states.
+func (s *OptionChainService) annotateDisplay(resp *dto.OptionChainResponse) {
+	for i := range resp.Strikes {
+		for _, contract := range []*dto.OptionContract{&resp.Strikes[i].Call, &resp.Strikes[i].Put} {
+			contract.AnalyticsSource = "BLACK_SCHOLES_ASSUMED_VOLATILITY"
+			if s.market == nil || !contract.IsAvailable {
+				continue
+			}
+			q, err := s.market.CachedQuote(contract.Symbol)
+			if err != nil || q == nil {
+				continue
+			}
+			contract.UpdatedAt, contract.QuoteSource = q.UpdatedAt, q.Source
+			contract.DayChangeAvailable = q.DayChangeAvailable
+			contract.ChangePaise, contract.ChangePercent = q.ChangePaise, q.ChangePercent
+			contract.IsQuoteStale = marketService.ValidateExecutableQuoteWithMode(q, time.Now(), s.market.AllowSeededQuotes()) != nil
+			contract.QuoteStatus = "FRESH"
+			if contract.IsQuoteStale {
+				contract.QuoteStatus = "STALE"
+			}
+		}
+	}
 }

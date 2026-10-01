@@ -195,6 +195,7 @@ func Setup(ctx context.Context, cfg *config.Config, opts ...SetupOption) *gin.En
 			c.Data(http.StatusOK, "application/yaml; charset=utf-8", openAPISpec)
 		})
 		api.GET("/market/status", market.Status)
+		api.GET("/market/calendar", market.Calendar)
 		api.GET("/market/quotes/batch", market.BatchQuotes)
 		api.POST("/market/quotes/batch", market.BatchQuotes)
 		api.GET("/market/quotes/:symbol", market.Quote)

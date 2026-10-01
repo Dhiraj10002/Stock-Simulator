@@ -15,6 +15,7 @@ import {
   Clock,
 } from "lucide-react";
 import { formatPaise, formatPercent } from "@/lib/format";
+import { valuationStatus as getValuationStatus } from "@/lib/marketDisplay";
 import type { Wallet, Portfolio } from "@/types";
 
 interface PortfolioSummarySnapshotProps {
@@ -45,11 +46,6 @@ export default function PortfolioSummarySnapshot({
   const realizedPnlPaise = portfolio?.realized_pnl_paise ?? 0;
   const totalNetPnlPaise = unrealizedPnlPaise + realizedPnlPaise;
 
-  const quotesAvailable = !!portfolio && (
-    portfolio.positions.length === 0 ||
-    portfolio.positions.some(p => p.is_quote_available || (p.current_price_paise && p.current_price_paise > 0)) ||
-    currentValuationPaise > 0
-  );
   const totalPortfolioValuePaise = portfolio ? currentValuationPaise : undefined;
 
   const returnPercent =
@@ -58,9 +54,7 @@ export default function PortfolioSummarySnapshot({
   const isTotalProfit = totalNetPnlPaise >= 0;
 
   const positionsCount = portfolio?.positions?.length ?? 0;
-  const valuationStatus = portfolio?.valuation_status && portfolio.valuation_status !== "DEGRADED"
-    ? portfolio.valuation_status
-    : (quotesAvailable ? "REALTIME" : "DEGRADED");
+  const valuationStatus = getValuationStatus(portfolio);
 
   const statusBadge = {
     REALTIME: {
@@ -167,7 +161,7 @@ export default function PortfolioSummarySnapshot({
             {formatPaise(portfolio?.invested_value_paise)}
           </div>
           <div className="text-[10px] text-slate-500">
-            Current: {formatPaise(quotesAvailable ? currentValuationPaise : undefined)}
+            Current: {formatPaise(portfolio ? currentValuationPaise : undefined)}
           </div>
         </div>
 
