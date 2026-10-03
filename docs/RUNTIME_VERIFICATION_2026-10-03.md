@@ -26,6 +26,7 @@ Reviewed main `d59d7a6a746c0a09ea0366d2442376b797468ec7` after PR #7 was merged.
 
 - Go tests and vet; PostgreSQL/Redis integration and order race checks in CI.
 - Regression for required schema creation, repeat upgrades, baseline preservation and legacy reset-epoch uniqueness. DDL runs in an isolated schema inside a disposable transaction.
+- CI exposed an existing graceful-shutdown test that leaked its application DATABASE_URL into subsequent tests. It now restores all changed environment values automatically and validates disposable PostgreSQL/Redis URLs before starting application workers; the test-database safety guard remains enforced.
 - Instrument tests prove lookup failures return errors and a populated master returns canonical records.
 - 80 market-worker tests, including shared/concurrent authentication, cooldown, expiry renewal, master startup recovery, strict LIVE lookup, token reuse during canonical activation and closed-session watchdog behavior.
 - Five launcher/cleanup tests with mock services and no real broker/database/Docker operations. The process-directory ownership test needs Linux `/proc` visibility and is skipped in the restricted local runtime; CI executes it.
