@@ -1,0 +1,6 @@
+{
+  "python.defaultInterpreterPath": "${workspaceFolder}/python-services/market-worker/venv/bin/python",
+  "python.analysis.extraPaths": [
+    "${workspaceFolder}/python-services/market-worker/venv/lib/python3.14/site-packages"
+  ]
+}

@@ -11,9 +11,16 @@ Verifies:
 
 import os
 import sys
+import glob
 import subprocess
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
+
+# Auto-resolve dependencies from market-worker virtualenv if running outside venv
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+for _sp in glob.glob(os.path.join(_REPO_ROOT, "python-services", "market-worker", "venv", "lib*", "python*", "site-packages")):
+    if _sp not in sys.path:
+        sys.path.insert(0, _sp)
 
 IST = ZoneInfo("Asia/Kolkata")
 
@@ -62,8 +69,8 @@ def test_smartapi_auth_and_quotes(config):
         return False, None
 
     try:
-        import pyotp
-        from SmartApi import SmartConnect
+        import pyotp  # type: ignore
+        from SmartApi import SmartConnect  # type: ignore
 
         api = SmartConnect(api_key=api_key)
         totp = pyotp.TOTP(totp_secret).now()
