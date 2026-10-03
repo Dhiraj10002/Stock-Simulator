@@ -61,8 +61,8 @@ func TestWalletService_Deposit(t *testing.T) {
 		t.Fatal("expected at least 1 transaction")
 	}
 	lastTx := txs[0]
-	if lastTx.Type != model.WalletTransactionCredit {
-		t.Fatalf("expected transaction type %s, got %s", model.WalletTransactionCredit, lastTx.Type)
+	if lastTx.Type != "DEPOSIT" {
+		t.Fatalf("expected transaction type %s, got %s", "DEPOSIT", lastTx.Type)
 	}
 	if lastTx.AmountPaise != depositAmount {
 		t.Fatalf("expected transaction amount %d, got %d", depositAmount, lastTx.AmountPaise)

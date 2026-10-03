@@ -243,6 +243,10 @@ func (s *Service) SetQuote(symbol string, pricePaise int64, volume int64) error 
 func (s *Service) CachedQuote(symbol string) (*dto.QuoteResponse, error) {
 	q, err := s.CurrentQuote(symbol)
 	if err == nil && q != nil && q.PricePaise > 0 {
+		stamp, parseErr := dto.ParseQuoteTime(q.UpdatedAt)
+		if parseErr != nil || stamp.After(time.Now().Add(5*time.Second)) {
+			return nil, fmt.Errorf("%w: cached quote timestamp is invalid", ErrQuoteIneligible)
+		}
 		return q, nil
 	}
 	if errors.Is(err, ErrQuoteStale) {

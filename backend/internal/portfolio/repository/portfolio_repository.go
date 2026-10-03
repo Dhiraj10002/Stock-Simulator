@@ -149,6 +149,7 @@ func (r *PortfolioRepository) EnsureDailySnapshot(user uuid.UUID, day string, bu
 		var existing model.AccountDailySnapshot
 		err := tx.Where("user_uuid = ? AND session_date = ? AND epoch = ?", user, day, epoch).First(&existing).Error
 		if err == nil {
+			existing.SessionDate = day
 			result = &existing
 			return nil
 		}
@@ -166,6 +167,7 @@ func (r *PortfolioRepository) EnsureDailySnapshot(user uuid.UUID, day string, bu
 		if err := tx.Where("user_uuid = ? AND session_date = ? AND epoch = ?", user, day, epoch).First(&existing).Error; err != nil {
 			return err
 		}
+		existing.SessionDate = day
 		result = &existing
 		return nil
 	})

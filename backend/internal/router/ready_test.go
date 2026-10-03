@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/config"
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/database"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/handler"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/calendar"
 	marketDTO "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/dto"
@@ -79,6 +80,9 @@ func startTestRedisServer(t *testing.T, feedState map[string]string) (string, fu
 }
 
 func TestReadyEndpoint_RoutingAndPayload(t *testing.T) {
+	priorDB := database.GetDB()
+	database.SetDBForTesting(nil)
+	defer database.SetDBForTesting(priorDB)
 	gin.SetMode(gin.TestMode)
 
 	// Outside market hours to verify readiness 200 without DB
