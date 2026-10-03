@@ -2,12 +2,12 @@
 import { useAccountWallet } from "@/hooks/useAccountWallet";
 
 import { canTradeOption } from "@/lib/marketDisplay";
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTradingStore } from "@/stores/trading-store";
 import { useSymbolQuote, useTargetedSubscription } from "@/stores/market-store";
 import { formatPaise, formatNumber } from "@/lib/format";
-import { API_URL } from "@/lib/api";
+import { API_URL, apiFetch, publicFetch, getAuthToken } from "@/lib/api";
 import {
   RefreshCw,
   Layers,
@@ -20,6 +20,9 @@ import {
   Flame,
 } from "lucide-react";
 import type { OptionChainResponse, OptionContract, ApiResponse, Instrument } from "@/types";
+import Link from "next/link";
+import { executeStrategy, pendingStatus, validLot, strategyJournalKey, type TrackedLeg } from "@/lib/strategyExecution";
+import type { Order } from "@/types";
 import FnoOrderModal from "@/components/trading/FnoOrderModal";
 
 type StrategyType =
@@ -52,17 +55,6 @@ type StrategyMetrics = {
   riskReward: string;
 };
 
-const UNDERLYINGS = [
-  { symbol: "NIFTY", label: "NIFTY 50", lot: 50 },
-  { symbol: "BANKNIFTY", label: "BANK NIFTY", lot: 15 },
-  { symbol: "FINNIFTY", label: "FIN NIFTY", lot: 25 },
-  { symbol: "KEI", label: "KEI IND", lot: 175 },
-  { symbol: "TCS", label: "TCS", lot: 175 },
-  { symbol: "RELIANCE", label: "RELIANCE", lot: 250 },
-  { symbol: "INFY", label: "INFOSYS", lot: 400 },
-  { symbol: "HDFCBANK", label: "HDFC BANK", lot: 550 },
-];
-
 interface OptionChainDeskProps {
   initialUnderlying?: string;
 }
@@ -86,12 +78,20 @@ export default function OptionChainDesk({ initialUnderlying = "NIFTY" }: OptionC
   const [executionMessage, setExecutionMessage] = useState<string | null>(null);
   const [executionError, setExecutionError] = useState<string | null>(null);
 
-  const [token] = useState<string>(() => {
-    if (typeof window !== "undefined") {
-      return localStorage.getItem("auth_token") || "";
-    }
-    return "";
+  const [journal, setJournal] = useState<{ owner: string | null; legs: TrackedLeg[] }>(() => {
+    const owner = strategyJournalKey(getAuthToken());
+    try { return { owner, legs: owner ? JSON.parse(sessionStorage.getItem(owner) || "[]") : [] }; } catch { return { owner, legs: [] }; }
   });
+  const submittingRef = useRef(false);
+  const [reviewed, setReviewed] = useState(false);
+  useEffect(() => {
+    const load = () => { const owner = strategyJournalKey(getAuthToken()); try { setJournal({ owner, legs: owner ? JSON.parse(sessionStorage.getItem(owner) || "[]") : [] }); } catch { setJournal({ owner, legs: [] }); } };
+    window.addEventListener("auth-changed", load); window.addEventListener("storage", load);
+    return () => { window.removeEventListener("auth-changed", load); window.removeEventListener("storage", load); };
+  }, []);
+  const visibleLegs = journal.owner === strategyJournalKey(getAuthToken()) ? journal.legs : [];
+  const eligible = useQuery({ queryKey: ["derivative-underlyings"], queryFn: () => publicFetch<string[]>("/instruments/derivative-underlyings"), staleTime: 60000 });
+  const [underlyingSearch, setUnderlyingSearch] = useState("");
 
   const apiUrl = API_URL;
 
@@ -134,40 +134,20 @@ export default function OptionChainDesk({ initialUnderlying = "NIFTY" }: OptionC
   const { data: wallet } = useAccountWallet();
 
   // Open contextual F&O order modal for selected contract
-  const handleSelectContract = (contract: OptionContract, side: "BUY" | "SELL") => {
-    if (!canTradeOption(contract)) { setExecutionError("A fresh market quote is required to trade this contract."); return; }
-    setSelectedSymbol(contract.symbol);
-    const inst: Instrument = {
-      id: contract.symbol,
-      symbol: contract.symbol,
-      display_symbol: `${selectedUnderlying} ${contract.strike_price_paise / 100} ${contract.option_type}`,
-      displayName: `${selectedUnderlying} ${contract.strike_price_paise / 100} ${contract.option_type}`,
-      name: `${selectedUnderlying} ${chain?.expiry_date || ""} ${contract.strike_price_paise / 100} ${contract.option_type}`,
-      exchange: "NFO",
-      token: contract.symbol,
-      instrument_type: "OPTIDX",
-      underlying: selectedUnderlying,
-      expiry: chain?.expiry_date || "",
-      strike: contract.strike_price_paise / 100,
-      option_type: contract.option_type,
-      lot_size: contract.lot_size || chain?.lot_size || 50,
-      lotSize: contract.lot_size || chain?.lot_size || 50,
-      tick_size: 0.05,
-      active: true,
-      segment: "OPTIONS",
-      basePricePaise: contract.ltp_paise,
-      price_paise: contract.ltp_paise,
-      dayChangePercent: 0,
-      change_percent: 0,
-    };
-    setFnoModalInstrument(inst);
-    setFnoOrderSide(side);
-    setIsFnoModalOpen(true);
+  const handleSelectContract = async (contract: OptionContract, side: "BUY" | "SELL") => {
+    if (!canTradeOption(contract) || !validLot(contract.lot_size)) { setExecutionError("A fresh quote and canonical lot size are required."); return; }
+    try {
+      const inst = await publicFetch<Instrument>(`/instruments/${encodeURIComponent(contract.symbol)}`);
+      if (!inst.active || !validLot(inst.lot_size) || inst.lot_size !== contract.lot_size || !inst.token || !inst.expiry || !["OPTIDX", "OPTSTK"].includes(inst.instrument_type)) throw new Error("Canonical contract specifications are unavailable or have changed. Refresh before trading.");
+      setSelectedSymbol(contract.symbol);
+      setFnoModalInstrument({ ...inst, lotSize: inst.lot_size, basePricePaise: contract.ltp_paise });
+      setFnoOrderSide(side); setIsFnoModalOpen(true);
+    } catch (error) { setExecutionError(error instanceof Error ? error.message : "Contract unavailable"); }
   };
 
   // Compute Strategy Definition & Payoffs
   const strategyMetrics: StrategyMetrics | null = useMemo(() => {
-    if (!chain || !chain.strikes || chain.strikes.length === 0 || activeStrategy === "NONE") {
+    if (!chain || !chain.strikes || chain.strikes.length === 0 || activeStrategy === "NONE" || !validLot(chain.lot_size) || !validLot(strategyLots)) {
       return null;
     }
 
@@ -334,52 +314,38 @@ export default function OptionChainDesk({ initialUnderlying = "NIFTY" }: OptionC
     return null;
   }, [chain, activeStrategy, strategyLots]);
 
-  // Execute multi-leg strategy orders
+  const saveJournal = (owner: string, legs: TrackedLeg[]) => {
+    setJournal({ owner, legs });
+    sessionStorage.setItem(owner, JSON.stringify(legs));
+  };
+  const refreshStrategy = async () => {
+    const owner = strategyJournalKey(getAuthToken()); if (!owner || owner !== journal.owner) return;
+    const rows = await Promise.all(journal.legs.map(async row => {
+      if (!row.uuid) return row;
+      try { const order = await apiFetch<Order>(`/orders/${row.uuid}`); return { ...row, status: order.status, error: undefined }; }
+      catch { return { ...row, error: "Status refresh failed; review Orders." }; }
+    }));
+    saveJournal(owner, rows);
+  };
+  const cancelPendingLeg = async (uuid: string) => {
+    try { await apiFetch(`/orders/${uuid}`, { method: "DELETE" }); } catch (error) { setExecutionError(error instanceof Error ? error.message : "Cancellation failed"); }
+    await refreshStrategy(); // A fill may win the cancellation race; confirm actual server status.
+  };
   const handleExecuteStrategy = async () => {
-    if (!strategyMetrics || !token) {
-      setExecutionError("Authentication token missing or invalid strategy configuration.");
-      return;
-    }
-
-    setExecutingStrategy(true);
-    setExecutionMessage(null);
-    setExecutionError(null);
-
+    const owner = strategyJournalKey(getAuthToken());
+    if (!strategyMetrics || !owner || submittingRef.current || visibleLegs.length) { setExecutionError("Sign in and review the previous strategy before starting another."); return; }
+    if (new Set(strategyMetrics.legs.map(leg => leg.contract.symbol)).size !== strategyMetrics.legs.length || strategyMetrics.legs.some(leg => !canTradeOption(leg.contract) || !validLot(leg.contract.lot_size) || leg.contract.lot_size !== chain?.lot_size)) { setExecutionError("Every strategy leg needs a fresh quote and canonical lot size."); return; }
+    submittingRef.current = true; setExecutingStrategy(true); setExecutionMessage(null); setExecutionError(null);
+    const assertOwner = () => { if (strategyJournalKey(getAuthToken()) !== owner) throw new Error("Account changed; inspect Orders before continuing."); };
     try {
-      const orderPromises = strategyMetrics.legs.map((leg) => {
-        const qty = (chain?.lot_size ?? 25) * strategyLots;
-        return fetch(`${apiUrl}/orders`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            symbol: leg.contract.symbol,
-            side: leg.side,
-            type: "MARKET",
-            product: "FNO",
-            quantity: qty,
-          }),
-        });
-      });
-
-      const responses = await Promise.all(orderPromises);
-      const allOk = responses.every((r) => r.ok);
-
-      if (allOk) {
-        setExecutionMessage(
-          `Successfully executed all ${strategyMetrics.legs.length} legs for ${strategyMetrics.title} (${strategyLots} lot)!`
-        );
-        setActiveStrategy("NONE");
-      } else {
-        setExecutionError("One or more strategy legs failed during order dispatch.");
-      }
-    } catch (err: unknown) {
-      setExecutionError(err instanceof Error ? err.message : "Execution failed");
-    } finally {
-      setExecutingStrategy(false);
-    }
+      const rows = await executeStrategy(strategyMetrics.legs.map(leg => ({ symbol: leg.contract.symbol, side: leg.side, lotSize: leg.contract.lot_size })), strategyLots, {
+        create: async row => { assertOwner(); return apiFetch<Order>("/orders", { method: "POST", body: JSON.stringify({ symbol: row.symbol, side: row.side, type: "MARKET", product: "FNO", quantity: row.quantity }) }); },
+        read: async uuid => { assertOwner(); return apiFetch<Order>(`/orders/${uuid}`); },
+      }, rows => saveJournal(owner, rows));
+      if (rows.every(row => row.status === "EXECUTED")) { setExecutionMessage(`Confirmed ${rows.length} executed strategy legs.`); setActiveStrategy("NONE"); }
+      else setExecutionError("Strategy incomplete. Further legs were stopped. Review each order and any open positions before continuing.");
+    } catch (error) { setExecutionError(error instanceof Error ? error.message : "Strategy failed"); }
+    finally { submittingRef.current = false; setExecutingStrategy(false); }
   };
 
   // Max Pain Calculation
@@ -423,24 +389,34 @@ export default function OptionChainDesk({ initialUnderlying = "NIFTY" }: OptionC
 
   return (
     <div className="space-y-6">
+      {visibleLegs.length > 0 && <section aria-label="Strategy order recovery" className="rounded-xl border border-amber-700 bg-slate-900 p-4 space-y-3">
+        <h2 className="font-bold">Strategy order status</h2><p className="text-sm">Each leg is a separate paper order. Filled legs remain open positions; this strategy is not atomic.</p>
+        <table className="w-full text-sm"><thead><tr><th>Contract</th><th>Side / quantity</th><th>Status</th><th>Recovery</th></tr></thead><tbody>{visibleLegs.map((row,i) => <tr key={i}><td>{row.symbol}</td><td>{row.side} / {row.quantity}</td><td>{row.status}{row.error && <p role="alert">{row.error}</p>}</td><td>{row.uuid && pendingStatus(row.status) && !executingStrategy && <button onClick={() => cancelPendingLeg(row.uuid!)}>Cancel pending leg</button>}</td></tr>)}</tbody></table>
+        <button disabled={executingStrategy} onClick={refreshStrategy} className="mr-4 text-cyan-300">Refresh order statuses</button><Link href="/orders" className="mr-4 text-cyan-300">Review Orders</Link><Link href="/portfolio" className="text-cyan-300">Review / close positions</Link>
+        <label className="block text-xs"><input type="checkbox" checked={reviewed} onChange={e => setReviewed(e.target.checked)} /> I reviewed all orders and positions, including unknown submissions.</label>
+        <button disabled={executingStrategy || !reviewed || visibleLegs.some(row => pendingStatus(row.status))} onClick={() => { if (journal.owner) { saveJournal(journal.owner, []); setReviewed(false); } }} className="disabled:opacity-40">Clear reviewed tracking</button>
+      </section>}
       {/* Top Controls: Underlyings, Spot Banner & Expiry */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 p-4 rounded-xl bg-slate-900/80 border border-slate-800 shadow-xl">
         {/* Underlying Selector Chips */}
+        <label className="text-xs">Search eligible underlying<input aria-label="Search option underlying" value={underlyingSearch} onChange={e => setUnderlyingSearch(e.target.value)} className="block rounded bg-slate-800 p-2" /></label>
+        {eligible.isError && <p role="alert">Eligible underlyings unavailable.</p>}
+        {eligible.data?.length === 0 && <p>No eligible contracts available.</p>}
         <div className="flex items-center gap-1.5 overflow-x-auto pb-2 lg:pb-0 scrollbar-none">
-          {UNDERLYINGS.map((u) => {
-            const isSelected = u.symbol === selectedUnderlying;
+          {eligible.data?.filter(name => name.includes(underlyingSearch.toUpperCase())).map((name) => {
+            const isSelected = name === selectedUnderlying;
             return (
               <button
-                key={u.symbol}
-                onClick={() => handleUnderlyingChange(u.symbol)}
+                key={name}
+                onClick={() => handleUnderlyingChange(name)}
                 className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 ${
                   isSelected
                     ? "bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20 scale-105"
                     : "bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700"
                 }`}
               >
-                <span>{u.label}</span>
-                <span className="text-[10px] ml-1 opacity-70 font-mono">({u.lot})</span>
+                <span>{name}</span>
+
               </button>
             );
           })}
@@ -618,7 +594,7 @@ export default function OptionChainDesk({ initialUnderlying = "NIFTY" }: OptionC
 
                 <button
                   onClick={handleExecuteStrategy}
-                  disabled={executingStrategy}
+                  disabled={executingStrategy || visibleLegs.length > 0}
                   className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs shadow-md shadow-cyan-500/20 transition-all disabled:opacity-50"
                 >
                   <Play className="w-3.5 h-3.5 fill-current" />

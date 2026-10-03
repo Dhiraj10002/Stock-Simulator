@@ -951,3 +951,63 @@ class NativeMarketFieldsTest(unittest.TestCase):
     def test_partial_depth_is_unavailable(self):
         fields = worker.provider_market_fields({"depth": {"buy": [{"price": 1, "quantity": 2}], "sell": []}})
         self.assertNotIn("depth_json", fields)
+
+class CanonicalRefreshReadinessTest(unittest.TestCase):
+    def test_worker_heartbeat_includes_loaded_master(self):
+        store = worker.InstrumentStore("database", ["TCS"])
+        store.master_version = "activated-v2"
+        client = MagicMock()
+        worker.write_worker_heartbeat(client, store)
+        client.set.assert_called_once()
+        self.assertEqual(client.set.call_args.kwargs["ex"], 90)
+        self.assertEqual(client.hset.call_args.kwargs["mapping"]["worker_master_version"], "activated-v2")
+
+    def test_master_failure_invalidates_subscriptions_and_requests_reconnect(self):
+        from unittest.mock import patch
+        store = worker.InstrumentStore("database", ["TCS"])
+        store.master_version = "old"
+        store.refresh = MagicMock(side_effect=RuntimeError("database master unavailable"))
+        store._subscriptions = {("1", 1): worker.Subscription("OLD", "1", "NSE", 1)}
+        control, client = MagicMock(), MagicMock()
+        with patch.dict(os.environ, {"MARKET_FEED_MODE": "live"}):
+            worker.refresh_once(store, control, client)
+        self.assertEqual(store.subscriptions(), [])
+        self.assertEqual(store.master_version, "")
+        control.reconnect.assert_called_once()
+        self.assertEqual(client.hset.call_args.kwargs["mapping"]["worker_master_version"], "")
+
+    def test_master_change_requests_reconciliation(self):
+        store, control = MagicMock(), MagicMock()
+        store.refresh.return_value = True
+        worker.refresh_once(store, control, MagicMock())
+        control.reconnect.assert_called_once()
+        store.refresh.return_value = False
+        worker.refresh_once(store, control, MagicMock())
+        self.assertEqual(control.reconnect.call_count, 1)
+
+    def test_dead_or_future_worker_fails_readiness(self):
+        from unittest.mock import patch
+        from datetime import datetime, timezone, timedelta
+        client = MagicMock()
+        writer = MagicMock(client=client)
+        with patch.object(worker, "GLOBAL_WRITER", writer), patch.dict(os.environ, {"MARKET_FEED_MODE": "live"}):
+            for delta in (-100, 60):
+                client.hgetall.return_value = {"worker_heartbeat": (datetime.now(timezone.utc)+timedelta(seconds=delta)).isoformat(), "worker_master_version":"v2", "feed_state":"LIVE"}
+                self.assertFalse(worker.worker_readiness()[0])
+
+    def test_live_refresh_uses_activated_database_and_skips_unchanged_member_load(self):
+        from unittest.mock import patch
+        connection, cursor, driver, rows_module = MagicMock(), MagicMock(), MagicMock(), MagicMock()
+        driver.connect.return_value.__enter__.return_value = connection
+        connection.cursor.return_value.__enter__.return_value = cursor
+        row = {"token":"11536","symbol":"TCS-EQ","name":"TCS","underlying_symbol":"TCS","expiry":"","strike":"0","lotsize":1,"instrumenttype":"EQUITY","exch_seg":"NSE","tick_size":"0.05"}
+        cursor.fetchall.side_effect = [[{"version":"v2"}],[row],[{"version":"v2"}]]
+        cursor.fetchone.return_value = {"count":1,"modified":"2026-10-03T10:00:00Z"}
+        store = worker.InstrumentStore("postgresql://test",["TCS"])
+        with patch.dict(sys.modules,{"psycopg":driver,"psycopg.rows":rows_module}), patch.dict(os.environ,{"MARKET_FEED_MODE":"live"}):
+            self.assertTrue(store.refresh())
+            self.assertFalse(store.refresh())
+        self.assertEqual(store.master_version,"v2")
+        queries = [call.args[0] for call in cursor.execute.call_args_list]
+        self.assertEqual(sum("SELECT token" in query for query in queries),1)
+        self.assertTrue(any("instrument_snapshots" in query for query in queries))

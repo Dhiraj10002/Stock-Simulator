@@ -713,6 +713,15 @@ class QuoteRequestHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
+        if parsed.path == "/ready":
+            ready, error = worker_readiness()
+            body = json.dumps({"ready": ready, "error": error}).encode()
+            self.send_response(200 if ready else 503)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers(); self.wfile.write(body)
+            return
+
         if parsed.path == "/health":
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -883,6 +892,8 @@ class InstrumentStore:
     def __init__(self, database_url: str, symbols: list[str]) -> None:
         self.database_url = database_url
         self.symbols = symbols
+        self.master_version = ""
+        self._master_signature = None
         self._rows: list[dict[str, Any]] = []
         self._subscriptions: dict[tuple[str, int], Subscription] = {}
         self._lock = threading.Lock()
@@ -906,7 +917,19 @@ class InstrumentStore:
             from psycopg.rows import dict_row
             with psycopg.connect(self.database_url, connect_timeout=5, row_factory=dict_row) as connection:
                 with connection.cursor() as cursor:
-                    cursor.execute("SELECT token,symbol,name,underlying_symbol,expiry,strike,lot_size AS lotsize,instrument_type AS instrumenttype,exchange_segment AS exch_seg,tick_size FROM instruments WHERE active = true AND is_tradable = true AND snapshot_version IN (SELECT version FROM instrument_snapshots WHERE status = 'ACTIVE')")
+                    cursor.execute("SELECT version FROM instrument_snapshots WHERE status = 'ACTIVE'")
+                    versions = list(cursor.fetchall())
+                    if len(versions) != 1:
+                        raise RuntimeError("LIVE requires exactly one activated master")
+                    version = versions[0]["version"]
+                    cursor.execute("SELECT COUNT(*) AS count, MAX(updated_at) AS modified FROM instruments WHERE active = true AND is_tradable = true AND snapshot_version = %s", (version,))
+                    meta = cursor.fetchone()
+                    if not meta or meta["count"] == 0:
+                        raise RuntimeError("activated master is empty")
+                    signature = (version, meta["count"], str(meta["modified"]))
+                    if signature == self._master_signature:
+                        return False
+                    cursor.execute("SELECT token,symbol,name,underlying_symbol,expiry,strike,lot_size AS lotsize,instrument_type AS instrumenttype,exchange_segment AS exch_seg,tick_size FROM instruments WHERE active = true AND is_tradable = true AND snapshot_version = %s", (version,))
                     rows = list(cursor.fetchall())
             if not rows:
                 raise RuntimeError("active master is empty; run sync-instruments before starting LIVE")
@@ -927,6 +950,8 @@ class InstrumentStore:
                         mapping[resolve_canonical_symbol(clean(row["name"]))] = row
             GLOBAL_TOKEN_MAP = mapping
             self._rows = rows
+            self.master_version = version
+            self._master_signature = signature
             subscriptions = self._build_subscriptions(rows)
             with self._lock:
                 changed = self._subscriptions != {(item.token,item.exchange_type):item for item in subscriptions}
@@ -1449,19 +1474,62 @@ def has_angel_credentials() -> bool:
     return all(bool(os.getenv(k, "").strip()) for k in required)
 
 
+def worker_readiness() -> tuple[bool, str]:
+    try:
+        if GLOBAL_WRITER is None or GLOBAL_WRITER.client is None:
+            return False, "worker not initialized"
+        values = GLOBAL_WRITER.client.hgetall("market:feed_state")
+        stamp = datetime.fromisoformat(values.get("worker_heartbeat", "").replace("Z", "+00:00"))
+        age = (datetime.now(timezone.utc) - stamp).total_seconds()
+        if age < -5 or age > 90:
+            return False, "worker heartbeat expired or future dated"
+        if get_feed_mode() == "live" and not values.get("worker_master_version"):
+            return False, "activated master missing"
+        if get_feed_mode() == "live" and values.get("feed_state") in ("UNAVAILABLE", "DISCONNECTED", "RETRYING"):
+            return False, "live provider unavailable"
+        return True, ""
+    except Exception:
+        return False, "worker state unavailable"
+
+
+def write_worker_heartbeat(client: Any, store: InstrumentStore) -> None:
+    stamp = datetime.now(timezone.utc).isoformat()
+    client.set("market:worker:heartbeat", stamp, ex=90)
+    client.hset("market:feed_state", mapping={"worker_heartbeat": stamp, "worker_master_version": store.master_version})
+
+
+def refresh_once(store: InstrumentStore, control: FeedControl, client: Any) -> None:
+    try:
+        if store.refresh():
+            control.reconnect("activated master or tradable contracts changed")
+    except Exception as error:
+        if get_feed_mode() == "live":
+            global GLOBAL_TOKEN_MAP
+            GLOBAL_TOKEN_MAP = {}
+            store.master_version = ""
+            store._master_signature = None
+            store._rows = []
+            with store._lock:
+                store._subscriptions = {}
+            publish_feed_state(client, feed_provider="angel_one", feed_state="UNAVAILABLE", is_synthetic=False)
+            write_worker_heartbeat(client, store)
+            control.reconnect("canonical master unavailable")
+        print(f"market worker: instrument refresh failed: {error}", flush=True)
+
+
 def refresh_daily(store: InstrumentStore, control: FeedControl, client: Any = None) -> None:
+    # Keep the function name for compatibility; reconcile within one minute, including expiry retirement.
+    interval = max(10, min(300, int(os.getenv("INSTRUMENT_REFRESH_SECONDS", "60"))))
     while True:
-        time.sleep(24 * 60 * 60)
-        try:
-            load_canonical_aliases(client)
-            if store.refresh():
-                control.reconnect("instrument subscriptions changed")
-        except Exception as error:
-            print(f"market worker: daily instrument refresh failed: {error}", flush=True)
+        time.sleep(interval)
+        refresh_once(store, control, client)
+        write_worker_heartbeat(client, store)
 
 
 def run_feed(store: InstrumentStore, writer: QuoteWriter, control: FeedControl) -> bool:
     global GLOBAL_SMART_API, GLOBAL_WRITER
+    if not store.master_version:
+        raise RuntimeError("activated canonical master unavailable")
     api_key = os.getenv("ANGEL_API_KEY", "").strip()
     client_id = os.getenv("ANGEL_CLIENT_ID", "").strip()
     password = os.getenv("ANGEL_PASSWORD", "").strip()
@@ -1476,14 +1544,6 @@ def run_feed(store: InstrumentStore, writer: QuoteWriter, control: FeedControl) 
         raise RuntimeError(f"Angel One login failed: {session.get('message', 'unknown error')}")
     GLOBAL_SMART_API = smart_api
     GLOBAL_WRITER = writer
-    def heartbeat() -> None:
-        while True:
-            try:
-                client.set("market:worker:heartbeat", datetime.now(timezone.utc).isoformat(), ex=90)
-            except Exception:
-                pass
-            time.sleep(20)
-    threading.Thread(target=heartbeat, daemon=True).start()
     auth_token = session["data"]["jwtToken"]
     feed_token = smart_api.getfeedToken()
     websocket = VerifiedSmartWebSocket(auth_token, api_key, client_id, feed_token)
@@ -1688,7 +1748,7 @@ def main() -> None:
     def heartbeat() -> None:
         while True:
             try:
-                client.set("market:worker:heartbeat", datetime.now(timezone.utc).isoformat(), ex=90)
+                write_worker_heartbeat(client, store)
             except Exception:
                 pass
             time.sleep(20)

@@ -167,6 +167,8 @@ func TestReadiness_LiveMode_StaleTickDuringMarketHours_Returns503(t *testing.T) 
 		"feed_state":              "LIVE",
 		"is_synthetic":            "false",
 		"last_tick":               staleTickTime,
+		"worker_heartbeat":        simulatedOpenTime.UTC().Format(time.RFC3339),
+		"worker_master_version":   "20261001-0800",
 		"subscribed_tokens_count": "150",
 	})
 	defer cleanup()
@@ -222,6 +224,8 @@ func TestReadiness_LiveMode_FreshTickDuringMarketHours_Returns200(t *testing.T) 
 		"feed_state":              "LIVE",
 		"is_synthetic":            "false",
 		"last_tick":               freshTickTime,
+		"worker_heartbeat":        simulatedOpenTime.UTC().Format(time.RFC3339),
+		"worker_master_version":   "20261001-0800",
 		"subscribed_tokens_count": "1420",
 	})
 	defer cleanup()
@@ -280,6 +284,8 @@ func TestReadiness_OutsideMarketHours_AgedTicksDoNotFailReadiness(t *testing.T) 
 		"feed_state":              "DISCONNECTED",
 		"is_synthetic":            "false",
 		"last_tick":               agedTickTime,
+		"worker_heartbeat":        simulatedClosedTime.UTC().Format(time.RFC3339),
+		"worker_master_version":   "20261001-0800",
 		"subscribed_tokens_count": "1420",
 	})
 	defer cleanup()
@@ -325,9 +331,11 @@ func TestReadiness_TradingHoliday_ReportsHoliday(t *testing.T) {
 	require.False(t, calendar.IsMarketOpen(simulatedHolidayTime))
 
 	redisAddr, cleanup := startFakeRedisServer(t, map[string]string{
-		"feed_provider": "angel_one",
-		"feed_state":    "LIVE",
-		"is_synthetic":  "false",
+		"worker_heartbeat":      simulatedHolidayTime.UTC().Format(time.RFC3339),
+		"worker_master_version": "20261001-0800",
+		"feed_provider":         "angel_one",
+		"feed_state":            "LIVE",
+		"is_synthetic":          "false",
 	})
 	defer cleanup()
 
@@ -396,4 +404,66 @@ func TestReadinessUnsupportedCalendarYearFailsClosed(t *testing.T) {
 	assert.Equal(t, "UNAVAILABLE", state)
 	assert.Empty(t, close)
 	assert.Empty(t, cutoff)
+}
+
+func TestClosedSessionStillRequiresWorkerHeartbeatAndMasterAgreement(t *testing.T) {
+	now := time.Date(2026, 9, 26, 12, 0, 0, 0, calendar.Location())
+	for _, tc := range []struct{ name, beat, version string }{
+		{"missing", "", "20261001-0800"},
+		{"expired", now.Add(-91 * time.Second).Format(time.RFC3339), "20261001-0800"},
+		{"future", now.Add(6 * time.Second).Format(time.RFC3339), "20261001-0800"},
+		{"wrong master", now.Format(time.RFC3339), "old-version"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := setupTestDB(t)
+			addr, cleanup := startFakeRedisServer(t, map[string]string{"feed_state": "LIVE", "is_synthetic": "false", "worker_heartbeat": tc.beat, "worker_master_version": tc.version})
+			defer cleanup()
+			market, err := marketService.New("redis://"+addr+"?protocol=2", 500*time.Millisecond)
+			require.NoError(t, err)
+			market.SetFeedMode(marketDTO.FeedModeLive)
+			defer market.Client().Close()
+			h := NewHealthHandler()
+			h.SetDB(db)
+			h.SetMarketService(market)
+			h.SetNowFunc(func() time.Time { return now })
+			w := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(w)
+			c.Request = httptest.NewRequest(http.MethodGet, "/ready", nil)
+			h.Readiness(c)
+			assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+			var result ReadinessResponse
+			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &result))
+			assert.Equal(t, "DOWN", result.Services.Worker.Status)
+		})
+	}
+}
+
+func TestLiveMasterRejectsLegacyRowsWithoutActivation(t *testing.T) {
+	db := setupTestDB(t)
+	require.NoError(t, db.Where("1=1").Delete(&model.InstrumentSnapshot{}).Error)
+	addr, stop := startFakeRedisServer(t, map[string]string{})
+	defer stop()
+	market, err := marketService.New("redis://"+addr+"?protocol=2", 500*time.Millisecond)
+	require.NoError(t, err)
+	defer market.Client().Close()
+	market.SetFeedMode(marketDTO.FeedModeLive)
+	h := NewHealthHandler()
+	h.SetDB(db)
+	h.SetMarketService(market)
+	status, _, _, _ := h.checkInstrumentMaster(t.Context())
+	assert.Equal(t, "DOWN", status)
+}
+
+func TestReadinessRejectsFutureFeedTick(t *testing.T) {
+	now := time.Date(2026, 9, 23, 11, 30, 0, 0, calendar.Location())
+	addr, stop := startFakeRedisServer(t, map[string]string{"feed_state": "LIVE", "last_tick": now.Add(time.Minute).Format(time.RFC3339)})
+	defer stop()
+	market, err := marketService.New("redis://"+addr+"?protocol=2", 500*time.Millisecond)
+	require.NoError(t, err)
+	defer market.Client().Close()
+	market.SetFeedMode(marketDTO.FeedModeLive)
+	h := NewHealthHandler()
+	h.SetMarketService(market)
+	status, _, _, _, _, _ := h.checkMarketFeed(t.Context(), now, "OPEN")
+	assert.Equal(t, "DOWN", status)
 }

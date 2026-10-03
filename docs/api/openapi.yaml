@@ -1653,6 +1653,13 @@ components:
                 active_version: { type: string, example: "20261001-0800" }
                 total_tradable: { type: integer, example: 18450 }
                 error: { type: string }
+            worker:
+              type: object
+              properties:
+                status: { type: string, enum: [UP, DOWN] }
+                heartbeat_age_seconds: { type: number, nullable: true }
+                master_version: { type: string }
+                error: { type: string }
             calendar:
               type: object
               properties:
