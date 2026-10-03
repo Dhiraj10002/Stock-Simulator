@@ -245,7 +245,9 @@ func TestInstrumentUpgradeSupportsMissingLegacyStateColumns(t *testing.T) {
 		t.Fatal(err)
 	}
 	var kept model.Instrument
-	if err := tx.First(&kept, newer.ID).Error; err != nil || kept.Active || kept.IsTradable || kept.SnapshotVersion == "" {
+	// These isolated schemas deliberately drop/readd columns, changing SELECT *
+	// result order on a reused pgx connection. Project the state being verified.
+	if err := tx.Select("id, active, is_tradable, snapshot_version").First(&kept, newer.ID).Error; err != nil || kept.ID != newer.ID || kept.Active || kept.IsTradable || kept.SnapshotVersion == "" {
 		t.Fatalf("legacy columns must be upgraded before quarantine: %+v, %v", kept, err)
 	}
 }

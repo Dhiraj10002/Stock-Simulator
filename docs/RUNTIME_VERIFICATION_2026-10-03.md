@@ -23,6 +23,8 @@ The importer uses the same repair before migrating and can activate verified con
 
 Live-session evidence remains tracked in [issue #9](https://github.com/Dhiraj10002/Stock-Simulator/issues/9), including commands, screenshots, paper-account cleanup and acceptance criteria. This automated upgrade cannot inspect the user's actual database records or certify live broker behavior.
 
+The follow-up CI also crossed midnight IST and exposed an existing contract-note test that requested the runner's UTC date. It now uses the confirmed trade's execution timestamp converted to the trading date. Report services share the exchange calendar's cached IST location and fixed UTC+05:30 fallback, instead of silently falling back to UTC when timezone data is absent.
+
 ## Findings and corrections
 
 | Finding | Evidence and correction |
