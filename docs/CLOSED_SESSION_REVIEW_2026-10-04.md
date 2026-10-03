@@ -1,5 +1,7 @@
 # Restart and unavailable-data review — 4 October 2026 IST
 
+**Latest update:** the next restart log showed an aborted Git pull and worker startup timeout. Use [the worker startup recovery guide](WORKER_STARTUP_RECOVERY_2026-10-04.md) for the current branch, a targeted local-edit backup and separate-terminal verification.
+
 ## Current conclusion
 
 The latest supplied log shows a running backend and an Angel One WebSocket connection to 49 canonical instruments. It does **not** establish that any valid quotes were received: `last_tick` is empty and several zero-price messages were discarded. The dashboard was captured after midnight on Sunday with `MARKET CLOSED`.

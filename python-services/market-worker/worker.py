@@ -1552,8 +1552,8 @@ def worker_readiness() -> tuple[bool, str]:
             return False, "worker heartbeat expired or future dated"
         if get_feed_mode() == "live" and not values.get("worker_master_version"):
             return False, "activated master missing"
-        if get_feed_mode() == "live" and values.get("feed_state") in ("UNAVAILABLE", "DISCONNECTED", "RETRYING"):
-            return False, "live provider unavailable"
+        if get_feed_mode() == "live" and values.get("feed_state") != "LIVE":
+            return False, "live provider not connected"
         return True, ""
     except Exception:
         return False, "worker state unavailable"
@@ -1821,26 +1821,24 @@ def main() -> None:
     if not symbols:
         raise RuntimeError("MARKET_SYMBOLS must contain at least one symbol")
 
+    # HTTP health is process liveness, not master/provider readiness. Remote
+    # master loading and broker login may take minutes; expose health first so
+    # the launcher can serve the UI while data remains explicitly unavailable.
+    GLOBAL_WRITER = None
+    if start_quote_server() is None:
+        raise RuntimeError("market worker HTTP listener failed to bind")
+
     client = redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"), decode_responses=True,
                             socket_connect_timeout=5, socket_timeout=5, health_check_interval=30)
     db_url = os.getenv("DATABASE_URL", "").strip()
     store = InstrumentStore(db_url, symbols)
-
-    # Load canonical symbol aliases from file, env, and Redis
-    load_canonical_aliases(client)
-
-    try:
-        store.refresh()
-    except Exception as error:
-        print(f"market worker: initial instrument refresh failed: {error}", flush=True)
-        # Keep liveness/heartbeat available and retry canonical activation through reconciliation.
 
     quote_ttl = int(os.getenv("QUOTE_TTL_SECONDS", "300"))
     history_ttl = int(os.getenv("HISTORY_TTL_SECONDS", "86400"))
     history_max = int(os.getenv("HISTORY_MAX_ITEMS", "500"))
     writer = QuoteWriter(client, quote_ttl, history_ttl, history_max)
     GLOBAL_WRITER = writer
-    if mode == "live" and not store.master_version:
+    if mode == "live":
         publish_feed_state(client, feed_provider="angel_one", feed_state="UNAVAILABLE", is_synthetic=False)
     def heartbeat() -> None:
         while True:
@@ -1851,11 +1849,19 @@ def main() -> None:
             time.sleep(20)
     threading.Thread(target=heartbeat, daemon=True).start()
 
-    # Initialize global symbol lookup, Angel One session, and on-demand quote HTTP server
+    # Heartbeats remain available throughout the initial canonical load/login.
+    print("market worker: loading canonical instruments; trading readiness remains unavailable until initialization completes", flush=True)
+    load_canonical_aliases(client)
+    try:
+        store.refresh()
+    except Exception as error:
+        print(f"market worker: initial instrument refresh failed: {error}", flush=True)
+        # Retry canonical activation through reconciliation; keep liveness up.
+
+    # Initialize symbol lookup and the shared Angel One session after the master.
     init_global_token_map()
     if mode == "live" and store.master_version:
         init_smart_api()
-    start_quote_server()
 
     # Seed historical candles only in explicit synthetic simulation mode; never inject fake candles in LIVE mode
     if mode == "synthetic":
