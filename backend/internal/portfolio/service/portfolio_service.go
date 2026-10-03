@@ -459,6 +459,7 @@ func toPositionResponse(position model.Position) dto.PositionResponse {
 		Symbol:             position.Symbol,
 		Product:            position.Product,
 		UnderlyingSymbol:   position.UnderlyingSymbol,
+		InstrumentType:     position.InstrumentType,
 		Quantity:           position.Quantity,
 		AveragePricePaise:  position.AveragePricePaise,
 		CurrentPricePaise:  position.CurrentPricePaise,

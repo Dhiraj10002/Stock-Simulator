@@ -242,6 +242,7 @@ func ToCanonicalInstrument(inst model.Instrument) dto.InstrumentResponse {
 		ID:              inst.ID,
 		Symbol:          inst.Symbol,
 		DisplaySymbol:   displaySymbol,
+		Name:            inst.Name,
 		Exchange:        exchange,
 		Token:           inst.Token,
 		InstrumentType:  instType,
@@ -1082,7 +1083,7 @@ func (s *Service) DerivativeUnderlyings(ctx context.Context) ([]string, error) {
 		return nil, fmt.Errorf("instrument master unavailable")
 	}
 	var members []model.Instrument
-	if err := s.db.WithContext(ctx).Where("active = ? AND is_tradable = ? AND instrument_type IN ?", true, true, []string{"FUTIDX", "FUTSTK", "OPTIDX", "OPTSTK"}).Find(&members).Error; err != nil {
+	if err := s.db.WithContext(ctx).Distinct("underlying", "underlying_symbol", "expiry").Where("active = ? AND is_tradable = ? AND instrument_type IN ?", true, true, []string{"FUTIDX", "FUTSTK", "OPTIDX", "OPTSTK"}).Find(&members).Error; err != nil {
 		return nil, err
 	}
 	seen := map[string]bool{}
@@ -1105,4 +1106,35 @@ func (s *Service) DerivativeUnderlyings(ctx context.Context) ([]string, error) {
 	}
 	sort.Strings(names)
 	return names, nil
+}
+
+// DerivativeStocks returns the complete eligible NSE equity universe without
+// truncating a general instrument search or presenting derivative-only test names.
+func (s *Service) DerivativeStocks(ctx context.Context) ([]dto.InstrumentResponse, error) {
+	names, err := s.DerivativeUnderlyings(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]dto.InstrumentResponse, 0)
+	if len(names) == 0 {
+		return out, nil
+	}
+	symbols := make([]string, 0, len(names)*2)
+	for i, name := range names {
+		names[i] = strings.ToUpper(name)
+		symbols = append(symbols, names[i], names[i]+"-EQ")
+	}
+	var equities []model.Instrument
+	err = s.db.WithContext(ctx).
+		Where("active = ? AND is_tradable = ? AND instrument_type = ?", true, true, "EQUITY").
+		Where("exchange = ? OR exchange_segment = ?", "NSE", "NSE").
+		Where("UPPER(symbol) IN ?", symbols).
+		Order("symbol ASC").Find(&equities).Error
+	if err != nil {
+		return nil, err
+	}
+	for _, equity := range equities {
+		out = append(out, ToCanonicalInstrument(equity))
+	}
+	return out, nil
 }

@@ -723,6 +723,17 @@ paths:
                   success: { type: boolean }
                   data: { type: array, items: { type: string } }
 
+  /instruments/derivative-stocks:
+    get:
+      summary: List active NSE equities with unexpired eligible derivatives
+      description: Complete canonical equity identities including names. No default universe on dependency failure.
+      tags: [Instruments]
+      responses:
+        '200':
+          description: Canonical F&O eligible NSE equities
+        '503':
+          description: Canonical instrument master unavailable
+
   /instruments:
     get:
       summary: List Canonical Instruments

@@ -5,6 +5,7 @@ type InstrumentResponse struct {
 	ID              uint    `json:"id"`
 	Symbol          string  `json:"symbol"`
 	DisplaySymbol   string  `json:"display_symbol"`
+	Name            string  `json:"name"`
 	Exchange        string  `json:"exchange"`
 	Token           string  `json:"token"`
 	InstrumentType  string  `json:"instrument_type"`

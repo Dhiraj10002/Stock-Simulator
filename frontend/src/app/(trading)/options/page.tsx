@@ -15,79 +15,33 @@ import {
   PieChart,
 } from "lucide-react";
 import { formatPaise } from "@/lib/format";
-import { API_URL } from "@/lib/api";
-import type { Portfolio, ApiResponse } from "@/types";
+import { apiFetch } from "@/lib/api";
+import { useAuthToken } from "@/hooks/useAuthToken";
+import { isDerivativePosition } from "@/lib/fnoExplore";
+import type { Portfolio } from "@/types";
 
 export default function OptionsPage() {
   // Navigation tabs: Explore (Derivatives Hub) vs Option Chain vs Positions
-  const [activeFnoTab, setActiveFnoTab] = useState<"explore" | "chain" | "positions">("explore");
-  const [selectedChainUnderlying, setSelectedChainUnderlying] = useState<string>("NIFTY");
+  const [activeFnoTab, setActiveFnoTab] = useState<
+    "explore" | "chain" | "positions"
+  >("explore");
+  const [selectedChainUnderlying, setSelectedChainUnderlying] =
+    useState<string>("NIFTY");
 
-  const [token] = useState<string>(() => {
-    if (typeof window !== "undefined") {
-      return (
-        localStorage.getItem("auth_token") ||
-        localStorage.getItem("stock-simulator-access-token") ||
-        ""
-      );
-    }
-    return "";
-  });
-
-  const apiUrl = API_URL;
-
-  // 1. Fetch Wallet for Navbar available balance
+  const token = useAuthToken();
   const { data: wallet } = useAccountWallet();
-
-  // 2. Fetch Portfolio for Navbar unrealized PnL & Positions
-  const { data: portfolio } = useQuery<Portfolio>({
+  const portfolioQuery = useQuery<Portfolio>({
     queryKey: ["portfolio", token],
-    queryFn: async () => {
-      if (!token) {
-        return {
-          invested_value_paise: 0,
-          current_value_paise: 0,
-          unrealized_pnl_paise: 0,
-          positions: [],
-        };
-      }
-      try {
-        const res = await fetch(`${apiUrl}/portfolio`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!res.ok) {
-          return {
-            invested_value_paise: 0,
-            current_value_paise: 0,
-            unrealized_pnl_paise: 0,
-            positions: [],
-          };
-        }
-        const json: ApiResponse<Portfolio> = await res.json();
-        return (
-          json.data || {
-            invested_value_paise: 0,
-            current_value_paise: 0,
-            unrealized_pnl_paise: 0,
-            positions: [],
-          }
-        );
-      } catch {
-        return {
-          invested_value_paise: 0,
-          current_value_paise: 0,
-          unrealized_pnl_paise: 0,
-          positions: [],
-        };
-      }
-    },
+    queryFn: () => apiFetch<Portfolio>("/portfolio"),
     enabled: !!token,
     refetchInterval: token ? 5000 : false,
+    retry: false,
   });
-
-  const fnoPositions = (portfolio?.positions ?? []).filter(
-    (p) => p.product === "FNO" || p.product === "INTRADAY"
-  );
+  const portfolio =
+    token && !portfolioQuery.isError ? portfolioQuery.data : undefined;
+  const fnoPositions = portfolio?.positions
+    .filter(isDerivativePosition)
+    .filter((position) => position.quantity !== 0);
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-150">
@@ -114,7 +68,8 @@ export default function OptionsPage() {
               <span>F&O Derivatives Hub</span>
             </h1>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Live index & stock futures, sectoral contracts, and institutional risk management.
+              Index & stock futures, option chains, and your paper trading
+              account.
             </p>
           </div>
 
@@ -154,7 +109,7 @@ export default function OptionsPage() {
                 }`}
               >
                 <PieChart className="w-3.5 h-3.5" />
-                <span>Positions ({fnoPositions.length})</span>
+                <span>Positions ({fnoPositions?.length ?? "—"})</span>
               </button>
             </div>
 
@@ -172,6 +127,7 @@ export default function OptionsPage() {
         {/* 1. EXPLORE TAB */}
         {activeFnoTab === "explore" && (
           <FnoExplorePage
+            onViewPositions={() => setActiveFnoTab("positions")}
             onSelectOptionChain={(sym) => {
               setSelectedChainUnderlying(sym);
               setActiveFnoTab("chain");
@@ -190,7 +146,7 @@ export default function OptionsPage() {
             <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
               <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
                 <PieChart className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
-                Active F&O Derivative Positions ({fnoPositions.length})
+                Active F&O Derivative Positions ({fnoPositions?.length ?? "—"})
               </h2>
               <Link
                 href="/portfolio"
@@ -201,7 +157,18 @@ export default function OptionsPage() {
               </Link>
             </div>
 
-            {fnoPositions.length === 0 ? (
+            {!fnoPositions ? (
+              <p
+                role="status"
+                className="py-8 text-sm text-slate-500 dark:text-slate-400"
+              >
+                {!token
+                  ? "Sign in to view derivative positions."
+                  : portfolioQuery.isError
+                    ? "Portfolio unavailable. Exposure cannot be confirmed."
+                    : "Loading derivative positions…"}
+              </p>
+            ) : fnoPositions.length === 0 ? (
               <div className="py-12 text-center space-y-3">
                 <div className="w-12 h-12 mx-auto rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400">
                   <Layers className="w-6 h-6" />
@@ -211,7 +178,9 @@ export default function OptionsPage() {
                     No Open Derivative Positions
                   </h3>
                   <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
-                    You currently do not have any open futures or options contracts. Explore the desk to trade index options and stock futures.
+                    You currently do not have any open futures or options
+                    contracts. Explore the desk to trade index options and stock
+                    futures.
                   </p>
                 </div>
                 <button
@@ -236,8 +205,13 @@ export default function OptionsPage() {
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
                     {fnoPositions.map((pos, idx) => {
-                      const pnl = pos.unrealized_pnl_paise ?? 0;
-                      const isGain = pnl >= 0;
+                      const available =
+                        pos.is_quote_available === true &&
+                        pos.quote_status !== "UNAVAILABLE";
+                      const pnl = available
+                        ? pos.unrealized_pnl_paise
+                        : undefined;
+                      const isGain = pnl !== undefined && pnl >= 0;
                       return (
                         <tr
                           key={idx}
@@ -258,16 +232,27 @@ export default function OptionsPage() {
                             {formatPaise(pos.average_price_paise)}
                           </td>
                           <td className="py-3 px-3 text-right font-mono font-tabular">
-                            {formatPaise(pos.current_price_paise ?? 0)}
+                            {available
+                              ? formatPaise(pos.current_price_paise)
+                              : "Unavailable"}
+                            {pos.is_quote_stale && (
+                              <small className="block text-amber-600 dark:text-amber-400">
+                                Last available
+                              </small>
+                            )}
                           </td>
                           <td
                             className={`py-3 px-3 text-right font-black font-tabular ${
-                              isGain
-                                ? "text-emerald-600 dark:text-emerald-400"
-                                : "text-rose-600 dark:text-rose-400"
+                              pnl === undefined
+                                ? "text-slate-400"
+                                : isGain
+                                  ? "text-emerald-600 dark:text-emerald-400"
+                                  : "text-rose-600 dark:text-rose-400"
                             }`}
                           >
-                            {formatPaise(pnl)}
+                            {pnl === undefined
+                              ? "Unavailable"
+                              : formatPaise(pnl)}
                           </td>
                         </tr>
                       );

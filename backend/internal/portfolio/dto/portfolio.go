@@ -6,6 +6,7 @@ type PositionResponse struct {
 	Symbol             string `json:"symbol"`
 	Product            string `json:"product"`
 	UnderlyingSymbol   string `json:"underlying_symbol,omitempty"`
+	InstrumentType     string `json:"instrument_type,omitempty"`
 	Quantity           int64  `json:"quantity"`
 	AveragePricePaise  int64  `json:"average_price_paise"`
 	CurrentPricePaise  int64  `json:"current_price_paise"`
