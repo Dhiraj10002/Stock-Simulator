@@ -152,7 +152,7 @@ func (a *App) RunWithContext(ctx context.Context) error {
 
 func upgradeRequiredSchema(db *gorm.DB) error {
 	if db.Migrator().HasTable(&model.AccountDailySnapshot{}) && !db.Migrator().HasColumn(&model.AccountDailySnapshot{}, "Epoch") && db.Migrator().HasIndex(&model.AccountDailySnapshot{}, "idx_daily_snapshots_user_date") {
-		if err := db.Migrator().DropIndex(&model.AccountDailySnapshot{}, "idx_daily_snapshots_user_date"); err != nil {
+		if err := model.DropIndexInTableSchema(db, model.AccountDailySnapshot{}.TableName(), "idx_daily_snapshots_user_date"); err != nil {
 			return err
 		}
 	}

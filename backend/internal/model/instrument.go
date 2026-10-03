@@ -44,7 +44,7 @@ func UpgradeInstrumentTokenIndex(db *gorm.DB) error {
 		if index.Name() == "idx_instruments_token_exchange" {
 			unique, known := index.Unique()
 			if known && unique {
-				return db.Migrator().DropIndex(&Instrument{}, index.Name())
+				return DropIndexInTableSchema(db, "instruments", index.Name())
 			}
 		}
 	}

@@ -42,8 +42,18 @@ func TestRequiredSchemaUpgradeRepairsExistingDatabase(t *testing.T) {
 				if err := tx.Exec("INSERT INTO account_daily_snapshots (user_uuid,session_date,opening_cash_paise,opening_holdings_value_paise,opening_equity_paise) VALUES (?, '2026-10-03',12345,0,12345)", user).Error; err != nil {
 					t.Fatal(err)
 				}
+				if err := tx.AutoMigrate(&model.Instrument{}); err != nil {
+					t.Fatal(err)
+				}
+				if err := tx.Exec(`DROP INDEX idx_instruments_token_exchange;
+					CREATE UNIQUE INDEX idx_instruments_token_exchange ON instruments (token, exchange_segment)`).Error; err != nil {
+					t.Fatal(err)
+				}
 			}
 			for i := 0; i < 2; i++ {
+				if err := model.UpgradeInstrumentTokenIndex(tx); err != nil {
+					t.Fatal(err)
+				}
 				if err := upgradeRequiredSchema(tx); err != nil {
 					t.Fatal(err)
 				}
@@ -61,6 +71,24 @@ func TestRequiredSchemaUpgradeRepairsExistingDatabase(t *testing.T) {
 				}
 				if err := tx.Create(&model.AccountDailySnapshot{UserUUID: user, SessionDate: "2026-10-03", Epoch: "reset-epoch"}).Error; err != nil {
 					t.Fatalf("legacy unique index did not allow a new reset epoch: %v", err)
+				}
+				for _, symbol := range []string{"OLDCE", "NEWCE"} {
+					if err := tx.Create(&model.Instrument{Symbol: symbol, Name: symbol, Token: "50001", ExchangeSegment: "NFO"}).Error; err != nil {
+						t.Fatalf("legacy token uniqueness was not upgraded: %v", err)
+					}
+				}
+				indexes, err := tx.Migrator().GetIndexes(&model.Instrument{})
+				if err != nil {
+					t.Fatal(err)
+				}
+				var contractUnique bool
+				for _, index := range indexes {
+					if index.Name() == "idx_instruments_contract" {
+						contractUnique, _ = index.Unique()
+					}
+				}
+				if !contractUnique {
+					t.Fatal("contract identity uniqueness must be preserved")
 				}
 			}
 		})
