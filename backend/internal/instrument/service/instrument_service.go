@@ -944,32 +944,35 @@ func (s *Service) ExpireInstruments(ctx context.Context, asOf time.Time) (int64,
 		loc = time.FixedZone("IST", 5*3600+1800)
 	}
 
-	var derivatives []model.Instrument
-	err = s.db.WithContext(ctx).
+	// A master has tens of thousands of option contracts but only a small set
+	// of expiry dates. Do not transfer every contract across a remote DB link
+	// on each lifecycle tick, or build an unbounded list of SQL ID parameters.
+	var expiries []string
+	err = s.db.WithContext(ctx).Model(&model.Instrument{}).
 		Where("is_tradable = ? AND expiry != '' AND exchange_segment IN ('NFO', 'BFO')", true).
-		Find(&derivatives).Error
+		Distinct().Pluck("expiry", &expiries).Error
 	if err != nil {
 		return 0, err
 	}
 
 	asOfIST := asOf.In(loc)
-	var expiredIDs []uint
+	var expiredDates []string
 
-	for _, inst := range derivatives {
-		expDate, err := ParseExpiryDate(inst.Expiry, loc)
+	for _, expiry := range expiries {
+		expDate, err := ParseExpiryDate(expiry, loc)
 		if err == nil {
 			if asOfIST.After(expDate) || asOfIST.Equal(expDate) {
-				expiredIDs = append(expiredIDs, inst.ID)
+				expiredDates = append(expiredDates, expiry)
 			}
 		}
 	}
 
-	if len(expiredIDs) == 0 {
+	if len(expiredDates) == 0 {
 		return 0, nil
 	}
 
 	res := s.db.WithContext(ctx).Model(&model.Instrument{}).
-		Where("id IN ?", expiredIDs).
+		Where("is_tradable = ? AND exchange_segment IN ('NFO', 'BFO') AND expiry IN ?", true, expiredDates).
 		Updates(map[string]interface{}{"is_tradable": false, "active": false})
 	return res.RowsAffected, res.Error
 }

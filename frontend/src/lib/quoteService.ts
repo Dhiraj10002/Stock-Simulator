@@ -72,7 +72,7 @@ export async function fetchQuote(symbol: string): Promise<Quote | null> {
   }
 
   try {
-    const res = await fetch(`${API_URL}/market/quotes/${encodeURIComponent(sym)}`);
+    const res = await fetch(`${API_URL}/market/quotes/${encodeURIComponent(sym)}?purpose=display`);
     if (res.status === 404) {
       return null;
     }

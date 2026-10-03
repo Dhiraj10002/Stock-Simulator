@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { fetchBatchQuotes, getCachedQuote } from "./quoteService";
+import { fetchQuote, fetchBatchQuotes, getCachedQuote } from "./quoteService";
 import { useMarketStore } from "@/stores/market-store";
 
 test("missing batch quotes do not produce per-symbol requests and can recover later", async (t) => {
@@ -29,4 +29,14 @@ test("stale store quotes do not prevent a fresh batch request", () => {
     source: "angelone_live", updated_at: new Date(Date.now() - 60000).toISOString(),
   });
   assert.equal(getCachedQuote("STALE_TEST"), undefined);
+});
+
+test("single symbol display retains a sourced last-session quote", async (t) => {
+  const fixture = {symbol: "CLOSED_SESSION_TEST", price_paise: 12345, source: "angelone_live", updated_at: new Date(Date.now() - 86400000).toISOString(), is_quote_stale: true};
+  t.mock.method(globalThis, "fetch", async (url: string | URL | Request) => {
+    assert.ok(String(url).endsWith("/market/quotes/CLOSED_SESSION_TEST?purpose=display"));
+    return Response.json({success: true, data: fixture});
+  });
+  assert.deepEqual(await fetchQuote(fixture.symbol), fixture);
+  assert.equal(useMarketStore.getState().quotes[fixture.symbol].is_quote_stale, true);
 });

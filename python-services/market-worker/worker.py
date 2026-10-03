@@ -507,10 +507,21 @@ def fetch_full_snapshots(api, subscriptions) -> dict:
         return {}
     result = broker_call(lambda: api.getMarketData('FULL', groups))
     if not isinstance(result, dict) or result.get('status') is not True:
+        # Never print a raw broker response: it can contain private session data.
+        print(f'market worker: FULL snapshot request rejected; requested={len(expected)}', flush=True)
         return {}
-    return {(row.get('exchange'), str(row.get('symbolToken'))): row
+    snapshots = {(row.get('exchange'), str(row.get('symbolToken'))): row
             for row in (result.get('data') or {}).get('fetched', [])
             if (row.get('exchange'), str(row.get('symbolToken'))) in expected}
+    if len(snapshots) != len(expected):
+        print(f'market worker: FULL snapshot coverage incomplete; requested={len(expected)} matched={len(snapshots)}', flush=True)
+    return snapshots
+
+
+def full_snapshot_time(data) -> datetime | None:
+    # Both are exchange-provided times. Missing feed time may use the older
+    # last-trade time; never substitute retrieval time to make a price fresh.
+    return broker_quote_time(data.get('exchFeedTime')) or broker_quote_time(data.get('exchTradeTime'))
 
 
 def fetch_full_snapshot(api, segment: str, token: str) -> dict | None:
@@ -632,7 +643,7 @@ def fetch_quote_for_symbol(symbol: str) -> dict[str, Any] | None:
             if data:
                 ltp_paise = rupees_to_paise(data.get("ltp"))
                 close_paise = rupees_to_paise(data.get("close"))
-                stamp = broker_quote_time(data.get("exchFeedTime"))
+                stamp = full_snapshot_time(data)
                 if ltp_paise <= 0 or stamp is None:
                     return None
                 lower_c = rupees_to_paise(data.get("lowerCircuit") or data.get("lower_circuit") or data.get("lower_circuit_limit"))
@@ -1648,12 +1659,15 @@ def run_feed(store: InstrumentStore, writer: QuoteWriter, control: FeedControl) 
                     return
                 for item in pending:
                     data = snapshots.get((item.exchange_segment, item.token))
-                    stamp = broker_quote_time(data.get("exchFeedTime")) if data else None
-                    if data and stamp:
+                    stamp = full_snapshot_time(data) if data else None
+                    price = rupees_to_paise(data.get("ltp")) if data else 0
+                    if data and stamp and price > 0:
                         writer.write(item, rupees_to_paise(data.get("ltp")), integer(data.get("tradeVolume")),
                                      source="angelone_live", previous_close_paise=rupees_to_paise(data.get("close")),
                                      event_time=stamp, build_history=False, open_interest=integer(data.get("opnInterest")), market_fields=provider_market_fields(data),
                                      lower_circuit_paise=rupees_to_paise(data.get("lowerCircuit")), upper_circuit_paise=rupees_to_paise(data.get("upperCircuit")))
+                    elif data:
+                        print(f'market worker: FULL snapshot discarded; positive_price={price > 0} exchange_time={stamp is not None}', flush=True)
             except Exception as error:
                 print(f"market worker: demand subscription refresh failed: {error}", flush=True)
 

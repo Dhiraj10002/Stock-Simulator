@@ -1,7 +1,9 @@
 "use client";
 
 import React from "react";
-import { useMultiSymbolQuotes } from "@/stores/market-store";
+import { useMarketStore, useMultiSymbolQuotes } from "@/stores/market-store";
+import { quoteLabel } from "@/lib/marketData";
+import { dayMovement } from "@/lib/marketDisplay";
 import { ArrowUpRight, ArrowDownRight, Activity } from "lucide-react";
 import { formatNumber, formatPercent } from "@/lib/format";
 
@@ -31,6 +33,8 @@ export default function IndicesBar({
 }: IndicesBarProps) {
   const symbols = INDICES_LIST.map((idx) => idx.symbol);
   const quotes = useMultiSymbolQuotes(symbols);
+  const marketStatus = useMarketStore((s) => s.marketStatus);
+  const connectionState = useMarketStore((s) => s.connectionState);
 
   return (
     <div
@@ -41,11 +45,12 @@ export default function IndicesBar({
       <div className="flex items-center gap-3 min-w-max">
         {INDICES_LIST.map((idx) => {
           const q = quotes[idx.symbol];
-          const hasQuote = q && q.price_paise > 0;
+          const label = quoteLabel(q);
+          const hasQuote = q && label !== "UNAVAILABLE";
           const price = hasQuote ? q.price_paise / 100 : 0;
-          const changePaise = q?.change_paise ?? 0;
-          const change = changePaise / 100;
-          const changePercent = q?.change_percent ?? 0;
+          const movement = dayMovement(q);
+          const change = movement?.change ?? 0;
+          const changePercent = movement?.percent ?? 0;
           const isPositive = changePercent >= 0;
           const isSelected = selectedIndex === idx.symbol;
 
@@ -90,7 +95,7 @@ export default function IndicesBar({
                     <div className="text-sm font-black font-tabular tracking-tight text-slate-900 dark:text-slate-50">
                       {formatNumber(price, 2)}
                     </div>
-                    <div
+                    {movement ? <div
                       className={`text-[11px] font-bold font-tabular flex items-center justify-end gap-0.5 ${
                         isPositive
                           ? "text-emerald-600 dark:text-emerald-400"
@@ -107,12 +112,13 @@ export default function IndicesBar({
                         {formatNumber(change, 2)}
                       </span>
                       <span>({formatPercent(changePercent)})</span>
-                    </div>
+                    </div> : <div className="text-[10px] text-slate-500">Day movement unavailable</div>}
+                    <div className="text-[9px] text-slate-500" title={q?.updated_at}>{marketStatus === "OPEN" ? label : "LAST AVAILABLE · SESSION CLOSED"}</div>
                   </>
                 ) : (
                   <div className="flex items-center gap-1 text-[11px] text-slate-400 dark:text-slate-500">
-                    <Activity className="w-3 h-3 animate-pulse text-cyan-500" />
-                    <span>Connecting...</span>
+                    <Activity className="w-3 h-3 text-slate-400" />
+                    <span>{marketStatus !== "OPEN" ? "Session closed · unavailable" : connectionState === "connecting" ? "Connecting..." : "Unavailable"}</span>
                   </div>
                 )}
               </div>

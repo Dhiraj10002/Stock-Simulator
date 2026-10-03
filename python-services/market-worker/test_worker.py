@@ -836,6 +836,22 @@ class RealBrokerDataRegressionTest(unittest.TestCase):
         with patch.object(worker, "broker_call", side_effect=lambda call: call()):
             self.assertIsNone(worker.fetch_full_snapshot(api, "NFO", "12345"))
 
+    def test_full_snapshot_falls_back_only_to_sourced_trade_time(self):
+        self.assertEqual(worker.full_snapshot_time({"exchFeedTime": "", "exchTradeTime": "01-Oct-2026 15:29:00"}).isoformat(), "2026-10-01T09:59:00+00:00")
+        self.assertIsNone(worker.full_snapshot_time({"exchFeedTime": "invalid", "exchTradeTime": ""}))
+        # Feed time takes precedence when both provider fields are valid.
+        self.assertEqual(worker.full_snapshot_time({"exchFeedTime": "01-Oct-2026 15:30:00", "exchTradeTime": "01-Oct-2026 15:29:00"}).isoformat(), "2026-10-01T10:00:00+00:00")
+
+    def test_rejected_snapshot_diagnostics_do_not_print_broker_payload(self):
+        from unittest.mock import patch
+        api = MagicMock()
+        api.getMarketData.return_value = {"status": False, "message": "private-provider-payload", "data": {"token": "private-session"}}
+        with patch.object(worker, "broker_call", side_effect=lambda call: call()), patch("builtins.print") as output:
+            self.assertEqual(worker.fetch_full_snapshots(api, [worker.Subscription("NIFTY", "99926000", "NSE", 1)]), {})
+        self.assertIn("requested=1", str(output.call_args))
+        self.assertNotIn("private-provider-payload", str(output.call_args))
+        self.assertNotIn("private-session", str(output.call_args))
+
     def test_missing_close_does_not_use_hardcoded_live_benchmark(self):
         redis = MockRedis()
         writer = worker.QuoteWriter(redis, 300, 86400, 500, feed_mode="live")

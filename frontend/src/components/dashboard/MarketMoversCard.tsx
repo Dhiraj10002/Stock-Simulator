@@ -11,6 +11,7 @@ import {
   ArrowRight,
   RotateCcw,
 } from "lucide-react";
+import { useMarketStore } from "@/stores/market-store";
 import { publicFetch } from "@/lib/api";
 import { formatNumber, formatPercent } from "@/lib/format";
 
@@ -47,9 +48,10 @@ export default function MarketMoversCard({
   className = "",
   limit = 8,
 }: MarketMoversCardProps) {
+  const marketStatus = useMarketStore((s) => s.marketStatus);
   const [activeTab, setActiveTab] = useState<TabType>("gainers");
 
-  const { data: moversData, isLoading } = useQuery<MarketMoversResponse>({
+  const { data: moversData, isLoading, isError } = useQuery<MarketMoversResponse>({
     queryKey: ["market-movers-card", limit],
     queryFn: () => publicFetch<MarketMoversResponse>(`/market/movers?limit=${limit}`),
     refetchInterval: 5000,
@@ -91,7 +93,7 @@ export default function MarketMoversCard({
           <h2 className="font-extrabold text-sm text-slate-900 dark:text-slate-100 uppercase tracking-wide flex items-center gap-2">
             <span>Market Movers</span>
             <span className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded bg-cyan-100 dark:bg-cyan-950/80 text-cyan-700 dark:text-cyan-300">
-              Live Aggregation
+              {isError ? "Rankings unavailable" : marketStatus === "OPEN" ? "Fresh quote sample" : "Session closed"}
             </span>
           </h2>
           <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
@@ -129,10 +131,10 @@ export default function MarketMoversCard({
           <div className="p-12 text-center text-xs text-slate-400 flex flex-col items-center justify-center space-y-2">
             <Activity className="w-8 h-8 text-slate-500 opacity-40 mb-1" />
             <p className="font-semibold text-slate-700 dark:text-slate-300">
-              No Movers Recorded Yet
+              {isError ? "Market Rankings Unavailable" : "No Fresh Rankings Available"}
             </p>
             <p className="text-[11px] text-slate-500 max-w-xs">
-              Market rankings update in real time once ticks stream from the market data supervisor.
+              Rankings require fresh quotes with sourced day movement. Closed-session prices can still appear as last available on stock pages.
             </p>
           </div>
         ) : (

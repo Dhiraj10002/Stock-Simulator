@@ -1,5 +1,7 @@
 # Existing-work runtime verification
 
+The newer [closed-session restart review](CLOSED_SESSION_REVIEW_2026-10-04.md) covers the latest screenshots/logs, honest display states, the costly expiry scan, safe local diagnostics and remaining issue #9 acceptance.
+
 Reviewed main `d59d7a6a746c0a09ea0366d2442376b797468ec7` after PR #7 was merged. Main's CI passed (run 37139837815). Also reviewed the supplied terminal output from 3 October 2026, 22:50–22:52 IST. No broker credentials, account IDs or session hashes from that output are reproduced here.
 
 ## Follow-up: duplicate contracts block startup
