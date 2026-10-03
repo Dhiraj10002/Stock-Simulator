@@ -10,7 +10,9 @@ import {
 } from "lucide-react";
 import { formatPaise } from "@/lib/format";
 import { API_URL, apiFetch } from "@/lib/api";
-import type { Instrument } from "@/types";
+import { useAuthToken } from "@/hooks/useAuthToken";
+import { validLot } from "@/lib/strategyExecution";
+import type { Instrument, Order } from "@/types";
 import { useSymbolQuote, useTargetedSubscription } from "@/stores/market-store";
 
 export interface FnoOrderModalProps {
@@ -37,23 +39,13 @@ export default function FnoOrderModal({
   const [lots, setLots] = useState<number>(1);
   const [limitPrice, setLimitPrice] = useState<string>("");
   const [executing, setExecuting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
   const [feedback, setFeedback] = useState<{
     type: "success" | "error";
     message: string;
   } | null>(null);
 
-  const [token] = useState<string>(() => {
-    if (typeof window !== "undefined") {
-      return (
-        localStorage.getItem("auth_token") ||
-        localStorage.getItem("stock-simulator-access-token") ||
-        ""
-      );
-    }
-    return "";
-  });
-
-  const apiUrl = API_URL;
+  const token = useAuthToken();
 
   // Active targeted WebSocket subscription while modal is open
   useTargetedSubscription(isOpen && instrument?.symbol ? instrument.symbol : undefined);
@@ -70,6 +62,7 @@ export default function FnoOrderModal({
       if (cancelled) return;
       setLiveLtpPaise(0);
       setFeedback(null);
+      setSubmitted(false);
       setLots(1);
       setSide(initialSide);
       setLimitPrice("");
@@ -92,8 +85,9 @@ export default function FnoOrderModal({
     return () => { cancelled = true; controller.abort(); clearInterval(timer); };
   }, [instrument, initialSide, isOpen]);
 
-  const lotSize = instrument?.lotSize && instrument.lotSize > 0 ? instrument.lotSize : 1;
+  const lotSize = instrument && validLot(instrument.lot_size) ? instrument.lot_size : 0;
   const totalQuantity = lots * lotSize;
+  const validQuantity = validLot(lots) && validLot(lotSize) && Number.isSafeInteger(totalQuantity);
   const effectivePricePaise =
     liveQuote && liveQuote.price_paise > 0
       ? liveQuote.price_paise
@@ -123,7 +117,7 @@ export default function FnoOrderModal({
   }>({
     queryKey: ["order-preview", token, previewBody],
     queryFn: () => apiFetch("/orders/preview", {method: "POST", body: JSON.stringify(previewBody)}),
-    enabled: isOpen && !!instrument && !!token && totalQuantity > 0,
+    enabled: isOpen && !!instrument && !!token && validQuantity && !submitted,
     refetchInterval: 5000, retry: false,
   });
   const validPreview = !preview.isError && !preview.isFetching ? preview.data : undefined;
@@ -133,7 +127,7 @@ export default function FnoOrderModal({
   if (!isOpen || !instrument) return null;
 
   const handleExecuteOrder = async () => {
-    if (executing || !hasSufficientMargin) return;
+    if (executing || submitted || !hasSufficientMargin || !validQuantity || !token) return;
     if (orderType === "MARKET" && (effectivePricePaise <= 0)) {
       setFeedback({
         type: "error",
@@ -146,12 +140,8 @@ export default function FnoOrderModal({
 
     try {
       // 1. Submit simulated order to backend API
-      const res = await fetch(`${apiUrl}/orders`, {
+      const placed = await apiFetch<Order>("/orders", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
         body: JSON.stringify({
           symbol: instrument.symbol,
           side: side,
@@ -162,10 +152,8 @@ export default function FnoOrderModal({
         }),
       });
 
-      if (!res.ok) {
-        const errJson = await res.json().catch(() => null);
-        throw new Error(errJson?.error || errJson?.message || `Order placement failed with status ${res.status}`);
-      }
+      if (!placed?.uuid) throw new Error("Order result unknown. Review Orders before submitting again.");
+      setSubmitted(true);
 
       // Invalidate queries so wallet, portfolio & orders immediately update
       void queryClient.invalidateQueries({ queryKey: ["wallet"] });
@@ -174,17 +162,14 @@ export default function FnoOrderModal({
       void queryClient.invalidateQueries({ queryKey: ["trades"] });
 
       setFeedback({
-        type: "success",
-        message: `Order Executed! ${side} ${totalQuantity} ${instrument.symbol} (${lots} Lot${
-          lots > 1 ? "s" : ""
-        }) @ ₹${activePrice.toFixed(2)}`,
+        type: ["REJECTED", "CANCELLED", "EXPIRED"].includes(placed.status) ? "error" : "success",
+        message: placed.status === "EXECUTED"
+          ? `Order executed: ${placed.uuid}. ${side} ${totalQuantity} ${instrument.symbol}.`
+          : `Order ${placed.uuid}: ${placed.status}. Execution is not confirmed. Review Orders for its current status.`,
       });
 
       onSuccess?.();
 
-      setTimeout(() => {
-        onClose();
-      }, 1400);
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : "Failed to place order. Please check network/balance.";
       setFeedback({
@@ -340,10 +325,10 @@ export default function FnoOrderModal({
           <div className="space-y-2">
             <div className="flex items-center justify-between text-[11px]">
               <label className="font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                Number of Lots (Lot Size: {lotSize})
+                Number of Lots (Lot Size: {lotSize || "Unavailable"})
               </label>
               <span className="font-mono font-bold text-cyan-600 dark:text-cyan-400">
-                Total Qty: {totalQuantity} Shares
+                Total Qty: {validQuantity ? totalQuantity : "Unavailable"}
               </span>
             </div>
 
@@ -441,6 +426,7 @@ export default function FnoOrderModal({
             {preview.isError ? `Preview unavailable: ${preview.error.message}` : preview.isFetching ? "Checking price and funds…" : "Server estimate; price and funds are rechecked at execution."}
           </p>
           {/* Feedback message */}
+          {!validQuantity && <p role="alert" className="text-sm text-amber-300">A canonical lot size and whole-number lots are required.</p>}
           {feedback && (
             <div
               className={`p-3 rounded-xl text-xs font-bold flex items-center gap-2 animate-in fade-in ${
@@ -461,7 +447,7 @@ export default function FnoOrderModal({
           {/* 6. Execution Button */}
           <button
             onClick={handleExecuteOrder}
-            disabled={executing || !hasSufficientMargin || (orderType === "MARKET" && effectivePricePaise <= 0)}
+            disabled={executing || submitted || !validQuantity || !token || !hasSufficientMargin || (orderType === "MARKET" && effectivePricePaise <= 0)}
             className={`w-full py-3.5 rounded-2xl text-white font-black text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer ${
               !hasSufficientMargin
                 ? "bg-slate-400 cursor-not-allowed"

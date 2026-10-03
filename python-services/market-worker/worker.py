@@ -1511,9 +1511,13 @@ def refresh_once(store: InstrumentStore, control: FeedControl, client: Any) -> N
             store._rows = []
             with store._lock:
                 store._subscriptions = {}
-            publish_feed_state(client, feed_provider="angel_one", feed_state="UNAVAILABLE", is_synthetic=False)
-            write_worker_heartbeat(client, store)
+            # Disconnect stale subscriptions even when Redis is also unavailable.
             control.reconnect("canonical master unavailable")
+            publish_feed_state(client, feed_provider="angel_one", feed_state="UNAVAILABLE", is_synthetic=False)
+            try:
+                write_worker_heartbeat(client, store)
+            except Exception as heartbeat_error:
+                print(f"market worker: invalidated master heartbeat failed: {heartbeat_error}", flush=True)
         print(f"market worker: instrument refresh failed: {error}", flush=True)
 
 
@@ -1522,8 +1526,12 @@ def refresh_daily(store: InstrumentStore, control: FeedControl, client: Any = No
     interval = max(10, min(300, int(os.getenv("INSTRUMENT_REFRESH_SECONDS", "60"))))
     while True:
         time.sleep(interval)
-        refresh_once(store, control, client)
-        write_worker_heartbeat(client, store)
+        try:
+            refresh_once(store, control, client)
+            write_worker_heartbeat(client, store)
+        except Exception as error:
+            # A transient Redis outage must not kill canonical reconciliation.
+            print(f"market worker: reconciliation state update failed: {error}", flush=True)
 
 
 def run_feed(store: InstrumentStore, writer: QuoteWriter, control: FeedControl) -> bool:

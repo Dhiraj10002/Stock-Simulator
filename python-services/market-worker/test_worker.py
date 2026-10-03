@@ -985,6 +985,34 @@ class CanonicalRefreshReadinessTest(unittest.TestCase):
         worker.refresh_once(store, control, MagicMock())
         self.assertEqual(control.reconnect.call_count, 1)
 
+    def test_master_failure_disconnects_even_when_redis_is_down(self):
+        from unittest.mock import patch
+        store = worker.InstrumentStore("database", ["TCS"])
+        store.master_version = "old"
+        store.refresh = MagicMock(side_effect=RuntimeError("database unavailable"))
+        store._subscriptions = {("1", 1): worker.Subscription("OLD", "1", "NSE", 1)}
+        client, control = MagicMock(), MagicMock()
+        client.hset.side_effect = RuntimeError("Redis unavailable")
+        client.set.side_effect = RuntimeError("Redis unavailable")
+        with patch.dict(os.environ, {"MARKET_FEED_MODE": "live"}):
+            worker.refresh_once(store, control, client)
+        control.reconnect.assert_called_once_with("canonical master unavailable")
+        self.assertEqual(store.master_version, "")
+        self.assertEqual(store.subscriptions(), [])
+
+    def test_reconciliation_continues_after_heartbeat_write_failure(self):
+        from unittest.mock import patch
+        store, control, client = MagicMock(), MagicMock(), MagicMock()
+        store.refresh.return_value = False
+        client.set.side_effect = [RuntimeError("Redis unavailable"), None]
+        # Stop the otherwise permanent loop only after two reconciliation attempts.
+        with patch.object(worker.time, "sleep", side_effect=[None, None, StopIteration]):
+            with self.assertRaises(StopIteration):
+                worker.refresh_daily(store, control, client)
+        self.assertEqual(store.refresh.call_count, 2)
+        self.assertEqual(client.set.call_count, 2)
+        client.hset.assert_called_once()
+
     def test_dead_or_future_worker_fails_readiness(self):
         from unittest.mock import patch
         from datetime import datetime, timezone, timedelta

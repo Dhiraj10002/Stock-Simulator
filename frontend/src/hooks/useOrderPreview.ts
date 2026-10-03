@@ -1,7 +1,8 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { apiFetch, getAuthToken } from "@/lib/api";
+import { apiFetch } from "@/lib/api";
+import { useAuthToken } from "@/hooks/useAuthToken";
 
 export interface OrderPreview {
   quote_source?: string;
@@ -13,7 +14,7 @@ export interface OrderPreview {
 }
 
 export function useOrderPreview(request: {symbol: string; side: string; type: string; product: string; quantity: number; price_paise: number; trigger_price_paise?: number}, enabled = true) {
-  const token = getAuthToken();
+  const token = useAuthToken();
   const query = useQuery<OrderPreview>({
     queryKey: ["order-preview", token, request],
     queryFn: () => apiFetch<OrderPreview>("/orders/preview", {method: "POST", body: JSON.stringify(request)}),

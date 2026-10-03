@@ -1,5 +1,6 @@
 "use client";
 import { useAccountWallet } from "@/hooks/useAccountWallet";
+import { useAuthToken } from "@/hooks/useAuthToken";
 
 import { canTradeOption } from "@/lib/marketDisplay";
 import React, { useState, useMemo, useEffect, useRef } from "react";
@@ -61,6 +62,7 @@ interface OptionChainDeskProps {
 
 export default function OptionChainDesk({ initialUnderlying = "NIFTY" }: OptionChainDeskProps) {
   const setSelectedSymbol = useTradingStore((s) => s.setSelectedSymbol);
+  const token = useAuthToken();
 
   const [selectedUnderlying, setSelectedUnderlying] = useState(initialUnderlying);
   useTargetedSubscription(selectedUnderlying);
@@ -89,7 +91,7 @@ export default function OptionChainDesk({ initialUnderlying = "NIFTY" }: OptionC
     window.addEventListener("auth-changed", load); window.addEventListener("storage", load);
     return () => { window.removeEventListener("auth-changed", load); window.removeEventListener("storage", load); };
   }, []);
-  const visibleLegs = journal.owner === strategyJournalKey(getAuthToken()) ? journal.legs : [];
+  const visibleLegs = journal.owner === strategyJournalKey(token) ? journal.legs : [];
   const eligible = useQuery({ queryKey: ["derivative-underlyings"], queryFn: () => publicFetch<string[]>("/instruments/derivative-underlyings"), staleTime: 60000 });
   const [underlyingSearch, setUnderlyingSearch] = useState("");
 
