@@ -7,7 +7,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Navbar from "@/components/layout/Navbar";
 import TradingViewChart from "@/components/trading/TradingViewChart";
 import { useSymbolQuote, useTargetedSubscription } from "@/stores/market-store";
-import { publicFetch, apiFetch, getAuthToken } from "@/lib/api";
+import { publicFetch, apiFetch } from "@/lib/api";
+import { useAuthToken } from "@/hooks/useAuthToken";
 import { formatPaise } from "@/lib/format";
 import { dayMovement } from "@/lib/marketDisplay";
 import { aggregateCandles, historyRequest, quoteLabel } from "@/lib/marketData";
@@ -18,6 +19,7 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: { initialSym
   const search = useSearchParams();
   const symbol = (search.get("symbol") || initialSymbol).toUpperCase();
   const client = useQueryClient();
+  const token = useAuthToken();
   const [timeframe, setTimeframe] = useState("1m");
   const [side, setSide] = useState<"BUY" | "SELL">("BUY");
   const [product, setProduct] = useState<"DELIVERY" | "INTRADAY">("DELIVERY");
@@ -73,7 +75,7 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: { initialSym
         <label className="block">Order type<select value={type} onChange={e => { setType(e.target.value as typeof type); setConfirmation(false); }} className="ml-3 bg-slate-800"><option>MARKET</option><option>LIMIT</option></select></label>
         <label className="block">Quantity<input aria-label="Quantity" type="number" min="1" step="1" value={quantity} onChange={e => { setQuantity(Number(e.target.value)); setConfirmation(false); }} className="mt-1 w-full rounded bg-slate-800 p-2" /></label>
         {type === "LIMIT" && <label className="block">Limit price ₹<input type="number" min="0.01" step="0.01" value={limit} onChange={e => { setLimit(e.target.value); setConfirmation(false); }} className="mt-1 w-full rounded bg-slate-800 p-2" /></label>}
-        {!getAuthToken() && <p className="text-amber-300">Sign in to preview and place a paper order.</p>}
+        {!token && <p className="text-amber-300">Sign in to preview and place a paper order.</p>}
         {preview.isError && <p role="alert" className="text-amber-300">{preview.error.message}</p>}
         {preview.data && <p className="text-sm text-slate-400">Required funds: {formatPaise(preview.data.required_funds_paise)} · Available: {formatPaise(preview.data.available_balance_paise)}</p>}
         <label className="flex gap-2 text-xs"><input type="checkbox" checked={confirmation} onChange={e => setConfirmation(e.target.checked)} />Confirm {side} {quantity} {symbol} as a {product} paper order.</label>

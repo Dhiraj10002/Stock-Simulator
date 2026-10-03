@@ -61,8 +61,8 @@ docker compose --profile local up --build
    ```
 5. Startup Order:
    - Backend boots first, performs GORM auto-migrations on Neon, and starts HTTP server on `:8080`.
-   - Backend health-check verifies database and readiness (`/api/v1/health`).
-   - Frontend and workers boot after backend reports healthy.
+   - Backend container health-check uses process liveness (`/api/v1/health`). Trading readiness is separately exposed at `/api/v1/ready`; it requires the worker heartbeat, activated master agreement and session-aware feed health.
+   - Frontend and workers boot after backend liveness succeeds, avoiding a readiness dependency cycle. Activate the canonical master before starting the LIVE worker. Its `/health` reports liveness and `/ready` reports worker readiness.
 6. Configure Caddy or Nginx reverse proxy with automated Let's Encrypt TLS:
    - Proxy `/api/v1/*` and `/ws/market` to `http://127.0.0.1:8080`.
    - Restrict Oracle OCI Security List / ingress rules: allow only 80 and 443 publicly; restrict port 22 to your own IP.

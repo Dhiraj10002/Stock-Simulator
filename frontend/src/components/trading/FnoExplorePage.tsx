@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { publicFetch, apiFetch, getAuthToken } from "@/lib/api";
+import { publicFetch, apiFetch } from "@/lib/api";
+import { useAuthToken } from "@/hooks/useAuthToken";
 import { formatPaise } from "@/lib/format";
 import { dayMovement } from "@/lib/marketDisplay";
 import { quoteLabel } from "@/lib/marketData";
@@ -28,7 +29,7 @@ export default function FnoExplorePage({ onSelectOptionChain }: { onSelectOption
     const rows = await publicFetch<Instrument[]>(`/instruments?underlying=${encodeURIComponent(underlying)}&active=true&limit=500`);
     return rows.filter(row => row.instrument_type === "FUTIDX" || row.instrument_type === "FUTSTK");
   }, refetchInterval: 60000 });
-  const token = getAuthToken();
+  const token = useAuthToken();
   const portfolio = useQuery({ queryKey: ["portfolio", token], queryFn: () => apiFetch<Portfolio>("/portfolio"), enabled: !!token, refetchInterval: 10000 });
   const onOrder = (instrument: Instrument, orderSide: "BUY" | "SELL") => { setSelected(instrument); setSide(orderSide); };
   return <main className="space-y-6 p-6 text-slate-100"><header><h1 className="text-3xl font-bold">Futures & Options</h1><p className="mt-2 text-sm text-slate-400">Contracts from the active instrument master. Prices retain their provider and timestamp; unavailable data is never estimated.</p></header>

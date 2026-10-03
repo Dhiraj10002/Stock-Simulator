@@ -75,6 +75,8 @@ services:
       - QUOTE_SERVER_PORT=8085
       - SYMBOL_ALIASES_FILE=/app/symbol_aliases.json
       - MARKET_FEED_MODE=${MARKET_FEED_MODE:-live}
+      - DATABASE_URL=${DATABASE_URL:?DATABASE_URL is required in production}
+      - INSTRUMENT_REFRESH_SECONDS=${INSTRUMENT_REFRESH_SECONDS:-60}
     expose:
       - "8085"
     restart: unless-stopped
@@ -86,7 +88,7 @@ services:
       backend:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8085/health')"]
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8085/ready')"]
       interval: 10s
       timeout: 3s
       retries: 5

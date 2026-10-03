@@ -51,6 +51,14 @@ type MarketFeedServiceStatus struct {
 	Error                 string   `json:"error,omitempty"`
 }
 
+// WorkerServiceStatus tracks process progress independently of exchange ticks.
+type WorkerServiceStatus struct {
+	Status              string   `json:"status"`
+	HeartbeatAgeSeconds *float64 `json:"heartbeat_age_seconds"`
+	MasterVersion       string   `json:"master_version"`
+	Error               string   `json:"error,omitempty"`
+}
+
 // InstrumentMasterServiceStatus represents the readiness of the instrument master.
 type InstrumentMasterServiceStatus struct {
 	Status        string `json:"status"`
@@ -73,6 +81,7 @@ type ReadinessServices struct {
 	Redis            RedisServiceStatus            `json:"redis"`
 	MarketFeed       MarketFeedServiceStatus       `json:"market_feed"`
 	InstrumentMaster InstrumentMasterServiceStatus `json:"instrument_master"`
+	Worker           WorkerServiceStatus           `json:"worker"`
 	Calendar         CalendarServiceStatus         `json:"calendar"`
 }
 
@@ -189,11 +198,16 @@ func (h *HealthHandler) Readiness(c *gin.Context) {
 	// 5. Inspect Instrument Master
 	masterStatus, activeVersion, tradableCount, masterErr := h.checkInstrumentMaster(ctx)
 
+	worker := h.checkWorker(ctx, now)
+	if feedMode == "LIVE" && worker.Status == "UP" && worker.MasterVersion != activeVersion {
+		worker.Status = "DOWN"
+		worker.Error = "worker has not loaded the activated master"
+	}
 	// Determine overall readiness
 	isReady := true
 	overallStatus := "OPERATIONAL"
 
-	if dbStatus != "UP" || redisStatus != "UP" || masterStatus != "UP" || calStatus != "UP" {
+	if dbStatus != "UP" || redisStatus != "UP" || masterStatus != "UP" || calStatus != "UP" || worker.Status != "UP" {
 		isReady = false
 		overallStatus = "UNAVAILABLE"
 	} else if feedStatus == "DEGRADED" {
@@ -205,6 +219,7 @@ func (h *HealthHandler) Readiness(c *gin.Context) {
 	}
 
 	services := ReadinessServices{
+		Worker: worker,
 		Database: DatabaseServiceStatus{
 			Status:         dbStatus,
 			LatencyMs:      dbLatency,
@@ -393,6 +408,9 @@ func (h *HealthHandler) checkMarketFeed(ctx context.Context, now time.Time, mark
 			if fs.LastTick != "" {
 				if t, err := parseTickTime(fs.LastTick); err == nil {
 					age := now.Sub(t).Seconds()
+					if age < -5 {
+						return "DOWN", feedMode, supervisorState, nil, subCount, "market tick timestamp is in the future"
+					}
 					if age < 0 {
 						age = 0
 					}
@@ -438,7 +456,57 @@ func (h *HealthHandler) checkMarketFeed(ctx context.Context, now time.Time, mark
 	return status, feedMode, supervisorState, lastTickAge, subCount, feedErr
 }
 
+func (h *HealthHandler) checkWorker(ctx context.Context, now time.Time) WorkerServiceStatus {
+	result := WorkerServiceStatus{Status: "DOWN"}
+	client := h.getRedisClient()
+	if client == nil {
+		result.Error = "worker heartbeat unavailable"
+		return result
+	}
+	values, err := client.HGetAll(ctx, marketService.FeedStateKey).Result()
+	if err != nil {
+		result.Error = "worker heartbeat unavailable"
+		return result
+	}
+	result.MasterVersion = values["worker_master_version"]
+	stamp, err := parseTickTime(values["worker_heartbeat"])
+	if err != nil {
+		result.Error = "worker heartbeat missing or invalid"
+		return result
+	}
+	age := now.Sub(stamp).Seconds()
+	result.HeartbeatAgeSeconds = &age
+	if age < -5 || age > 90 {
+		result.Error = "worker heartbeat expired or future dated"
+		return result
+	}
+	result.Status = "UP"
+	return result
+}
+
 func (h *HealthHandler) checkInstrumentMaster(ctx context.Context) (string, string, int, string) {
+	if h.marketService != nil && h.marketService.FeedMode() == "LIVE" {
+		db := h.getDB()
+		if db == nil {
+			return "DOWN", "none", 0, "database master unavailable"
+		}
+		var snapshots []model.InstrumentSnapshot
+		if err := db.WithContext(ctx).Where("status = ?", model.SnapshotStatusActive).Find(&snapshots).Error; err != nil {
+			return "DOWN", "none", 0, err.Error()
+		}
+		if len(snapshots) != 1 {
+			return "DOWN", "none", 0, "LIVE requires exactly one activated master"
+		}
+		snap := snapshots[0]
+		var count int64
+		if err := db.WithContext(ctx).Model(&model.Instrument{}).Where("active = ? AND is_tradable = ? AND snapshot_version = ?", true, true, snap.Version).Count(&count).Error; err != nil {
+			return "DOWN", snap.Version, 0, err.Error()
+		}
+		if count == 0 {
+			return "DOWN", snap.Version, 0, "activated master is empty"
+		}
+		return "UP", snap.Version, int(count), ""
+	}
 	activeVersion := ""
 	totalTradable := 0
 
