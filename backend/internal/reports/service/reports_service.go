@@ -7,6 +7,7 @@ import (
 	_ "time/tzdata"
 
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/database"
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/calendar"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/reports/dto"
 	"github.com/google/uuid"
@@ -19,11 +20,7 @@ func New() *ReportsService {
 }
 
 func getISTLocation() *time.Location {
-	loc, err := time.LoadLocation("Asia/Kolkata")
-	if err != nil {
-		return time.UTC
-	}
-	return loc
+	return calendar.Location()
 }
 
 func (s *ReportsService) GetContractNote(userID, dateStr string) (*dto.ContractNoteResponse, error) {

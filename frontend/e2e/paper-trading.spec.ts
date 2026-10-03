@@ -15,7 +15,7 @@ const instrument = (symbol:string,lot=1) => ({symbol,token: symbol+"-token",name
 const quote = (symbol:string) => ({symbol,price_paise:10000,source:"angelone_live",updated_at:new Date().toISOString(),is_quote_stale:false,day_change_available:true,previous_close_paise:9900,change_paise:100,change_percent:1.01});
 const contract = (symbol:string,type:string,strike:number,lot=65) => ({symbol,option_type:type,strike_price_paise:strike,lot_size:lot,ltp_paise:10000,open_interest:100,open_interest_available:true,is_available:true,is_quote_stale:false,quote_status:"AVAILABLE",quote_source:"angelone_live",updated_at:new Date().toISOString(),iv:20,delta:0.5,gamma:0.01,theta:-1,vega:1});
 function chain(lot=65) { return {underlying_symbol:"NIFTY",spot_price_paise:2500000,expiry_date:"2026-12-31",lot_size:lot,total_call_oi:200,total_put_oi:200,put_call_ratio:1,feed_mode:"LIVE",strikes:[0,1].map(i=>({strike_price_paise:2500000+i*5000,is_atm:i===0,call:contract(`CALL${i}`,"CE",2500000+i*5000,lot),put:contract(`PUT${i}`,"PE",2500000+i*5000,lot)}))}; }
-async function mocks(page:Page, overrides: { unavailable?:boolean; lot?:number; partial?:boolean; pending?:boolean }={}) {
+async function mocks(page:Page, overrides: { unavailable?:boolean; closed?:boolean; lot?:number; partial?:boolean; pending?:boolean }={}) {
  const posts: Record<string,unknown>[] = [];
  await page.route("**/api/v1/**",async route=>{
   const req=route.request(),url=new URL(req.url()),path=url.pathname.replace("/api/v1","");
@@ -37,6 +37,7 @@ async function mocks(page:Page, overrides: { unavailable?:boolean; lot?:number; 
   else if(path==="/fno/option-chain") data=chain(overrides.lot);
   else if(path.endsWith("/history") && !overrides.unavailable) data=[0,1,2].map(i=>({timestamp:Math.floor(Date.now()/60000)*60-180+i*60,open_paise:10000,high_paise:10100,low_paise:9900,close_paise:10000,volume:20,source:"angelone_live",feed_mode:"LIVE"}));
   else if(path.startsWith("/market/quotes/") && !overrides.unavailable) data=quote(path.split("/").at(-1)!);
+  else if(path==="/market/status") data={status:overrides.closed?"CLOSED":"OPEN",is_open:!overrides.closed,server_time:new Date().toISOString(),feed_provider:"angel_one",feed_state:"LIVE",is_synthetic:false,last_tick:overrides.closed?"":new Date().toISOString()};
   else if(path==="/market/feed-status") data={feed_provider:"angel_one",feed_state:"LIVE",is_synthetic:false,last_tick:new Date().toISOString()};
   else { await route.fulfill({status:503,headers,json:{success:false,message:"Provider unavailable",code:"MARKET_DATA_UNAVAILABLE"}}); return; }
   await route.fulfill({headers,json:{success:true,data}});
@@ -79,4 +80,16 @@ test("single option order uses canonical quantity and preserves pending status",
  const posts=await mocks(page,{pending:true});await signIn(page);await page.goto("/options");await page.getByRole("button",{name:"Option Chain",exact:true}).click();await page.getByTitle("Buy Call",{exact:true}).first().click();
  const submit=page.getByRole("button",{name:"BUY 65 CALL0 (1 LOT)",exact:true});await expect(submit).toBeEnabled();await submit.click();
  await expect(page.getByText("Order leg-1: PENDING. Execution is not confirmed. Review Orders for its current status.")).toBeVisible();await expect(submit).toBeDisabled();expect(posts).toHaveLength(1);expect(posts[0].quantity).toBe(65);
+});
+
+test("closed empty dashboard reports honest data and valuation states", async ({page}) => {
+ await mocks(page, {closed:true}); await signIn(page);
+ await expect(page.getByText("Angel One · session closed", {exact:true}).first()).toBeVisible();
+ await expect(page.getByText("Breadth unavailable", {exact:true})).toBeVisible();
+ await expect(page.getByText("Session closed · unavailable", {exact:true})).toHaveCount(3);
+ await expect(page.getByText("No open positions", {exact:true})).toBeVisible();
+ await expect(page.getByText("+Unavailable", {exact:true})).toHaveCount(0);
+ await expect(page.getByText("0 Advancing (50%)", {exact:true})).toHaveCount(0);
+ await expect(page.getByText("Connecting...", {exact:true})).toHaveCount(0);
+ await expect(page.getByText("Live Valuation", {exact:true})).toHaveCount(0);
 });

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/calendar"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
 	orderDTO "github.com/Dhiraj10002/Stock-Simulator/backend/internal/order/dto"
 	portfolioDTO "github.com/Dhiraj10002/Stock-Simulator/backend/internal/portfolio/dto"
@@ -143,9 +144,22 @@ func TestPhase10_ContractNote_StatutoryCharges(t *testing.T) {
 		t.Fatalf("failed to create order: code=%d res=%v", rec.Code, res)
 	}
 
-	// Fetch Contract Note
-	todayStr := time.Now().Format("2006-01-02")
-	rec, res = sendRequest(env.router, http.MethodGet, "/api/v1/reports/contract-note?date="+todayStr, token, nil)
+	// Reports use the execution's IST trading date, which can differ from the
+	// runner's UTC date and must also survive an actual midnight boundary.
+	trades := fetchTrades(t, env, token)
+	if len(trades) != 1 {
+		t.Fatalf("expected one confirmed trade before its contract note, got %d", len(trades))
+	}
+	executedAt, ok := trades[0]["executed_at"].(string)
+	if !ok {
+		t.Fatal("trade execution timestamp is missing")
+	}
+	stamp, err := time.Parse(time.RFC3339, executedAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tradeDate := stamp.In(calendar.Location()).Format("2006-01-02")
+	rec, res = sendRequest(env.router, http.MethodGet, "/api/v1/reports/contract-note?date="+tradeDate, token, nil)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("GET /api/v1/reports/contract-note failed: code=%d res=%v", rec.Code, res)
 	}

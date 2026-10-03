@@ -58,8 +58,8 @@ func (a *App) RunWithContext(ctx context.Context) error {
 	logger.Info("Database Connected")
 
 	// Provider tokens are recyclable. Historical identity is symbol + segment.
-	if err := model.UpgradeInstrumentTokenIndex(database.GetDB()); err != nil {
-		return err
+	if err := model.UpgradeInstrumentSchema(database.GetDB()); err != nil {
+		return fmt.Errorf("upgrade legacy instrument identities: %w", err)
 	}
 	// Run Migrations if tables do not exist or if explicitly requested
 	shouldMigrate := os.Getenv("RUN_MIGRATION") == "true" || !database.GetDB().Migrator().HasTable(&model.User{})
@@ -83,7 +83,7 @@ func (a *App) RunWithContext(ctx context.Context) error {
 		}
 		logger.Info("Database Migration Completed")
 	} else {
-		logger.Info("Database Schema Verified (Tables Exist, Skipping Slow Remote Introspection)")
+		logger.Info("Existing database detected; checking required schema upgrades")
 		if !database.GetDB().Migrator().HasColumn(&model.Trade{}, "Tag") {
 			_ = database.GetDB().AutoMigrate(&model.Trade{})
 			logger.Info("Auto-migrated Trade model (Tag & Notes columns)")
@@ -102,15 +102,11 @@ func (a *App) RunWithContext(ctx context.Context) error {
 		}
 	}
 
-	if database.GetDB().Migrator().HasTable(&model.AccountDailySnapshot{}) && !database.GetDB().Migrator().HasColumn(&model.AccountDailySnapshot{}, "Epoch") && database.GetDB().Migrator().HasIndex(&model.AccountDailySnapshot{}, "idx_daily_snapshots_user_date") {
-		if err := database.GetDB().Migrator().DropIndex(&model.AccountDailySnapshot{}, "idx_daily_snapshots_user_date"); err != nil {
-			return err
-		}
-	}
 	// Required additive upgrade: fail startup rather than run without durable exits.
-	if err := database.GetDB().AutoMigrate(&model.Order{}, &model.RefreshSession{}, &model.SettlementReference{}, &model.AccountDailySnapshot{}, &model.Instrument{}, &model.InstrumentSnapshot{}); err != nil {
-		return fmt.Errorf("upgrade durable exit schema: %w", err)
+	if err := upgradeRequiredSchema(database.GetDB()); err != nil {
+		return fmt.Errorf("upgrade required trading and portfolio schema: %w", err)
 	}
+	logger.Info("Required trading and portfolio schema upgrades verified")
 	ensurePerformanceIndexes(database.GetDB())
 
 	// Setup Router with worker context
@@ -152,6 +148,15 @@ func (a *App) RunWithContext(ctx context.Context) error {
 
 	logger.Info("HTTP server gracefully stopped")
 	return nil
+}
+
+func upgradeRequiredSchema(db *gorm.DB) error {
+	if db.Migrator().HasTable(&model.AccountDailySnapshot{}) && !db.Migrator().HasColumn(&model.AccountDailySnapshot{}, "Epoch") && db.Migrator().HasIndex(&model.AccountDailySnapshot{}, "idx_daily_snapshots_user_date") {
+		if err := model.DropIndexInTableSchema(db, model.AccountDailySnapshot{}.TableName(), "idx_daily_snapshots_user_date"); err != nil {
+			return err
+		}
+	}
+	return db.AutoMigrate(&model.Order{}, &model.RefreshSession{}, &model.SettlementReference{}, &model.AccountDailySnapshot{}, &model.Instrument{}, &model.InstrumentSnapshot{})
 }
 
 func ensurePerformanceIndexes(db *gorm.DB) {

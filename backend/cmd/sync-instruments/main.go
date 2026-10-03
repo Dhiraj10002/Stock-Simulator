@@ -31,7 +31,7 @@ func main() {
 	}
 
 	db := database.GetDB()
-	if err := model.UpgradeInstrumentTokenIndex(db); err != nil {
+	if err := model.UpgradeInstrumentSchema(db); err != nil {
 		log.Fatal(err)
 	}
 	if err := db.AutoMigrate(&model.Instrument{}, &model.InstrumentSnapshot{}); err != nil {

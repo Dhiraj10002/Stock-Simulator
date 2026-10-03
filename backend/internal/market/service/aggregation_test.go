@@ -57,6 +57,9 @@ func TestMarketAggregation_RedisDynamicCalculation(t *testing.T) {
 		{Symbol: "TEST_FLAT", Name: "Flat Stock", Exchange: "NSE"},
 		{Symbol: "TEST_STALE", Name: "Stale Stock", Exchange: "NSE"},
 		{Symbol: "TEST_SEEDED", Name: "Seeded Mock Stock", Exchange: "NSE"},
+		{Symbol: "TEST_NO_CHANGE", Exchange: "NSE"},
+		{Symbol: "TEST_FUTURE_TIME", Exchange: "NSE"},
+		{Symbol: "TEST_BAD_CHANGE", Exchange: "NSE"},
 	}
 
 	svc.SetEquityProvider(func(ctx context.Context) ([]EquityUniverseItem, error) {
@@ -149,6 +152,20 @@ func TestMarketAggregation_RedisDynamicCalculation(t *testing.T) {
 		"source":         "auto_seeded",
 		"updated_at":     now,
 	}).Err()
+
+	// Missing movement and invalid/future quote times must not enter breadth.
+	for _, item := range testUniverse[:7] {
+		_ = client.HSet(ctx, "market:quote:"+item.Symbol, "day_change_available", "true", "previous_close_paise", "100000").Err()
+	}
+	for _, symbol := range []string{"TEST_NO_CHANGE", "TEST_FUTURE_TIME", "TEST_BAD_CHANGE"} {
+		_ = client.HSet(ctx, "market:quote:"+symbol, map[string]interface{}{
+			"symbol": symbol, "price_paise": "100000", "source": "angelone_live", "updated_at": now,
+			"previous_close_paise": "100000", "day_change_available": "true", "change_paise": "0", "change_percent": "0",
+		}).Err()
+	}
+	_ = client.HSet(ctx, "market:quote:TEST_NO_CHANGE", "day_change_available", "false").Err()
+	_ = client.HSet(ctx, "market:quote:TEST_FUTURE_TIME", "updated_at", time.Now().Add(time.Minute).UTC().Format(time.RFC3339)).Err()
+	_ = client.HSet(ctx, "market:quote:TEST_BAD_CHANGE", "change_percent", "NaN").Err()
 
 	t.Run("GetMarketMovers dynamic rankings", func(t *testing.T) {
 		movers, err := svc.GetMarketMovers(ctx, 10)

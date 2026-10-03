@@ -21,7 +21,6 @@ import (
 	marketHandler "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/handler"
 	marketWebsocket "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/websocket"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/middleware"
-	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
 	newsHandler "github.com/Dhiraj10002/Stock-Simulator/backend/internal/news/handler"
 	orderHandler "github.com/Dhiraj10002/Stock-Simulator/backend/internal/order/handler"
 	portfolioHandler "github.com/Dhiraj10002/Stock-Simulator/backend/internal/portfolio/handler"
@@ -116,25 +115,21 @@ func Setup(ctx context.Context, cfg *config.Config, opts ...SetupOption) *gin.En
 			}
 
 			// 2. Database query using B-tree indexed columns (symbol and name)
-			var count int64
-			err := database.GetDB().Model(&model.Instrument{}).
-				Where("symbol IN (?, ?) OR name = ?", clean, clean+"-EQ", clean).
-				Count(&count).Error
+			var found bool
+			err := database.GetDB().Raw("SELECT EXISTS (SELECT 1 FROM instruments WHERE symbol IN (?, ?) OR name = ?)", clean, clean+"-EQ", clean).Scan(&found).Error
 			if err != nil {
 				return false, err
 			}
-			if count > 0 {
+			if found {
 				instrumentFinderCache.Store(clean, true)
 				return true, nil
 			}
 			if canonical != "" && canonical != clean {
-				err = database.GetDB().Model(&model.Instrument{}).
-					Where("symbol IN (?, ?) OR name = ?", canonical, canonical+"-EQ", canonical).
-					Count(&count).Error
+				err = database.GetDB().Raw("SELECT EXISTS (SELECT 1 FROM instruments WHERE symbol IN (?, ?) OR name = ?)", canonical, canonical+"-EQ", canonical).Scan(&found).Error
 				if err != nil {
 					return false, err
 				}
-				if count > 0 {
+				if found {
 					instrumentFinderCache.Store(clean, true)
 					return true, nil
 				}
