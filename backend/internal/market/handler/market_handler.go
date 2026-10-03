@@ -2,6 +2,7 @@ package handler
 
 import (
 	"errors"
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/dto"
 	"net/http"
 	"strconv"
 	"strings"
@@ -34,7 +35,16 @@ func (h *Handler) SetWorkerURL(workerURL string) {
 
 func (h *Handler) Quote(c *gin.Context) {
 	symbol := c.Param("symbol")
-	quote, err := h.service.CurrentQuote(symbol)
+	var quote *dto.QuoteResponse
+	var err error
+	if c.Query("purpose") == "display" {
+		quote, err = h.service.CachedQuote(symbol)
+	} else {
+		quote, err = h.service.CurrentQuote(symbol)
+	}
+	if quote != nil {
+		quote.IsQuoteStale = service.ValidateExecutableQuoteWithFeedMode(quote, time.Now(), h.service.FeedMode(), h.service.AllowSeededQuotes()) != nil
+	}
 	if err != nil {
 		if errors.Is(err, service.ErrInstrumentNotFound) {
 			response.Error(c, http.StatusNotFound, "Instrument not found in canonical master", "INSTRUMENT_NOT_FOUND")

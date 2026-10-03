@@ -116,12 +116,13 @@ func getTestDB(t *testing.T) *gorm.DB {
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		user_uuid TEXT NOT NULL,
 		session_date TEXT NOT NULL,
+ epoch TEXT NOT NULL DEFAULT '',
 		opening_cash_paise INTEGER NOT NULL,
 		opening_holdings_value_paise INTEGER NOT NULL,
 		opening_equity_paise INTEGER NOT NULL,
 		net_cash_inflows_paise INTEGER NOT NULL DEFAULT 0,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-		UNIQUE(user_uuid, session_date)
+		UNIQUE(user_uuid, session_date, epoch)
 	);`
 
 	if err := db.Exec(createTables).Error; err != nil {
@@ -825,4 +826,3 @@ func TestPortfolioService_DailyPnl_OvernightPositionReflectsPreviousClose(t *tes
 		t.Errorf("expected daily P&L %% to be 0.2%%, got %f", *res.DailyPnlPercent)
 	}
 }
-

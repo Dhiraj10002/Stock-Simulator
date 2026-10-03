@@ -1,4 +1,5 @@
 "use client";
+import { quoteLabel } from "@/lib/marketData";
 
 import React, { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import {
@@ -457,7 +458,7 @@ export default function TradingViewChart({
   // Real-Time Live Tick Streaming into Active Candle Bar
   // ---------------------------------------------------------------------------
   useEffect(() => {
-    if (!liveQuote || liveQuote.price_paise <= 0 || !chartRef.current) return;
+    if (timeframe !== "1m" || !liveQuote || !["LIVE", "SIMULATED"].includes(quoteLabel(liveQuote)) || liveQuote.is_quote_stale || liveQuote.price_paise <= 0 || !chartRef.current) return;
 
     const { candle: updatedCandle } = applyLiveTick(
       lastCandleRef.current
@@ -471,7 +472,7 @@ export default function TradingViewChart({
           }
         : null,
       liveQuote.price_paise,
-      Math.floor(Date.now() / 1000)
+      Math.floor(Date.parse(liveQuote.updated_at) / 1000)
     );
 
     const barForSeries = {
@@ -507,7 +508,7 @@ export default function TradingViewChart({
             : "rgba(239, 68, 68, 0.4)",
       });
     }
-  }, [liveQuote, chartType, indicators.volume]);
+  }, [liveQuote, chartType, indicators.volume, timeframe]);
 
   // ---------------------------------------------------------------------------
   // Dynamic Visibility Updates for Chart Type & Indicators
@@ -586,7 +587,7 @@ export default function TradingViewChart({
           </div>
 
           {/* Live Tick Stream Badge */}
-          {liveQuote && liveQuote.price_paise > 0 ? (
+          {quoteLabel(liveQuote) === "LIVE" ? (
             <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/70 border border-emerald-200 dark:border-emerald-800/50 text-emerald-700 dark:text-emerald-400 text-[10px] font-mono font-bold">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
               <span>LIVE</span>
@@ -594,7 +595,7 @@ export default function TradingViewChart({
           ) : (
             <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500 text-[10px] font-mono">
               <Radio className="w-2.5 h-2.5 opacity-60" />
-              <span>SYNTH</span>
+              <span>{quoteLabel(liveQuote) === "UNAVAILABLE" && historicalCandles?.length ? "ARCHIVED" : quoteLabel(liveQuote)}</span>
             </div>
           )}
 

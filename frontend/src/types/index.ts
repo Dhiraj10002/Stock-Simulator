@@ -70,6 +70,10 @@ export type Transaction = {
 };
 
 export type Quote = {
+ depth?: { bids: DepthItem[]; asks: DepthItem[] };
+ open_interest_available?: boolean;
+ is_quote_stale?: boolean;
+ volume?: number;
   open_interest?: number;
   previous_close_paise?: number;
   day_change_available?: boolean;
@@ -216,6 +220,7 @@ export type RiskOverview = {
 };
 
 export type OptionContract = {
+ open_interest_available?: boolean;
   updated_at?: string;
   quote_source?: string;
   is_quote_stale?: boolean;

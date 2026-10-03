@@ -213,4 +213,3 @@ func TestMarginRulesStressAndExpiryEdgeCases(t *testing.T) {
 		t.Fatalf("expected long option to require 100%% premium (500000), got %d (err: %v)", longOptPremium, err)
 	}
 }
-

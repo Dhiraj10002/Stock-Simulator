@@ -1,6 +1,9 @@
 package repository
 
 import (
+	"errors"
+	"fmt"
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/calendar"
 	"time"
 
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/database"
@@ -123,3 +126,96 @@ func (r *PortfolioRepository) ListActiveUserUUIDs() ([]uuid.UUID, error) {
 	return userUUIDs, err
 }
 
+// EnsureDailySnapshot serializes baseline creation with executions, deposits and resets.
+func (r *PortfolioRepository) EnsureDailySnapshot(user uuid.UUID, day string, build func(*gorm.DB, model.Wallet) (*model.AccountDailySnapshot, error)) (*model.AccountDailySnapshot, error) {
+	db := database.GetDB()
+	if db == nil {
+		return nil, fmt.Errorf("database unavailable")
+	}
+	var result *model.AccountDailySnapshot
+	err := db.Transaction(func(tx *gorm.DB) error {
+		var wallet model.Wallet
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_uuid = ?", user).First(&wallet).Error; err != nil {
+			return err
+		}
+		var reset model.WalletTransaction
+		epoch := ""
+		resetErr := tx.Where("wallet_uuid = ? AND type = ?", wallet.UUID, model.WalletTransactionReset).Order("created_at DESC,id DESC").First(&reset).Error
+		if resetErr == nil {
+			epoch = reset.UUID.String()
+		} else if !errors.Is(resetErr, gorm.ErrRecordNotFound) {
+			return resetErr
+		}
+		var existing model.AccountDailySnapshot
+		err := tx.Where("user_uuid = ? AND session_date = ? AND epoch = ?", user, day, epoch).First(&existing).Error
+		if err == nil {
+			result = &existing
+			return nil
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		candidate, err := build(tx, wallet)
+		if err != nil {
+			return err
+		}
+		candidate.Epoch = epoch
+		if err := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "user_uuid"}, {Name: "session_date"}, {Name: "epoch"}}, DoNothing: true}).Create(candidate).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("user_uuid = ? AND session_date = ? AND epoch = ?", user, day, epoch).First(&existing).Error; err != nil {
+			return err
+		}
+		result = &existing
+		return nil
+	})
+	return result, err
+}
+func DepositsInTransaction(tx *gorm.DB, wallet uuid.UUID, from time.Time) (int64, error) {
+	var total struct{ Total int64 }
+	err := tx.Model(&model.WalletTransaction{}).Select("COALESCE(SUM(amount_paise),0) AS total").Where("wallet_uuid = ? AND (type = ? OR (type = ? AND note = ?)) AND created_at >= ?", wallet, "DEPOSIT", "CREDIT", "Paper trading margin deposit", from).Scan(&total).Error
+	return total.Total, err
+}
+
+func (r *PortfolioRepository) ReadAccount(user uuid.UUID, day string, consume func(model.Wallet, []model.Position, *model.AccountDailySnapshot) error) error {
+	db := database.GetDB()
+	if db == nil {
+		return fmt.Errorf("database unavailable")
+	}
+	return db.Transaction(func(tx *gorm.DB) error {
+		var w model.Wallet
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_uuid = ?", user).First(&w).Error; err != nil {
+			return err
+		}
+		var positions []model.Position
+		if err := tx.Where("user_uuid = ? AND quantity <> 0", user).Find(&positions).Error; err != nil {
+			return err
+		}
+		var snap model.AccountDailySnapshot
+		if err := tx.Where("user_uuid = ? AND session_date = ?", user, day).Order("id DESC").First(&snap).Error; err != nil {
+			return err
+		}
+		var reset model.WalletTransaction
+		resetErr := tx.Where("wallet_uuid = ? AND type = ?", w.UUID, model.WalletTransactionReset).Order("created_at DESC,id DESC").First(&reset).Error
+		if resetErr == nil && snap.Epoch != reset.UUID.String() {
+			return fmt.Errorf("accounting epoch changed")
+		}
+		if resetErr != nil && !errors.Is(resetErr, gorm.ErrRecordNotFound) {
+			return resetErr
+		}
+		session, err := time.ParseInLocation("2006-01-02", day, calendar.Location())
+		if err != nil {
+			return err
+		}
+		boundary, _, _ := calendar.SessionBounds(session)
+		if resetErr == nil && reset.CreatedAt.After(boundary) {
+			boundary = reset.CreatedAt
+		}
+		actual, err := DepositsInTransaction(tx, w.UUID, boundary)
+		if err != nil {
+			return err
+		}
+		snap.NetCashInflowsPaise = actual
+		return consume(w, positions, &snap)
+	})
+}

@@ -2,6 +2,8 @@ package repository
 
 import (
 	"errors"
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/calendar"
+	"time"
 
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/database"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
@@ -123,5 +125,37 @@ func (r *WalletRepository) adjust(walletUUID uuid.UUID, cashChange, blockedChang
 			return err
 		}
 		return tx.Create(&model.WalletTransaction{WalletUUID: wallet.UUID, Type: transactionType, AmountPaise: cashChange, BalancePaise: wallet.CashBalancePaise, BlockedPaise: wallet.BlockedPaise, Note: note}).Error
+	})
+}
+
+func (r *WalletRepository) Deposit(id uuid.UUID, amount int64) error {
+	if amount <= 0 {
+		return errors.New("deposit must be positive")
+	}
+	return database.GetDB().Transaction(func(tx *gorm.DB) error {
+		var w model.Wallet
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("uuid = ?", id).First(&w).Error; err != nil {
+			return err
+		}
+		if w.CashBalancePaise > int64(^uint64(0)>>1)-amount {
+			return errors.New("wallet balance overflow")
+		}
+		w.CashBalancePaise += amount
+		if err := tx.Save(&w).Error; err != nil {
+			return err
+		}
+		now := time.Now()
+		if err := tx.Create(&model.WalletTransaction{WalletUUID: id, Type: "DEPOSIT", AmountPaise: amount, BalancePaise: w.CashBalancePaise, BlockedPaise: w.BlockedPaise, Note: "Paper capital deposit", CreatedAt: now}).Error; err != nil {
+			return err
+		}
+		var reset model.WalletTransaction
+		epoch := ""
+		resetErr := tx.Where("wallet_uuid = ? AND type = ?", w.UUID, model.WalletTransactionReset).Order("created_at DESC,id DESC").First(&reset).Error
+		if resetErr == nil {
+			epoch = reset.UUID.String()
+		} else if !errors.Is(resetErr, gorm.ErrRecordNotFound) {
+			return resetErr
+		}
+		return tx.Model(&model.AccountDailySnapshot{}).Where("user_uuid = ? AND session_date = ? AND epoch = ?", w.UserUUID, now.In(calendar.Location()).Format("2006-01-02"), epoch).UpdateColumn("net_cash_inflows_paise", gorm.Expr("net_cash_inflows_paise + ?", amount)).Error
 	})
 }

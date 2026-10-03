@@ -156,6 +156,9 @@ func Setup(ctx context.Context, cfg *config.Config, opts ...SetupOption) *gin.En
 	}
 	marketWS := marketWebsocket.New(market.Service(), cfg.CORSAllowedOrigins, cfg.IsProduction())
 	instruments := instrumentHandler.New()
+	if ctx != nil {
+		go instrumentService.NewService(database.GetDB()).RunLifecycle(ctx)
+	}
 	stocks := stockHandler.New(market.Service())
 	trades := tradeHandler.New()
 	watchlist := watchlistHandler.New()
@@ -216,6 +219,7 @@ func Setup(ctx context.Context, cfg *config.Config, opts ...SetupOption) *gin.En
 		api.GET("/market/sectors", market.Sectors)
 		api.GET("/fno/option-chain", fno.GetOptionChain)
 		api.GET("/instruments", instruments.List)
+		api.GET("/instruments/derivative-underlyings", instruments.DerivativeUnderlyings)
 		api.GET("/instruments/snapshots/active", instruments.GetActiveSnapshot)
 		api.GET("/instruments/snapshots", instruments.ListSnapshots)
 		api.GET("/instruments/master/status", instruments.GetMasterStatus)

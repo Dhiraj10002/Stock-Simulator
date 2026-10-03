@@ -933,3 +933,21 @@ class CircuitLimitIngestionTest(unittest.TestCase):
                 break
         self.assertTrue(found_hset, "expected ZOMATO quote to be stored in Redis with circuit limits")
 
+
+class NativeMarketFieldsTest(unittest.TestCase):
+    def test_missing_fields_are_not_fabricated(self):
+        fields = worker.provider_market_fields({})
+        self.assertEqual(fields, {"open_interest_available": "false"})
+
+    def test_zero_open_interest_is_known_and_depth_units_match(self):
+        rest_rows = [{"price": 123.45, "quantity": 20, "orders": 2} for _ in range(5)]
+        ws_rows = [{"price": 12345, "quantity": 20, "no_of_orders": 2} for _ in range(5)]
+        rest = worker.provider_market_fields({"opnInterest": 0, "depth": {"buy": rest_rows, "sell": rest_rows}})
+        ws = worker.provider_market_fields({"open_interest": 0, "best_5_buy_data": ws_rows, "best_5_sell_data": ws_rows}, scaled=True)
+        self.assertEqual(rest["open_interest_available"], "true")
+        self.assertEqual(json.loads(rest["depth_json"]), json.loads(ws["depth_json"]))
+        self.assertEqual(json.loads(rest["depth_json"])["bids"][0]["price_paise"], 12345)
+
+    def test_partial_depth_is_unavailable(self):
+        fields = worker.provider_market_fields({"depth": {"buy": [{"price": 1, "quantity": 2}], "sell": []}})
+        self.assertNotIn("depth_json", fields)

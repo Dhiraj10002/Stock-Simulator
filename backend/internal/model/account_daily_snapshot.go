@@ -9,6 +9,7 @@ import (
 // AccountDailySnapshot records user account equity baseline at session open (09:15 IST).
 // Used for establishing true account daily P&L.
 type AccountDailySnapshot struct {
+	Epoch                     string    `gorm:"size:36;not null;default:'';uniqueIndex:idx_daily_snapshots_user_date" json:"epoch"`
 	ID                        uint      `gorm:"primaryKey" json:"id"`
 	UserUUID                  uuid.UUID `gorm:"type:uuid;not null;uniqueIndex:idx_daily_snapshots_user_date" json:"user_uuid"`
 	SessionDate               string    `gorm:"type:date;not null;uniqueIndex:idx_daily_snapshots_user_date" json:"session_date"`

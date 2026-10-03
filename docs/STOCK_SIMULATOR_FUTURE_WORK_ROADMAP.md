@@ -1,3 +1,5 @@
+> Updated implementation status and release gates: [2026-10-03 handoff](STOCK_SIMULATOR_IMPLEMENTATION_AND_NEXT_PLAN_2026-10-03.md). Earlier completion claims below are historical and must be checked against that document and current CI/live evidence.
+
 # Stock Simulator — Master Future Work Roadmap & Architecture Specification
 
 **Document Version**: `2.0.0-PRODUCTION-ROADMAP`  

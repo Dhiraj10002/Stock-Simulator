@@ -418,6 +418,10 @@ paths:
           required: true
           schema: { type: string }
           example: RELIANCE
+        - name: purpose
+          in: query
+          description: Display mode may return a stale authentic mark; never use it to authorize fills.
+          schema: { type: string, enum: [display] }
       responses:
         '200':
           description: Live quote
@@ -703,6 +707,21 @@ paths:
                 $ref: '#/components/schemas/OptionChainResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
+
+  /instruments/derivative-underlyings:
+    get:
+      summary: List active unexpired derivative underlyings from the canonical master
+      tags: [Instruments]
+      responses:
+        '200':
+          description: Canonical eligible underlying symbols
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data: { type: array, items: { type: string } }
 
   /instruments:
     get:
@@ -1320,7 +1339,26 @@ components:
             symbol: { type: string, example: "RELIANCE" }
             price_paise: { type: integer, format: int64, example: 250000 }
             source: { type: string, example: "ANGEL_ONE" }
+            is_quote_stale: { type: boolean }
+            open_interest: { type: integer, format: int64 }
+            open_interest_available: { type: boolean }
+            open_paise: { type: integer, format: int64 }
+            high_paise: { type: integer, format: int64 }
+            low_paise: { type: integer, format: int64 }
+            depth:
+              type: object
+              nullable: true
+              properties:
+                bids: { type: array, items: { $ref: '#/components/schemas/DepthLevel' } }
+                asks: { type: array, items: { $ref: '#/components/schemas/DepthLevel' } }
             updated_at: { type: string, format: date-time }
+
+    DepthLevel:
+      type: object
+      properties:
+        price_paise: { type: integer, format: int64 }
+        quantity: { type: integer, format: int64 }
+        orders: { type: integer, format: int64 }
 
     CandleItem:
       type: object

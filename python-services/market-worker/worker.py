@@ -358,6 +358,8 @@ def get_symbol_aliases(canonical_symbol: str) -> list[str]:
 
 
 def init_global_token_map() -> None:
+    if get_feed_mode() == "live" and os.getenv("DATABASE_URL"):
+        return  # LIVE map comes exclusively from the activated DB master.
     global GLOBAL_TOKEN_MAP
     for item in FALLBACK_INSTRUMENT_MASTER:
         GLOBAL_TOKEN_MAP[item["name"].upper()] = item
@@ -594,7 +596,8 @@ def fetch_quote_for_symbol(symbol: str) -> dict[str, Any] | None:
                 quote = {
                     "symbol": symbol, "price_paise": ltp_paise,
                     "previous_close_paise": close_paise,
-                    "day_change_available": close_paise > 0,
+                    "day_change_available": close_paise > 0, "open_interest": integer(data.get("opnInterest")),
+                    **provider_market_fields(data),
                     "volume": integer(data.get("tradeVolume")),
                     "source": "angelone_live", "updated_at": stamp.isoformat()
                 }
@@ -610,7 +613,7 @@ def fetch_quote_for_symbol(symbol: str) -> dict[str, Any] | None:
                     GLOBAL_WRITER.write(sub, ltp_paise, quote["volume"], source="angelone_live",
                                         previous_close_paise=close_paise, event_time=stamp, build_history=False,
                                         open_interest=integer(data.get("opnInterest")),
-                                        lower_circuit_paise=lower_c, upper_circuit_paise=upper_c)
+                                        lower_circuit_paise=lower_c, upper_circuit_paise=upper_c, market_fields=provider_market_fields(data))
                 return quote
         except Exception as e:
             print(f"market worker: error fetching live quote for {symbol} from Angel One: {e}", flush=True)
@@ -895,6 +898,41 @@ class InstrumentStore:
     def refresh(self) -> bool:
         rows: list[dict[str, Any]] = []
 
+        if get_feed_mode() == "live":
+            # The Go importer owns activation; subscribing from a second master can corrupt identity.
+            if not self.database_url:
+                raise RuntimeError("LIVE feed requires the canonical database master")
+            import psycopg
+            from psycopg.rows import dict_row
+            with psycopg.connect(self.database_url, connect_timeout=5, row_factory=dict_row) as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute("SELECT token,symbol,name,underlying_symbol,expiry,strike,lot_size AS lotsize,instrument_type AS instrumenttype,exchange_segment AS exch_seg,tick_size FROM instruments WHERE active = true AND is_tradable = true AND snapshot_version IN (SELECT version FROM instrument_snapshots WHERE status = 'ACTIVE')")
+                    rows = list(cursor.fetchall())
+            if not rows:
+                raise RuntimeError("active master is empty; run sync-instruments before starting LIVE")
+            for row in rows:
+                for key in ("lotsize","strike","tick_size"):
+                    row[key] = str(row[key])
+                if re.fullmatch(r"\d{4}-\d{2}-\d{2}",row.get("expiry") or ""):
+                    row["expiry"] = datetime.strptime(row["expiry"],"%Y-%m-%d").strftime("%d%b%Y").upper()
+            global GLOBAL_TOKEN_MAP
+            mapping = {}
+            for row in rows:
+                sym = clean(row["symbol"]).upper()
+                mapping[sym] = row
+                if row["instrumenttype"] in ("EQUITY","INDEX","AMXIDX",""):
+                    mapping[sym.removesuffix("-EQ")] = row
+                    mapping[resolve_canonical_symbol(sym.removesuffix("-EQ"))] = row
+                    if row["instrumenttype"] in ("INDEX","AMXIDX"):
+                        mapping[resolve_canonical_symbol(clean(row["name"]))] = row
+            GLOBAL_TOKEN_MAP = mapping
+            self._rows = rows
+            subscriptions = self._build_subscriptions(rows)
+            with self._lock:
+                changed = self._subscriptions != {(item.token,item.exchange_type):item for item in subscriptions}
+                self._subscriptions = {(item.token,item.exchange_type):item for item in subscriptions}
+            return changed
+
         # 1. Check local cache first to avoid slow 35MB download
         if (os.path.exists(LOCAL_CACHE_PATH) and os.path.getsize(LOCAL_CACHE_PATH) > 1000000
                 and time.time() - os.path.getmtime(LOCAL_CACHE_PATH) < 86400):
@@ -931,10 +969,6 @@ class InstrumentStore:
                 if not rows:
                     rows = FALLBACK_INSTRUMENT_MASTER
 
-        # 3. Asynchronously upsert to DB if configured (don't block feed startup)
-        if self.database_url:
-            threading.Thread(target=self._upsert_bg, args=(rows,), daemon=True).start()
-
         self._rows = rows
         init_global_token_map()
         subscriptions = self._build_subscriptions(rows)
@@ -947,185 +981,6 @@ class InstrumentStore:
             self._subscriptions = {(item.token, item.exchange_type): item for item in subscriptions}
         print(f"market worker: configured {len(subscriptions)} instruments; subscribed symbols={','.join(item.symbol for item in subscriptions)}", flush=True)
         return changed
-
-    def _upsert_bg(self, rows: list[dict[str, Any]]) -> None:
-        try:
-            import psycopg
-            from datetime import timezone
-            snapshot_ver = f"mw-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}"
-
-            init_ddl = """
-                CREATE TABLE IF NOT EXISTS instrument_snapshots (
-                    id BIGSERIAL PRIMARY KEY,
-                    version VARCHAR(64) NOT NULL UNIQUE,
-                    source VARCHAR(64) NOT NULL DEFAULT 'market_worker',
-                    total_instruments INT NOT NULL DEFAULT 0,
-                    equity_count INT NOT NULL DEFAULT 0,
-                    futures_count INT NOT NULL DEFAULT 0,
-                    options_count INT NOT NULL DEFAULT 0,
-                    index_count INT NOT NULL DEFAULT 0,
-                    status VARCHAR(32) NOT NULL DEFAULT 'STAGED',
-                    validation_errors TEXT,
-                    activated_at TIMESTAMPTZ,
-                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-                );
-                ALTER TABLE instruments ADD COLUMN IF NOT EXISTS snapshot_version VARCHAR(64);
-                ALTER TABLE instruments ADD COLUMN IF NOT EXISTS is_tradable BOOLEAN NOT NULL DEFAULT TRUE;
-                CREATE INDEX IF NOT EXISTS idx_instruments_version_tradable ON instruments (snapshot_version, is_tradable);
-            """
-
-            statement = """
-                INSERT INTO instruments (token, symbol, display_symbol, exchange, name, underlying, underlying_symbol, expiry, strike, option_type, lot_size, instrument_type, exchange_segment, tick_size, active, snapshot_version, is_tradable, created_at, updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, true, %s, true, NOW(), NOW())
-                ON CONFLICT (token, exchange_segment) DO UPDATE SET
-                    symbol = EXCLUDED.symbol, display_symbol = EXCLUDED.display_symbol, exchange = EXCLUDED.exchange,
-                    name = EXCLUDED.name, underlying = EXCLUDED.underlying, underlying_symbol = EXCLUDED.underlying_symbol,
-                    expiry = EXCLUDED.expiry, strike = EXCLUDED.strike, lot_size = EXCLUDED.lot_size,
-                    option_type = EXCLUDED.option_type, instrument_type = EXCLUDED.instrument_type,
-                    tick_size = EXCLUDED.tick_size, active = true, is_tradable = true,
-                    snapshot_version = EXCLUDED.snapshot_version, updated_at = NOW()
-            """
-            values = []
-            seen_tokens = set()
-            target_names = set(s.upper() for s in self.symbols) | {
-                "NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "SENSEX",
-                "RELIANCE", "TCS", "INFY", "HDFCBANK", "TATAMOTORS", "TMPV",
-                "BHARTIARTL", "SBIN", "ICICIBANK", "KOTAKBANK", "AXISBANK",
-                "BAJFINANCE", "MARUTI", "LT", "ITC", "SUNPHARMA", "TATASTEEL"
-            }
-            eq_cnt = 0
-            fut_cnt = 0
-            opt_cnt = 0
-            idx_cnt = 0
-
-            for row in rows:
-                token, segment = clean(row.get("token")), clean(row.get("exch_seg"))
-                if not token or not segment:
-                    continue
-                if segment not in ("NSE", "NFO", "BSE", "BFO"):
-                    continue
-
-                tok_key = (token, segment)
-                if tok_key in seen_tokens:
-                    continue
-
-                name = clean(row.get("name")).upper()
-                symbol = clean(row.get("symbol")).upper()
-                underlying = clean(row.get("underlying_symbol")).upper() or name
-
-                is_target = name in target_names or symbol in target_names or underlying in target_names
-                is_equity = segment == "NSE" and (symbol.endswith("-EQ") or clean(row.get("instrumenttype")) in ("", "EQ"))
-                is_index = clean(row.get("instrumenttype")) == "AMXIDX" or name in ("NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "SENSEX")
-
-                is_derivative = segment in ("NFO", "BFO") and clean(row.get("instrumenttype")) in ("FUTSTK", "FUTIDX", "OPTSTK", "OPTIDX")
-                if is_derivative:
-                    try:
-                        if datetime.strptime(clean(row.get("expiry")), "%d%b%Y").date() < datetime.now(ZoneInfo("Asia/Kolkata")).date():
-                            continue
-                    except ValueError:
-                        continue
-                    if integer(row.get("lotsize")) <= 0:
-                        continue  # never invent derivative contract sizes
-                if not (is_target or is_equity or is_index or is_derivative):
-                    continue
-
-                opt_type = clean(row.get("option_type"))
-                if not opt_type and segment in ("NFO", "BFO"):
-                    if symbol.endswith("CE"):
-                        opt_type = "CE"
-                    elif symbol.endswith("PE"):
-                        opt_type = "PE"
-
-                strike = clean(row.get("strike"))
-                if strike in ("-1", "-1.000000"):
-                    strike = ""
-                elif strike and segment in ("NFO", "BFO"):
-                    strike = str(Decimal(strike) / 100)
-
-                lotsize = integer(row.get("lotsize"))
-                if lotsize <= 0:
-                    if underlying == "NIFTY":
-                        lotsize = 25
-                    elif underlying == "BANKNIFTY":
-                        lotsize = 15
-                    elif underlying == "FINNIFTY":
-                        lotsize = 25
-                    elif underlying == "MIDCPNIFTY":
-                        lotsize = 50
-                    elif underlying == "SENSEX":
-                        lotsize = 10
-                    else:
-                        lotsize = 1
-
-                tick_size = clean(row.get("tick_size")) or "0.05"
-                try:
-                    tv = float(tick_size)
-                    if tv >= 1.0:
-                        tick_size = f"{tv / 100.0:.2f}"
-                except Exception:
-                    tick_size = "0.05"
-
-                inst_type = clean(row.get("instrumenttype"))
-                if segment == "NSE":
-                    if is_index:
-                        inst_type = "INDEX"
-                    elif inst_type in ("", "EQ") or symbol.endswith("-EQ"):
-                        inst_type = "EQUITY"
-                elif segment == "BSE":
-                    if is_index:
-                        inst_type = "INDEX"
-                    elif inst_type in ("", "EQ"):
-                        inst_type = "EQUITY"
-
-                if inst_type == "EQUITY":
-                    eq_cnt += 1
-                elif inst_type in ("FUTSTK", "FUTIDX"):
-                    fut_cnt += 1
-                elif inst_type in ("OPTSTK", "OPTIDX"):
-                    opt_cnt += 1
-                elif inst_type == "INDEX":
-                    idx_cnt += 1
-
-                disp_sym = format_display_symbol(symbol, clean(row.get("expiry")), strike, opt_type, name)
-                seen_tokens.add(tok_key)
-
-                values.append((
-                    token, symbol, disp_sym, segment, name, underlying, underlying,
-                    clean(row.get("expiry")), strike, opt_type, lotsize,
-                    inst_type, segment, tick_size, snapshot_ver
-                ))
-
-            if not values:
-                return
-
-            with psycopg.connect(self.database_url, connect_timeout=5) as connection:
-                with connection.cursor() as cursor:
-                    cursor.execute(init_ddl)
-                    # Stage snapshot row
-                    cursor.execute("""
-                        INSERT INTO instrument_snapshots (version, source, total_instruments, equity_count, futures_count, options_count, index_count, status, created_at, updated_at)
-                        VALUES (%s, 'market_worker', %s, %s, %s, %s, %s, 'STAGED', NOW(), NOW())
-                        ON CONFLICT (version) DO NOTHING
-                    """, (snapshot_ver, len(values), eq_cnt, fut_cnt, opt_cnt, idx_cnt))
-
-                    for start in range(0, len(values), 1000):
-                        cursor.executemany(statement, values[start:start + 1000])
-
-                    # Atomically activate new snapshot and soft-retire removed/older instruments
-                    cursor.execute("UPDATE instruments SET is_tradable = false, active = false WHERE snapshot_version IS DISTINCT FROM %s", (snapshot_ver,))
-                    cursor.execute("UPDATE instrument_snapshots SET status = 'RETIRED' WHERE status = 'ACTIVE'")
-                    cursor.execute("""
-                        UPDATE instrument_snapshots
-                        SET status = 'ACTIVE', activated_at = NOW(), total_instruments = %s,
-                            equity_count = %s, futures_count = %s, options_count = %s, index_count = %s, updated_at = NOW()
-                        WHERE version = %s
-                    """, (len(values), eq_cnt, fut_cnt, opt_cnt, idx_cnt, snapshot_ver))
-
-                connection.commit()
-            print(f"market worker: successfully staged and activated snapshot {snapshot_ver} with {len(values)} instruments (eq={eq_cnt}, fno={fut_cnt+opt_cnt}, idx={idx_cnt})", flush=True)
-        except Exception as error:
-            print(f"market worker: database background upsert skipped/failed: {error}", flush=True)
 
     def _fallback_subscriptions(self) -> list[Subscription]:
         result = []
@@ -1154,9 +1009,12 @@ class InstrumentStore:
                     if expiry < datetime.now(timezone.utc).astimezone(ZoneInfo("Asia/Kolkata")).date():
                         continue
                     by_symbol[symbol] = row
-                elif segment == "NSE" and symbol.endswith("-EQ"):
+                elif segment in ("NSE","BSE") and (symbol.endswith("-EQ") or clean(row.get("instrumenttype")) in ("EQUITY","INDEX","AMXIDX")):
                     by_symbol[symbol] = row
-                    by_symbol[symbol[:-3]] = row
+                    by_symbol[symbol.removesuffix("-EQ")] = row
+                    by_symbol[resolve_canonical_symbol(symbol.removesuffix("-EQ"))] = row
+                    if clean(row.get("instrumenttype")) in ("INDEX","AMXIDX"):
+                        by_symbol[resolve_canonical_symbol(clean(row.get("name")))] = row
             self._subscription_index = (rows, today, by_symbol)
         indexes = {"NIFTY": ("99926000", "NSE"), "BANKNIFTY": ("99926009", "NSE"),
                    "FINNIFTY": ("99926037", "NSE"), "MIDCPNIFTY": ("99926074", "NSE"),
@@ -1164,11 +1022,11 @@ class InstrumentStore:
         subscriptions = {}
         for requested in (self.symbols if requested_symbols is None else requested_symbols):
             symbol = resolve_canonical_symbol(requested)
-            if symbol in indexes:
+            if symbol in indexes and get_feed_mode() != "live":
                 token, segment = indexes[symbol]
             else:
                 row = by_symbol.get(symbol) or by_symbol.get(requested.upper())
-                if row is None:
+                if row is None and get_feed_mode() != "live":
                     row = next((r for r in FALLBACK_INSTRUMENT_MASTER if r["name"] == symbol and r["symbol"].endswith("-EQ")), None)
                 if row is None:
                     continue
@@ -1266,6 +1124,36 @@ def publish_feed_state(
     return state_payload
 
 
+def provider_market_fields(data: dict[str, Any], scaled: bool = False) -> dict[str, Any]:
+    """Only transport provider fields. Missing OHLC/OI/depth never becomes zero data."""
+    fields: dict[str, Any] = {}
+    convert = integer if scaled else rupees_to_paise
+    for dest, key in (("open_paise", "open_price_of_the_day" if scaled else "open"),
+                      ("high_paise", "high_price_of_the_day" if scaled else "high"),
+                      ("low_paise", "low_price_of_the_day" if scaled else "low")):
+        value = convert(data.get(key))
+        if value > 0:
+            fields[dest] = value
+    oi_key = "open_interest" if scaled else "opnInterest"
+    fields["open_interest_available"] = "true" if oi_key in data and data[oi_key] is not None else "false"
+    depth = data.get("depth") or {}
+    book = {}
+    for side, key in (("bids", "best_5_buy_data"), ("asks", "best_5_sell_data")):
+        rows = data.get(key) if scaled else depth.get("buy" if side == "bids" else "sell")
+        clean_rows = []
+        for row in rows or []:
+            price = convert(row.get("price"))
+            quantity = integer(row.get("quantity"))
+            orders = integer(row.get("no_of_orders") if scaled else row.get("orders"))
+            if price > 0 and quantity > 0:
+                clean_rows.append({"price_paise": price, "quantity": quantity, "orders": orders})
+        if len(clean_rows) == 5:
+            book[side] = clean_rows
+    if len(book) == 2:
+        fields["depth_json"] = json.dumps(book)
+    return fields
+
+
 class QuoteWriter:
     def __init__(self, client: redis.Redis, quote_ttl: int, history_ttl: int, history_max_items: int, feed_mode: str | None = None) -> None:
         self.client = client
@@ -1285,7 +1173,8 @@ class QuoteWriter:
     def write(self, subscription: Subscription, price_paise: int, volume: int, source: str = "synthetic",
               previous_close_paise: int = 0, event_time: datetime | None = None,
               build_history: bool = True, open_interest: int = 0,
-              lower_circuit_paise: int = 0, upper_circuit_paise: int = 0) -> None:
+              lower_circuit_paise: int = 0, upper_circuit_paise: int = 0,
+              market_fields: dict[str, Any] | None = None) -> None:
         mode = self.feed_mode
         if mode == "live" and source != "angelone_live":
             print(f"market worker: rejected non-live quote write to Redis in LIVE mode (source={source}, symbol={subscription.symbol})", flush=True)
@@ -1319,15 +1208,10 @@ class QuoteWriter:
         }
         if lower_circuit_paise > 0:
             quote["lower_circuit_paise"] = lower_circuit_paise
-        elif benchmark > 0:
-            pct = 0.20 if any(k in subscription.symbol for k in ("FUT", "CE", "PE")) else 0.10
-            quote["lower_circuit_paise"] = max(5, int(benchmark * (1 - pct)))
-
         if upper_circuit_paise > 0:
             quote["upper_circuit_paise"] = upper_circuit_paise
-        elif benchmark > 0:
-            pct = 0.20 if any(k in subscription.symbol for k in ("FUT", "CE", "PE")) else 0.10
-            quote["upper_circuit_paise"] = int(benchmark * (1 + pct))
+        if market_fields:
+            quote.update(market_fields)
 
         bucket = int(now.timestamp()) // 60
         quote_key, history_key = f"market:quote:{subscription.symbol}", f"market:history:{subscription.symbol}"
@@ -1359,6 +1243,10 @@ class QuoteWriter:
                     sym_quote.pop("change_paise", None)
                     sym_quote.pop("change_percent", None)
                     pipe.hdel(q_key, "change_paise", "change_percent")
+                # Remove stale optional fields rather than preserving a prior guessed band/book.
+                for field in ("lower_circuit_paise", "upper_circuit_paise", "depth_json", "open_paise", "high_paise", "low_paise", "open_interest_available"):
+                    if field not in sym_quote:
+                        pipe.hdel(q_key, field)
                 pipe.hset(q_key, mapping={**sym_quote, "day_change_available": str(sym_quote["day_change_available"]).lower()})
                 pipe.expire(q_key, self.quote_ttl)
 
@@ -1588,6 +1476,14 @@ def run_feed(store: InstrumentStore, writer: QuoteWriter, control: FeedControl) 
         raise RuntimeError(f"Angel One login failed: {session.get('message', 'unknown error')}")
     GLOBAL_SMART_API = smart_api
     GLOBAL_WRITER = writer
+    def heartbeat() -> None:
+        while True:
+            try:
+                client.set("market:worker:heartbeat", datetime.now(timezone.utc).isoformat(), ex=90)
+            except Exception:
+                pass
+            time.sleep(20)
+    threading.Thread(target=heartbeat, daemon=True).start()
     auth_token = session["data"]["jwtToken"]
     feed_token = smart_api.getfeedToken()
     websocket = VerifiedSmartWebSocket(auth_token, api_key, client_id, feed_token)
@@ -1633,7 +1529,8 @@ def run_feed(store: InstrumentStore, writer: QuoteWriter, control: FeedControl) 
                     if data and stamp:
                         writer.write(item, rupees_to_paise(data.get("ltp")), integer(data.get("tradeVolume")),
                                      source="angelone_live", previous_close_paise=rupees_to_paise(data.get("close")),
-                                     event_time=stamp, build_history=False, open_interest=integer(data.get("opnInterest")))
+                                     event_time=stamp, build_history=False, open_interest=integer(data.get("opnInterest")), market_fields=provider_market_fields(data),
+                                     lower_circuit_paise=rupees_to_paise(data.get("lowerCircuit")), upper_circuit_paise=rupees_to_paise(data.get("upperCircuit")))
             except Exception as error:
                 print(f"market worker: demand subscription refresh failed: {error}", flush=True)
 
@@ -1665,7 +1562,7 @@ def run_feed(store: InstrumentStore, writer: QuoteWriter, control: FeedControl) 
             writer.write(subscription, price_paise, volume, source="angelone_live",
                          previous_close_paise=paise(message.get("closed_price")), event_time=stamp,
                          open_interest=integer(message.get("open_interest")),
-                         lower_circuit_paise=lower_c, upper_circuit_paise=upper_c)
+                         lower_circuit_paise=lower_c, upper_circuit_paise=upper_c, market_fields=provider_market_fields(message, scaled=True))
         except (ValueError, redis.RedisError) as error:
             print(f"market worker: discarded Angel One tick: {error}", flush=True)
 
@@ -1779,13 +1676,23 @@ def main() -> None:
     try:
         store.refresh()
     except Exception as error:
-        print(f"market worker: initial instrument refresh failed: {error}; proceeding with fallback", flush=True)
+        print(f"market worker: initial instrument refresh failed: {error}", flush=True)
+        if mode == "live":
+            raise
 
     quote_ttl = int(os.getenv("QUOTE_TTL_SECONDS", "300"))
     history_ttl = int(os.getenv("HISTORY_TTL_SECONDS", "86400"))
     history_max = int(os.getenv("HISTORY_MAX_ITEMS", "500"))
     writer = QuoteWriter(client, quote_ttl, history_ttl, history_max)
     GLOBAL_WRITER = writer
+    def heartbeat() -> None:
+        while True:
+            try:
+                client.set("market:worker:heartbeat", datetime.now(timezone.utc).isoformat(), ex=90)
+            except Exception:
+                pass
+            time.sleep(20)
+    threading.Thread(target=heartbeat, daemon=True).start()
 
     # Initialize global symbol lookup, Angel One session, and on-demand quote HTTP server
     init_global_token_map()

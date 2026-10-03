@@ -38,7 +38,6 @@ func (h *Handler) Service() *service.Service {
 	return h.svc
 }
 
-
 // List handles GET /api/v1/instruments.
 func (h *Handler) List(c *gin.Context) {
 	q := strings.TrimSpace(c.Query("q"))
@@ -173,3 +172,11 @@ func formatSnapshotResponse(snap *model.InstrumentSnapshot) dto.SnapshotResponse
 	}
 }
 
+func (h *Handler) DerivativeUnderlyings(c *gin.Context) {
+	names, err := h.svc.DerivativeUnderlyings(c.Request.Context())
+	if err != nil {
+		response.Error(c, http.StatusServiceUnavailable, "Instrument master unavailable", nil)
+		return
+	}
+	response.Success(c, http.StatusOK, "Current eligible underlyings", names)
+}
