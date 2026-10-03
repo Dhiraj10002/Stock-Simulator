@@ -67,7 +67,8 @@ export default function Navbar({
 
   const { data: verifiedWallet } = useAccountWallet();
   const availableBalancePaise = verifiedWallet?.available_balance_paise;
-  const [clientMarketStatus, setClientMarketStatus] = useState(getIndianMarketStatus());
+  // Static pages can be served long after build time; hydrate with a stable clock placeholder.
+  const [clientIstTime, setClientIstTime] = useState("");
   const feedStatus = useMarketStore((s) => s.feedStatus);
   const serverMarketStatus = useMarketStore((s) => s.marketStatus);
   const connectionState = useMarketStore((s) => s.connectionState);
@@ -76,7 +77,7 @@ export default function Navbar({
     feedStatus,
     serverMarketStatus,
     connectionState,
-    clientMarketStatus.istTime
+    clientIstTime
   );
 
   const [showProfileMenu, setShowProfileMenu] = useState(false);
@@ -89,9 +90,10 @@ export default function Navbar({
     queueMicrotask(() => {
       const storedName = localStorage.getItem("user_name");
       if (storedName) setUserName(storedName);
+      setClientIstTime(getIndianMarketStatus().istTime);
     });
     const timer = setInterval(() => {
-      setClientMarketStatus(getIndianMarketStatus());
+      setClientIstTime(getIndianMarketStatus().istTime);
     }, 10000);
     return () => clearInterval(timer);
   }, []);
@@ -186,7 +188,7 @@ export default function Navbar({
             <span className="font-semibold">{authoritativeStatus.fullLabel}</span>
             <span className="text-slate-500 dark:text-slate-400 text-[10px] flex items-center gap-1 border-l border-slate-300 dark:border-slate-700/60 pl-2">
               <Clock className="w-3 h-3" />
-              {clientMarketStatus.istTime}
+              {clientIstTime || "— IST"}
             </span>
           </div>
 
