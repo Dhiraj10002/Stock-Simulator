@@ -2,6 +2,27 @@
 
 Reviewed main `d59d7a6a746c0a09ea0366d2442376b797468ec7` after PR #7 was merged. Main's CI passed (run 37139837815). Also reviewed the supplied terminal output from 3 October 2026, 22:50–22:52 IST. No broker credentials, account IDs or session hashes from that output are reproduced here.
 
+## Follow-up: duplicate contracts block startup
+
+The 3 October 23:57–23:58 IST restart reached the backend but failed while creating `idx_instruments_contract`, with SQLSTATE 23505. Legacy imports can leave multiple rows for the same `(symbol, exchange_segment)`, even after obsolete token uniqueness is removed. Prior migration tests covered legacy indexes but did not seed this duplicate data condition.
+
+The application and `sync-instruments` now run the same PostgreSQL upgrade before any instrument AutoMigrate. It locks canonical activation and instrument writes, archives every original row of each duplicate group to `instrument_duplicate_archives`, and keeps one deterministic survivor. A row matching the single validated activated snapshot's payload/version wins over newer unrelated imports. If no row can be verified, the survivor is inactive and not tradable; an empty legacy version receives `legacy-duplicate-quarantine` so consumers cannot turn its false tradability into a legacy default. No provider identity is invented. Different exchange segments and nonduplicate contracts are untouched.
+
+Archival, quarantine, duplicate removal and unique-index creation form one transaction. Failed archival/index creation rolls back the changes; repeated successful startup does not rearchive rows. Custom foreign keys pointing at instrument IDs cause an explicit review error, preventing implicit cascading deletion. Wallets, orders, positions and trades remain untouched. PostgreSQL regressions cover preservation, canonical selection, untrusted snapshots, old missing columns, rollback, repeated upgrades, uniqueness and custom references.
+
+After pulling the latest PR #8 branch, restart. Inspect the repair counts in the log and keep the archive. If contracts were quarantined or no complete master is active, stop services and run the complete trusted importer from the backend directory:
+
+```bash
+cd backend
+go run ./cmd/sync-instruments
+cd ..
+./start-dev.sh
+```
+
+The importer uses the same repair before migrating and can activate verified contracts afterwards. Historical derivative identity conflicts still require review against the archived rows; their protection is not bypassed. Do not truncate the instrument table, delete portfolio records or drop the new unique index to hide this error.
+
+Live-session evidence remains tracked in [issue #9](https://github.com/Dhiraj10002/Stock-Simulator/issues/9), including commands, screenshots, paper-account cleanup and acceptance criteria. This automated upgrade cannot inspect the user's actual database records or certify live broker behavior.
+
 ## Findings and corrections
 
 | Finding | Evidence and correction |

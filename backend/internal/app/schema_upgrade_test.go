@@ -51,7 +51,7 @@ func TestRequiredSchemaUpgradeRepairsExistingDatabase(t *testing.T) {
 				}
 			}
 			for i := 0; i < 2; i++ {
-				if err := model.UpgradeInstrumentTokenIndex(tx); err != nil {
+				if err := model.UpgradeInstrumentSchema(tx); err != nil {
 					t.Fatal(err)
 				}
 				if err := upgradeRequiredSchema(tx); err != nil {

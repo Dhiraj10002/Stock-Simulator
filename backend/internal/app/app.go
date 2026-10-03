@@ -58,8 +58,8 @@ func (a *App) RunWithContext(ctx context.Context) error {
 	logger.Info("Database Connected")
 
 	// Provider tokens are recyclable. Historical identity is symbol + segment.
-	if err := model.UpgradeInstrumentTokenIndex(database.GetDB()); err != nil {
-		return err
+	if err := model.UpgradeInstrumentSchema(database.GetDB()); err != nil {
+		return fmt.Errorf("upgrade legacy instrument identities: %w", err)
 	}
 	// Run Migrations if tables do not exist or if explicitly requested
 	shouldMigrate := os.Getenv("RUN_MIGRATION") == "true" || !database.GetDB().Migrator().HasTable(&model.User{})
