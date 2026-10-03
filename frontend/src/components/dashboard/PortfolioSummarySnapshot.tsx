@@ -90,7 +90,7 @@ export default function PortfolioSummarySnapshot({
               className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-md border ${statusBadge.bg}`}
             >
               {statusBadge.icon}
-              <span>{statusBadge.label}</span>
+              <span>{portfolio && positionsCount === 0 ? "No open positions" : statusBadge.label}</span>
             </span>
           </div>
 

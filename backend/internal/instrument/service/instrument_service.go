@@ -242,6 +242,7 @@ func ToCanonicalInstrument(inst model.Instrument) dto.InstrumentResponse {
 		ID:              inst.ID,
 		Symbol:          inst.Symbol,
 		DisplaySymbol:   displaySymbol,
+		Name:            inst.Name,
 		Exchange:        exchange,
 		Token:           inst.Token,
 		InstrumentType:  instType,
@@ -272,9 +273,11 @@ func (s *Service) List(query, exchange, instrumentType, underlying string, activ
 		return s.filterDefaults(query, exchange, instrumentType, underlying, activeOnly, limit), nil
 	}
 
-	var dbCount int64
-	_ = db.Model(&model.Instrument{}).Count(&dbCount).Error
-	if dbCount == 0 {
+	var hasInstruments bool
+	if err := db.Raw("SELECT EXISTS (SELECT 1 FROM instruments LIMIT 1)").Scan(&hasInstruments).Error; err != nil {
+		return nil, err
+	}
+	if !hasInstruments {
 		return s.filterDefaults(query, exchange, instrumentType, underlying, activeOnly, limit), nil
 	}
 
@@ -942,32 +945,35 @@ func (s *Service) ExpireInstruments(ctx context.Context, asOf time.Time) (int64,
 		loc = time.FixedZone("IST", 5*3600+1800)
 	}
 
-	var derivatives []model.Instrument
-	err = s.db.WithContext(ctx).
+	// A master has tens of thousands of option contracts but only a small set
+	// of expiry dates. Do not transfer every contract across a remote DB link
+	// on each lifecycle tick, or build an unbounded list of SQL ID parameters.
+	var expiries []string
+	err = s.db.WithContext(ctx).Model(&model.Instrument{}).
 		Where("is_tradable = ? AND expiry != '' AND exchange_segment IN ('NFO', 'BFO')", true).
-		Find(&derivatives).Error
+		Distinct().Pluck("expiry", &expiries).Error
 	if err != nil {
 		return 0, err
 	}
 
 	asOfIST := asOf.In(loc)
-	var expiredIDs []uint
+	var expiredDates []string
 
-	for _, inst := range derivatives {
-		expDate, err := ParseExpiryDate(inst.Expiry, loc)
+	for _, expiry := range expiries {
+		expDate, err := ParseExpiryDate(expiry, loc)
 		if err == nil {
 			if asOfIST.After(expDate) || asOfIST.Equal(expDate) {
-				expiredIDs = append(expiredIDs, inst.ID)
+				expiredDates = append(expiredDates, expiry)
 			}
 		}
 	}
 
-	if len(expiredIDs) == 0 {
+	if len(expiredDates) == 0 {
 		return 0, nil
 	}
 
 	res := s.db.WithContext(ctx).Model(&model.Instrument{}).
-		Where("id IN ?", expiredIDs).
+		Where("is_tradable = ? AND exchange_segment IN ('NFO', 'BFO') AND expiry IN ?", true, expiredDates).
 		Updates(map[string]interface{}{"is_tradable": false, "active": false})
 	return res.RowsAffected, res.Error
 }
@@ -1077,7 +1083,7 @@ func (s *Service) DerivativeUnderlyings(ctx context.Context) ([]string, error) {
 		return nil, fmt.Errorf("instrument master unavailable")
 	}
 	var members []model.Instrument
-	if err := s.db.WithContext(ctx).Where("active = ? AND is_tradable = ? AND instrument_type IN ?", true, true, []string{"FUTIDX", "FUTSTK", "OPTIDX", "OPTSTK"}).Find(&members).Error; err != nil {
+	if err := s.db.WithContext(ctx).Distinct("underlying", "underlying_symbol", "expiry").Where("active = ? AND is_tradable = ? AND instrument_type IN ?", true, true, []string{"FUTIDX", "FUTSTK", "OPTIDX", "OPTSTK"}).Find(&members).Error; err != nil {
 		return nil, err
 	}
 	seen := map[string]bool{}
@@ -1100,4 +1106,35 @@ func (s *Service) DerivativeUnderlyings(ctx context.Context) ([]string, error) {
 	}
 	sort.Strings(names)
 	return names, nil
+}
+
+// DerivativeStocks returns the complete eligible NSE equity universe without
+// truncating a general instrument search or presenting derivative-only test names.
+func (s *Service) DerivativeStocks(ctx context.Context) ([]dto.InstrumentResponse, error) {
+	names, err := s.DerivativeUnderlyings(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]dto.InstrumentResponse, 0)
+	if len(names) == 0 {
+		return out, nil
+	}
+	symbols := make([]string, 0, len(names)*2)
+	for i, name := range names {
+		names[i] = strings.ToUpper(name)
+		symbols = append(symbols, names[i], names[i]+"-EQ")
+	}
+	var equities []model.Instrument
+	err = s.db.WithContext(ctx).
+		Where("active = ? AND is_tradable = ? AND instrument_type = ?", true, true, "EQUITY").
+		Where("exchange = ? OR exchange_segment = ?", "NSE", "NSE").
+		Where("UPPER(symbol) IN ?", symbols).
+		Order("symbol ASC").Find(&equities).Error
+	if err != nil {
+		return nil, err
+	}
+	for _, equity := range equities {
+		out = append(out, ToCanonicalInstrument(equity))
+	}
+	return out, nil
 }

@@ -186,18 +186,23 @@ func (s *Service) collectValidEquityQuotes(ctx context.Context) ([]dto.MarketMov
 		}
 
 		updatedAt, parseErr := dto.ParseQuoteTime(updatedAtStr)
-		if parseErr != nil || now.Sub(updatedAt) > maxExecutableQuoteAge {
+		if parseErr != nil || updatedAt.After(now.Add(5*time.Second)) || now.Sub(updatedAt) > maxExecutableQuoteAge {
+			continue
+		}
+		// Missing daily movement is unknown, not an unchanged stock. Keep it out
+		// of rankings and breadth until the provider supplies a previous close.
+		previousClose, closeErr := strconv.ParseInt(values["previous_close_paise"], 10, 64)
+		if values["day_change_available"] != "true" || closeErr != nil || previousClose <= 0 {
 			continue
 		}
 
 		var changePaise int64
 		var changePercent float64
 		var volume int64
-		if cp, ok := values["change_paise"]; ok {
-			changePaise, _ = strconv.ParseInt(cp, 10, 64)
-		}
-		if cp, ok := values["change_percent"]; ok {
-			changePercent, _ = strconv.ParseFloat(cp, 64)
+		changePaise, changeErr := strconv.ParseInt(values["change_paise"], 10, 64)
+		changePercent, percentErr := strconv.ParseFloat(values["change_percent"], 64)
+		if changeErr != nil || percentErr != nil || math.IsNaN(changePercent) || math.IsInf(changePercent, 0) {
+			continue
 		}
 		if v, ok := values["volume"]; ok {
 			volume, _ = strconv.ParseInt(v, 10, 64)

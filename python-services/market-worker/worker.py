@@ -1,4 +1,5 @@
 import json
+import base64
 import logging
 import math
 import os
@@ -228,6 +229,10 @@ DEFAULT_BENCHMARK_PRICES_PAISE = {
 
 
 GLOBAL_SMART_API: Any = None
+SMART_API_SESSION_LOCK = threading.Lock()
+SMART_API_SESSION: dict[str, Any] | None = None
+SMART_API_SESSION_EXPIRES = 0.0
+SMART_API_LOGIN_RETRY_AFTER = 0.0
 GLOBAL_WRITER: Any = None
 GLOBAL_SUPERVISOR: Any = None
 GLOBAL_TOKEN_MAP: dict[str, dict[str, Any]] = {}
@@ -358,7 +363,7 @@ def get_symbol_aliases(canonical_symbol: str) -> list[str]:
 
 
 def init_global_token_map() -> None:
-    if get_feed_mode() == "live" and os.getenv("DATABASE_URL"):
+    if get_feed_mode() == "live":
         return  # LIVE map comes exclusively from the activated DB master.
     global GLOBAL_TOKEN_MAP
     for item in FALLBACK_INSTRUMENT_MASTER:
@@ -391,23 +396,57 @@ def init_global_token_map() -> None:
             print(f"market worker: error loading scrip master: {e}", flush=True)
 
 
-def init_smart_api() -> None:
-    global GLOBAL_SMART_API
+def smart_api_session() -> tuple[Any, dict[str, Any]]:
+    """Share one REST/WebSocket login and bound retries after provider rejection."""
+    global GLOBAL_SMART_API, SMART_API_SESSION, SMART_API_SESSION_EXPIRES, SMART_API_LOGIN_RETRY_AFTER
+    if get_feed_mode() != "live":
+        raise RuntimeError("broker authentication requires LIVE mode")
     api_key = os.getenv("ANGEL_API_KEY", "").strip()
     client_id = os.getenv("ANGEL_CLIENT_ID", "").strip()
     password = os.getenv("ANGEL_PASSWORD", "").strip()
     totp_secret = os.getenv("ANGEL_TOTP_SECRET", "").strip()
-    if api_key and client_id and password and totp_secret:
+    if not (api_key and client_id and password and totp_secret):
+        raise RuntimeError("Angel One credentials incomplete")
+    with SMART_API_SESSION_LOCK:
+        now = time.monotonic()
+        if GLOBAL_SMART_API is not None and SMART_API_SESSION and now < SMART_API_SESSION_EXPIRES:
+            return GLOBAL_SMART_API, SMART_API_SESSION
+        if now < SMART_API_LOGIN_RETRY_AFTER:
+            raise RuntimeError("Angel One login retry cooling down")
+        # Failed/expired sessions must not remain available to REST requests.
+        GLOBAL_SMART_API = None
+        SMART_API_SESSION = None
+        SMART_API_LOGIN_RETRY_AFTER = now + 30
+        api = SmartConnect(api_key=api_key)
+        session = api.generateSession(client_id, password, pyotp.TOTP(totp_secret).now())
+        data = session.get("data") or {}
+        if not session.get("status") or not data.get("jwtToken") or not data.get("feedToken"):
+            raise RuntimeError("Angel One login failed or returned incomplete session tokens")
+        lifetime = 900.0
         try:
-            api = SmartConnect(api_key=api_key)
-            sess = api.generateSession(client_id, password, pyotp.TOTP(totp_secret).now())
-            if sess.get("status"):
-                GLOBAL_SMART_API = api
-                print("market worker: Angel One REST API authenticated for on-demand quotes", flush=True)
-            else:
-                print(f"market worker: Angel One login failed for on-demand quotes: {sess.get('message')}", flush=True)
-        except Exception as e:
-            print(f"market worker: failed to init SmartConnect: {e}", flush=True)
+            # This unverified payload only schedules renewal; the broker authenticates every request.
+            payload = data["jwtToken"].removeprefix("Bearer ").split(".")[1]
+            expiry = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4))).get("exp")
+            if expiry is not None:
+                lifetime = min(lifetime, float(expiry) - time.time() - 30)
+        except (ValueError, TypeError, IndexError, json.JSONDecodeError):
+            pass
+        if lifetime <= 0:
+            raise RuntimeError("Angel One returned an expired session")
+        GLOBAL_SMART_API, SMART_API_SESSION = api, data
+        SMART_API_SESSION_EXPIRES = time.monotonic() + lifetime
+        SMART_API_LOGIN_RETRY_AFTER = 0.0
+        return api, data
+
+
+def init_smart_api() -> None:
+    if get_feed_mode() != "live" or not has_angel_credentials():
+        return
+    try:
+        smart_api_session()
+        print("market worker: shared Angel One REST/WebSocket session authenticated", flush=True)
+    except Exception as error:
+        print(f"market worker: failed to initialize broker session: {error}", flush=True)
 
 
 def get_feed_mode() -> str:
@@ -468,10 +507,21 @@ def fetch_full_snapshots(api, subscriptions) -> dict:
         return {}
     result = broker_call(lambda: api.getMarketData('FULL', groups))
     if not isinstance(result, dict) or result.get('status') is not True:
+        # Never print a raw broker response: it can contain private session data.
+        print(f'market worker: FULL snapshot request rejected; requested={len(expected)}', flush=True)
         return {}
-    return {(row.get('exchange'), str(row.get('symbolToken'))): row
+    snapshots = {(row.get('exchange'), str(row.get('symbolToken'))): row
             for row in (result.get('data') or {}).get('fetched', [])
             if (row.get('exchange'), str(row.get('symbolToken'))) in expected}
+    if len(snapshots) != len(expected):
+        print(f'market worker: FULL snapshot coverage incomplete; requested={len(expected)} matched={len(snapshots)}', flush=True)
+    return snapshots
+
+
+def full_snapshot_time(data) -> datetime | None:
+    # Both are exchange-provided times. Missing feed time may use the older
+    # last-trade time; never substitute retrieval time to make a price fresh.
+    return broker_quote_time(data.get('exchFeedTime')) or broker_quote_time(data.get('exchTradeTime'))
 
 
 def fetch_full_snapshot(api, segment: str, token: str) -> dict | None:
@@ -568,10 +618,11 @@ def fetch_quote_for_symbol(symbol: str) -> dict[str, Any] | None:
     canonical_sym = resolve_canonical_symbol(symbol)
     clean_sym = symbol.replace("-EQ", "").replace("-BE", "").replace("-SM", "")
 
+    token_map = GLOBAL_TOKEN_MAP
     info = (
-        GLOBAL_TOKEN_MAP.get(canonical_sym)
-        or GLOBAL_TOKEN_MAP.get(clean_sym)
-        or GLOBAL_TOKEN_MAP.get(symbol)
+        token_map.get(canonical_sym)
+        or token_map.get(clean_sym)
+        or token_map.get(symbol)
     )
 
     token = None
@@ -585,10 +636,14 @@ def fetch_quote_for_symbol(symbol: str) -> dict[str, Any] | None:
     if mode == "live" and GLOBAL_SMART_API and token:
         try:
             data = fetch_full_snapshot(GLOBAL_SMART_API, exch, str(token))
+            if GLOBAL_TOKEN_MAP is not token_map:
+                # Provider tokens can be reused after canonical activation.
+                # Never assign an in-flight response using the previous identity.
+                return None
             if data:
                 ltp_paise = rupees_to_paise(data.get("ltp"))
                 close_paise = rupees_to_paise(data.get("close"))
-                stamp = broker_quote_time(data.get("exchFeedTime"))
+                stamp = full_snapshot_time(data)
                 if ltp_paise <= 0 or stamp is None:
                     return None
                 lower_c = rupees_to_paise(data.get("lowerCircuit") or data.get("lower_circuit") or data.get("lower_circuit_limit"))
@@ -902,8 +957,14 @@ class InstrumentStore:
         with self._lock:
             return list(self._subscriptions.values())
 
-    def lookup(self, token: str, exchange_type: int) -> Subscription | None:
+    def canonical_epoch(self) -> tuple:
         with self._lock:
+            return self.master_version, self._master_signature
+
+    def lookup(self, token: str, exchange_type: int, expected_epoch: tuple | None = None) -> Subscription | None:
+        with self._lock:
+            if expected_epoch is not None and expected_epoch != (self.master_version, self._master_signature):
+                return None
             return self._subscriptions.get((token, exchange_type))
 
     def refresh(self) -> bool:
@@ -948,12 +1009,12 @@ class InstrumentStore:
                     mapping[resolve_canonical_symbol(sym.removesuffix("-EQ"))] = row
                     if row["instrumenttype"] in ("INDEX","AMXIDX"):
                         mapping[resolve_canonical_symbol(clean(row["name"]))] = row
-            GLOBAL_TOKEN_MAP = mapping
-            self._rows = rows
-            self.master_version = version
-            self._master_signature = signature
             subscriptions = self._build_subscriptions(rows)
             with self._lock:
+                GLOBAL_TOKEN_MAP = mapping
+                self._rows = rows
+                self.master_version = version
+                self._master_signature = signature
                 changed = self._subscriptions != {(item.token,item.exchange_type):item for item in subscriptions}
                 self._subscriptions = {(item.token,item.exchange_type):item for item in subscriptions}
             return changed
@@ -1074,6 +1135,7 @@ class InstrumentStore:
 
 
 def sync_demand_subscriptions(store, client, websocket) -> list[Subscription]:
+    epoch = store.canonical_epoch()
     desired = {(s.token, s.exchange_type): s for s in store.demanded_subscriptions(client)}
     current = {(s.token, s.exchange_type): s for s in store.subscriptions()}
     added = [s for k, s in desired.items() if k not in current]
@@ -1085,6 +1147,8 @@ def sync_demand_subscriptions(store, client, websocket) -> list[Subscription]:
         return [{"exchangeType": k, "tokens": v} for k, v in grouped.items()]
     # Install lookup before subscription so the first incoming tick is recognized.
     with store._lock:
+        if epoch != (store.master_version, store._master_signature):
+            return []
         store._subscriptions = {**current, **desired}
     try:
         if removed:
@@ -1093,10 +1157,13 @@ def sync_demand_subscriptions(store, client, websocket) -> list[Subscription]:
             websocket.subscribe("demand", QUOTE_SUBSCRIPTION_MODE, groups(added))
     except Exception:
         with store._lock:
-            store._subscriptions = current
+            if epoch == (store.master_version, store._master_signature):
+                store._subscriptions = current
         websocket.input_request_dict = {QUOTE_SUBSCRIPTION_MODE: {g["exchangeType"]: g["tokens"] for g in groups(current.values())}}
         raise
     with store._lock:
+        if epoch != (store.master_version, store._master_signature):
+            return []
         store._subscriptions = desired
     # The installed SDK appends tokens and does not correctly prune unsubscribe
     # state. Keep its reconnect snapshot equal to the actual desired subscriptions.
@@ -1485,8 +1552,8 @@ def worker_readiness() -> tuple[bool, str]:
             return False, "worker heartbeat expired or future dated"
         if get_feed_mode() == "live" and not values.get("worker_master_version"):
             return False, "activated master missing"
-        if get_feed_mode() == "live" and values.get("feed_state") in ("UNAVAILABLE", "DISCONNECTED", "RETRYING"):
-            return False, "live provider unavailable"
+        if get_feed_mode() == "live" and values.get("feed_state") != "LIVE":
+            return False, "live provider not connected"
         return True, ""
     except Exception:
         return False, "worker state unavailable"
@@ -1505,11 +1572,11 @@ def refresh_once(store: InstrumentStore, control: FeedControl, client: Any) -> N
     except Exception as error:
         if get_feed_mode() == "live":
             global GLOBAL_TOKEN_MAP
-            GLOBAL_TOKEN_MAP = {}
-            store.master_version = ""
-            store._master_signature = None
-            store._rows = []
             with store._lock:
+                GLOBAL_TOKEN_MAP = {}
+                store.master_version = ""
+                store._master_signature = None
+                store._rows = []
                 store._subscriptions = {}
             # Disconnect stale subscriptions even when Redis is also unavailable.
             control.reconnect("canonical master unavailable")
@@ -1540,20 +1607,13 @@ def run_feed(store: InstrumentStore, writer: QuoteWriter, control: FeedControl) 
         raise RuntimeError("activated canonical master unavailable")
     api_key = os.getenv("ANGEL_API_KEY", "").strip()
     client_id = os.getenv("ANGEL_CLIENT_ID", "").strip()
-    password = os.getenv("ANGEL_PASSWORD", "").strip()
-    totp_secret = os.getenv("ANGEL_TOTP_SECRET", "").strip()
-
-    if not (api_key and client_id and password and totp_secret):
-        raise RuntimeError("Angel One credentials incomplete")
-
-    smart_api = SmartConnect(api_key=api_key)
-    session = smart_api.generateSession(client_id, password, pyotp.TOTP(totp_secret).now())
-    if not session.get("status"):
-        raise RuntimeError(f"Angel One login failed: {session.get('message', 'unknown error')}")
-    GLOBAL_SMART_API = smart_api
+    smart_api, session = smart_api_session()
+    master_epoch = store.canonical_epoch()
+    if not master_epoch[0]:
+        raise RuntimeError("activated canonical master unavailable")
     GLOBAL_WRITER = writer
-    auth_token = session["data"]["jwtToken"]
-    feed_token = smart_api.getfeedToken()
+    auth_token = session["jwtToken"]
+    feed_token = session["feedToken"]
     websocket = VerifiedSmartWebSocket(auth_token, api_key, client_id, feed_token)
     websocket.input_request_dict = {}
     control.attach(websocket)
@@ -1571,6 +1631,9 @@ def run_feed(store: InstrumentStore, writer: QuoteWriter, control: FeedControl) 
             if not connected.is_set():
                 continue
             try:
+                if store.canonical_epoch() != master_epoch:
+                    control.reconnect("canonical master changed during feed")
+                    return
                 sync_demand_subscriptions(store, writer.client, websocket)
                 # Up to 50 exact identities per FULL request, across all segments.
                 pending = []
@@ -1591,18 +1654,27 @@ def run_feed(store: InstrumentStore, writer: QuoteWriter, control: FeedControl) 
                     if len(pending) == 50:
                         break
                 snapshots = fetch_full_snapshots(smart_api, pending)
+                if store.canonical_epoch() != master_epoch:
+                    control.reconnect("canonical master changed during snapshot request")
+                    return
                 for item in pending:
                     data = snapshots.get((item.exchange_segment, item.token))
-                    stamp = broker_quote_time(data.get("exchFeedTime")) if data else None
-                    if data and stamp:
+                    stamp = full_snapshot_time(data) if data else None
+                    price = rupees_to_paise(data.get("ltp")) if data else 0
+                    if data and stamp and price > 0:
                         writer.write(item, rupees_to_paise(data.get("ltp")), integer(data.get("tradeVolume")),
                                      source="angelone_live", previous_close_paise=rupees_to_paise(data.get("close")),
                                      event_time=stamp, build_history=False, open_interest=integer(data.get("opnInterest")), market_fields=provider_market_fields(data),
                                      lower_circuit_paise=rupees_to_paise(data.get("lowerCircuit")), upper_circuit_paise=rupees_to_paise(data.get("upperCircuit")))
+                    elif data:
+                        print(f'market worker: FULL snapshot discarded; positive_price={price > 0} exchange_time={stamp is not None}', flush=True)
             except Exception as error:
                 print(f"market worker: demand subscription refresh failed: {error}", flush=True)
 
     def on_open(_wsapp: Any) -> None:
+        if store.canonical_epoch() != master_epoch:
+            control.reconnect("canonical master changed before connection opened")
+            return
         if writer and getattr(writer, "client", None):
             publish_feed_state(writer.client, feed_provider="angel_one", feed_state="LIVE", is_synthetic=False, subscribed_tokens_count=len(store.subscriptions()))
         grouped: dict[int, list[str]] = {}
@@ -1616,7 +1688,7 @@ def run_feed(store: InstrumentStore, writer: QuoteWriter, control: FeedControl) 
     def on_data(_wsapp: Any, message: dict[str, Any]) -> None:
         try:
             exchange_type = integer(message.get("exchange_type"))
-            subscription = store.lookup(clean(message.get("token")), exchange_type)
+            subscription = store.lookup(clean(message.get("token")), exchange_type, master_epoch)
             if subscription is None:
                 return
             price_paise = paise(message.get("last_traded_price"))
@@ -1660,12 +1732,28 @@ def run_feed(store: InstrumentStore, writer: QuoteWriter, control: FeedControl) 
     return opened
 
 
+def confirmed_closed_session() -> bool:
+    """Use the backend calendar, including holidays; failures never suppress a watchdog."""
+    url = os.getenv("MARKET_STATUS_URL", "http://127.0.0.1:8080/api/v1/market/status")
+    try:
+        with urllib.request.urlopen(url, timeout=2) as response:
+            payload = json.load(response)
+        data = payload.get("data") or {}
+        return payload.get("success") is True and data.get("is_open") is False and data.get("status") in ("CLOSED", "HOLIDAY", "PRE_OPEN", "POST_MARKET")
+    except Exception:
+        return False
+
+
+def check_feed_watchdog(control: FeedControl, stale_after_seconds: int) -> None:
+    if control.stale(stale_after_seconds) and not confirmed_closed_session():
+        control.reconnect(f"no market tick for {stale_after_seconds}s")
+
+
 def watch_feed(control: FeedControl, stale_after_seconds: int) -> None:
     check_interval = max(1, min(10, stale_after_seconds // 2))
     while True:
         time.sleep(check_interval)
-        if control.stale(stale_after_seconds):
-            control.reconnect(f"no market tick for {stale_after_seconds}s")
+        check_feed_watchdog(control, stale_after_seconds)
 
 
 class FeedSupervisor:
@@ -1733,26 +1821,25 @@ def main() -> None:
     if not symbols:
         raise RuntimeError("MARKET_SYMBOLS must contain at least one symbol")
 
+    # HTTP health is process liveness, not master/provider readiness. Remote
+    # master loading and broker login may take minutes; expose health first so
+    # the launcher can serve the UI while data remains explicitly unavailable.
+    GLOBAL_WRITER = None
+    if start_quote_server() is None:
+        raise RuntimeError("market worker HTTP listener failed to bind")
+
     client = redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"), decode_responses=True,
                             socket_connect_timeout=5, socket_timeout=5, health_check_interval=30)
     db_url = os.getenv("DATABASE_URL", "").strip()
     store = InstrumentStore(db_url, symbols)
-
-    # Load canonical symbol aliases from file, env, and Redis
-    load_canonical_aliases(client)
-
-    try:
-        store.refresh()
-    except Exception as error:
-        print(f"market worker: initial instrument refresh failed: {error}", flush=True)
-        if mode == "live":
-            raise
 
     quote_ttl = int(os.getenv("QUOTE_TTL_SECONDS", "300"))
     history_ttl = int(os.getenv("HISTORY_TTL_SECONDS", "86400"))
     history_max = int(os.getenv("HISTORY_MAX_ITEMS", "500"))
     writer = QuoteWriter(client, quote_ttl, history_ttl, history_max)
     GLOBAL_WRITER = writer
+    if mode == "live":
+        publish_feed_state(client, feed_provider="angel_one", feed_state="UNAVAILABLE", is_synthetic=False)
     def heartbeat() -> None:
         while True:
             try:
@@ -1762,10 +1849,19 @@ def main() -> None:
             time.sleep(20)
     threading.Thread(target=heartbeat, daemon=True).start()
 
-    # Initialize global symbol lookup, Angel One session, and on-demand quote HTTP server
+    # Heartbeats remain available throughout the initial canonical load/login.
+    print("market worker: loading canonical instruments; trading readiness remains unavailable until initialization completes", flush=True)
+    load_canonical_aliases(client)
+    try:
+        store.refresh()
+    except Exception as error:
+        print(f"market worker: initial instrument refresh failed: {error}", flush=True)
+        # Retry canonical activation through reconciliation; keep liveness up.
+
+    # Initialize symbol lookup and the shared Angel One session after the master.
     init_global_token_map()
-    init_smart_api()
-    start_quote_server()
+    if mode == "live" and store.master_version:
+        init_smart_api()
 
     # Seed historical candles only in explicit synthetic simulation mode; never inject fake candles in LIVE mode
     if mode == "synthetic":
@@ -1791,6 +1887,8 @@ def main() -> None:
 
     # Live Feed Mode (strict Angel One, no automatic fallback)
     print("market worker: running in LIVE ANGEL ONE feed mode", flush=True)
+    control = FeedControl()
+    threading.Thread(target=refresh_daily, args=(store, control, client), daemon=True).start()
     if not has_angel_credentials():
         print("market worker: Angel One credentials missing in LIVE mode; setting state to UNAVAILABLE (no hidden synthetic fallback)", flush=True)
         publish_feed_state(client, feed_provider="angel_one", feed_state="UNAVAILABLE", is_synthetic=False)
@@ -1799,9 +1897,7 @@ def main() -> None:
             publish_feed_state(client, feed_provider="angel_one", feed_state="UNAVAILABLE", is_synthetic=False)
         return
 
-    publish_feed_state(client, feed_provider="angel_one", feed_state="CONNECTING", is_synthetic=False)
-    control = FeedControl()
-    threading.Thread(target=refresh_daily, args=(store, control, client), daemon=True).start()
+    publish_feed_state(client, feed_provider="angel_one", feed_state="CONNECTING" if store.master_version else "UNAVAILABLE", is_synthetic=False)
     stale_after_seconds = int(os.getenv("MARKET_FEED_STALE_SECONDS", "120"))
     threading.Thread(target=watch_feed, args=(control, stale_after_seconds), daemon=True).start()
 

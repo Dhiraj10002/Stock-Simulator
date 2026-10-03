@@ -10,7 +10,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { publicFetch } from "@/lib/api";
-import { useMarketStore } from "@/stores/market-store";
+import { feedLabel as getFeedLabel } from "@/lib/marketDisplay";
 
 interface MarketStatusData {
   status: "OPEN" | "CLOSED" | "PRE_OPEN" | "POST_MARKET" | "HOLIDAY";
@@ -38,10 +38,8 @@ interface MarketStatusBannerProps {
 }
 
 export default function MarketStatusBanner({ className = "" }: MarketStatusBannerProps) {
-  const storeConnectionState = useMarketStore((s) => s.connectionState);
-
   // Poll authoritative backend market status
-  const { data: statusData, refetch: refetchStatus, isFetching: isRefreshingStatus } = useQuery<MarketStatusData>({
+  const { data: statusData, isError: statusError, refetch: refetchStatus, isFetching: isRefreshingStatus } = useQuery<MarketStatusData>({
     queryKey: ["market-status-banner"],
     queryFn: () => publicFetch<MarketStatusData>("/market/status"),
     refetchInterval: 15000,
@@ -77,17 +75,11 @@ export default function MarketStatusBanner({ className = "" }: MarketStatusBanne
     return () => clearInterval(interval);
   }, []);
 
-  const status = statusData?.status || "CLOSED";
+  const status = !statusError && statusData ? statusData.status : "UNKNOWN";
   const holidayName = statusData?.holiday_name;
 
   // Feed badge configuration
-  const isSynthetic = statusData?.is_synthetic ?? true;
-  const feedLabel =
-    storeConnectionState === "disconnected"
-      ? "Offline"
-      : isSynthetic
-      ? "Synthetic Matching Engine"
-      : "Angel One Institutional Live";
+  const feedLabel = getFeedLabel(statusError ? undefined : statusData);
 
   // Status visual attributes
   const statusConfig = {
@@ -119,7 +111,13 @@ export default function MarketStatusBanner({ className = "" }: MarketStatusBanne
       badgeBg: "bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/30",
       dot: "bg-slate-400",
       label: "MARKET CLOSED",
-      subtext: "Regular session closed. Orders will route at next open (09:15)",
+      subtext: "Session closed. Paper execution requires an open session and a fresh quote.",
+    },
+    UNKNOWN: {
+      badgeBg: "bg-slate-500/10 text-slate-500 border-slate-500/30",
+      dot: "bg-slate-400",
+      label: "MARKET STATUS UNAVAILABLE",
+      subtext: "The exchange session could not be confirmed.",
     },
   }[status];
 
@@ -143,7 +141,7 @@ export default function MarketStatusBanner({ className = "" }: MarketStatusBanne
             </div>
             <div className="flex items-center gap-2 text-[11px] font-mono text-slate-500 dark:text-slate-400">
               <Clock className="w-3 h-3 text-cyan-600 dark:text-cyan-400" />
-              <span>{istTime || "13:00:00 IST"}</span>
+              <span>{istTime || "— IST"}</span>
               <span className="text-slate-300 dark:text-slate-700">•</span>
               <span>NSE & BSE Cash Segments</span>
             </div>
@@ -171,11 +169,7 @@ export default function MarketStatusBanner({ className = "" }: MarketStatusBanne
           {/* Feed Mode Badge */}
           <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60 text-[11px]">
             <Radio
-              className={`w-3 h-3 ${
-                isSynthetic
-                  ? "text-cyan-500 animate-pulse"
-                  : "text-emerald-500 animate-pulse"
-              }`}
+              className="w-3 h-3 text-slate-500"
             />
             <span className="text-slate-500 dark:text-slate-400 font-medium">Feed:</span>
             <span className="font-bold text-slate-800 dark:text-slate-200">

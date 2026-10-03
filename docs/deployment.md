@@ -26,7 +26,7 @@ Oracle Cloud Always Free VM
 
 ## Local & Staging Single-Command Launch
 
-The entire platform (Next.js Frontend, Go Backend, Python Market Worker with GBM Synthetic Feed, and Python News Worker) can be launched locally or on staging with a single command:
+The entire platform (Next.js Frontend, Go Backend, Python Market Worker using the configured feed mode, and Python News Worker) can be launched locally or on staging with a single command:
 
 ```bash
 docker compose up --build
@@ -34,13 +34,15 @@ docker compose up --build
 
 - **Institutional Frontend UI**: `http://localhost:3000`
 - **Go REST API & WebSocket**: `http://localhost:8080` (`/api/v1` and `/ws/market`)
-- **Market Worker**: Automatically seeds 150 historical candles and streams 1-second ticks into Redis.
+- **Market Worker**: LIVE requires an activated canonical master and broker credentials. Historical seeding and generated ticks run only in explicit synthetic mode.
 - **News Worker**: Continuously ingests RSS financial headlines with sectoral sentiment scoring.
 
 To run with local PostgreSQL and Redis containers instead of Neon and Upstash:
 ```bash
 docker compose --profile local up --build
 ```
+
+For native Linux/Fedora development, `./start-dev.sh` waits for backend HTTP health before starting workers and frontend, and fails if a required process exits or a startup timeout expires. `./stop.sh` stops processes belonging to that checkout. The worker uses `MARKET_STATUS_URL` (native default `http://127.0.0.1:8080/api/v1/market/status`) for holiday/session-aware watchdog checks. See `RUNTIME_VERIFICATION_2026-10-03.md` for log findings and restart verification.
 
 ---
 
@@ -75,5 +77,4 @@ To verify the entire platform end-to-end:
 cd backend
 go test -v -run TestE2E_FullPlatformSuite ./internal/router/...
 ```
-
 

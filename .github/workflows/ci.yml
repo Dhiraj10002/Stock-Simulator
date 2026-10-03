@@ -91,6 +91,9 @@ jobs:
         working-directory: python-services/news-worker
         run: python3 -m unittest discover -v -p 'test_*.py'
 
+      - name: Test Local Startup and Cleanup
+        run: python3 -m unittest discover -v -s scripts -p 'test_*.py'
+
   frontend:
     name: Next.js Frontend Quality Gate
     runs-on: ubuntu-latest

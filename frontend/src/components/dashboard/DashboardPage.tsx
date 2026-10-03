@@ -4,9 +4,9 @@ import { useAccountWallet } from "@/hooks/useAccountWallet";
 import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMultiSymbolQuotes } from "@/stores/market-store";
+import { useMarketStore, useMultiSymbolQuotes } from "@/stores/market-store";
 import { fetchBatchQuotes, getCachedQuote } from "@/lib/quoteService";
-import { dayMovement } from "@/lib/marketDisplay";
+import { breadthPercentages, feedLabel, dayMovement } from "@/lib/marketDisplay";
 import MarketDesk from "@/components/dashboard/MarketDesk";
 import Navbar from "@/components/layout/Navbar";
 import {
@@ -283,6 +283,10 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
     const extra = [...new Set(Object.values(SECTOR_CONSTITUENTS).flat())].filter(symbol => !known.has(symbol));
     return [...MASTER_STOCKS_CATALOG, ...extra.map(symbol => ({symbol, name: symbol, price: 0, change: 0, changePercent: 0, isPositive: true}))];
   }, []);
+  const marketStatus = useMarketStore((s) => s.marketStatus);
+  const feedStatus = useMarketStore((s) => s.feedStatus);
+  const dashboardFeedLabel = feedLabel({status: marketStatus, feed_provider: feedStatus.feedProvider, feed_state: feedStatus.feedState, is_synthetic: feedStatus.isSynthetic, last_tick: feedStatus.lastTick});
+  const hasLiveFeed = dashboardFeedLabel === "Angel One · live quotes";
   const quotes = useMultiSymbolQuotes([...dashboardCatalog.map((s) => s.symbol), "NIFTY", "SENSEX", "BANKNIFTY"]);
 
   // Prefetch live real-time quotes for all catalog stocks on mount
@@ -358,6 +362,7 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
           ...sec,
           gainersCount: 0,
           losersCount: 0,
+          observedCount: 0,
           isAvailable: false,
           changePercent: 0,
           topStock: "—",
@@ -373,6 +378,7 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
 
       return {
         ...sec,
+        observedCount: constituents.length,
         gainersCount: gainers,
         isAvailable: true,
         losersCount: losers,
@@ -399,21 +405,11 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
     });
   }, [dynamicSectors, sectorSearch, sectorFilter]);
 
-  const totalSectorGainers = useMemo(
-    () => (marketBreadth && marketBreadth.total > 0 ? marketBreadth.advances : dynamicSectors.reduce((acc, s) => acc + s.gainersCount, 0)),
-    [marketBreadth, dynamicSectors]
-  );
-  const totalSectorLosers = useMemo(
-    () => (marketBreadth && marketBreadth.total > 0 ? marketBreadth.declines : dynamicSectors.reduce((acc, s) => acc + s.losersCount, 0)),
-    [marketBreadth, dynamicSectors]
-  );
-  const totalSectorStocks = totalSectorGainers + totalSectorLosers;
-  const overallAdvancePercent =
-    marketBreadth && marketBreadth.total > 0
-      ? Math.round(marketBreadth.advance_percent)
-      : totalSectorStocks > 0
-      ? Math.round((totalSectorGainers / totalSectorStocks) * 100)
-      : 50;
+  const totalSectorGainers = marketBreadth?.advances ?? 0;
+  const totalSectorLosers = marketBreadth?.declines ?? 0;
+  const breadth = breadthPercentages(marketBreadth);
+  const overallAdvancePercent = breadth?.advances ?? 0;
+  const overallDeclinePercent = breadth?.declines ?? 0;
 
   const indexKey =
     selectedIndex === "NIFTY 50"
@@ -559,7 +555,7 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
                       </h2>
                     </div>
                     <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                      Sectoral breadth and advancing vs declining ratio
+                      Sampled stock day changes; prices may be delayed
                     </p>
                   </div>
                   <Link
@@ -576,10 +572,10 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
                   <div className="flex items-center justify-between text-[11px] font-mono font-bold">
                     <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                      {totalSectorGainers} Advancing ({overallAdvancePercent}%)
+                      {breadth ? `${totalSectorGainers} Advancing (${overallAdvancePercent}%)` : "Breadth unavailable"}
                     </span>
                     <span className="text-rose-600 dark:text-rose-400 flex items-center gap-1">
-                      {totalSectorLosers} Declining ({100 - overallAdvancePercent}%)
+                      {breadth ? `${totalSectorLosers} Declining (${overallDeclinePercent}%)` : "Awaiting sourced quotes"}
                       <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
                     </span>
                   </div>
@@ -590,7 +586,7 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
                     />
                     <div
                       className="h-full bg-rose-500 transition-all duration-300"
-                      style={{ width: `${100 - overallAdvancePercent}%` }}
+                      style={{ width: `${overallDeclinePercent}%` }}
                     />
                   </div>
                 </div>
@@ -644,9 +640,10 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
                     {filteredSectors.map((sec) => {
                       const Icon = sec.icon;
                       const isGain = sec.changePercent >= 0;
-                      const totalInSec = sec.gainersCount + sec.losersCount;
+                      const totalInSec = sec.observedCount;
                       const gainerPct =
-                        totalInSec > 0 ? (sec.gainersCount / totalInSec) * 100 : 50;
+                        totalInSec > 0 ? (sec.gainersCount / totalInSec) * 100 : 0;
+                      const loserPct = totalInSec > 0 ? (sec.losersCount / totalInSec) * 100 : 0;
 
                       return (
                         <tr
@@ -665,13 +662,13 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
                                 </div>
                                 <div className="text-[10px] text-slate-400 truncate">
                                   Top Leader:{" "}
-                                  <Link
+                                  {sec.isAvailable ? <Link
                                     href={`/stocks/${sec.topStock}`}
                                     className="text-slate-600 dark:text-slate-300 font-semibold hover:text-cyan-600 dark:hover:text-cyan-400 hover:underline"
                                   >
                                     {sec.topStock} ({sec.topStockChange >= 0 ? "+" : ""}
                                     {sec.topStockChange}%)
-                                  </Link>
+                                  </Link> : "Unavailable"}
                                 </div>
                               </div>
                             </div>
@@ -682,10 +679,10 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
                             <div className="w-20 sm:w-24 mx-auto space-y-1">
                               <div className="flex items-center justify-between text-[10px] font-mono font-bold">
                                 <span className="text-emerald-600 dark:text-emerald-400">
-                                  {sec.gainersCount}
+                                  {sec.isAvailable ? sec.gainersCount : "—"}
                                 </span>
                                 <span className="text-rose-600 dark:text-rose-400">
-                                  {sec.losersCount}
+                                  {sec.isAvailable ? sec.losersCount : "—"}
                                 </span>
                               </div>
                               <div className="h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 flex overflow-hidden">
@@ -695,7 +692,7 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
                                 />
                                 <div
                                   className="h-full bg-rose-500 rounded-r-full transition-all"
-                                  style={{ width: `${100 - gainerPct}%` }}
+                                  style={{ width: `${loserPct}%` }}
                                 />
                               </div>
                             </div>
@@ -705,12 +702,12 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
                           <td className="py-2.5 pr-3 text-right whitespace-nowrap">
                             <span
                               className={`inline-block text-[11px] font-bold font-tabular px-1.5 py-0.5 rounded ${
-                                isGain
+                                !sec.isAvailable ? "bg-slate-100 dark:bg-slate-800 text-slate-500 border border-slate-200 dark:border-slate-700" : isGain
                                   ? "bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/40"
                                   : "bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-800/40"
                               }`}
                             >
-                              {isGain ? "+" : ""}
+                              {sec.isAvailable && isGain ? "+" : ""}
                               {sec.isAvailable ? `${sec.changePercent.toFixed(2)}%` : "Unavailable"}
                             </span>
                           </td>
@@ -753,12 +750,12 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
               <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-cyan-100 text-cyan-800 dark:bg-cyan-950/80 dark:text-cyan-400 border border-cyan-300 dark:border-cyan-800">
                 PRO PAPER TRADING DESK
               </span>
-              <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800 flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                NSE • Live Feed
+              <span className={`px-2 py-0.5 rounded text-[11px] font-bold border flex items-center gap-1 ${hasLiveFeed ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-400 border-emerald-300 dark:border-emerald-800" : "bg-slate-100 text-slate-500 dark:bg-slate-800 border-slate-300 dark:border-slate-700"}`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${hasLiveFeed ? "bg-emerald-500 animate-pulse" : "bg-slate-400"}`} />
+                {dashboardFeedLabel}
               </span>
               <span className="text-xs text-slate-500 dark:text-slate-400 font-mono">
-                NSE / BSE Live Simulator
+                NSE / BSE Paper Simulator
               </span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-black tracking-tight mt-1 flex items-center gap-2">

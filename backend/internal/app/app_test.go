@@ -6,6 +6,8 @@ import (
 	"os"
 	"testing"
 	"time"
+
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/testutil"
 )
 
 func TestApp_GracefulShutdown(t *testing.T) {
@@ -13,15 +15,27 @@ func TestApp_GracefulShutdown(t *testing.T) {
 	if databaseURL == "" {
 		t.Skip("TEST_DATABASE_URL required for App integration test")
 	}
+	if err := testutil.ValidateDisposableDBURL(databaseURL); err != nil {
+		t.Fatalf("unsafe app integration database: %v", err)
+	}
+	redisURL := os.Getenv("TEST_REDIS_URL")
+	if redisURL == "" {
+		t.Skip("TEST_REDIS_URL required for App integration test")
+	}
+	if err := testutil.ValidateDisposableRedisURL(redisURL); err != nil {
+		t.Fatalf("unsafe app integration Redis: %v", err)
+	}
 
-	// Set temporary random port for test
-	os.Setenv("PORT", "18099")
-	os.Setenv("DATABASE_URL", databaseURL)
-	os.Setenv("JWT_SECRET", "testsecret_graceful_shutdown_32chars!")
+	// Restore environment automatically so later tests retain their safety checks.
+	t.Setenv("PORT", "18099")
+	t.Setenv("DATABASE_URL", databaseURL)
+	t.Setenv("REDIS_URL", redisURL)
+	t.Setenv("JWT_SECRET", "testsecret_graceful_shutdown_32chars!")
 
 	app := New()
 
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	errCh := make(chan error, 1)
 	go func() {
