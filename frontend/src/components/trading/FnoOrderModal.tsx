@@ -412,6 +412,31 @@ export default function FnoOrderModal({
             </div>
           </div>
 
+          {/* Simulator Leverage & Margin Policy Disclosure */}
+          <div className="p-3 rounded-xl bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200/80 dark:border-indigo-800/60 text-[11px] space-y-1">
+            <div className="flex items-center justify-between font-bold text-indigo-900 dark:text-indigo-300">
+              <span className="flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse" />
+                {instrument.segment === "FUTURES"
+                  ? "Futures Margin Policy (~20% / 5x)"
+                  : side === "BUY"
+                  ? "Long Option Policy (100% Cash Premium)"
+                  : "Short Option Policy (~30% Fixed Margin)"}
+              </span>
+              <span className="text-[9px] uppercase font-mono px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300">
+                Paper Trading Model
+              </span>
+            </div>
+            <p className="text-slate-600 dark:text-slate-300 text-[11px] leading-relaxed">
+              {instrument.segment === "FUTURES"
+                ? "Futures require ~20% contract value margin (5x leverage). Positions are marked-to-market daily and cash-settled against final quote on expiry."
+                : side === "BUY"
+                ? "Long options require 100% upfront cash premium and block ₹0 margin. Maximum possible loss is capped strictly at the premium paid."
+                : "Short options block ~30% fixed margin against contract value to absorb non-linear risk. Real broker SPAN + Exposure margins fluctuate dynamically."}
+            </p>
+          </div>
+
+
           <p className="text-xs text-slate-500" role="status">
             {preview.isError ? `Preview unavailable: ${preview.error.message}` : preview.isFetching ? "Checking price and funds…" : "Server estimate; price and funds are rechecked at execution."}
           </p>

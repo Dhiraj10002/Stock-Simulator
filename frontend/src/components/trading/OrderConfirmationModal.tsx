@@ -210,6 +210,15 @@ export default function OrderConfirmationModal({
               </span>
             </div>
 
+            {/* Simulator Margin Policy Disclosure */}
+            <div className="mt-2 pt-2 border-t border-slate-800/80 text-[10px] text-slate-400 flex items-start gap-1.5 leading-relaxed">
+              <span className="text-cyan-400 font-bold">ℹ</span>
+              <span>
+                <strong className="text-slate-300">Simulator Policy:</strong> Fixed leverage model applied (5x MIS, 100% Long Options, ~20-30% Futures/Short Options). Educational paper desk.
+              </span>
+            </div>
+
+
             {hasInsufficientMargin && (
               <div className="mt-2 p-2 rounded-lg bg-rose-950/60 border border-rose-500/40 flex items-center gap-2 text-rose-300 text-[11px]">
                 <AlertTriangle className="w-4 h-4 shrink-0" />

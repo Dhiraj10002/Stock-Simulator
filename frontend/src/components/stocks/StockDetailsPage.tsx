@@ -1283,6 +1283,25 @@ export default function StockDetailsPage({ initialSymbol = "ITC" }: StockDetails
                 </div>
               </div>
 
+              {/* Simulator Leverage & Margin Policy Disclosure */}
+              <div className="p-2.5 rounded-xl bg-cyan-50/60 dark:bg-cyan-950/30 border border-cyan-200/80 dark:border-cyan-800/60 text-[11px] space-y-1">
+                <div className="flex items-center justify-between font-bold text-cyan-800 dark:text-cyan-300">
+                  <span className="flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse" />
+                    {orderProduct === "MIS" ? "5x Leverage Policy (MIS)" : "1x Cash Delivery (CNC)"}
+                  </span>
+                  <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-cyan-100 dark:bg-cyan-900/60 text-cyan-700 dark:text-cyan-300">
+                    Simulator Model
+                  </span>
+                </div>
+                <p className="text-slate-600 dark:text-slate-300 text-[11px] leading-relaxed">
+                  {orderProduct === "MIS"
+                    ? "20% margin is blocked with mandatory auto square-off at 15:15 IST. Stock Simulator uses a fixed 5x leverage model rather than dynamic broker VAR/ELM margins."
+                    : "100% upfront cash is debited with zero leverage. Positions are held indefinitely in your portfolio without daily square-off."}
+                </p>
+              </div>
+
+
               {/* Submit Button */}
               <button
                 onClick={handleExecuteOrder}

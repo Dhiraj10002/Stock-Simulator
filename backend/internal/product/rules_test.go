@@ -167,3 +167,50 @@ func TestResolveContractLotSize(t *testing.T) {
 		t.Fatalf("expected fallback to 1 for unknown equity, got %d", lot)
 	}
 }
+
+func TestMarginRulesStressAndExpiryEdgeCases(t *testing.T) {
+	rules := Rules{MISLeverage: 5, FuturesMarginPercent: 20, OptionSellMarginPercent: 30}
+
+	// 1. Extreme large notional (₹100 Crore = 10,000,000,000 paise)
+	largeNotional := int64(10_000_000_000)
+	futMargin, err := rules.Margin(model.OrderProductFNO, InstrumentFuture, model.OrderSideBuy, largeNotional)
+	if err != nil {
+		t.Fatalf("unexpected error on large future notional: %v", err)
+	}
+	expectedFutMargin := int64(2_000_000_000) // 20%
+	if futMargin != expectedFutMargin {
+		t.Fatalf("expected %d, got %d", expectedFutMargin, futMargin)
+	}
+
+	shortOptMargin, err := rules.Margin(model.OrderProductFNO, InstrumentOption, model.OrderSideSell, largeNotional)
+	if err != nil {
+		t.Fatalf("unexpected error on large short option notional: %v", err)
+	}
+	expectedShortMargin := int64(3_000_000_000) // 30%
+	if shortOptMargin != expectedShortMargin {
+		t.Fatalf("expected %d, got %d", expectedShortMargin, shortOptMargin)
+	}
+
+	misMargin, err := rules.Margin(model.OrderProductIntraday, "", model.OrderSideBuy, largeNotional)
+	if err != nil {
+		t.Fatalf("unexpected error on large MIS notional: %v", err)
+	}
+	expectedMISMargin := int64(2_000_000_000) // 5x leverage = 20%
+	if misMargin != expectedMISMargin {
+		t.Fatalf("expected %d, got %d", expectedMISMargin, misMargin)
+	}
+
+	// 2. Minimum tick notional (5 paise)
+	smallNotional := int64(5)
+	smallMis, err := rules.Margin(model.OrderProductIntraday, "", model.OrderSideBuy, smallNotional)
+	if err != nil || smallMis != 1 {
+		t.Fatalf("expected small MIS margin 1, got %d (err: %v)", smallMis, err)
+	}
+
+	// 3. Long option requires 100% premium and 0 blocked margin
+	longOptPremium, err := rules.Margin(model.OrderProductFNO, InstrumentOption, model.OrderSideBuy, 500_000)
+	if err != nil || longOptPremium != 500_000 {
+		t.Fatalf("expected long option to require 100%% premium (500000), got %d (err: %v)", longOptPremium, err)
+	}
+}
+
