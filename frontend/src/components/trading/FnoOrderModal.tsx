@@ -2,17 +2,15 @@
 
 import React, { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  Zap,
-  X,
-  CheckCircle2,
-  AlertCircle,
-} from "lucide-react";
+import { Zap, X, CheckCircle2, AlertCircle } from "lucide-react";
 import { formatPaise } from "@/lib/format";
 import { API_URL, apiFetch } from "@/lib/api";
 import { useAuthToken } from "@/hooks/useAuthToken";
 import { validLot } from "@/lib/strategyExecution";
-import type { Instrument, Order } from "@/types";
+import { dayMovement } from "@/lib/marketDisplay";
+import { quoteLabel } from "@/lib/marketData";
+import { displayQuote } from "@/lib/fnoExplore";
+import type { Instrument, Order, Quote } from "@/types";
 import { useSymbolQuote, useTargetedSubscription } from "@/stores/market-store";
 
 export interface FnoOrderModalProps {
@@ -48,11 +46,15 @@ export default function FnoOrderModal({
   const token = useAuthToken();
 
   // Active targeted WebSocket subscription while modal is open
-  useTargetedSubscription(isOpen && instrument?.symbol ? instrument.symbol : undefined);
-  const liveQuote = useSymbolQuote(isOpen && instrument?.symbol ? instrument.symbol : undefined);
+  useTargetedSubscription(
+    isOpen && instrument?.symbol ? instrument.symbol : undefined,
+  );
+  const liveQuote = useSymbolQuote(
+    isOpen && instrument?.symbol ? instrument.symbol : undefined,
+  );
 
   // Live price state: fallback REST poll from backend if WebSocket tick is pending
-  const [liveLtpPaise, setLiveLtpPaise] = React.useState<number>(0);
+  const [restQuote, setRestQuote] = React.useState<Quote>();
 
   React.useEffect(() => {
     if (!isOpen || !instrument) return;
@@ -60,7 +62,7 @@ export default function FnoOrderModal({
     const controller = new AbortController();
     queueMicrotask(() => {
       if (cancelled) return;
-      setLiveLtpPaise(0);
+      setRestQuote(undefined);
       setFeedback(null);
       setSubmitted(false);
       setLots(1);
@@ -72,33 +74,38 @@ export default function FnoOrderModal({
       if (inFlight) return;
       inFlight = true;
       try {
-        const res = await fetch(`${API_URL}/market/quotes/${encodeURIComponent(instrument.symbol)}`, { signal: controller.signal });
+        const res = await fetch(
+          `${API_URL}/market/quotes/${encodeURIComponent(instrument.symbol)}?purpose=display`,
+          { signal: controller.signal },
+        );
         const body = res.ok ? await res.json() : null;
-        if (!cancelled && body?.success && body?.data?.price_paise > 0) {
-          setLiveLtpPaise(body.data.price_paise);
-        }
-      } catch { /* Keep unavailable until an authentic quote arrives. */ }
-      finally { inFlight = false; }
+        if (!cancelled) setRestQuote(body?.success ? body.data : undefined);
+      } catch {
+        if (!cancelled)
+          setRestQuote((previous) =>
+            previous ? { ...previous, is_quote_stale: true } : undefined,
+          );
+      } finally {
+        inFlight = false;
+      }
     };
     void refresh();
     const timer = setInterval(refresh, 3000);
-    return () => { cancelled = true; controller.abort(); clearInterval(timer); };
+    return () => {
+      cancelled = true;
+      controller.abort();
+      clearInterval(timer);
+    };
   }, [instrument, initialSide, isOpen]);
 
-  const lotSize = instrument && validLot(instrument.lot_size) ? instrument.lot_size : 0;
+  const lotSize =
+    instrument && validLot(instrument.lot_size) ? instrument.lot_size : 0;
   const totalQuantity = lots * lotSize;
-  const validQuantity = validLot(lots) && validLot(lotSize) && Number.isSafeInteger(totalQuantity);
-  const effectivePricePaise =
-    liveQuote && liveQuote.price_paise > 0
-      ? liveQuote.price_paise
-      : liveLtpPaise > 0
-      ? liveLtpPaise
-      : (instrument?.basePricePaise ?? 0);
-
-  const effectiveChangePercent =
-    liveQuote && typeof liveQuote.change_percent === "number"
-      ? liveQuote.change_percent
-      : (instrument?.dayChangePercent ?? 0);
+  const validQuantity =
+    validLot(lots) && validLot(lotSize) && Number.isSafeInteger(totalQuantity);
+  const effectiveQuote = displayQuote(restQuote, liveQuote);
+  const effectivePricePaise = effectiveQuote?.price_paise ?? 0;
+  const effectiveChangePercent = dayMovement(effectiveQuote)?.percent;
 
   const ltpRupees = effectivePricePaise / 100;
   const activePrice =
@@ -107,31 +114,52 @@ export default function FnoOrderModal({
       : ltpRupees;
 
   const previewBody = {
-    symbol: instrument?.symbol, side, type: orderType, product,
+    symbol: instrument?.symbol,
+    side,
+    type: orderType,
+    product,
     quantity: totalQuantity,
     price_paise: orderType === "MARKET" ? 0 : Math.round(activePrice * 100),
   };
   const preview = useQuery<{
-    required_funds_paise: number; available_balance_paise: number;
-    estimated_price_paise: number; sufficient_funds: boolean;
+    required_funds_paise: number;
+    available_balance_paise: number;
+    estimated_price_paise: number;
+    sufficient_funds: boolean;
   }>({
     queryKey: ["order-preview", token, previewBody],
-    queryFn: () => apiFetch("/orders/preview", {method: "POST", body: JSON.stringify(previewBody)}),
+    queryFn: () =>
+      apiFetch("/orders/preview", {
+        method: "POST",
+        body: JSON.stringify(previewBody),
+      }),
     enabled: isOpen && !!instrument && !!token && validQuantity && !submitted,
-    refetchInterval: 5000, retry: false,
+    refetchInterval: 5000,
+    retry: false,
   });
-  const validPreview = !preview.isError && !preview.isFetching ? preview.data : undefined;
+  const validPreview =
+    !preview.isError && !preview.isFetching ? preview.data : undefined;
   const requiredMarginPaise = validPreview?.required_funds_paise;
   const availableBalancePaise = validPreview?.available_balance_paise;
-  const hasSufficientMargin = validPreview?.sufficient_funds === true;
+  const hasSufficientMargin =
+    validPreview?.sufficient_funds === true &&
+    ["LIVE", "SIMULATED"].includes(quoteLabel(effectiveQuote));
   if (!isOpen || !instrument) return null;
 
   const handleExecuteOrder = async () => {
-    if (executing || submitted || !hasSufficientMargin || !validQuantity || !token) return;
-    if (orderType === "MARKET" && (effectivePricePaise <= 0)) {
+    if (
+      executing ||
+      submitted ||
+      !hasSufficientMargin ||
+      !validQuantity ||
+      !token
+    )
+      return;
+    if (orderType === "MARKET" && effectivePricePaise <= 0) {
       setFeedback({
         type: "error",
-        message: "Market quote is currently unavailable. Place a Limit order or wait for live feed.",
+        message:
+          "Market quote is currently unavailable. Place a Limit order or wait for live feed.",
       });
       return;
     }
@@ -148,11 +176,15 @@ export default function FnoOrderModal({
           type: orderType,
           product: product,
           quantity: totalQuantity,
-          price_paise: orderType === "MARKET" ? 0 : Math.round(activePrice * 100),
+          price_paise:
+            orderType === "MARKET" ? 0 : Math.round(activePrice * 100),
         }),
       });
 
-      if (!placed?.uuid) throw new Error("Order result unknown. Review Orders before submitting again.");
+      if (!placed?.uuid)
+        throw new Error(
+          "Order result unknown. Review Orders before submitting again.",
+        );
       setSubmitted(true);
 
       // Invalidate queries so wallet, portfolio & orders immediately update
@@ -162,16 +194,21 @@ export default function FnoOrderModal({
       void queryClient.invalidateQueries({ queryKey: ["trades"] });
 
       setFeedback({
-        type: ["REJECTED", "CANCELLED", "EXPIRED"].includes(placed.status) ? "error" : "success",
-        message: placed.status === "EXECUTED"
-          ? `Order executed: ${placed.uuid}. ${side} ${totalQuantity} ${instrument.symbol}.`
-          : `Order ${placed.uuid}: ${placed.status}. Execution is not confirmed. Review Orders for its current status.`,
+        type: ["REJECTED", "CANCELLED", "EXPIRED"].includes(placed.status)
+          ? "error"
+          : "success",
+        message:
+          placed.status === "EXECUTED"
+            ? `Order executed: ${placed.uuid}. ${side} ${totalQuantity} ${instrument.symbol}.`
+            : `Order ${placed.uuid}: ${placed.status}. Execution is not confirmed. Review Orders for its current status.`,
       });
 
       onSuccess?.();
-
     } catch (err: unknown) {
-      const errMsg = err instanceof Error ? err.message : "Failed to place order. Please check network/balance.";
+      const errMsg =
+        err instanceof Error
+          ? err.message
+          : "Failed to place order. Please check network/balance.";
       setFeedback({
         type: "error",
         message: errMsg,
@@ -206,27 +243,46 @@ export default function FnoOrderModal({
             </div>
 
             <h2 className="text-xl font-black text-slate-900 dark:text-slate-100 tracking-tight mt-1.5 flex items-center gap-2">
-              <span>{instrument.display_symbol || instrument.displayName || instrument.symbol}</span>
+              <span>
+                {instrument.display_symbol ||
+                  instrument.displayName ||
+                  instrument.symbol}
+              </span>
             </h2>
 
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              {instrument.name} {instrument.expiry ? `• Expiry: ${instrument.expiry}` : ""}
+              {instrument.name}{" "}
+              {instrument.expiry ? `• Expiry: ${instrument.expiry}` : ""}
             </p>
           </div>
 
           <div className="text-right">
             <div className="text-lg font-black font-tabular text-slate-900 dark:text-slate-100">
-              {ltpRupees > 0 ? `₹${ltpRupees.toLocaleString("en-IN", { minimumFractionDigits: 2 })}` : "UNAVAILABLE"}
+              {ltpRupees > 0
+                ? `₹${ltpRupees.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`
+                : "UNAVAILABLE"}
             </div>
             <div
               className={`text-xs font-bold font-tabular flex items-center justify-end gap-1 ${
-                effectiveChangePercent >= 0
-                  ? "text-emerald-600 dark:text-emerald-400"
-                  : "text-rose-600 dark:text-rose-400"
+                effectiveChangePercent === undefined
+                  ? "text-slate-400"
+                  : effectiveChangePercent >= 0
+                    ? "text-emerald-600 dark:text-emerald-400"
+                    : "text-rose-600 dark:text-rose-400"
               }`}
             >
-              <span>{effectiveChangePercent >= 0 ? "+" : ""}{effectiveChangePercent.toFixed(2)}%</span>
+              <span>
+                {effectiveChangePercent === undefined
+                  ? "Day change unavailable"
+                  : `${effectiveChangePercent >= 0 ? "+" : ""}${effectiveChangePercent.toFixed(2)}%`}
+              </span>
             </div>
+            <p
+              className="text-[10px] text-slate-500 dark:text-slate-400"
+              title={effectiveQuote?.updated_at}
+            >
+              {quoteLabel(effectiveQuote)}
+            </p>
             <button
               onClick={onClose}
               className="p-1 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 mt-2 transition-colors cursor-pointer"
@@ -287,7 +343,7 @@ export default function FnoOrderModal({
                       : "text-slate-500 hover:text-slate-800 dark:hover:text-white"
                   }`}
                 >
-                  MIS (5x)
+                  MIS (Intraday)
                 </button>
               </div>
             </div>
@@ -338,7 +394,9 @@ export default function FnoOrderModal({
                 min="1"
                 max="100"
                 value={lots}
-                onChange={(e) => setLots(Math.max(1, parseInt(e.target.value) || 1))}
+                onChange={(e) =>
+                  setLots(Math.max(1, parseInt(e.target.value) || 1))
+                }
                 className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-black font-tabular text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-500"
               />
 
@@ -369,7 +427,13 @@ export default function FnoOrderModal({
               <input
                 type="number"
                 step="0.05"
-                value={limitPrice !== "" ? limitPrice : (ltpRupees > 0 ? ltpRupees.toFixed(2) : "")}
+                value={
+                  limitPrice !== ""
+                    ? limitPrice
+                    : ltpRupees > 0
+                      ? ltpRupees.toFixed(2)
+                      : ""
+                }
                 placeholder={ltpRupees > 0 ? ltpRupees.toFixed(2) : "0.00"}
                 onChange={(e) => setLimitPrice(e.target.value)}
                 className="w-full px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-bold font-tabular text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-500"
@@ -405,8 +469,8 @@ export default function FnoOrderModal({
                 {instrument.segment === "FUTURES"
                   ? "Futures Margin Policy (~20% / 5x)"
                   : side === "BUY"
-                  ? "Long Option Policy (100% Cash Premium)"
-                  : "Short Option Policy (~30% Fixed Margin)"}
+                    ? "Long Option Policy (100% Cash Premium)"
+                    : "Short Option Policy (~30% Fixed Margin)"}
               </span>
               <span className="text-[9px] uppercase font-mono px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300">
                 Paper Trading Model
@@ -416,17 +480,24 @@ export default function FnoOrderModal({
               {instrument.segment === "FUTURES"
                 ? "Futures require ~20% contract value margin (5x leverage). Positions are marked-to-market daily and cash-settled against final quote on expiry."
                 : side === "BUY"
-                ? "Long options require 100% upfront cash premium and block ₹0 margin. Maximum possible loss is capped strictly at the premium paid."
-                : "Short options block ~30% fixed margin against contract value to absorb non-linear risk. Real broker SPAN + Exposure margins fluctuate dynamically."}
+                  ? "Long options require 100% upfront cash premium and block ₹0 margin. Maximum possible loss is capped strictly at the premium paid."
+                  : "Short options block ~30% fixed margin against contract value to absorb non-linear risk. Real broker SPAN + Exposure margins fluctuate dynamically."}
             </p>
           </div>
 
-
           <p className="text-xs text-slate-500" role="status">
-            {preview.isError ? `Preview unavailable: ${preview.error.message}` : preview.isFetching ? "Checking price and funds…" : "Server estimate; price and funds are rechecked at execution."}
+            {preview.isError
+              ? `Preview unavailable: ${preview.error.message}`
+              : preview.isFetching
+                ? "Checking price and funds…"
+                : "Server estimate; price and funds are rechecked at execution."}
           </p>
           {/* Feedback message */}
-          {!validQuantity && <p role="alert" className="text-sm text-amber-300">A canonical lot size and whole-number lots are required.</p>}
+          {!validQuantity && (
+            <p role="alert" className="text-sm text-amber-300">
+              A canonical lot size and whole-number lots are required.
+            </p>
+          )}
           {feedback && (
             <div
               className={`p-3 rounded-xl text-xs font-bold flex items-center gap-2 animate-in fade-in ${
@@ -447,13 +518,20 @@ export default function FnoOrderModal({
           {/* 6. Execution Button */}
           <button
             onClick={handleExecuteOrder}
-            disabled={executing || submitted || !validQuantity || !token || !hasSufficientMargin || (orderType === "MARKET" && effectivePricePaise <= 0)}
+            disabled={
+              executing ||
+              submitted ||
+              !validQuantity ||
+              !token ||
+              !hasSufficientMargin ||
+              (orderType === "MARKET" && effectivePricePaise <= 0)
+            }
             className={`w-full py-3.5 rounded-2xl text-white font-black text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer ${
               !hasSufficientMargin
                 ? "bg-slate-400 cursor-not-allowed"
                 : side === "BUY"
-                ? "bg-cyan-600 hover:bg-cyan-500 dark:bg-cyan-500 dark:hover:bg-cyan-400 dark:text-slate-950 shadow-cyan-600/20 hover:scale-[1.01]"
-                : "bg-rose-600 hover:bg-rose-500 dark:bg-rose-500 dark:hover:bg-rose-400 shadow-rose-600/20 hover:scale-[1.01]"
+                  ? "bg-cyan-600 hover:bg-cyan-500 dark:bg-cyan-500 dark:hover:bg-cyan-400 dark:text-slate-950 shadow-cyan-600/20 hover:scale-[1.01]"
+                  : "bg-rose-600 hover:bg-rose-500 dark:bg-rose-500 dark:hover:bg-rose-400 shadow-rose-600/20 hover:scale-[1.01]"
             }`}
           >
             {executing ? (

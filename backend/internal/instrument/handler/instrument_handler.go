@@ -180,3 +180,12 @@ func (h *Handler) DerivativeUnderlyings(c *gin.Context) {
 	}
 	response.Success(c, http.StatusOK, "Current eligible underlyings", names)
 }
+
+func (h *Handler) DerivativeStocks(c *gin.Context) {
+	stocks, err := h.svc.DerivativeStocks(c.Request.Context())
+	if err != nil {
+		response.Error(c, http.StatusServiceUnavailable, "Eligible stock universe unavailable", nil)
+		return
+	}
+	response.Success(c, http.StatusOK, "Current F&O eligible NSE equities", stocks)
+}

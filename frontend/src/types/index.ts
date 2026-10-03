@@ -16,6 +16,7 @@ export type Position = {
   symbol: string;
   product: "DELIVERY" | "INTRADAY" | "FNO";
   underlying_symbol?: string;
+  instrument_type?: string;
   quantity: number;
   average_price_paise: number;
   current_price_paise: number;

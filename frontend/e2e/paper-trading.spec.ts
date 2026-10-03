@@ -32,6 +32,7 @@ async function mocks(page:Page, overrides: { unavailable?:boolean; closed?:boole
   else if(path.startsWith("/orders/")) data={uuid:path.split("/").at(-1),symbol:"CALL0",status:"EXECUTED"};
   else if(["/orders","/trades","/news","/watchlist"].includes(path)) data=[];
   else if(path==="/instruments/derivative-underlyings") data=["NIFTY","DYNAMICSTOCK"];
+  else if(path==="/instruments/derivative-stocks") data=[];
   else if(path==="/instruments") data=[];
   else if(path.startsWith("/instruments/")) data=instrument(path.split("/").at(-1)!,65);
   else if(path==="/fno/option-chain") data=chain(overrides.lot);

@@ -160,7 +160,7 @@ export default function Navbar({
       <div className="h-[1px] w-full bg-gradient-to-r from-transparent via-cyan-500/35 dark:via-cyan-500/30 to-transparent absolute -bottom-[1px] left-0 pointer-events-none" />
 
       {/* Top Utility Bar */}
-      <div className="px-4 lg:px-6 py-2 flex items-center justify-between gap-4 border-b border-slate-200/80 dark:border-white/[0.06]">
+      <div className="px-4 lg:px-6 py-2 flex items-center justify-between gap-2 sm:gap-4 border-b border-slate-200/80 dark:border-white/[0.06]">
         {/* Left: Brand + Market Status + Indices Ticker */}
         <div className="flex items-center gap-4 lg:gap-6">
           <Link href="/" className="flex items-center gap-2.5 group">
@@ -241,7 +241,7 @@ export default function Navbar({
         <div className="flex items-center gap-2">
           <button
             onClick={() => setSearchPaletteOpen(true)}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200/80 dark:bg-white/[0.04] dark:hover:bg-white/[0.07] border border-slate-200 dark:border-white/[0.08] text-xs text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200 transition-colors w-36 sm:w-48 lg:w-60 shadow-xs"
+            className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200/80 dark:bg-white/[0.04] dark:hover:bg-white/[0.07] border border-slate-200 dark:border-white/[0.08] text-xs text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200 transition-colors w-28 sm:w-48 lg:w-60 shadow-xs"
           >
             <Search className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400 shrink-0" />
             <span className="truncate">Search stocks, F&O...</span>
