@@ -953,6 +953,12 @@ class NativeMarketFieldsTest(unittest.TestCase):
         self.assertNotIn("depth_json", fields)
 
 class CanonicalRefreshReadinessTest(unittest.TestCase):
+    def test_live_without_database_never_populates_fallback_token_map(self):
+        from unittest.mock import patch
+        with patch.dict(os.environ, {"MARKET_FEED_MODE":"live", "DATABASE_URL":""}), patch.object(worker, "GLOBAL_TOKEN_MAP", {}):
+            worker.init_global_token_map()
+            self.assertEqual(worker.GLOBAL_TOKEN_MAP, {})
+
     def test_worker_heartbeat_includes_loaded_master(self):
         store = worker.InstrumentStore("database", ["TCS"])
         store.master_version = "activated-v2"
@@ -1039,3 +1045,154 @@ class CanonicalRefreshReadinessTest(unittest.TestCase):
         queries = [call.args[0] for call in cursor.execute.call_args_list]
         self.assertEqual(sum("SELECT token" in query for query in queries),1)
         self.assertTrue(any("instrument_snapshots" in query for query in queries))
+
+
+class BrokerSessionRecoveryTest(unittest.TestCase):
+    def setUp(self):
+        from unittest.mock import patch
+        self.env = patch.dict(os.environ, {"MARKET_FEED_MODE":"live", "ANGEL_API_KEY":"test", "ANGEL_CLIENT_ID":"test", "ANGEL_PASSWORD":"test", "ANGEL_TOTP_SECRET":"test"})
+        self.env.start()
+        self.addCleanup(self.env.stop)
+        for name, value in (("GLOBAL_SMART_API",None),("GLOBAL_WRITER",None),("SMART_API_SESSION",None),("SMART_API_SESSION_EXPIRES",0.0),("SMART_API_LOGIN_RETRY_AFTER",0.0)):
+            patcher = patch.object(worker,name,value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        self.api = MagicMock()
+        self.api.generateSession.return_value = {"status":True,"data":{"jwtToken":"test-token","feedToken":"test-feed"}}
+        api_patch = patch.object(worker,"SmartConnect",return_value=self.api)
+        api_patch.start()
+        self.addCleanup(api_patch.stop)
+        otp_patch = patch.object(worker.pyotp,"TOTP")
+        otp_patch.start()
+        self.addCleanup(otp_patch.stop)
+
+    def test_rest_and_websocket_share_one_login_even_on_reconnect(self):
+        from unittest.mock import patch
+        worker.init_smart_api()
+        store,writer,control = MagicMock(),MagicMock(),MagicMock()
+        store.master_version = "v1"
+        with patch.object(worker,"VerifiedSmartWebSocket"), patch.object(worker.threading,"Thread"):
+            worker.run_feed(store,writer,control)
+            worker.run_feed(store,writer,control)
+        self.api.generateSession.assert_called_once()
+
+    def test_concurrent_login_requests_share_one_session(self):
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            sessions=list(executor.map(lambda _:worker.smart_api_session(),range(8)))
+        self.assertTrue(all(api is self.api for api,_ in sessions))
+        self.api.generateSession.assert_called_once()
+
+    def test_login_failure_does_not_retry_within_cooldown(self):
+        from unittest.mock import patch
+        self.api.generateSession.side_effect = RuntimeError("provider access rate exceeded")
+        with patch.object(worker.time,"monotonic",return_value=100):
+            with self.assertRaises(RuntimeError): worker.smart_api_session()
+            with self.assertRaisesRegex(RuntimeError,"cooling down"): worker.smart_api_session()
+        self.api.generateSession.assert_called_once()
+
+    def test_expired_session_is_renewed(self):
+        from unittest.mock import patch
+        with patch.object(worker.time,"monotonic",return_value=100): worker.smart_api_session()
+        with patch.object(worker.time,"monotonic",return_value=1001): worker.smart_api_session()
+        self.assertEqual(self.api.generateSession.call_count,2)
+
+    def test_synthetic_mode_does_not_authenticate_to_broker(self):
+        from unittest.mock import patch
+        with patch.dict(os.environ,{"MARKET_FEED_MODE":"synthetic"}): worker.init_smart_api()
+        self.api.generateSession.assert_not_called()
+
+    def test_old_websocket_frame_is_not_relabelled_after_token_reuse(self):
+        from unittest.mock import patch
+        store = worker.InstrumentStore("postgresql://test", [])
+        store.master_version = "v1"
+        store._master_signature = ("v1", 1, "before")
+        store._subscriptions = {("50001", 2): worker.Subscription("OLDCE", "50001", "NFO", 2)}
+        socket, writer, control = MagicMock(), MagicMock(), MagicMock()
+
+        def deliver_after_refresh():
+            with store._lock:
+                store.master_version = "v2"
+                store._master_signature = ("v2", 1, "after")
+                store._subscriptions = {("50001", 2): worker.Subscription("NEWCE", "50001", "NFO", 2)}
+            socket.on_data(None, {"token":"50001", "exchange_type":2, "last_traded_price":12300, "exchange_timestamp":1780000000000})
+
+        socket.connect.side_effect = deliver_after_refresh
+        with patch.object(worker, "VerifiedSmartWebSocket", return_value=socket), patch.object(worker.threading, "Thread"):
+            worker.run_feed(store, writer, control)
+        writer.write.assert_not_called()
+        control.tick.assert_not_called()
+
+    def test_rest_response_is_discarded_if_canonical_map_changes_in_flight(self):
+        from unittest.mock import patch
+        old_map = {"OLDCE":{"token":"50001", "exch_seg":"NFO"}}
+        writer = MagicMock()
+
+        def response_after_activation(*args):
+            worker.GLOBAL_TOKEN_MAP = {"NEWCE":{"token":"50001", "exch_seg":"NFO"}}
+            return {"ltp":123, "close":120, "exchFeedTime":"30-Sep-2026 15:30:00"}
+
+        with patch.object(worker, "GLOBAL_TOKEN_MAP", old_map), patch.object(worker, "GLOBAL_SMART_API", self.api), patch.object(worker, "GLOBAL_WRITER", writer), patch.object(worker, "fetch_full_snapshot", side_effect=response_after_activation):
+            self.assertIsNone(worker.fetch_quote_for_symbol("OLDCE"))
+        writer.write.assert_not_called()
+
+    def test_demand_refresh_does_not_restore_previous_master_subscriptions(self):
+        from unittest.mock import patch
+        store = worker.InstrumentStore("postgresql://test", [])
+        store.master_version = "v1"
+        old = worker.Subscription("OLDCE", "50001", "NFO", 2)
+        new = worker.Subscription("NEWCE", "50002", "NFO", 2)
+        socket = MagicMock()
+
+        def activate_new_master(*args):
+            with store._lock:
+                store.master_version = "v2"
+                store._subscriptions = {("50002", 2):new}
+
+        socket.subscribe.side_effect = activate_new_master
+        with patch.object(store, "demanded_subscriptions", return_value=[old]):
+            self.assertEqual(worker.sync_demand_subscriptions(store, MagicMock(), socket), [])
+        self.assertEqual(store.subscriptions(), [new])
+
+    def test_initial_master_failure_keeps_worker_available_for_recovery(self):
+        from unittest.mock import patch
+        store = MagicMock()
+        store.master_version = ""
+        store.refresh.side_effect = RuntimeError("master not activated")
+        supervisor = MagicMock()
+        supervisor.handle_feed_cycle.side_effect = StopIteration
+        with patch.object(worker,"InstrumentStore",return_value=store), patch.object(worker.redis,"from_url"), patch.object(worker,"QuoteWriter"), patch.object(worker,"start_quote_server") as server, patch.object(worker,"init_smart_api") as login, patch.object(worker.threading,"Thread") as thread, patch.object(worker,"FeedSupervisor",return_value=supervisor), patch.object(worker,"GLOBAL_WRITER",None):
+            with self.assertRaises(StopIteration): worker.main()
+        server.assert_called_once()
+        login.assert_not_called()
+        self.assertTrue(any(call.kwargs.get("target") is worker.refresh_daily for call in thread.call_args_list))
+
+
+class SessionAwareWatchdogTest(unittest.TestCase):
+    def test_closed_and_holiday_sessions_do_not_trigger_reconnect(self):
+        from unittest.mock import patch
+        import io
+        for status in ("CLOSED","HOLIDAY","PRE_OPEN","POST_MARKET"):
+            control=MagicMock()
+            control.stale.return_value=True
+            payload={"success":True,"data":{"is_open":False,"status":status}}
+            with patch.object(worker.urllib.request,"urlopen",return_value=io.BytesIO(json.dumps(payload).encode())):
+                worker.check_feed_watchdog(control,120)
+            control.reconnect.assert_not_called()
+
+    def test_open_or_unknown_sessions_keep_watchdog_active(self):
+        from unittest.mock import patch
+        import io
+        for payload in ({"success":True,"data":{"is_open":True,"status":"OPEN"}},{"success":True,"data":{}},{"success":False,"data":{"is_open":False,"status":"CLOSED"}}):
+            control=MagicMock()
+            control.stale.return_value=True
+            with patch.object(worker.urllib.request,"urlopen",return_value=io.BytesIO(json.dumps(payload).encode())):
+                worker.check_feed_watchdog(control,120)
+            control.reconnect.assert_called_once()
+
+    def test_calendar_request_failure_does_not_hide_a_stale_feed(self):
+        from unittest.mock import patch
+        control=MagicMock()
+        control.stale.return_value=True
+        with patch.object(worker.urllib.request,"urlopen",side_effect=TimeoutError): worker.check_feed_watchdog(control,120)
+        control.reconnect.assert_called_once()

@@ -272,9 +272,11 @@ func (s *Service) List(query, exchange, instrumentType, underlying string, activ
 		return s.filterDefaults(query, exchange, instrumentType, underlying, activeOnly, limit), nil
 	}
 
-	var dbCount int64
-	_ = db.Model(&model.Instrument{}).Count(&dbCount).Error
-	if dbCount == 0 {
+	var hasInstruments bool
+	if err := db.Raw("SELECT EXISTS (SELECT 1 FROM instruments LIMIT 1)").Scan(&hasInstruments).Error; err != nil {
+		return nil, err
+	}
+	if !hasInstruments {
 		return s.filterDefaults(query, exchange, instrumentType, underlying, activeOnly, limit), nil
 	}
 
