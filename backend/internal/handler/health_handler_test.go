@@ -388,3 +388,12 @@ func TestReadiness_DatabaseUnreachable_Returns503(t *testing.T) {
 	assert.Equal(t, "UNAVAILABLE", resp.Status)
 	assert.Equal(t, "DOWN", resp.Services.Database.Status)
 }
+
+func TestReadinessUnsupportedCalendarYearFailsClosed(t *testing.T) {
+	h := &HealthHandler{}
+	status, state, close, cutoff := h.checkCalendar(time.Date(2027, 1, 4, 10, 0, 0, 0, calendar.Location()))
+	assert.Equal(t, "UNAVAILABLE", status)
+	assert.Equal(t, "UNAVAILABLE", state)
+	assert.Empty(t, close)
+	assert.Empty(t, cutoff)
+}

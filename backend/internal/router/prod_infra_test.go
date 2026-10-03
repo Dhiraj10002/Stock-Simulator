@@ -322,6 +322,7 @@ func TestProdInfra_Health_And_Readiness_Endpoints(t *testing.T) {
 		CORSAllowedOrigins: "*",
 		JWTSecret:          "test-secret",
 		RedisURL:           redisURL,
+		MarketFeedMode:     "UNAVAILABLE",
 	}
 	r := Setup(context.Background(), cfg)
 
@@ -352,14 +353,14 @@ func TestProdInfra_Health_And_Readiness_Endpoints(t *testing.T) {
 	})
 
 	// Subtest 5b: Readiness endpoints return 200 when database is connected
-	t.Run("Readiness endpoints return 200 when database connected", func(t *testing.T) {
+	t.Run("Readiness fails closed when database is connected but feed unavailable", func(t *testing.T) {
 		for _, endpoint := range []string{"/ready", "/readyz", "/api/v1/ready", "/api/v1/readyz"} {
 			req := httptest.NewRequest(http.MethodGet, endpoint, nil)
 			w := httptest.NewRecorder()
 			r.ServeHTTP(w, req)
 
-			if w.Code != http.StatusOK {
-				t.Fatalf("expected HTTP 200 for %s, got: %d", endpoint, w.Code)
+			if w.Code != http.StatusServiceUnavailable {
+				t.Fatalf("expected HTTP 503 for %s, got: %d", endpoint, w.Code)
 			}
 
 			var body struct {
@@ -371,8 +372,8 @@ func TestProdInfra_Health_And_Readiness_Endpoints(t *testing.T) {
 			if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
 				t.Fatalf("failed to decode readiness response from %s: %v", endpoint, err)
 			}
-			if body.Data.Status != "ready" {
-				t.Fatalf("expected status ready, got: %s", body.Data.Status)
+			if body.Data.Status != "not_ready" {
+				t.Fatalf("expected status not_ready, got: %s", body.Data.Status)
 			}
 			if body.Data.Database != "connected" {
 				t.Fatalf("expected database connected, got: %s", body.Data.Database)

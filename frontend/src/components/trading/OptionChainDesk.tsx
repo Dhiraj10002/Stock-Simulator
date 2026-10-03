@@ -384,7 +384,7 @@ export default function OptionChainDesk({ initialUnderlying = "NIFTY" }: OptionC
 
   // Max Pain Calculation
   const maxPainStrike = useMemo(() => {
-    if (!chain || !chain.strikes || chain.strikes.length === 0) return null;
+    if (!chain || !chain.strikes || chain.strikes.length === 0 || !chain.strikes.every(row => row.call.open_interest_available && row.put.open_interest_available)) return null;
     let minLoss = Infinity;
     let bestStrike = chain.strikes[0].strike_price_paise;
 
@@ -412,11 +412,12 @@ export default function OptionChainDesk({ initialUnderlying = "NIFTY" }: OptionC
     return bestStrike;
   }, [chain]);
 
-  const pcr = chain?.put_call_ratio ?? 1;
+  const oiComplete = !!chain?.strikes.length && chain.strikes.every(row => row.call.open_interest_available && row.put.open_interest_available);
+  const pcr = oiComplete && (chain?.total_call_oi ?? 0) > 0 ? chain!.total_put_oi / chain!.total_call_oi : null;
   const pcrSentiment =
-    pcr > 1.2
+    pcr !== null && pcr > 1.2
       ? { label: "Bullish (Oversold Puts)", color: "text-emerald-400 bg-emerald-950/60 border-emerald-800/40" }
-      : pcr < 0.8
+      : pcr !== null && pcr < 0.8
       ? { label: "Bearish (Call Writing)", color: "text-rose-400 bg-rose-950/60 border-rose-800/40" }
       : { label: "Neutral / Balanced", color: "text-cyan-400 bg-cyan-950/60 border-cyan-800/40" };
 
@@ -495,12 +496,12 @@ export default function OptionChainDesk({ initialUnderlying = "NIFTY" }: OptionC
           </span>
           <div className="flex items-center gap-2">
             <span className="text-2xl font-black font-tabular text-slate-100">
-              {pcr.toFixed(2)}
+              {pcr === null ? "Unavailable" : pcr.toFixed(2)}
             </span>
             <span
               className={`text-[10px] font-bold px-2 py-0.5 rounded border ${pcrSentiment.color}`}
             >
-              {pcrSentiment.label}
+              {pcr === null ? "OI incomplete" : pcrSentiment.label}
             </span>
           </div>
           <span className="text-[10px] text-slate-500">Total Put OI / Total Call OI</span>
@@ -524,7 +525,7 @@ export default function OptionChainDesk({ initialUnderlying = "NIFTY" }: OptionC
             Total Call OI (Resistance)
           </span>
           <div className="text-2xl font-bold font-tabular text-slate-100">
-            {chain?.total_call_oi?.toLocaleString("en-IN") ?? 0}
+            {chain?.strikes.every(row => row.call.open_interest_available) ? chain.total_call_oi.toLocaleString("en-IN") : "Unavailable"}
           </div>
           <span className="text-[10px] text-slate-500">Cumulative Call contracts outstanding</span>
         </div>
@@ -535,7 +536,7 @@ export default function OptionChainDesk({ initialUnderlying = "NIFTY" }: OptionC
             Total Put OI (Support)
           </span>
           <div className="text-2xl font-bold font-tabular text-slate-100">
-            {chain?.total_put_oi?.toLocaleString("en-IN") ?? 0}
+            {chain?.strikes.every(row => row.put.open_interest_available) ? chain.total_put_oi.toLocaleString("en-IN") : "Unavailable"}
           </div>
           <span className="text-[10px] text-slate-500">Cumulative Put contracts outstanding</span>
         </div>
@@ -798,7 +799,7 @@ export default function OptionChainDesk({ initialUnderlying = "NIFTY" }: OptionC
                           isCallItm ? "bg-emerald-950/15" : ""
                         }`}
                       >
-                        {row.call.open_interest.toLocaleString("en-IN")}
+                        {row.call.open_interest_available ? row.call.open_interest.toLocaleString("en-IN") : "Unavailable"}
                       </td>
 
                       {/* Call IV */}
@@ -959,7 +960,7 @@ export default function OptionChainDesk({ initialUnderlying = "NIFTY" }: OptionC
                           isPutItm ? "bg-rose-950/15" : ""
                         }`}
                       >
-                        {row.put.open_interest.toLocaleString("en-IN")}
+                        {row.put.open_interest_available ? row.put.open_interest.toLocaleString("en-IN") : "Unavailable"}
                       </td>
                     </tr>
                   );

@@ -5,7 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	orderService "github.com/Dhiraj10002/Stock-Simulator/backend/internal/order/service"
+	"gorm.io/gorm"
 	"math"
+	"math/big"
+	"strings"
 	"time"
 	_ "time/tzdata"
 
@@ -116,117 +120,133 @@ func (s *PortfolioService) getSnapshotFromRedis(userUUID uuid.UUID, sessionDate 
 
 // EnsureSessionSnapshot retrieves or captures the 09:15 IST opening equity snapshot for a user.
 func (s *PortfolioService) EnsureSessionSnapshot(userUUID uuid.UUID, now time.Time) (*model.AccountDailySnapshot, error) {
-	todayStr := now.In(calendar.Location()).Format("2006-01-02")
-
 	if s.repo == nil {
-		if cached := s.getSnapshotFromRedis(userUUID, todayStr); cached != nil {
-			return cached, nil
-		}
 		return nil, fmt.Errorf("portfolio repository not configured")
 	}
-
-	snap, err := s.repo.FindDailySnapshot(userUUID, todayStr)
-	if err == nil && snap != nil {
-		s.cacheSnapshotToRedis(snap)
-		return snap, nil
-	}
-
-	wallet, err := s.repo.FindWallet(userUUID)
+	boundary, err := accountingBoundary(now)
 	if err != nil {
 		return nil, err
 	}
-
-	sessionOpen, _, _ := calendar.SessionBounds(now)
-	isNewUserToday := !wallet.CreatedAt.Before(sessionOpen)
-
-	var openingCash int64
-	var openingHoldings int64
-	var openingEquity int64
-	var netInflows int64
-
-	if isNewUserToday {
-		// If user registered today after session open, baseline is established at registration
-		depositsToday, _ := s.repo.GetDepositsSince(userUUID, wallet.CreatedAt)
-		tradesToday, _ := s.repo.GetTradesSince(userUUID, wallet.CreatedAt)
-
-		var tradesCashDelta int64
-		for _, tr := range tradesToday {
-			if tr.Side == model.OrderSideBuy {
-				tradesCashDelta += tr.TotalPaise
-			} else if tr.Side == model.OrderSideSell {
-				tradesCashDelta -= tr.TotalPaise
+	day := boundary.Format("2006-01-02")
+	return s.repo.EnsureDailySnapshot(userUUID, day, func(tx *gorm.DB, wallet model.Wallet) (*model.AccountDailySnapshot, error) {
+		// Initial registration and resets establish an explicit capital epoch.
+		var epoch model.WalletTransaction
+		if err := tx.Where("wallet_uuid = ? AND type IN ? AND created_at <= ?", wallet.UUID,
+			[]string{model.WalletTransactionInitialCredit, model.WalletTransactionReset}, now).
+			Order("created_at DESC, id DESC").First(&epoch).Error; err != nil {
+			return nil, err
+		}
+		openingCash := epoch.BalancePaise
+		from := epoch.CreatedAt
+		if from.Before(boundary) {
+			var last model.WalletTransaction
+			if err := tx.Where("wallet_uuid = ? AND created_at < ?", wallet.UUID, boundary).
+				Order("created_at DESC, id DESC").First(&last).Error; err != nil {
+				return nil, err
 			}
+			openingCash = last.BalancePaise
+		} else {
+			boundary = from
 		}
-
-		openingCash = wallet.CashBalancePaise - depositsToday + tradesCashDelta
-		openingHoldings = 0
-		openingEquity = openingCash - wallet.BlockedPaise
-		if openingEquity <= 0 {
-			openingEquity = 100000000 // ₹10 Lakhs default
+		var trades []model.Trade
+		if err := tx.Where("user_uuid = ? AND executed_at >= ? AND executed_at < ?", userUUID, from, boundary).
+			Order("executed_at ASC, id ASC").Find(&trades).Error; err != nil {
+			return nil, err
 		}
-		netInflows = depositsToday
-	} else {
-		// User registered before today; calculate baseline at today's 09:15 session open
-		depositsToday, _ := s.repo.GetDepositsSince(userUUID, sessionOpen)
-		tradesToday, _ := s.repo.GetTradesSince(userUUID, sessionOpen)
-
-		var tradesCashDelta int64
-		tradesQtyBySymbol := make(map[string]int64)
-		for _, tr := range tradesToday {
-			if tr.Side == model.OrderSideBuy {
-				tradesCashDelta += tr.TotalPaise
-				tradesQtyBySymbol[tr.Symbol] += tr.Quantity
-			} else if tr.Side == model.OrderSideSell {
-				tradesCashDelta -= tr.TotalPaise
-				tradesQtyBySymbol[tr.Symbol] -= tr.Quantity
-			}
-		}
-
-		openingCash = wallet.CashBalancePaise - depositsToday + tradesCashDelta
-
-		positions, _ := s.listPositions(userUUID)
-		for _, pos := range positions {
-			overnightQty := pos.Quantity - tradesQtyBySymbol[pos.Symbol]
-			if overnightQty <= 0 {
+		positions := map[string]model.Position{}
+		for _, tr := range trades {
+			key := tr.Symbol + "|" + tr.Product
+			pos := positions[key]
+			if tr.PricePaise == 0 && tr.Reason == model.OrderReasonFNOExpiry {
+				if tr.Quantity != absPortfolio(pos.Quantity) {
+					return nil, fmt.Errorf("invalid zero-price expiry ledger")
+				}
+				pos.Quantity = 0
+				pos.AveragePricePaise = 0
+				positions[key] = pos
 				continue
 			}
-			prevClose := int64(0)
-			if q, qErr := s.currentQuote(pos.Symbol); qErr == nil && q != nil && q.PreviousClosePaise > 0 {
-				prevClose = q.PreviousClosePaise
-			} else if pos.CurrentPricePaise > 0 {
-				prevClose = pos.CurrentPricePaise
-			} else {
-				prevClose = pos.AveragePricePaise
+			transition, err := orderService.ReplayPositionTransition(pos.Quantity, pos.AveragePricePaise, tr.Quantity, tr.PricePaise, tr.Side)
+			if err != nil {
+				return nil, err
 			}
-			openingHoldings += overnightQty * prevClose
+			pos.Symbol, pos.Product = tr.Symbol, tr.Product
+			pos.Quantity, pos.AveragePricePaise = transition.NewQuantity, transition.NewAveragePrice
+			positions[key] = pos
 		}
-
-		openingEquity = openingCash + openingHoldings - wallet.BlockedPaise
-		if openingEquity <= 0 {
-			openingEquity = wallet.CashBalancePaise
+		openingValue := int64(0)
+		for _, pos := range positions {
+			if pos.Quantity == 0 {
+				continue
+			}
+			q, err := s.currentQuote(pos.Symbol)
+			if err != nil || q == nil || !q.DayChangeAvailable || q.PreviousClosePaise <= 0 {
+				return nil, fmt.Errorf("opening reference unavailable for %s", pos.Symbol)
+			}
+			qt, err := marketDTO.ParseQuoteTime(q.UpdatedAt)
+			if err != nil || qt.In(calendar.Location()).Format("2006-01-02") != day {
+				return nil, fmt.Errorf("opening reference has wrong session")
+			}
+			pos.CurrentPricePaise = q.PreviousClosePaise
+			if pos.Product == model.OrderProductFNO {
+				var inst model.Instrument
+				if err := tx.Where("symbol = ?", pos.Symbol).First(&inst).Error; err != nil {
+					return nil, err
+				}
+				pos.InstrumentType = inst.InstrumentType
+			}
+			value, err := positionEquity(pos)
+			if err != nil {
+				return nil, err
+			}
+			openingValue, err = addPnl(openingValue, value)
+			if err != nil {
+				return nil, err
+			}
 		}
-		netInflows = depositsToday
-	}
-
-	newSnapshot := &model.AccountDailySnapshot{
-		UserUUID:                  userUUID,
-		SessionDate:               todayStr,
-		OpeningCashPaise:          openingCash,
-		OpeningHoldingsValuePaise: openingHoldings,
-		OpeningEquityPaise:        openingEquity,
-		NetCashInflowsPaise:       netInflows,
-		CreatedAt:                 now,
-	}
-
-	if saveErr := s.repo.CreateDailySnapshot(newSnapshot); saveErr != nil {
-		if existing, findErr := s.repo.FindDailySnapshot(userUUID, todayStr); findErr == nil && existing != nil {
-			s.cacheSnapshotToRedis(existing)
-			return existing, nil
+		// Refuse incomplete legacy ledgers instead of inventing an opening value.
+		var current []model.Position
+		if err := tx.Where("user_uuid = ? AND quantity <> 0", userUUID).Find(&current).Error; err != nil {
+			return nil, err
 		}
-	}
-
-	s.cacheSnapshotToRedis(newSnapshot)
-	return newSnapshot, nil
+		var after []model.Trade
+		if err := tx.Where("user_uuid = ? AND executed_at >= ? AND executed_at <= ?", userUUID, boundary, now).Find(&after).Error; err != nil {
+			return nil, err
+		}
+		qty := map[string]int64{}
+		for k, pos := range positions {
+			qty[k] = pos.Quantity
+		}
+		for _, tr := range after {
+			delta := tr.Quantity
+			if tr.Side == model.OrderSideSell {
+				delta = -delta
+			}
+			qty[tr.Symbol+"|"+tr.Product] += delta
+		}
+		for _, pos := range current {
+			key := pos.Symbol + "|" + pos.Product
+			if qty[key] != pos.Quantity {
+				return nil, fmt.Errorf("incomplete position ledger")
+			}
+			delete(qty, key)
+		}
+		for _, n := range qty {
+			if n != 0 {
+				return nil, fmt.Errorf("incomplete position ledger")
+			}
+		}
+		inflow, err := repository.DepositsInTransaction(tx, wallet.UUID, boundary)
+		if err != nil {
+			return nil, err
+		}
+		equity, err := addPnl(openingCash, openingValue)
+		if err != nil {
+			return nil, err
+		}
+		return &model.AccountDailySnapshot{UserUUID: userUUID, SessionDate: day, OpeningCashPaise: openingCash,
+			OpeningHoldingsValuePaise: openingValue, OpeningEquityPaise: equity, NetCashInflowsPaise: inflow, CreatedAt: now}, nil
+	})
 }
 
 // ProcessSessionOpenSnapshots records 09:15 IST opening equity snapshots for all active users.
@@ -270,6 +290,8 @@ func (s *PortfolioService) Get(userID string) (*dto.PortfolioResponse, error) {
 		return nil, err
 	}
 
+	equityValue := int64(0)
+	equityValid := true
 	result := &dto.PortfolioResponse{
 		Positions:       make([]dto.PositionResponse, 0, len(positions)),
 		ValuationStatus: "REALTIME",
@@ -325,6 +347,15 @@ func (s *PortfolioService) Get(userID string) (*dto.PortfolioResponse, error) {
 		}
 
 		position.CurrentPricePaise = quotePrice
+		value, equityErr := positionEquity(position)
+		if equityErr != nil || !isAvailable {
+			equityValid = false
+		} else {
+			equityValue, equityErr = addPnl(equityValue, value)
+			if equityErr != nil {
+				equityValid = false
+			}
+		}
 		item := toPositionResponse(position)
 		item.QuoteStatus = quoteStatus
 		item.QuoteSource = quoteSource
@@ -359,30 +390,42 @@ func (s *PortfolioService) Get(userID string) (*dto.PortfolioResponse, error) {
 		return nil, err
 	}
 
-	// Calculate true Daily Account P&L based on session baseline (09:15 IST)
-	if snap, snapErr := s.EnsureSessionSnapshot(userUUID, s.now()); snapErr == nil && snap != nil {
-		wallet, wErr := s.repo.FindWallet(userUUID)
-		cash := int64(0)
-		blocked := int64(0)
-		if wErr == nil && wallet != nil {
-			cash = wallet.CashBalancePaise
-			blocked = wallet.BlockedPaise
+	// Read wallet, positions and capital flows at one serialized ledger boundary.
+	if equityValid {
+		if snap, err := s.EnsureSessionSnapshot(userUUID, s.now()); err == nil && snap != nil {
+			_ = s.repo.ReadAccount(userUUID, snap.SessionDate, func(wallet model.Wallet, positions []model.Position, snapshot *model.AccountDailySnapshot) error {
+				equity := wallet.CashBalancePaise
+				for _, p := range positions {
+					q, err := s.currentQuote(p.Symbol)
+					if err != nil || q == nil {
+						return fmt.Errorf("quote unavailable")
+					}
+					p.CurrentPricePaise = q.PricePaise
+					value, err := positionEquity(p)
+					if err != nil {
+						return err
+					}
+					equity, err = addPnl(equity, value)
+					if err != nil {
+						return err
+					}
+				}
+				daily, err := addPnl(equity, -snapshot.OpeningEquityPaise)
+				if err != nil {
+					return err
+				}
+				daily, err = addPnl(daily, -snapshot.NetCashInflowsPaise)
+				if err != nil {
+					return err
+				}
+				result.DailyPnlPaise = &daily
+				if snapshot.OpeningEquityPaise > 0 {
+					pct := math.Round(float64(daily)/float64(snapshot.OpeningEquityPaise)*10000) / 100
+					result.DailyPnlPercent = &pct
+				}
+				return nil
+			})
 		}
-		currentAccountValue := cash + result.CurrentValuePaise - blocked
-		totalInflows := snap.NetCashInflowsPaise
-
-		dailyPnl := currentAccountValue - snap.OpeningEquityPaise - totalInflows
-		result.DailyPnlPaise = &dailyPnl
-
-		if snap.OpeningEquityPaise > 0 {
-			pct := math.Round((float64(dailyPnl)/float64(snap.OpeningEquityPaise))*10000) / 100
-			result.DailyPnlPercent = &pct
-		} else {
-			zero := 0.0
-			result.DailyPnlPercent = &zero
-		}
-	} else {
-		result.DailyPnlPaise = nil
 	}
 
 	result.TotalPnlPaise, err = addPnl(result.UnrealizedPnlPaise, result.RealizedPnlPaise)
@@ -431,4 +474,59 @@ func addPnl(left, right int64) (int64, error) {
 		return 0, fmt.Errorf("portfolio P&L is too large")
 	}
 	return left + right, nil
+}
+
+// Select the latest supported regular session; weekend/pre-open reads cannot create a new day.
+func accountingBoundary(now time.Time) (time.Time, error) {
+	day := now.In(calendar.Location())
+	if !calendar.Snapshot(day.Year()).Available {
+		return time.Time{}, fmt.Errorf("calendar unavailable")
+	}
+	for i := 0; i < 10; i++ {
+		open, _, _ := calendar.SessionBounds(day)
+		holiday, _ := calendar.IsTradingHoliday(day)
+		if !calendar.IsWeekend(day) && !holiday && !now.Before(open) {
+			return open, nil
+		}
+		day = day.AddDate(0, 0, -1)
+	}
+	return time.Time{}, fmt.Errorf("accounting session unavailable")
+}
+
+func positionEquity(p model.Position) (int64, error) {
+	if p.Quantity == 0 {
+		return 0, nil
+	}
+	if p.CurrentPricePaise <= 0 {
+		return 0, fmt.Errorf("missing position valuation")
+	}
+	mark := p.CurrentPricePaise
+	kind := strings.ToUpper(p.InstrumentType)
+	switch p.Product {
+	case model.OrderProductDelivery:
+	case model.OrderProductIntraday:
+		mark -= p.AveragePricePaise
+	case model.OrderProductFNO:
+		switch kind {
+		case "FUTURE", "FUTIDX", "FUTSTK":
+			mark -= p.AveragePricePaise
+		case "OPTION", "OPTIDX", "OPTSTK":
+		default:
+			return 0, fmt.Errorf("unknown derivative valuation type")
+		}
+	default:
+		return 0, fmt.Errorf("unknown product")
+	}
+	v := new(big.Int).Mul(big.NewInt(p.Quantity), big.NewInt(mark))
+	if !v.IsInt64() {
+		return 0, fmt.Errorf("position equity overflow")
+	}
+	return v.Int64(), nil
+}
+
+func absPortfolio(n int64) int64 {
+	if n < 0 {
+		return -n
+	}
+	return n
 }

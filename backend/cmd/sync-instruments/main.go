@@ -31,6 +31,9 @@ func main() {
 	}
 
 	db := database.GetDB()
+	if err := model.UpgradeInstrumentTokenIndex(db); err != nil {
+		log.Fatal(err)
+	}
 	if err := db.AutoMigrate(&model.Instrument{}, &model.InstrumentSnapshot{}); err != nil {
 		log.Fatalf("Failed to migrate instruments schema: %v", err)
 	}

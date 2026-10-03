@@ -405,14 +405,14 @@ func TestResolveCircuitLimits_RealExchangeLimits(t *testing.T) {
 	}
 	lcFb, ucFb := resolveCircuitLimits(fallbackQuote, model.OrderProductDelivery)
 	// 10% on previous close 250,000 -> [225,000, 275,000]
-	if lcFb != 225000 || ucFb != 275000 {
-		t.Fatalf("expected fallback circuit limits on prev close (225000, 275000), got (%d, %d)", lcFb, ucFb)
+	if lcFb != 0 || ucFb != 0 {
+		t.Fatalf("expected unavailable circuits (0,0), got (%d, %d)", lcFb, ucFb)
 	}
 
 	// 3. F&O fallback is 20% on previous close
 	lcFno, ucFno := resolveCircuitLimits(fallbackQuote, model.OrderProductFNO)
-	if lcFno != 200000 || ucFno != 300000 {
-		t.Fatalf("expected F&O 20%% circuit limits (200000, 300000), got (%d, %d)", lcFno, ucFno)
+	if lcFno != 0 || ucFno != 0 {
+		t.Fatalf("expected unavailable F&O circuits (0,0), got (%d, %d)", lcFno, ucFno)
 	}
 }
 
@@ -473,12 +473,12 @@ func TestOrderService_CircuitBreakerEnforcement_RealExchangeLimits(t *testing.T)
 
 	// 3. Stop-Loss Trigger Price exceeding upper circuit
 	_, err = orderSvc.Create(userUUID.String(), dto.CreateOrderRequest{
-		Symbol:           "ZOMATO",
-		Side:             model.OrderSideBuy,
-		Type:             model.OrderTypeSL,
-		Product:          model.OrderProductDelivery,
-		Quantity:         10,
-		PricePaise:       20800, // Valid limit price
+		Symbol:            "ZOMATO",
+		Side:              model.OrderSideBuy,
+		Type:              model.OrderTypeSL,
+		Product:           model.OrderProductDelivery,
+		Quantity:          10,
+		PricePaise:        20800, // Valid limit price
 		TriggerPricePaise: 21500, // Trigger price ₹215.00 > ₹210.00
 	})
 	if err == nil {

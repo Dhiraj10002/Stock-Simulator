@@ -268,6 +268,9 @@ func (s *OrderService) executeMarginProduct(userUUID, orderUUID uuid.UUID, pendi
 			}
 			return fmt.Errorf("cannot execute expired contract %s (expiry: %s)", pending.Symbol, instrument.Expiry)
 		}
+		if instrument.SnapshotVersion != "" && (!instrument.Active || !instrument.IsTradable) && pending.ExitPositionUUID == nil {
+			return fmt.Errorf("contract retired before execution")
+		}
 		instrumentType, err = product.ValidateFNOInstrument(*instrument, pending.Quantity)
 		if err != nil {
 			return err
@@ -675,4 +678,9 @@ func calculatePositionTransition(oldQty, oldAverage, orderQty, execPrice int64, 
 		ClosedQuantity:   0,
 		OpenedQuantity:   orderQty,
 	}, nil
+}
+
+// ReplayPositionTransition shares the exact execution average-cost semantics with session accounting.
+func ReplayPositionTransition(oldQty, oldAverage, orderQty, execPrice int64, side string) (PositionTransition, error) {
+	return calculatePositionTransition(oldQty, oldAverage, orderQty, execPrice, side)
 }

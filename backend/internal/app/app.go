@@ -57,6 +57,10 @@ func (a *App) RunWithContext(ctx context.Context) error {
 
 	logger.Info("Database Connected")
 
+	// Provider tokens are recyclable. Historical identity is symbol + segment.
+	if err := model.UpgradeInstrumentTokenIndex(database.GetDB()); err != nil {
+		return err
+	}
 	// Run Migrations if tables do not exist or if explicitly requested
 	shouldMigrate := os.Getenv("RUN_MIGRATION") == "true" || !database.GetDB().Migrator().HasTable(&model.User{})
 	if shouldMigrate {
@@ -98,8 +102,13 @@ func (a *App) RunWithContext(ctx context.Context) error {
 		}
 	}
 
+	if database.GetDB().Migrator().HasTable(&model.AccountDailySnapshot{}) && !database.GetDB().Migrator().HasColumn(&model.AccountDailySnapshot{}, "Epoch") && database.GetDB().Migrator().HasIndex(&model.AccountDailySnapshot{}, "idx_daily_snapshots_user_date") {
+		if err := database.GetDB().Migrator().DropIndex(&model.AccountDailySnapshot{}, "idx_daily_snapshots_user_date"); err != nil {
+			return err
+		}
+	}
 	// Required additive upgrade: fail startup rather than run without durable exits.
-	if err := database.GetDB().AutoMigrate(&model.Order{}, &model.RefreshSession{}, &model.SettlementReference{}); err != nil {
+	if err := database.GetDB().AutoMigrate(&model.Order{}, &model.RefreshSession{}, &model.SettlementReference{}, &model.AccountDailySnapshot{}, &model.Instrument{}, &model.InstrumentSnapshot{}); err != nil {
 		return fmt.Errorf("upgrade durable exit schema: %w", err)
 	}
 	ensurePerformanceIndexes(database.GetDB())

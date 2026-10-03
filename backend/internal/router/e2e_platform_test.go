@@ -3,10 +3,13 @@ package router
 import (
 	"context"
 	"encoding/json"
+	marketService "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/service"
+	orderHandler "github.com/Dhiraj10002/Stock-Simulator/backend/internal/order/handler"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/auth/token"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/config"
@@ -25,7 +28,13 @@ func TestE2E_FullPlatformSuite(t *testing.T) {
 		GeminiModel:        "gemini-2.0-flash",
 	}
 
-	appRouter := Setup(ctx, cfg)
+	market, err := marketService.New("", 50*time.Millisecond)
+	if err != nil {
+		t.Fatal(err)
+	}
+	orders := orderHandler.New(market, cfg)
+	orders.Service().SetNowFunc(func() time.Time { return time.Date(2026, 9, 16, 5, 0, 0, 0, time.UTC) })
+	appRouter := Setup(ctx, cfg, WithOrderHandler(orders))
 
 	// 1. Health Check
 	t.Run("1. GET /api/v1/health returns 200 with X-Request-ID", func(t *testing.T) {

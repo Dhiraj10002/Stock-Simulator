@@ -615,6 +615,7 @@ func (s *OptionChainService) annotateDisplay(resp *dto.OptionChainResponse) {
 				continue
 			}
 			contract.UpdatedAt, contract.QuoteSource = q.UpdatedAt, q.Source
+			contract.OpenInterestAvailable = q.OpenInterestAvailable
 			contract.DayChangeAvailable = q.DayChangeAvailable
 			contract.ChangePaise, contract.ChangePercent = q.ChangePaise, q.ChangePercent
 			contract.IsQuoteStale = marketService.ValidateExecutableQuoteWithMode(q, time.Now(), s.market.AllowSeededQuotes()) != nil

@@ -8,4 +8,3 @@ type FeedStatusResponse struct {
 	UpdatedAt             string `json:"updated_at,omitempty"`
 	SubscribedTokensCount int    `json:"subscribed_tokens_count,omitempty"`
 }
-

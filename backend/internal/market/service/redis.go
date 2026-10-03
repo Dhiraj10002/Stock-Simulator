@@ -243,6 +243,10 @@ func (s *Service) SetQuote(symbol string, pricePaise int64, volume int64) error 
 func (s *Service) CachedQuote(symbol string) (*dto.QuoteResponse, error) {
 	q, err := s.CurrentQuote(symbol)
 	if err == nil && q != nil && q.PricePaise > 0 {
+		stamp, parseErr := dto.ParseQuoteTime(q.UpdatedAt)
+		if parseErr != nil || stamp.After(time.Now().Add(5*time.Second)) {
+			return nil, fmt.Errorf("%w: cached quote timestamp is invalid", ErrQuoteIneligible)
+		}
 		return q, nil
 	}
 	if errors.Is(err, ErrQuoteStale) {
@@ -315,24 +319,17 @@ func (s *Service) rawCachedQuote(symbol string) (*dto.QuoteResponse, error) {
 	openInterest, _ := strconv.ParseInt(values["open_interest"], 10, 64)
 	previousClose, _ := strconv.ParseInt(values["previous_close_paise"], 10, 64)
 	dayAvailable, _ := strconv.ParseBool(values["day_change_available"])
-	var lowerCircuit int64
-	var upperCircuit int64
-	if lc, ok := values["lower_circuit_paise"]; ok {
-		lowerCircuit, _ = strconv.ParseInt(lc, 10, 64)
-	}
-	if uc, ok := values["upper_circuit_paise"]; ok {
-		upperCircuit, _ = strconv.ParseInt(uc, 10, 64)
-	}
 	return &dto.QuoteResponse{
-		OpenInterest:       openInterest,
+		OpenInterest:          openInterest,
+		OpenInterestAvailable: values["open_interest_available"] == "true",
+		OpenPaise:             optionalInt(values, "open_paise"), HighPaise: optionalInt(values, "high_paise"), LowPaise: optionalInt(values, "low_paise"),
+		LowerCircuitPaise: optionalInt(values, "lower_circuit_paise"), UpperCircuitPaise: optionalInt(values, "upper_circuit_paise"), Depth: optionalDepth(values),
 		PreviousClosePaise: previousClose,
 		DayChangeAvailable: dayAvailable && previousClose > 0,
 		Symbol:             symbol,
 		PricePaise:         price,
 		ChangePaise:        changePaise,
 		ChangePercent:      changePercent,
-		LowerCircuitPaise:  lowerCircuit,
-		UpperCircuitPaise:  upperCircuit,
 		Volume:             volume,
 		Source:             values["source"],
 		UpdatedAt:          values["updated_at"],
@@ -500,7 +497,10 @@ func (s *Service) CurrentQuote(symbol string) (*dto.QuoteResponse, error) {
 	previousClose, _ := strconv.ParseInt(values["previous_close_paise"], 10, 64)
 	dayAvailable, _ := strconv.ParseBool(values["day_change_available"])
 	return &dto.QuoteResponse{
-		OpenInterest:       openInterest,
+		OpenInterest:          openInterest,
+		OpenInterestAvailable: values["open_interest_available"] == "true",
+		OpenPaise:             optionalInt(values, "open_paise"), HighPaise: optionalInt(values, "high_paise"), LowPaise: optionalInt(values, "low_paise"),
+		LowerCircuitPaise: optionalInt(values, "lower_circuit_paise"), UpperCircuitPaise: optionalInt(values, "upper_circuit_paise"), Depth: optionalDepth(values),
 		PreviousClosePaise: previousClose,
 		DayChangeAvailable: dayAvailable && previousClose > 0,
 		Symbol:             symbol,
@@ -754,4 +754,23 @@ func ValidHistoricalCandle(c dto.CandleResponse, mode dto.FeedMode, allowSeeded 
 
 func (s *Service) ValidateStreamQuote(q *dto.QuoteResponse) error {
 	return ValidateExecutableQuoteWithFeedMode(q, time.Now(), s.FeedMode(), s.AllowSeededQuotes())
+}
+
+func optionalInt(values map[string]string, key string) int64 {
+	n, _ := strconv.ParseInt(values[key], 10, 64)
+	return n
+}
+func optionalDepth(values map[string]string) *dto.MarketDepth {
+	var book dto.MarketDepth
+	if json.Unmarshal([]byte(values["depth_json"]), &book) != nil || len(book.Bids) != 5 || len(book.Asks) != 5 {
+		return nil
+	}
+	for _, rows := range [][]dto.DepthLevel{book.Bids, book.Asks} {
+		for _, row := range rows {
+			if row.PricePaise <= 0 || row.Quantity <= 0 {
+				return nil
+			}
+		}
+	}
+	return &book
 }

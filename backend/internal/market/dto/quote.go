@@ -6,7 +6,23 @@ import (
 	"time"
 )
 
+type DepthLevel struct {
+	PricePaise int64 `json:"price_paise"`
+	Quantity   int64 `json:"quantity"`
+	Orders     int64 `json:"orders"`
+}
+type MarketDepth struct {
+	Bids []DepthLevel `json:"bids"`
+	Asks []DepthLevel `json:"asks"`
+}
 type QuoteResponse struct {
+	OpenInterestAvailable bool         `json:"open_interest_available"`
+	OpenPaise             int64        `json:"open_paise,omitempty"`
+	HighPaise             int64        `json:"high_paise,omitempty"`
+	LowPaise              int64        `json:"low_paise,omitempty"`
+	Depth                 *MarketDepth `json:"depth,omitempty"`
+	IsQuoteStale          bool         `json:"is_quote_stale"`
+
 	OpenInterest       int64   `json:"open_interest"`
 	PreviousClosePaise int64   `json:"previous_close_paise"`
 	DayChangeAvailable bool    `json:"day_change_available"`

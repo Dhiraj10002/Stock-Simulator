@@ -113,8 +113,8 @@ func TestFNOExpiry_Stress_MultiLegPortfolioMarginRelease(t *testing.T) {
 		}
 	}()
 
-	initialCash := int64(2_000_000)   // ₹20,000.00
-	initialBlocked := int64(800_000)  // ₹8,000.00
+	initialCash := int64(2_000_000)  // ₹20,000.00
+	initialBlocked := int64(800_000) // ₹8,000.00
 	wallet := model.Wallet{
 		UUID:             walletUUID,
 		UserUUID:         userUUID,
@@ -195,7 +195,6 @@ func TestFNOExpiry_Stress_MultiLegPortfolioMarginRelease(t *testing.T) {
 		OptionSellMarginPercent: 30,
 	})
 	orderSvc.SetNowFunc(func() time.Time { return expiryTime })
-
 
 	// Spot settles at 24,500 paise (245.00):
 	// - Future settles at 21,500 (+1,500 profit/share * 50 = +75,000 paise).
@@ -340,7 +339,6 @@ func TestFNOExpiry_Stress_HighVolumeBatchConcurrency(t *testing.T) {
 	orderSvc.SetExecutableQuoteFunc(func(symbol string) (*marketDTO.QuoteResponse, error) {
 		return &marketDTO.QuoteResponse{Symbol: symbol, PricePaise: 20500, UpdatedAt: quoteTimeStr, Source: "angelone_live"}, nil
 	})
-
 
 	// Run concurrent expiry settlement cycles to stress test lock ordering
 	var wg sync.WaitGroup

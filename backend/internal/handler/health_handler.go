@@ -193,7 +193,7 @@ func (h *HealthHandler) Readiness(c *gin.Context) {
 	isReady := true
 	overallStatus := "OPERATIONAL"
 
-	if dbStatus != "UP" || redisStatus != "UP" || masterStatus != "UP" {
+	if dbStatus != "UP" || redisStatus != "UP" || masterStatus != "UP" || calStatus != "UP" {
 		isReady = false
 		overallStatus = "UNAVAILABLE"
 	} else if feedStatus == "DEGRADED" {
@@ -341,6 +341,9 @@ func (h *HealthHandler) checkRedis(ctx context.Context) (string, float64, string
 }
 
 func (h *HealthHandler) checkCalendar(ist time.Time) (string, string, string, string) {
+	if !calendar.Snapshot(ist.Year()).Available {
+		return "UNAVAILABLE", "UNAVAILABLE", "", ""
+	}
 	marketState := "CLOSED"
 	isWeekend := calendar.IsWeekend(ist)
 	isHoliday, _ := calendar.IsTradingHoliday(ist)
@@ -402,6 +405,9 @@ func (h *HealthHandler) checkMarketFeed(ctx context.Context, now time.Time, mark
 
 	status := "UP"
 	var feedErr string
+	if feedMode != "LIVE" && feedMode != "SYNTHETIC" {
+		return "DOWN", feedMode, supervisorState, lastTickAge, subCount, "feed mode unavailable"
+	}
 
 	if marketState == "OPEN" {
 		// Regular trading hours (09:15-15:30 IST on a trading weekday)
@@ -439,10 +445,19 @@ func (h *HealthHandler) checkInstrumentMaster(ctx context.Context) (string, stri
 	if h.instrumentService != nil {
 		if snap, err := h.instrumentService.GetActiveSnapshot(ctx); err == nil && snap != nil {
 			activeVersion = snap.Version
-			totalTradable = snap.TotalInstruments
+			if db := h.getDB(); db != nil {
+				var count int64
+				if err := db.WithContext(ctx).Model(&model.Instrument{}).Where("active = ? AND is_tradable = ? AND snapshot_version = ?", true, true, snap.Version).Count(&count).Error; err != nil {
+					return "DOWN", snap.Version, 0, err.Error()
+				}
+				totalTradable = int(count)
+			}
 		}
 	}
 
+	if activeVersion != "" && totalTradable == 0 {
+		return "DOWN", activeVersion, 0, "active version has no tradable members"
+	}
 	if totalTradable == 0 {
 		if db := h.getDB(); db != nil {
 			var count int64

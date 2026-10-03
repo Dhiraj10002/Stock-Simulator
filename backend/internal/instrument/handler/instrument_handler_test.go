@@ -204,4 +204,3 @@ func TestInstrumentHandler(t *testing.T) {
 		}
 	})
 }
-

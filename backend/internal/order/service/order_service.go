@@ -230,7 +230,7 @@ func (s *OrderService) Create(userID string, request dto.CreateOrderRequest) (*d
 
 	// Circuit Breaker Validation against Daily Price Bands (Real Exchange Limits or fallback bands)
 	curQuote, qErr := s.currentQuote(request.Symbol)
-	if qErr == nil && curQuote != nil && (curQuote.PricePaise > 0 || curQuote.LowerCircuitPaise > 0) {
+	if qErr == nil && curQuote != nil && curQuote.LowerCircuitPaise > 0 && curQuote.UpperCircuitPaise > 0 {
 		lc, uc := resolveCircuitLimits(curQuote, request.Product)
 		if (request.Type == model.OrderTypeLimit || request.Type == model.OrderTypeSL) && request.PricePaise > 0 {
 			if request.PricePaise > uc {
@@ -527,14 +527,8 @@ func resolveCircuitLimits(quote *marketDTO.QuoteResponse, product string) (lower
 		return quote.LowerCircuitPaise, quote.UpperCircuitPaise
 	}
 
-	refPrice := int64(0)
-	if quote != nil && quote.PreviousClosePaise > 0 {
-		refPrice = quote.PreviousClosePaise
-	} else if quote != nil && quote.PricePaise > 0 {
-		refPrice = quote.PricePaise
-	}
+	return 0, 0
 
-	return calculateCircuitLimits(refPrice, product)
 }
 
 func calculateCircuitLimits(refPricePaise int64, product string) (lowerCircuit int64, upperCircuit int64) {

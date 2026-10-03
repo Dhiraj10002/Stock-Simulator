@@ -1,26 +1,27 @@
 package dto
 
 type OptionContract struct {
-	UpdatedAt          string  `json:"updated_at,omitempty"`
-	QuoteSource        string  `json:"quote_source,omitempty"`
-	IsQuoteStale       bool    `json:"is_quote_stale"`
-	DayChangeAvailable bool    `json:"day_change_available"`
-	ChangePaise        int64   `json:"change_paise"`
-	ChangePercent      float64 `json:"change_percent"`
-	AnalyticsSource    string  `json:"analytics_source,omitempty"`
-	Symbol             string  `json:"symbol"`
-	OptionType         string  `json:"option_type"` // CE or PE
-	StrikePricePaise   int64   `json:"strike_price_paise"`
-	LTPPaise           int64   `json:"ltp_paise"`
-	OpenInterest       int64   `json:"open_interest"`
-	IV                 float64 `json:"iv"`
-	Delta              float64 `json:"delta"`
-	Gamma              float64 `json:"gamma"`
-	Theta              float64 `json:"theta"`
-	Vega               float64 `json:"vega"`
-	LotSize            int64   `json:"lot_size"`
-	IsAvailable        bool    `json:"is_available"`
-	QuoteStatus        string  `json:"quote_status,omitempty"`
+	OpenInterestAvailable bool    `json:"open_interest_available"`
+	UpdatedAt             string  `json:"updated_at,omitempty"`
+	QuoteSource           string  `json:"quote_source,omitempty"`
+	IsQuoteStale          bool    `json:"is_quote_stale"`
+	DayChangeAvailable    bool    `json:"day_change_available"`
+	ChangePaise           int64   `json:"change_paise"`
+	ChangePercent         float64 `json:"change_percent"`
+	AnalyticsSource       string  `json:"analytics_source,omitempty"`
+	Symbol                string  `json:"symbol"`
+	OptionType            string  `json:"option_type"` // CE or PE
+	StrikePricePaise      int64   `json:"strike_price_paise"`
+	LTPPaise              int64   `json:"ltp_paise"`
+	OpenInterest          int64   `json:"open_interest"`
+	IV                    float64 `json:"iv"`
+	Delta                 float64 `json:"delta"`
+	Gamma                 float64 `json:"gamma"`
+	Theta                 float64 `json:"theta"`
+	Vega                  float64 `json:"vega"`
+	LotSize               int64   `json:"lot_size"`
+	IsAvailable           bool    `json:"is_available"`
+	QuoteStatus           string  `json:"quote_status,omitempty"`
 }
 
 type StrikeRow struct {

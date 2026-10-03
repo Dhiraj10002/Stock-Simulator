@@ -75,21 +75,21 @@ func TestStageSnapshot_ValidationAndDeduplication(t *testing.T) {
 		t.Errorf("expected 5 processed, got %d", stats.TotalProcessed)
 	}
 	// Upserted: RELIANCE (1001), TCS (3001). Skipped: RELIANCE_DUP (duplicate token), NIFTY (lot size 0), GOLD (MCX)
-	if stats.TotalUpserted != 2 {
-		t.Errorf("expected 2 upserted, got %d", stats.TotalUpserted)
+	if stats.TotalUpserted != 1 {
+		t.Errorf("expected 1 valid staged member, got %d", stats.TotalUpserted)
 	}
-	if stats.TotalSkipped != 3 {
-		t.Errorf("expected 3 skipped, got %d", stats.TotalSkipped)
+	if stats.TotalSkipped != 4 {
+		t.Errorf("expected 4 skipped, got %d", stats.TotalSkipped)
 	}
 
-	if snapshot.Status != model.SnapshotStatusStaged {
-		t.Errorf("expected status STAGED, got %s", snapshot.Status)
+	if snapshot.Status != model.SnapshotStatusFailed {
+		t.Errorf("expected invalid snapshot FAILED, got %s", snapshot.Status)
 	}
 	if snapshot.EquityCount != 1 {
 		t.Errorf("expected 1 equity, got %d", snapshot.EquityCount)
 	}
-	if snapshot.FuturesCount != 1 {
-		t.Errorf("expected 1 futures, got %d", snapshot.FuturesCount)
+	if snapshot.FuturesCount != 0 {
+		t.Errorf("expected 0 valid futures, got %d", snapshot.FuturesCount)
 	}
 
 	if !strings.Contains(snapshot.ValidationErrors, "duplicate token") {

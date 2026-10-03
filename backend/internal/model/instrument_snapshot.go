@@ -12,6 +12,8 @@ const (
 // InstrumentSnapshot records the versioned metadata of an imported instrument master.
 // It enables staged ingestion, duplicate-token validation, and atomic version switching.
 type InstrumentSnapshot struct {
+	Payload          string     `gorm:"type:text" json:"-"`
+	Partial          bool       `gorm:"not null;default:false" json:"partial"`
 	ID               uint       `gorm:"primaryKey" json:"id"`
 	Version          string     `gorm:"size:64;not null;uniqueIndex" json:"version"`
 	Source           string     `gorm:"size:64;not null;default:'angelone_openapi'" json:"source"`

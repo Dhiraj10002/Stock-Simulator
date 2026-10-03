@@ -10,8 +10,10 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/database"
@@ -60,6 +62,8 @@ var DefaultCanonicalInstruments = []model.Instrument{
 	{ID: 33, Symbol: "RELIANCE24SEPFUT", DisplaySymbol: "RELIANCE SEP FUT", Name: "RELIANCE Futures", Underlying: "RELIANCE", Token: "NFO_REL_FUT", Exchange: "NFO", ExchangeSegment: "NFO", InstrumentType: "FUTSTK", Expiry: "2026-09-24", LotSize: 250, TickSize: "0.05", Active: true, IsTradable: true},
 	{ID: 34, Symbol: "TCS24SEPFUT", DisplaySymbol: "TCS SEP FUT", Name: "TCS Futures", Underlying: "TCS", Token: "NFO_TCS_FUT", Exchange: "NFO", ExchangeSegment: "NFO", InstrumentType: "FUTSTK", Expiry: "2026-09-24", LotSize: 175, TickSize: "0.05", Active: true, IsTradable: true},
 }
+
+var activationMu sync.Mutex
 
 // Service provides access to authoritative canonical instruments.
 type Service struct {
@@ -304,9 +308,15 @@ func (s *Service) List(query, exchange, instrumentType, underlying string, activ
 		return nil, err
 	}
 
-	out := make([]dto.InstrumentResponse, len(results))
-	for i, r := range results {
-		out[i] = ToCanonicalInstrument(r)
+	out := make([]dto.InstrumentResponse, 0, len(results))
+	for _, r := range results {
+		if activeOnly && r.Expiry != "" {
+			exp, err := ParseExpiryDate(r.Expiry, nil)
+			if err != nil || !time.Now().Before(exp) {
+				continue
+			}
+		}
+		out = append(out, ToCanonicalInstrument(r))
 	}
 	return out, nil
 }
@@ -583,7 +593,7 @@ func ParseExpiryDate(expiry string, loc *time.Location) (time.Time, error) {
 func (s *Service) StageSnapshot(ctx context.Context, version, source string, r io.Reader, opts ...SyncOptions) (*model.InstrumentSnapshot, *SyncStats, error) {
 	start := time.Now()
 	if version == "" {
-		version = fmt.Sprintf("master-%s", time.Now().UTC().Format("20060102-150405"))
+		version = fmt.Sprintf("master-%s", time.Now().UTC().Format("20060102-150405.000000000"))
 	}
 	if source == "" {
 		source = "angelone_openapi"
@@ -625,6 +635,7 @@ func (s *Service) StageSnapshot(ctx context.Context, version, source string, r i
 	stats := &SyncStats{}
 	var batch []model.Instrument
 	seenTokens := make(map[string]bool)
+	seenContracts := make(map[string]bool)
 	var validationErrors []string
 
 	eqCount := 0
@@ -632,25 +643,11 @@ func (s *Service) StageSnapshot(ctx context.Context, version, source string, r i
 	optCount := 0
 	idxCount := 0
 
+	var members []model.Instrument
 	flushBatch := func() error {
-		if len(batch) == 0 {
-			return nil
-		}
-		if s.db != nil {
-			err := s.db.WithContext(ctx).Clauses(clause.OnConflict{
-				Columns: []clause.Column{{Name: "token"}, {Name: "exchange_segment"}},
-				DoUpdates: clause.AssignmentColumns([]string{
-					"symbol", "display_symbol", "exchange", "name", "underlying", "underlying_symbol",
-					"expiry", "strike", "option_type", "lot_size", "instrument_type",
-					"tick_size", "active", "snapshot_version", "is_tradable", "updated_at",
-				}),
-			}).Create(&batch).Error
-			if err != nil {
-				return fmt.Errorf("failed staging instrument batch: %w", err)
-			}
-		}
+		members = append(members, batch...)
 		stats.TotalUpserted += len(batch)
-		batch = batch[:0]
+		batch = nil
 		return nil
 	}
 
@@ -687,6 +684,13 @@ func (s *Service) StageSnapshot(ctx context.Context, version, source string, r i
 			continue
 		}
 
+		contractKey := inst.ExchangeSegment + ":" + inst.Symbol
+		if seenContracts[contractKey] {
+			validationErrors = append(validationErrors, "duplicate contract "+contractKey)
+			stats.TotalSkipped++
+			continue
+		}
+		seenContracts[contractKey] = true
 		// Check duplicate tokens within the same exchange segment
 		tokenKey := fmt.Sprintf("%s:%s", inst.ExchangeSegment, inst.Token)
 		if seenTokens[tokenKey] {
@@ -708,11 +712,13 @@ func (s *Service) StageSnapshot(ctx context.Context, version, source string, r i
 				stats.TotalSkipped++
 				continue
 			}
-			if inst.Expiry != "" {
+			{
 				if _, err := ParseExpiryDate(inst.Expiry, loc); err != nil {
 					if len(validationErrors) < 100 {
 						validationErrors = append(validationErrors, fmt.Sprintf("invalid expiry format %q for derivative %s", inst.Expiry, inst.Symbol))
 					}
+					stats.TotalSkipped++
+					continue
 				}
 			}
 		}
@@ -741,8 +747,15 @@ func (s *Service) StageSnapshot(ctx context.Context, version, source string, r i
 		}
 	}
 
-	// Consume closing bracket ']'
-	_, _ = dec.Token()
+	// Malformed/trailing streams must never become activatable.
+	closing, err := dec.Token()
+	if err != nil || closing != json.Delim(']') {
+		return nil, stats, fmt.Errorf("incomplete master array")
+	}
+	var trailing any
+	if err := dec.Decode(&trailing); err != io.EOF {
+		return nil, stats, fmt.Errorf("trailing master data")
+	}
 
 	if err := flushBatch(); err != nil {
 		return nil, stats, err
@@ -751,7 +764,12 @@ func (s *Service) StageSnapshot(ctx context.Context, version, source string, r i
 	stats.DurationMs = time.Since(start).Milliseconds()
 
 	valErrorsJoined := strings.Join(validationErrors, "\n")
+	payload, err := json.Marshal(members)
+	if err != nil {
+		return nil, stats, err
+	}
 	snapshot := &model.InstrumentSnapshot{
+		Payload: string(payload), Partial: targetUnderlyings != nil || (targetSegments != nil && !(targetSegments["NSE"] && targetSegments["BSE"] && targetSegments["NFO"] && targetSegments["BFO"])),
 		Version:          version,
 		Source:           source,
 		TotalInstruments: stats.TotalUpserted,
@@ -765,15 +783,12 @@ func (s *Service) StageSnapshot(ctx context.Context, version, source string, r i
 		UpdatedAt:        time.Now(),
 	}
 
+	if len(members) == 0 || valErrorsJoined != "" {
+		snapshot.Status = model.SnapshotStatusFailed
+	}
 	if s.db != nil {
-		if err := s.db.WithContext(ctx).Clauses(clause.OnConflict{
-			Columns: []clause.Column{{Name: "version"}},
-			DoUpdates: clause.AssignmentColumns([]string{
-				"total_instruments", "equity_count", "futures_count", "options_count", "index_count",
-				"status", "validation_errors", "updated_at",
-			}),
-		}).Create(snapshot).Error; err != nil {
-			return nil, stats, fmt.Errorf("failed saving staged snapshot record: %w", err)
+		if err := s.db.WithContext(ctx).Create(snapshot).Error; err != nil {
+			return nil, stats, fmt.Errorf("save immutable staged snapshot: %w", err)
 		}
 	}
 
@@ -783,57 +798,81 @@ func (s *Service) StageSnapshot(ctx context.Context, version, source string, r i
 // ActivateSnapshot atomically activates a staged snapshot and soft-retires contracts not in the new snapshot version.
 func (s *Service) ActivateSnapshot(ctx context.Context, version string) (*model.InstrumentSnapshot, error) {
 	if s.db == nil {
-		return &model.InstrumentSnapshot{
-			Version: version,
-			Status:  model.SnapshotStatusActive,
-		}, nil
+		return nil, fmt.Errorf("database required for activation")
 	}
-
+	activationMu.Lock()
+	defer activationMu.Unlock()
 	var snapshot model.InstrumentSnapshot
 	now := time.Now()
-
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("version = ?", version).First(&snapshot).Error; err != nil {
-			return fmt.Errorf("snapshot %s not found: %w", version, err)
+		if tx.Dialector.Name() == "postgres" {
+			if err := tx.Exec("SELECT pg_advisory_xact_lock(81003261003)").Error; err != nil {
+				return err
+			}
+		}
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("version = ?", version).First(&snapshot).Error; err != nil {
+			return err
+		}
+		if snapshot.Status != model.SnapshotStatusStaged || snapshot.ValidationErrors != "" || snapshot.Partial {
+			return fmt.Errorf("snapshot is not a validated complete staged master")
+		}
+		var members []model.Instrument
+		if err := json.Unmarshal([]byte(snapshot.Payload), &members); err != nil || len(members) == 0 {
+			return fmt.Errorf("snapshot members unavailable")
+		}
+		var oldCount int64
+		if err := tx.Model(&model.Instrument{}).Where("active = ? AND is_tradable = ?", true, true).Count(&oldCount).Error; err != nil {
+			return err
+		}
+		if oldCount > 20 && int64(len(members))*100 < oldCount*80 {
+			return fmt.Errorf("master shrank more than 20 percent; operator review required")
+		}
+		if err := tx.Model(&model.Instrument{}).Where("active = ? OR is_tradable = ?", true, true).Updates(map[string]any{"active": false, "is_tradable": false}).Error; err != nil {
+			return err
+		}
+		var priorRows []model.Instrument
+		if err := tx.Find(&priorRows).Error; err != nil {
+			return err
+		}
+		priorMap := map[string]model.Instrument{}
+		for _, row := range priorRows {
+			priorMap[row.Symbol+"|"+row.ExchangeSegment] = row
+		}
+		for i := range members {
+			inst := &members[i]
+			inst.ID = 0
+			inst.CreatedAt = time.Time{}
+			inst.UpdatedAt = time.Time{}
+			inst.Active = true
+			inst.IsTradable = true
+			if inst.Expiry != "" {
+				expiry, err := ParseExpiryDate(inst.Expiry, nil)
+				if err != nil {
+					return err
+				}
+				if !now.Before(expiry) {
+					inst.Active = false
+					inst.IsTradable = false
+				}
+			}
+			prior, found := priorMap[inst.Symbol+"|"+inst.ExchangeSegment]
+			if found && prior.Expiry != "" && (prior.Expiry != inst.Expiry || prior.Strike != inst.Strike || prior.InstrumentType != inst.InstrumentType) {
+				return fmt.Errorf("historical derivative identity changed: %s", inst.Symbol)
+			}
+
+		}
+		if err := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "symbol"}, {Name: "exchange_segment"}}, DoUpdates: clause.AssignmentColumns([]string{"token", "display_symbol", "exchange", "name", "underlying", "underlying_symbol", "expiry", "strike", "option_type", "lot_size", "instrument_type", "tick_size", "active", "is_tradable", "snapshot_version", "updated_at"})}).CreateInBatches(&members, 500).Error; err != nil {
+			return err
 		}
 
-		// 1. Soft-retire older instruments not in this version: preserve rows, mark is_tradable = false, active = false
-		if err := tx.Model(&model.Instrument{}).
-			Where("snapshot_version IS DISTINCT FROM ?", version).
-			Updates(map[string]interface{}{"is_tradable": false, "active": false}).Error; err != nil {
-			return fmt.Errorf("failed soft-retiring older instruments: %w", err)
+		if err := tx.Model(&model.InstrumentSnapshot{}).Where("status = ?", model.SnapshotStatusActive).Update("status", model.SnapshotStatusRetired).Error; err != nil {
+			return err
 		}
-
-		// 2. Ensure current snapshot instruments are active and tradable
-		if err := tx.Model(&model.Instrument{}).
-			Where("snapshot_version = ?", version).
-			Updates(map[string]interface{}{"is_tradable": true, "active": true}).Error; err != nil {
-			return fmt.Errorf("failed activating new instruments: %w", err)
-		}
-
-		// 3. Retire previous active snapshot(s)
-		if err := tx.Model(&model.InstrumentSnapshot{}).
-			Where("status = ? AND version != ?", model.SnapshotStatusActive, version).
-			Updates(map[string]interface{}{"status": model.SnapshotStatusRetired, "updated_at": now}).Error; err != nil {
-			return fmt.Errorf("failed retiring previous active snapshot: %w", err)
-		}
-
-		// 4. Activate current snapshot
 		snapshot.Status = model.SnapshotStatusActive
 		snapshot.ActivatedAt = &now
-		snapshot.UpdatedAt = now
-		if err := tx.Save(&snapshot).Error; err != nil {
-			return fmt.Errorf("failed marking snapshot as active: %w", err)
-		}
-
-		return nil
+		return tx.Save(&snapshot).Error
 	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	return &snapshot, nil
+	return &snapshot, err
 }
 
 // GetActiveSnapshot returns the currently active instrument snapshot metadata.
@@ -935,7 +974,7 @@ func (s *Service) ExpireInstruments(ctx context.Context, asOf time.Time) (int64,
 
 // SyncFromReader streams an Angel One scrip master JSON array, stages a versioned snapshot, and atomically activates it.
 func (s *Service) SyncFromReader(ctx context.Context, r io.Reader, opts ...SyncOptions) (*SyncStats, error) {
-	version := fmt.Sprintf("master-%s", time.Now().UTC().Format("20060102-150405"))
+	version := fmt.Sprintf("master-%s", time.Now().UTC().Format("20060102-150405.000000000"))
 	snapshot, stats, err := s.StageSnapshot(ctx, version, "angelone_openapi", r, opts...)
 	if err != nil {
 		return stats, err
@@ -1017,4 +1056,48 @@ func (s *Service) syncBoundedSource(ctx context.Context, source io.Reader, opts 
 		return nil, err
 	}
 	return s.SyncFromReader(ctx, f, opts...)
+}
+
+// RunLifecycle preserves expired identities but removes them from current discovery.
+func (s *Service) RunLifecycle(ctx context.Context) {
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
+	for {
+		_, _ = s.ExpireInstruments(ctx, time.Now())
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+func (s *Service) DerivativeUnderlyings(ctx context.Context) ([]string, error) {
+	if s.db == nil {
+		return nil, fmt.Errorf("instrument master unavailable")
+	}
+	var members []model.Instrument
+	if err := s.db.WithContext(ctx).Where("active = ? AND is_tradable = ? AND instrument_type IN ?", true, true, []string{"FUTIDX", "FUTSTK", "OPTIDX", "OPTSTK"}).Find(&members).Error; err != nil {
+		return nil, err
+	}
+	seen := map[string]bool{}
+	for _, inst := range members {
+		expiry, err := ParseExpiryDate(inst.Expiry, nil)
+		if err != nil || !time.Now().Before(expiry) {
+			continue
+		}
+		name := inst.Underlying
+		if name == "" {
+			name = inst.UnderlyingSymbol
+		}
+		if name != "" {
+			seen[name] = true
+		}
+	}
+	names := make([]string, 0, len(seen))
+	for name := range seen {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names, nil
 }
