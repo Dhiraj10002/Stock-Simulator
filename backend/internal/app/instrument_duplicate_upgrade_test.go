@@ -159,6 +159,10 @@ func TestInstrumentUpgradePrefersActivatedCanonicalIdentityOverNewestRow(t *test
 	tx := legacyInstrumentDB(t)
 	canonical := seedDuplicate(t, tx, "100", "current", time.Now().Add(-time.Hour))
 	seedDuplicate(t, tx, "200", "staged", time.Now())
+	nullVersion := seedDuplicate(t, tx, "100", "", time.Now().Add(time.Minute))
+	if err := tx.Exec("UPDATE instruments SET snapshot_version = NULL WHERE id = ?", nullVersion.ID).Error; err != nil {
+		t.Fatal(err)
+	}
 	activateDuplicateMaster(t, tx, []model.Instrument{canonical}, "")
 	if err := model.UpgradeInstrumentSchema(tx); err != nil {
 		t.Fatal(err)
@@ -171,8 +175,23 @@ func TestInstrumentUpgradePrefersActivatedCanonicalIdentityOverNewestRow(t *test
 		t.Fatalf("active-master identity must win over recency: %+v", rows[0])
 	}
 	var verified int64
-	if err := tx.Model(&model.InstrumentDuplicateArchive{}).Where("canonical_verified = true").Count(&verified).Error; err != nil || verified != 2 {
+	if err := tx.Model(&model.InstrumentDuplicateArchive{}).Where("canonical_verified = true").Count(&verified).Error; err != nil || verified != 3 {
 		t.Fatalf("canonical resolution must be recorded: %d, %v", verified, err)
+	}
+}
+
+func TestInstrumentUpgradeCreatesMissingIndexWithoutQuarantiningUniqueRows(t *testing.T) {
+	tx := legacyInstrumentDB(t)
+	row := seedDuplicate(t, tx, "100", "", time.Now())
+	if err := model.UpgradeInstrumentSchema(tx); err != nil {
+		t.Fatal(err)
+	}
+	var kept model.Instrument
+	if err := tx.First(&kept, row.ID).Error; err != nil || !kept.Active || !kept.IsTradable || kept.Token != row.Token || kept.SnapshotVersion != row.SnapshotVersion {
+		t.Fatalf("unique rows must be untouched: %+v, %v", kept, err)
+	}
+	if !tx.Migrator().HasIndex(&model.Instrument{}, "idx_instruments_contract") || tx.Migrator().HasTable(&model.InstrumentDuplicateArchive{}) {
+		t.Fatal("missing identity index must be created without a duplicate archive")
 	}
 }
 

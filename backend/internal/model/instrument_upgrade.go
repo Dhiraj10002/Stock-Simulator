@@ -117,7 +117,9 @@ func upgradeInstrumentContractIndex(tx *gorm.DB, counts *instrumentUpgradeCounts
 	if err := DropIndexInTableSchema(tx, "instruments", "idx_instruments_contract"); err != nil {
 		return err
 	}
-	index := pgx.Identifier{schema, "idx_instruments_contract"}.Sanitize()
+	// PostgreSQL derives an index's schema from its table; CREATE INDEX does
+	// not accept a schema-qualified index name (DROP INDEX does).
+	index := pgx.Identifier{"idx_instruments_contract"}.Sanitize()
 	return tx.Exec("CREATE UNIQUE INDEX " + index + " ON " + table + " (symbol, exchange_segment)").Error
 }
 
