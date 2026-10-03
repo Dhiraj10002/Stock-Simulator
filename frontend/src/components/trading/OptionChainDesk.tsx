@@ -389,6 +389,20 @@ export default function OptionChainDesk({ initialUnderlying = "NIFTY" }: OptionC
 
   return (
     <div className="space-y-6">
+            {executionMessage && (
+              <div role="status" className="p-2.5 rounded-lg bg-emerald-950/60 border border-emerald-800/60 text-emerald-300 text-xs flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>{executionMessage}</span>
+              </div>
+            )}
+
+            {executionError && (
+              <div role="alert" className="p-2.5 rounded-lg bg-rose-950/60 border border-rose-800/60 text-rose-300 text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                <span>{executionError}</span>
+              </div>
+            )}
+
       {visibleLegs.length > 0 && <section aria-label="Strategy order recovery" className="rounded-xl border border-amber-700 bg-slate-900 p-4 space-y-3">
         <h2 className="font-bold">Strategy order status</h2><p className="text-sm">Each leg is a separate paper order. Filled legs remain open positions; this strategy is not atomic.</p>
         <table className="w-full text-sm"><thead><tr><th>Contract</th><th>Side / quantity</th><th>Status</th><th>Recovery</th></tr></thead><tbody>{visibleLegs.map((row,i) => <tr key={i}><td>{row.symbol}</td><td>{row.side} / {row.quantity}</td><td>{row.status}{row.error && <p role="alert">{row.error}</p>}</td><td>{row.uuid && pendingStatus(row.status) && !executingStrategy && <button onClick={() => cancelPendingLeg(row.uuid!)}>Cancel pending leg</button>}</td></tr>)}</tbody></table>
@@ -666,19 +680,6 @@ export default function OptionChainDesk({ initialUnderlying = "NIFTY" }: OptionC
               ))}
             </div>
 
-            {executionMessage && (
-              <div className="p-2.5 rounded-lg bg-emerald-950/60 border border-emerald-800/60 text-emerald-300 text-xs flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                <span>{executionMessage}</span>
-              </div>
-            )}
-
-            {executionError && (
-              <div className="p-2.5 rounded-lg bg-rose-950/60 border border-rose-800/60 text-rose-300 text-xs flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
-                <span>{executionError}</span>
-              </div>
-            )}
           </div>
         )}
       </div>

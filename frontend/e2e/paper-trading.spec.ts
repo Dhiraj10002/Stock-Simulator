@@ -10,6 +10,8 @@ async function mocks(page:Page, overrides: { unavailable?:boolean; lot?:number; 
  const posts: Record<string,unknown>[] = [];
  await page.route("**/api/v1/**",async route=>{
   const req=route.request(),url=new URL(req.url()),path=url.pathname.replace("/api/v1","");
+  const headers = { "access-control-allow-origin":"http://127.0.0.1:3100", "access-control-allow-methods":"GET,POST,DELETE,OPTIONS", "access-control-allow-headers":"authorization,content-type,idempotency-key,x-request-id" };
+  if(req.method()==="OPTIONS") { await route.fulfill({status:204,headers}); return; }
   let data:unknown;
   if(path==="/auth/login") data={access_token:token,refresh_token:"browser-refresh"};
   else if(path==="/auth/logout") data={};
@@ -27,8 +29,8 @@ async function mocks(page:Page, overrides: { unavailable?:boolean; lot?:number; 
   else if(path.endsWith("/history") && !overrides.unavailable) data=[0,1,2].map(i=>({timestamp:Math.floor(Date.now()/60000)*60-180+i*60,open_paise:10000,high_paise:10100,low_paise:9900,close_paise:10000,volume:20,source:"angelone_live",feed_mode:"LIVE"}));
   else if(path.startsWith("/market/quotes/") && !overrides.unavailable) data=quote(path.split("/").at(-1)!);
   else if(path==="/market/feed-status") data={feed_provider:"angel_one",feed_state:"LIVE",is_synthetic:false,last_tick:new Date().toISOString()};
-  else { await route.fulfill({status:503,json:{success:false,message:"Provider unavailable",code:"MARKET_DATA_UNAVAILABLE"}}); return; }
-  await route.fulfill({json:{success:true,data}});
+  else { await route.fulfill({status:503,headers,json:{success:false,message:"Provider unavailable",code:"MARKET_DATA_UNAVAILABLE"}}); return; }
+  await route.fulfill({headers,json:{success:true,data}});
  });
  return posts;
 }
