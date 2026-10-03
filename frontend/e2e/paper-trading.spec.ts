@@ -71,6 +71,9 @@ test("partial strategy persists recovery and never reports complete execution",a
  const posts=await mocks(page,{partial:true});await signIn(page);await page.goto("/options");await page.getByRole("button",{name:"Option Chain",exact:true}).click();await page.getByRole("button",{name:"Bull Call Spread",exact:true}).click();await page.getByRole("button",{name:/Execute Strategy/}).click();
  const recovery=page.getByRole("region",{name:"Strategy order recovery"});await expect(recovery.getByText("EXECUTED",{exact:true})).toBeVisible();await expect(recovery.getByText("REJECTED",{exact:true})).toBeVisible();expect(posts).toHaveLength(2);expect(posts[0].quantity).toBe(65);
  await page.reload();await page.getByRole("button",{name:"Option Chain",exact:true}).click();await expect(recovery.getByText("REJECTED",{exact:true})).toBeVisible();await expect(recovery.getByRole("link",{name:"Review / close positions"})).toBeVisible();expect(posts).toHaveLength(2);
+ const otherToken=`test.${Buffer.from(JSON.stringify({user_id:"another-trader"})).toString("base64url")}.test`;
+ await page.evaluate(value=>{localStorage.setItem("auth_token",value);window.dispatchEvent(new Event("auth-changed"));},otherToken);await expect(recovery).not.toBeVisible();
+ await page.evaluate(value=>{localStorage.setItem("auth_token",value);window.dispatchEvent(new Event("auth-changed"));},token);await expect(recovery.getByText("REJECTED",{exact:true})).toBeVisible();expect(posts).toHaveLength(2);
 });
 test("single option order uses canonical quantity and preserves pending status",async({page})=>{
  const posts=await mocks(page,{pending:true});await signIn(page);await page.goto("/options");await page.getByRole("button",{name:"Option Chain",exact:true}).click();await page.getByTitle("Buy Call",{exact:true}).first().click();

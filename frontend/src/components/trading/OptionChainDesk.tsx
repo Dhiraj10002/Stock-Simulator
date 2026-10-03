@@ -317,7 +317,8 @@ export default function OptionChainDesk({ initialUnderlying = "NIFTY" }: OptionC
   }, [chain, activeStrategy, strategyLots]);
 
   const saveJournal = (owner: string, legs: TrackedLeg[]) => {
-    setJournal({ owner, legs });
+    // A late response from the previous account must not replace current recovery state.
+    if (strategyJournalKey(getAuthToken()) === owner) setJournal({ owner, legs });
     sessionStorage.setItem(owner, JSON.stringify(legs));
   };
   const refreshStrategy = async () => {
