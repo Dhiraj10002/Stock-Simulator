@@ -142,7 +142,7 @@ func normalize(raw []byte, symbol string) (Snapshot, error) {
 	result := Snapshot{Symbol: symbol, Source: "IndianAPI", Status: "AVAILABLE", RetrievedAt: time.Now().UTC().Format(time.RFC3339), Metrics: []Metric{}}
 	var walk func(any, string, int)
 	walk = func(value any, label string, depth int) {
-		if depth > 4 || len(result.Metrics) >= 40 {
+		if depth > 4 || len(result.Metrics) >= 40 || len(label) > 180 {
 			return
 		}
 		switch v := value.(type) {
@@ -166,6 +166,10 @@ func normalize(raw []byte, symbol string) (Snapshot, error) {
 					name, _ := obj["label"].(string)
 					if name == "" {
 						name, _ = obj["name"].(string)
+					}
+					name = strings.TrimSpace(name)
+					if name == "" {
+						continue
 					}
 					for _, k := range []string{"period", "unit"} {
 						if suffix, ok := obj[k].(string); ok && suffix != "" {

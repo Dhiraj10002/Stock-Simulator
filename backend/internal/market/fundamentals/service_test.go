@@ -40,6 +40,9 @@ func TestFundamentalsPreserveUnitsPeriodsAndVerifyIdentity(t *testing.T) {
 	if err != nil || rows.Metrics[0].Label != "EPS (FY2025) (INR)" {
 		t.Fatalf("lost period/unit: %+v %v", rows, err)
 	}
+	if _, err := normalize([]byte(`{"tickerId":"TCS","keyMetrics":[{"value":100,"period":"FY2025","unit":"INR"}]}`), "TCS"); err == nil {
+		t.Fatal("period and unit without a metric identity were accepted")
+	}
 }
 func TestFundamentalsUnconfiguredUnknownAndCacheFailureAreExplicit(t *testing.T) {
 	known := func(_ context.Context, s string) bool { return s == "TCS" }
