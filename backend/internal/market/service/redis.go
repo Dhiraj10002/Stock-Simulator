@@ -237,7 +237,8 @@ func (s *Service) SetQuote(symbol string, pricePaise int64, volume int64) error 
 	}).Err()
 }
 
-// CachedQuote returns the quote from Redis, with fallback to derived F&O quote.
+// CachedQuote returns the quote from Redis, with fallback to derived F&O quote
+// or on-demand worker fetch in live mode.
 // Unlike CurrentQuote which strictly validates staleness for execution, CachedQuote
 // returns the latest cached quote data for display and search even if stale.
 func (s *Service) CachedQuote(symbol string) (*dto.QuoteResponse, error) {
@@ -254,7 +255,19 @@ func (s *Service) CachedQuote(symbol string) (*dto.QuoteResponse, error) {
 			return cq, nil
 		}
 	}
+	if (errors.Is(err, ErrQuoteNotFound) || errors.Is(err, ErrQuoteStale)) && s.FeedMode() == dto.FeedModeLive {
+		if wQuote, wErr := s.FetchLiveFromWorker(symbol); wErr == nil && wQuote != nil && wQuote.PricePaise > 0 {
+			stamp, parseErr := dto.ParseQuoteTime(wQuote.UpdatedAt)
+			if parseErr == nil && !stamp.After(time.Now().Add(5*time.Second)) {
+				return wQuote, nil
+			}
+		}
+	}
 	return nil, err
+}
+
+func (s *Service) RawCachedQuote(symbol string) (*dto.QuoteResponse, error) {
+	return s.rawCachedQuote(symbol)
 }
 
 func (s *Service) rawCachedQuote(symbol string) (*dto.QuoteResponse, error) {

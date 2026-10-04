@@ -1003,12 +1003,16 @@ class InstrumentStore:
             mapping = {}
             for row in rows:
                 sym = clean(row["symbol"]).upper()
-                mapping[sym] = row
-                if row["instrumenttype"] in ("EQUITY","INDEX","AMXIDX",""):
-                    mapping[sym.removesuffix("-EQ")] = row
-                    mapping[resolve_canonical_symbol(sym.removesuffix("-EQ"))] = row
-                    if row["instrumenttype"] in ("INDEX","AMXIDX"):
-                        mapping[resolve_canonical_symbol(clean(row["name"]))] = row
+                seg = clean(row.get("exch_seg"))
+                keys_to_set = [sym]
+                if row["instrumenttype"] in ("EQUITY", "INDEX", "AMXIDX", ""):
+                    keys_to_set.extend([sym.removesuffix("-EQ"), resolve_canonical_symbol(sym.removesuffix("-EQ"))])
+                    if row["instrumenttype"] in ("INDEX", "AMXIDX"):
+                        keys_to_set.append(resolve_canonical_symbol(clean(row["name"])))
+                for k in keys_to_set:
+                    existing = mapping.get(k)
+                    if existing is None or seg == "NSE" or clean(existing.get("exch_seg")) != "NSE":
+                        mapping[k] = row
             subscriptions = self._build_subscriptions(rows)
             with self._lock:
                 GLOBAL_TOKEN_MAP = mapping
@@ -1095,12 +1099,14 @@ class InstrumentStore:
                     if expiry < datetime.now(timezone.utc).astimezone(ZoneInfo("Asia/Kolkata")).date():
                         continue
                     by_symbol[symbol] = row
-                elif segment in ("NSE","BSE") and (symbol.endswith("-EQ") or clean(row.get("instrumenttype")) in ("EQUITY","INDEX","AMXIDX")):
-                    by_symbol[symbol] = row
-                    by_symbol[symbol.removesuffix("-EQ")] = row
-                    by_symbol[resolve_canonical_symbol(symbol.removesuffix("-EQ"))] = row
-                    if clean(row.get("instrumenttype")) in ("INDEX","AMXIDX"):
-                        by_symbol[resolve_canonical_symbol(clean(row.get("name")))] = row
+                elif segment in ("NSE", "BSE") and (symbol.endswith("-EQ") or clean(row.get("instrumenttype")) in ("EQUITY", "INDEX", "AMXIDX")):
+                    keys_to_set = [symbol, symbol.removesuffix("-EQ"), resolve_canonical_symbol(symbol.removesuffix("-EQ"))]
+                    if clean(row.get("instrumenttype")) in ("INDEX", "AMXIDX"):
+                        keys_to_set.append(resolve_canonical_symbol(clean(row.get("name"))))
+                    for k in keys_to_set:
+                        existing = by_symbol.get(k)
+                        if existing is None or segment == "NSE" or clean(existing.get("exch_seg")) != "NSE":
+                            by_symbol[k] = row
             self._subscription_index = (rows, today, by_symbol)
         indexes = {"NIFTY": ("99926000", "NSE"), "BANKNIFTY": ("99926009", "NSE"),
                    "FINNIFTY": ("99926037", "NSE"), "MIDCPNIFTY": ("99926074", "NSE"),

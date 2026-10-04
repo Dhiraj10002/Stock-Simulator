@@ -68,6 +68,25 @@ func (s *OptionChainService) GetOptionChain(symbol, expiry string) (*dto.OptionC
 	// 3. Check for real NFO option contracts in database
 	var nfoInstruments []model.Instrument
 	if db != nil {
+		if expiry == "" {
+			var expiries []string
+			_ = db.Model(&model.Instrument{}).Where("(UPPER(underlying_symbol) = ? OR UPPER(name) = ?) AND exchange_segment IN ('NFO', 'BFO') AND expiry != ''", symbol, symbol).Distinct("expiry").Pluck("expiry", &expiries).Error
+			nowDay := time.Now().Truncate(24 * time.Hour)
+			var futureExpiries []string
+			for _, expStr := range expiries {
+				tExp := parseExpiryDate(expStr)
+				if !tExp.IsZero() && !tExp.Before(nowDay) {
+					futureExpiries = append(futureExpiries, expStr)
+				}
+			}
+			sort.Slice(futureExpiries, func(i, j int) bool {
+				return parseExpiryDate(futureExpiries[i]).Before(parseExpiryDate(futureExpiries[j]))
+			})
+			if len(futureExpiries) > 0 {
+				expiry = futureExpiries[0]
+			}
+		}
+
 		q := db.Where("(UPPER(underlying_symbol) = ? OR UPPER(name) = ?) AND exchange_segment IN ('NFO', 'BFO') AND (option_type = 'CE' OR option_type = 'PE' OR symbol LIKE '%CE' OR symbol LIKE '%PE')", symbol, symbol)
 		if mode == marketDto.FeedModeLive {
 			q = q.Where("active = ? AND token ~ '^[0-9]+$'", true)
@@ -270,7 +289,7 @@ func (s *OptionChainService) buildFromRealInstruments(
 			if mode == marketDto.FeedModeLive {
 				// LIVE mode: strictly read live quotes from Redis. Never write/seed to Redis!
 				if s.market != nil {
-					if q, err := s.market.CachedQuote(pair.call.Symbol); err == nil && q != nil && q.PricePaise > 0 {
+					if q, err := s.market.RawCachedQuote(pair.call.Symbol); err == nil && q != nil && q.PricePaise > 0 {
 						cePrice = q.PricePaise
 						callOI = q.OpenInterest
 						isAvailable = true
@@ -323,7 +342,7 @@ func (s *OptionChainService) buildFromRealInstruments(
 			if mode == marketDto.FeedModeLive {
 				// LIVE mode: strictly read live quotes from Redis. Never write/seed to Redis!
 				if s.market != nil {
-					if q, err := s.market.CachedQuote(pair.put.Symbol); err == nil && q != nil && q.PricePaise > 0 {
+					if q, err := s.market.RawCachedQuote(pair.put.Symbol); err == nil && q != nil && q.PricePaise > 0 {
 						pePrice = q.PricePaise
 						putOI = q.OpenInterest
 						isAvailable = true
@@ -610,7 +629,7 @@ func (s *OptionChainService) annotateDisplay(resp *dto.OptionChainResponse) {
 			if s.market == nil || !contract.IsAvailable {
 				continue
 			}
-			q, err := s.market.CachedQuote(contract.Symbol)
+			q, err := s.market.RawCachedQuote(contract.Symbol)
 			if err != nil || q == nil {
 				continue
 			}
