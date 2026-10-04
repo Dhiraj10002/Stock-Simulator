@@ -517,7 +517,7 @@ export default function StocksExplorePage() {
                     <Link
                       key={stock.symbol}
                       href={`/stocks/${stock.symbol}`}
-                      className="p-4 rounded-xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 hover:border-cyan-500/50 hover:shadow-md transition-all group flex flex-col justify-between"
+                      className="min-h-[160px] p-3.5 rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 hover:border-cyan-500/50 hover:shadow-md transition-all group flex flex-col justify-between"
                     >
                       <div className="flex items-start justify-between">
                         <div className="flex items-center gap-2.5">
@@ -547,7 +547,7 @@ export default function StocksExplorePage() {
                             {hasQuote ? `₹${currentPrice.toFixed(2)}` : "₹—"}
                           </div>
                           <div className="text-[10px] text-slate-400">
-                            Cap: {stock.marketCap}
+                            {hasQuote ? "Angel One quote" : "Quote unavailable"}
                           </div>
                         </div>
 

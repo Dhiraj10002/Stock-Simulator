@@ -337,7 +337,9 @@ func (s *Service) GetBySymbol(symbol string) (*dto.InstrumentResponse, error) {
 	if db != nil {
 		var inst model.Instrument
 		err := db.Where("UPPER(symbol) = ? OR UPPER(symbol) = ? OR UPPER(symbol) = ?", clean, cleanNoEq, cleanNoEq+"-EQ").
-			Order("is_tradable DESC, active DESC, id DESC").First(&inst).Error
+			Order("CASE WHEN UPPER(exchange_segment) = 'NSE' THEN 0 ELSE 1 END").
+			Order("is_tradable DESC, active DESC").
+			Order("id DESC").First(&inst).Error
 		if err == nil {
 			resp := ToCanonicalInstrument(inst)
 			return &resp, nil
@@ -346,7 +348,9 @@ func (s *Service) GetBySymbol(symbol string) (*dto.InstrumentResponse, error) {
 		canonical := alias.ResolveCanonicalSymbol(cleanNoEq)
 		if canonical != "" && canonical != cleanNoEq {
 			err = db.Where("UPPER(symbol) = ? OR UPPER(symbol) = ?", canonical, canonical+"-EQ").
-				Order("is_tradable DESC, active DESC, id DESC").First(&inst).Error
+				Order("CASE WHEN UPPER(exchange_segment) = 'NSE' THEN 0 ELSE 1 END").
+				Order("is_tradable DESC, active DESC").
+				Order("id DESC").First(&inst).Error
 			if err == nil {
 				resp := ToCanonicalInstrument(inst)
 				return &resp, nil
@@ -1088,6 +1092,9 @@ func (s *Service) DerivativeUnderlyings(ctx context.Context) ([]string, error) {
 	}
 	seen := map[string]bool{}
 	for _, inst := range members {
+		if isExchangeTestInstrument(inst) {
+			continue
+		}
 		expiry, err := ParseExpiryDate(inst.Expiry, nil)
 		if err != nil || !time.Now().Before(expiry) {
 			continue
@@ -1134,6 +1141,9 @@ func (s *Service) DerivativeStocks(ctx context.Context) ([]dto.InstrumentRespons
 		return nil, err
 	}
 	for _, equity := range equities {
+		if isExchangeTestInstrument(equity) {
+			continue
+		}
 		out = append(out, ToCanonicalInstrument(equity))
 	}
 	return out, nil

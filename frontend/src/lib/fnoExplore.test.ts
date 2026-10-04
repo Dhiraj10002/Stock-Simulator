@@ -4,12 +4,22 @@ import {
   derivativePnl,
   displayQuote,
   isDerivativePosition,
-  rankStocks,
+  futuresExpiry,
+  parseFuturesCatalog,
+  filterFutures,
+  futuresTradeBlock,
   sortedFutures,
 } from "./fnoExplore";
 import type { Instrument, Position, Quote } from "../types";
 const stock = (symbol: string) =>
-  ({ symbol, name: symbol, active: true }) as Instrument;
+  ({
+    symbol,
+    name: symbol,
+    token: symbol,
+    underlying: symbol,
+    active: true,
+    is_tradable: true,
+  }) as Instrument;
 const quote = (symbol: string, percent = 1) =>
   ({
     symbol,
@@ -21,27 +31,139 @@ const quote = (symbol: string, percent = 1) =>
     change_percent: percent,
   }) as Quote;
 
-test("rankings exclude missing, unknown and unavailable movement rather than inventing gainers", () => {
-  const stocks = ["A", "B", "C", "D", "E"].map(stock);
-  const quotes = {
-    A: quote("A", 2),
-    B: quote("B", -3),
-    C: { ...quote("C", 8), day_change_available: false },
-    D: { ...quote("D", 20), source: "unknown" },
+test("invalid or outdated catalog payloads become a recoverable error", () => {
+  assert.throws(() => parseFuturesCatalog({ symbol: "futures" }));
+  assert.throws(() => parseFuturesCatalog([null]));
+  assert.throws(() => parseFuturesCatalog([{ symbol: "NIFTY" }]));
+  assert.deepEqual(parseFuturesCatalog([]), []);
+});
+test("expiry resolves to the IST close and rejects impossible dates", () => {
+  const close = Date.parse("2026-10-27T10:00:00Z");
+  for (const text of [
+    "27OCT2026",
+    "27Oct2026",
+    "27-OCT-2026",
+    "2026-10-27",
+    "27-10-2026",
+  ])
+    assert.equal(futuresExpiry(text), close);
+  for (const text of ["31FEB2026", "2026-13-01", "bad", ""])
+    assert.ok(Number.isNaN(futuresExpiry(text)));
+});
+test("near-month is per exchange and underlying, with dynamic category/search/expiry filters", () => {
+  const future = (
+    symbol: string,
+    underlying: string,
+    expiry: string,
+    exchange = "NFO",
+  ) =>
+    ({
+      ...stock(symbol),
+      underlying,
+      expiry,
+      exchange,
+      instrument_type: "FUTIDX",
+      lot_size: 65,
+    }) as Instrument;
+  const rows = sortedFutures(
+    [
+      future("A", "NIFTY", "27OCT2026"),
+      future("B", "NIFTY", "24NOV2026"),
+      future("C", "BANKNIFTY", "24NOV2026"),
+      future("D", "NIFTY", "24NOV2026", "BFO"),
+      future("011NSETESTFUT", "NSETEST", "27OCT2026"),
+      future("OLD", "NIFTY", "01JAN2026"),
+      future("BAD", "NIFTY", "bad"),
+    ],
+    Date.parse("2026-10-04T00:00:00Z"),
+  );
+  const filters = {
+    kind: "all" as const,
+    search: "",
+    exchange: "",
+    underlying: "",
+    expiry: "near",
   };
   assert.deepEqual(
-    rankStocks(stocks, quotes, "gainers").map((s) => s.symbol),
-    ["A"],
+    filterFutures(rows, filters).map((i) => i.symbol),
+    ["A", "D", "C"],
   );
   assert.deepEqual(
-    rankStocks(stocks, quotes, "losers").map((s) => s.symbol),
-    ["B"],
+    filterFutures(rows, {
+      ...filters,
+      exchange: "NFO",
+      underlying: "NIFTY",
+      expiry: "",
+    }).map((i) => i.symbol),
+    ["A", "B"],
   );
-  assert.equal(rankStocks(stocks, quotes, "all").length, 5);
   assert.deepEqual(
-    rankStocks(stocks, quotes, "all", "B").map((s) => s.symbol),
-    ["B"],
+    filterFutures(rows, {
+      ...filters,
+      expiry: String(futuresExpiry("24NOV2026")),
+      underlying: "BANKNIFTY",
+    }).map((i) => i.symbol),
+    ["C"],
   );
+});
+test("paper execution requires identity, canonical lots, unexpired contract, confirmed open feed and fresh real quote", () => {
+  const now = Date.now();
+  const instrument = {
+    ...stock("NIFTY"),
+    expiry: "27OCT2099",
+    lot_size: 65,
+  } as Instrument;
+  const status = {
+    status: "OPEN",
+    is_open: true,
+    feed_provider: "angel_one",
+    feed_state: "LIVE",
+    is_synthetic: false,
+  };
+  assert.equal(
+    futuresTradeBlock(instrument, quote("NIFTY"), "token", status, now),
+    undefined,
+  );
+  for (const blocked of [
+    futuresTradeBlock(instrument, quote("NIFTY"), "", status, now),
+    futuresTradeBlock(
+      { ...instrument, lot_size: 0 },
+      quote("NIFTY"),
+      "token",
+      status,
+      now,
+    ),
+    futuresTradeBlock(instrument, quote("NIFTY"), "token", undefined, now),
+    futuresTradeBlock(
+      instrument,
+      quote("NIFTY"),
+      "token",
+      { ...status, status: "CLOSED" },
+      now,
+    ),
+    futuresTradeBlock(
+      instrument,
+      { ...quote("NIFTY"), source: "synthetic_gbm" },
+      "token",
+      status,
+      now,
+    ),
+    futuresTradeBlock(
+      instrument,
+      { ...quote("NIFTY"), updated_at: new Date(now - 120001).toISOString() },
+      "token",
+      status,
+      now,
+    ),
+    futuresTradeBlock(
+      instrument,
+      { ...quote("NIFTY"), price_paise: NaN },
+      "token",
+      status,
+      now,
+    ),
+  ])
+    assert.ok(blocked);
 });
 test("newer stream wins, failed refresh is explicitly stale and invalid prices never display", () => {
   const rest = quote("A");
@@ -57,24 +179,27 @@ test("newer stream wins, failed refresh is explicitly stale and invalid prices n
   assert.equal(displayQuote({ ...rest, updated_at: "invalid" }), undefined);
 });
 test("futures sort by expiry even for native Angel date strings and retain canonical lots", () => {
-  const sorted = sortedFutures([
-    {
-      ...stock("NOV"),
-      instrument_type: "FUTSTK",
-      expiry: "23NOV2026",
-      lot_size: 225,
-      exchange: "NFO",
-    },
-    {
-      ...stock("OCT"),
-      instrument_type: "FUTSTK",
-      expiry: "27OCT2026",
-      lot_size: 225,
-      exchange: "NFO",
-    },
-    { ...stock("OPTION"), instrument_type: "OPTSTK", expiry: "2026-10-01" },
-    { ...stock("RETIRED"), active: false, instrument_type: "FUTSTK" },
-  ]);
+  const sorted = sortedFutures(
+    [
+      {
+        ...stock("NOV"),
+        instrument_type: "FUTSTK",
+        expiry: "23NOV2026",
+        lot_size: 225,
+        exchange: "NFO",
+      },
+      {
+        ...stock("OCT"),
+        instrument_type: "FUTSTK",
+        expiry: "27OCT2026",
+        lot_size: 225,
+        exchange: "NFO",
+      },
+      { ...stock("OPTION"), instrument_type: "OPTSTK", expiry: "2026-10-01" },
+      { ...stock("RETIRED"), active: false, instrument_type: "FUTSTK" },
+    ],
+    Date.parse("2026-10-04T00:00:00Z"),
+  );
   assert.deepEqual(
     sorted.map((s) => s.symbol),
     ["OCT", "NOV"],

@@ -75,6 +75,7 @@ export type Quote = {
  open_interest_available?: boolean;
  is_quote_stale?: boolean;
  volume?: number;
+ volume_available?: boolean;
   open_interest?: number;
   previous_close_paise?: number;
   day_change_available?: boolean;
@@ -89,6 +90,10 @@ export type Quote = {
   high_paise?: number;
   low_paise?: number;
   open_paise?: number;
+  week_52_high_paise?: number;
+  week_52_low_paise?: number;
+  total_buy_quantity?: number;
+  total_sell_quantity?: number;
 };
 
 export type Candle = {
@@ -113,7 +118,7 @@ export type Article = {
 
 export type DepthItem = {
   price_paise: number;
-  orders: number;
+  orders?: number;
   quantity: number;
 };
 
@@ -142,6 +147,7 @@ export interface Instrument {
   lot_size: number;
   tick_size: number;
   active: boolean;
+  is_tradable?: boolean;
 
   // Optional live quote enrichment fields
   name?: string;

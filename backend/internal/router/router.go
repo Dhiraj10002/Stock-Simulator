@@ -18,9 +18,11 @@ import (
 	instrumentService "github.com/Dhiraj10002/Stock-Simulator/backend/internal/instrument/service"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/alias"
 	marketDTO "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/dto"
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/fundamentals"
 	marketHandler "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/handler"
 	marketWebsocket "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/websocket"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/middleware"
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
 	newsHandler "github.com/Dhiraj10002/Stock-Simulator/backend/internal/news/handler"
 	orderHandler "github.com/Dhiraj10002/Stock-Simulator/backend/internal/order/handler"
 	portfolioHandler "github.com/Dhiraj10002/Stock-Simulator/backend/internal/portfolio/handler"
@@ -150,6 +152,15 @@ func Setup(ctx context.Context, cfg *config.Config, opts ...SetupOption) *gin.En
 		go portfolio.Service().RunSessionSnapshotScheduler(ctx)
 	}
 	marketWS := marketWebsocket.New(market.Service(), cfg.CORSAllowedOrigins, cfg.IsProduction())
+	companyFundamentals := fundamentals.New(cfg.IndianAPIKey, cfg.IndianAPIPlan, market.Service().Client(), func(ctx context.Context, symbol string) bool {
+		db := database.GetDB()
+		if db == nil {
+			return false
+		}
+		var count int64
+		err := db.WithContext(ctx).Model(&model.Instrument{}).Where("(UPPER(symbol) = ? OR UPPER(symbol) = ?) AND exchange_segment = 'NSE' AND instrument_type = 'EQUITY' AND active = ? AND is_tradable = ?", symbol, symbol+"-EQ", true, true).Count(&count).Error
+		return err == nil && count > 0
+	})
 	instruments := instrumentHandler.New()
 	if ctx != nil {
 		go instrumentService.NewService(database.GetDB()).RunLifecycle(ctx)
@@ -208,6 +219,7 @@ func Setup(ctx context.Context, cfg *config.Config, opts ...SetupOption) *gin.En
 		api.POST("/market/quotes/batch", market.BatchQuotes)
 		api.GET("/market/quotes/:symbol", market.Quote)
 		api.GET("/market/quotes/:symbol/history", market.History)
+		api.GET("/market/quotes/:symbol/fundamentals", companyFundamentals.Handler)
 		api.GET("/market/movers", market.Movers)
 		api.GET("/market/breadth", market.Breadth)
 		api.GET("/market/indices", market.Indices)
@@ -216,6 +228,7 @@ func Setup(ctx context.Context, cfg *config.Config, opts ...SetupOption) *gin.En
 		api.GET("/instruments", instruments.List)
 		api.GET("/instruments/derivative-underlyings", instruments.DerivativeUnderlyings)
 		api.GET("/instruments/derivative-stocks", instruments.DerivativeStocks)
+		api.GET("/instruments/futures", instruments.FuturesCatalog)
 		api.GET("/instruments/snapshots/active", instruments.GetActiveSnapshot)
 		api.GET("/instruments/snapshots", instruments.ListSnapshots)
 		api.GET("/instruments/master/status", instruments.GetMasterStatus)

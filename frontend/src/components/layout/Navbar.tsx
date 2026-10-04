@@ -56,7 +56,7 @@ const NAV_LINKS = [
 ];
 
 export default function Navbar({
-  unrealizedPnlPaise = 0,
+  unrealizedPnlPaise,
   onResetSimulation,
   onSignOut,
   resetting = false,
@@ -150,7 +150,7 @@ export default function Navbar({
   const sensexPrice = sensexQuote && sensexQuote.price_paise > 0 ? sensexQuote.price_paise : undefined;
   const sensexChange = sensexQuote?.change_percent;
 
-  const isProfit = unrealizedPnlPaise >= 0;
+  const isProfit = unrealizedPnlPaise !== undefined && unrealizedPnlPaise >= 0;
 
   return (
     <>
@@ -160,7 +160,7 @@ export default function Navbar({
       <div className="h-[1px] w-full bg-gradient-to-r from-transparent via-cyan-500/35 dark:via-cyan-500/30 to-transparent absolute -bottom-[1px] left-0 pointer-events-none" />
 
       {/* Top Utility Bar */}
-      <div className="px-4 lg:px-6 py-2 flex items-center justify-between gap-2 sm:gap-4 border-b border-slate-200/80 dark:border-white/[0.06]">
+      <div className="px-4 lg:px-6 py-2 flex flex-wrap items-center justify-between gap-2 sm:gap-4 border-b border-slate-200/80 dark:border-white/[0.06]">
         {/* Left: Brand + Market Status + Indices Ticker */}
         <div className="flex items-center gap-4 lg:gap-6">
           <Link href="/" className="flex items-center gap-2.5 group">
@@ -270,7 +270,7 @@ export default function Navbar({
               Unrealized P&L
             </span>
             <div className="flex items-center justify-end gap-1">
-              {unrealizedPnlPaise === 0 ? (
+              {(unrealizedPnlPaise === undefined || unrealizedPnlPaise === 0) ? (
                 <span className="w-1.5 h-1.5 rounded-full bg-slate-400 dark:bg-slate-500 mr-0.5" />
               ) : isProfit ? (
                 <TrendingUp className="w-3 h-3 text-emerald-600 dark:text-emerald-400 shrink-0" />
@@ -279,7 +279,7 @@ export default function Navbar({
               )}
               <strong
                 className={`text-xs font-bold font-tabular ${
-                  unrealizedPnlPaise === 0
+                  (unrealizedPnlPaise === undefined || unrealizedPnlPaise === 0)
                     ? "text-slate-600 dark:text-slate-300"
                     : isProfit
                     ? "text-emerald-600 dark:text-emerald-400"

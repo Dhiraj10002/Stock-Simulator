@@ -41,6 +41,7 @@ func TestDerivativeStocksCanonicalIntersection(t *testing.T) {
 	add("OLD-EQ", "NSE", "EQUITY", "OLD", "")
 	add("OLDFUT", "NFO", "FUTSTK", "OLD", past)
 	add("NSETESTFUT", "NFO", "FUTSTK", "NSETEST", future)
+	add("NSETEST-EQ", "NSE", "EQUITY", "NSETEST", "")
 	add("TCS-BSE", "BSE", "EQUITY", "TCS", "")
 	add("RETIRED-EQ", "NSE", "EQUITY", "RETIRED", "")
 	add("RETIREDFUT", "NFO", "FUTSTK", "RETIRED", future)

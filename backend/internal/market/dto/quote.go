@@ -7,9 +7,9 @@ import (
 )
 
 type DepthLevel struct {
-	PricePaise int64 `json:"price_paise"`
-	Quantity   int64 `json:"quantity"`
-	Orders     int64 `json:"orders"`
+	PricePaise int64  `json:"price_paise"`
+	Quantity   int64  `json:"quantity"`
+	Orders     *int64 `json:"orders,omitempty"`
 }
 type MarketDepth struct {
 	Bids []DepthLevel `json:"bids"`
@@ -20,6 +20,10 @@ type QuoteResponse struct {
 	OpenPaise             int64        `json:"open_paise,omitempty"`
 	HighPaise             int64        `json:"high_paise,omitempty"`
 	LowPaise              int64        `json:"low_paise,omitempty"`
+	Week52HighPaise       int64        `json:"week_52_high_paise,omitempty"`
+	Week52LowPaise        int64        `json:"week_52_low_paise,omitempty"`
+	TotalBuyQuantity      *int64       `json:"total_buy_quantity,omitempty"`
+	TotalSellQuantity     *int64       `json:"total_sell_quantity,omitempty"`
 	Depth                 *MarketDepth `json:"depth,omitempty"`
 	IsQuoteStale          bool         `json:"is_quote_stale"`
 
@@ -32,7 +36,8 @@ type QuoteResponse struct {
 	ChangePercent      float64 `json:"change_percent"`
 	LowerCircuitPaise  int64   `json:"lower_circuit_paise,omitempty"`
 	UpperCircuitPaise  int64   `json:"upper_circuit_paise,omitempty"`
-	Volume             int64   `json:"volume,omitempty"`
+	Volume             int64   `json:"volume"`
+	VolumeAvailable    *bool   `json:"volume_available,omitempty"`
 	Source             string  `json:"source"`
 	UpdatedAt          string  `json:"updated_at"`
 }

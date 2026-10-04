@@ -20,6 +20,7 @@ export interface FnoOrderModalProps {
   initialSide?: "BUY" | "SELL";
   availableBalancePaise?: number;
   onSuccess?: () => void;
+  submissionBlock?: string;
 }
 
 export default function FnoOrderModal({
@@ -28,6 +29,7 @@ export default function FnoOrderModal({
   instrument,
   initialSide = "BUY",
   onSuccess,
+  submissionBlock,
 }: FnoOrderModalProps) {
   const queryClient = useQueryClient();
 
@@ -152,7 +154,8 @@ export default function FnoOrderModal({
       submitted ||
       !hasSufficientMargin ||
       !validQuantity ||
-      !token
+      !token ||
+      !!submissionBlock
     )
       return;
     if (orderType === "MARKET" && effectivePricePaise <= 0) {
@@ -164,6 +167,8 @@ export default function FnoOrderModal({
       return;
     }
     setExecuting(true);
+    // An uncertain response must never enable another POST from this ticket.
+    setSubmitted(true);
     setFeedback(null);
 
     try {
@@ -185,7 +190,6 @@ export default function FnoOrderModal({
         throw new Error(
           "Order result unknown. Review Orders before submitting again.",
         );
-      setSubmitted(true);
 
       // Invalidate queries so wallet, portfolio & orders immediately update
       void queryClient.invalidateQueries({ queryKey: ["wallet"] });
@@ -211,7 +215,7 @@ export default function FnoOrderModal({
           : "Failed to place order. Please check network/balance.";
       setFeedback({
         type: "error",
-        message: errMsg,
+        message: `${errMsg} Review Orders before placing another order.`,
       });
     } finally {
       setExecuting(false);
@@ -220,10 +224,15 @@ export default function FnoOrderModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="w-full max-w-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl overflow-hidden flex flex-col transition-colors">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Paper order ticket"
+        className="max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto bg-[#ffffff] dark:bg-[#0f172a] border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl flex flex-col transition-colors"
+      >
         {/* Modal Header */}
-        <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex items-start justify-between bg-slate-50/70 dark:bg-slate-950/60">
-          <div>
+        <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-start justify-between gap-3 bg-slate-50/70 dark:bg-slate-950/60">
+          <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 flex-wrap">
               <span
                 className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded ${
@@ -242,7 +251,7 @@ export default function FnoOrderModal({
               </span>
             </div>
 
-            <h2 className="text-xl font-black text-slate-900 dark:text-slate-100 tracking-tight mt-1.5 flex items-center gap-2">
+            <h2 className="break-words text-xl font-black text-slate-900 dark:text-slate-100 tracking-tight mt-1.5 flex items-center gap-2">
               <span>
                 {instrument.display_symbol ||
                   instrument.displayName ||
@@ -256,7 +265,7 @@ export default function FnoOrderModal({
             </p>
           </div>
 
-          <div className="text-right">
+          <div className="shrink-0 text-right">
             <div className="text-lg font-black font-tabular text-slate-900 dark:text-slate-100">
               {ltpRupees > 0
                 ? `₹${ltpRupees.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`
@@ -284,6 +293,7 @@ export default function FnoOrderModal({
               {quoteLabel(effectiveQuote)}
             </p>
             <button
+              aria-label="Close paper order ticket"
               onClick={onClose}
               className="p-1 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 mt-2 transition-colors cursor-pointer"
             >
@@ -492,6 +502,14 @@ export default function FnoOrderModal({
                 ? "Checking price and funds…"
                 : "Server estimate; price and funds are rechecked at execution."}
           </p>
+          {submissionBlock && (
+            <p
+              role="alert"
+              className="text-sm text-amber-800 dark:text-amber-300"
+            >
+              {submissionBlock}
+            </p>
+          )}
           {/* Feedback message */}
           {!validQuantity && (
             <p role="alert" className="text-sm text-amber-300">
@@ -523,6 +541,7 @@ export default function FnoOrderModal({
               submitted ||
               !validQuantity ||
               !token ||
+              !!submissionBlock ||
               !hasSufficientMargin ||
               (orderType === "MARKET" && effectivePricePaise <= 0)
             }

@@ -6,7 +6,7 @@ import pathlib
 import sys
 import tempfile
 import unittest
-from datetime import date
+from datetime import date, datetime, timezone
 
 
 from unittest.mock import MagicMock
@@ -953,7 +953,7 @@ class CircuitLimitIngestionTest(unittest.TestCase):
 class NativeMarketFieldsTest(unittest.TestCase):
     def test_missing_fields_are_not_fabricated(self):
         fields = worker.provider_market_fields({})
-        self.assertEqual(fields, {"open_interest_available": "false"})
+        self.assertEqual(fields, {"open_interest_available": "false", "volume_available": "false"})
 
     def test_zero_open_interest_is_known_and_depth_units_match(self):
         rest_rows = [{"price": 123.45, "quantity": 20, "orders": 2} for _ in range(5)]
@@ -964,9 +964,9 @@ class NativeMarketFieldsTest(unittest.TestCase):
         self.assertEqual(json.loads(rest["depth_json"]), json.loads(ws["depth_json"]))
         self.assertEqual(json.loads(rest["depth_json"])["bids"][0]["price_paise"], 12345)
 
-    def test_partial_depth_is_unavailable(self):
+    def test_partial_depth_is_preserved_without_inventing_levels(self):
         fields = worker.provider_market_fields({"depth": {"buy": [{"price": 1, "quantity": 2}], "sell": []}})
-        self.assertNotIn("depth_json", fields)
+        self.assertEqual(json.loads(fields["depth_json"]), {"bids": [{"price_paise": 100, "quantity": 2}], "asks": []})
 
 class CanonicalRefreshReadinessTest(unittest.TestCase):
     def test_live_without_database_never_populates_fallback_token_map(self):
@@ -1212,3 +1212,60 @@ class SessionAwareWatchdogTest(unittest.TestCase):
         control.stale.return_value=True
         with patch.object(worker.urllib.request,"urlopen",side_effect=TimeoutError): worker.check_feed_watchdog(control,120)
         control.reconnect.assert_called_once()
+
+class StockDetailTransportTest(unittest.TestCase):
+    def test_sdk_order_key_ranges_and_unknown_counts(self):
+        fields = worker.provider_market_fields({
+            "52_week_high_price": 160000, "52_week_low_price": 90000,
+            "total_buy_quantity": 0, "total_sell_quantity": "bad",
+            "best_5_buy_data": [{"price": 10000, "quantity": 20, "no of orders": 7}],
+            "best_5_sell_data": [{"price": 10100, "quantity": 10}],
+        }, scaled=True)
+        self.assertEqual(fields["week_52_high_paise"], 160000)
+        self.assertEqual(fields["week_52_low_paise"], 90000)
+        self.assertEqual(fields["total_buy_quantity"], 0)
+        self.assertNotIn("total_sell_quantity", fields)
+        depth = json.loads(fields["depth_json"])
+        self.assertEqual(depth["bids"][0]["orders"], 7)
+        self.assertNotIn("orders", depth["asks"][0])
+        for value in (None, "bad", -1, 1.5, True, "NaN"):
+            self.assertIsNone(worker.provider_count(value))
+
+    def test_depth_survives_redis_to_websocket_transport(self):
+        client = MagicMock()
+        client.hgetall.return_value = {}
+        client.lindex.return_value = None
+        pipe = client.pipeline.return_value.__enter__.return_value
+        writer = worker.QuoteWriter(client, 120, 86400, 100, feed_mode="live")
+        sub = worker.Subscription("TCS", "11536", "NSE", 1)
+        fields = worker.provider_market_fields({"depth": {"buy": [{"price": 100, "quantity": 20, "orders": 4}], "sell": [{"price": 101, "quantity": 10, "orders": 2}]}})
+        stamp = datetime.now(timezone.utc)
+        writer.write(sub, 10000, 20, source="angelone_live", event_time=stamp, market_fields=fields)
+        event = json.loads(pipe.publish.call_args_list[0].args[1])
+        stored = pipe.hset.call_args_list[1].kwargs["mapping"]
+        self.assertEqual(event["depth"], json.loads(stored["depth_json"]))
+        self.assertNotIn("depth_json", event)
+        self.assertIs(event["open_interest_available"], False)
+        self.assertIs(event["volume_available"], False)
+        self.assertEqual(event["updated_at"], stamp.isoformat())
+
+class CashIdentityRegressionTest(unittest.TestCase):
+    def test_nse_identity_wins_independent_of_master_import_order(self):
+        nse = {"symbol":"RELIANCE-EQ","name":"RELIANCE","token":"2885","exch_seg":"NSE","instrumenttype":"EQUITY"}
+        bse = {"symbol":"RELIANCE","name":"RELIANCE","token":"500325","exch_seg":"BSE","instrumenttype":"EQUITY"}
+        for rows in ([nse,bse],[bse,nse]):
+            index = {}
+            for row in rows:
+                worker.index_master_identity(index, "RELIANCE", row)
+            self.assertEqual(index["RELIANCE"]["token"], "2885")
+            store = worker.InstrumentStore("", ["RELIANCE"])
+            sub = store._build_subscriptions(rows)[0]
+            self.assertEqual((sub.token,sub.exchange_segment), ("2885","NSE"))
+
+    def test_full_quote_http_payload_uses_same_typed_fields_as_stream(self):
+        fields = worker.provider_market_fields({"opnInterest":0,"tradeVolume":0,"depth":{"buy":[{"price":100,"quantity":10,"orders":2}],"sell":[]}})
+        payload = worker.quote_wire_payload(fields)
+        self.assertIs(payload["open_interest_available"], True)
+        self.assertIs(payload["volume_available"], True)
+        self.assertEqual(payload["depth"]["bids"][0]["price_paise"],10000)
+        self.assertNotIn("depth_json",payload)

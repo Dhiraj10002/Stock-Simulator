@@ -241,8 +241,9 @@ export async function apiFetch<T>(
 /**
  * Public (unauthenticated) fetch — same as apiFetch but never sends auth header.
  */
-export async function publicFetch<T>(path: string): Promise<T> {
+export async function publicFetch<T>(path: string, signal?: AbortSignal): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
+    signal,
     headers: { "Content-Type": "application/json" },
   });
 

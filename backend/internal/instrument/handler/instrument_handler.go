@@ -189,3 +189,12 @@ func (h *Handler) DerivativeStocks(c *gin.Context) {
 	}
 	response.Success(c, http.StatusOK, "Current F&O eligible NSE equities", stocks)
 }
+
+func (h *Handler) FuturesCatalog(c *gin.Context) {
+	contracts, err := h.svc.FuturesCatalog(c.Request.Context())
+	if err != nil {
+		response.Error(c, http.StatusServiceUnavailable, "Current futures catalog unavailable", nil)
+		return
+	}
+	response.Success(c, http.StatusOK, "Current canonical futures", contracts)
+}

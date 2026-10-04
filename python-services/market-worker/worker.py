@@ -362,6 +362,13 @@ def get_symbol_aliases(canonical_symbol: str) -> list[str]:
     return aliases
 
 
+def index_master_identity(index: dict[str, dict[str, Any]], key: str, row: dict[str, Any]) -> None:
+    """Bare cash aliases prefer NSE, independent of master import order."""
+    existing = index.get(key)
+    if existing is None or clean(existing.get("exch_seg")) != "NSE" or clean(row.get("exch_seg")) == "NSE":
+        index[key] = row
+
+
 def init_global_token_map() -> None:
     if get_feed_mode() == "live":
         return  # LIVE map comes exclusively from the activated DB master.
@@ -669,7 +676,7 @@ def fetch_quote_for_symbol(symbol: str) -> dict[str, Any] | None:
                                         previous_close_paise=close_paise, event_time=stamp, build_history=False,
                                         open_interest=integer(data.get("opnInterest")),
                                         lower_circuit_paise=lower_c, upper_circuit_paise=upper_c, market_fields=provider_market_fields(data))
-                return quote
+                return quote_wire_payload(quote)
         except Exception as e:
             print(f"market worker: error fetching live quote for {symbol} from Angel One: {e}", flush=True)
 
@@ -1003,10 +1010,10 @@ class InstrumentStore:
             mapping = {}
             for row in rows:
                 sym = clean(row["symbol"]).upper()
-                mapping[sym] = row
+                index_master_identity(mapping, sym, row)
                 if row["instrumenttype"] in ("EQUITY","INDEX","AMXIDX",""):
-                    mapping[sym.removesuffix("-EQ")] = row
-                    mapping[resolve_canonical_symbol(sym.removesuffix("-EQ"))] = row
+                    index_master_identity(mapping, sym.removesuffix("-EQ"), row)
+                    index_master_identity(mapping, resolve_canonical_symbol(sym.removesuffix("-EQ")), row)
                     if row["instrumenttype"] in ("INDEX","AMXIDX"):
                         mapping[resolve_canonical_symbol(clean(row["name"]))] = row
             subscriptions = self._build_subscriptions(rows)
@@ -1094,13 +1101,13 @@ class InstrumentStore:
                         continue
                     if expiry < datetime.now(timezone.utc).astimezone(ZoneInfo("Asia/Kolkata")).date():
                         continue
-                    by_symbol[symbol] = row
+                    index_master_identity(by_symbol, symbol, row)
                 elif segment in ("NSE","BSE") and (symbol.endswith("-EQ") or clean(row.get("instrumenttype")) in ("EQUITY","INDEX","AMXIDX")):
-                    by_symbol[symbol] = row
-                    by_symbol[symbol.removesuffix("-EQ")] = row
-                    by_symbol[resolve_canonical_symbol(symbol.removesuffix("-EQ"))] = row
+                    index_master_identity(by_symbol, symbol, row)
+                    index_master_identity(by_symbol, symbol.removesuffix("-EQ"), row)
+                    index_master_identity(by_symbol, resolve_canonical_symbol(symbol.removesuffix("-EQ")), row)
                     if clean(row.get("instrumenttype")) in ("INDEX","AMXIDX"):
-                        by_symbol[resolve_canonical_symbol(clean(row.get("name")))] = row
+                        index_master_identity(by_symbol, resolve_canonical_symbol(clean(row.get("name"))), row)
             self._subscription_index = (rows, today, by_symbol)
         indexes = {"NIFTY": ("99926000", "NSE"), "BANKNIFTY": ("99926009", "NSE"),
                    "FINNIFTY": ("99926037", "NSE"), "MIDCPNIFTY": ("99926074", "NSE"),
@@ -1216,34 +1223,73 @@ def publish_feed_state(
     return state_payload
 
 
+def provider_count(value: Any) -> int | None:
+    """A supplied zero is data; malformed, fractional and absent counts are not."""
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        number = Decimal(str(value))
+        if number.is_finite() and number == number.to_integral_value() and 0 <= number <= 9007199254740991:
+            return int(number)
+    except (InvalidOperation, ValueError, TypeError):
+        pass
+    return None
+
+
 def provider_market_fields(data: dict[str, Any], scaled: bool = False) -> dict[str, Any]:
     """Only transport provider fields. Missing OHLC/OI/depth never becomes zero data."""
     fields: dict[str, Any] = {}
     convert = integer if scaled else rupees_to_paise
     for dest, key in (("open_paise", "open_price_of_the_day" if scaled else "open"),
                       ("high_paise", "high_price_of_the_day" if scaled else "high"),
-                      ("low_paise", "low_price_of_the_day" if scaled else "low")):
+                      ("low_paise", "low_price_of_the_day" if scaled else "low"),
+                      ("week_52_high_paise", "52_week_high_price" if scaled else "52WeekHigh"),
+                      ("week_52_low_paise", "52_week_low_price" if scaled else "52WeekLow")):
         value = convert(data.get(key))
         if value > 0:
             fields[dest] = value
     oi_key = "open_interest" if scaled else "opnInterest"
-    fields["open_interest_available"] = "true" if oi_key in data and data[oi_key] is not None else "false"
+    fields["open_interest_available"] = "true" if provider_count(data.get(oi_key)) is not None else "false"
+    for dest, key in (("total_buy_quantity", "total_buy_quantity" if scaled else "totBuyQuan"),
+                      ("total_sell_quantity", "total_sell_quantity" if scaled else "totSellQuan")):
+        count = provider_count(data.get(key))
+        if count is not None:
+            fields[dest] = count
+    volume_key = "volume_trade_for_the_day" if scaled else "tradeVolume"
+    fields["volume_available"] = "true" if provider_count(data.get(volume_key)) is not None else "false"
     depth = data.get("depth") or {}
     book = {}
     for side, key in (("bids", "best_5_buy_data"), ("asks", "best_5_sell_data")):
         rows = data.get(key) if scaled else depth.get("buy" if side == "bids" else "sell")
         clean_rows = []
         for row in rows or []:
+            if not isinstance(row, dict):
+                continue
             price = convert(row.get("price"))
-            quantity = integer(row.get("quantity"))
-            orders = integer(row.get("no_of_orders") if scaled else row.get("orders"))
-            if price > 0 and quantity > 0:
-                clean_rows.append({"price_paise": price, "quantity": quantity, "orders": orders})
-        if len(clean_rows) == 5:
-            book[side] = clean_rows
-    if len(book) == 2:
+            quantity = provider_count(row.get("quantity"))
+            if price > 0 and quantity is not None and quantity > 0:
+                level = {"price_paise": price, "quantity": quantity}
+                # SmartAPI's Python SDK uses spaces in this key.
+                raw_orders = row.get("no of orders", row.get("no_of_orders")) if scaled else row.get("orders")
+                orders = provider_count(raw_orders)
+                if orders is not None:
+                    level["orders"] = orders
+                clean_rows.append(level)
+        book[side] = sorted(clean_rows, key=lambda r: r["price_paise"], reverse=side == "bids")[:5]
+    if (book["bids"] or book["asks"]) and not (book["bids"] and book["asks"] and book["bids"][0]["price_paise"] > book["asks"][0]["price_paise"]):
         fields["depth_json"] = json.dumps(book)
     return fields
+
+
+def quote_wire_payload(quote: dict[str, Any]) -> dict[str, Any]:
+    """HTTP and pub/sub share the Go/TypeScript quote schema, not Redis strings."""
+    event = dict(quote)
+    for flag in ("open_interest_available", "volume_available"):
+        if flag in event:
+            event[flag] = str(event[flag]).lower() == "true"
+    if "depth_json" in event:
+        event["depth"] = json.loads(event.pop("depth_json"))
+    return event
 
 
 class QuoteWriter:
@@ -1336,7 +1382,7 @@ class QuoteWriter:
                     sym_quote.pop("change_percent", None)
                     pipe.hdel(q_key, "change_paise", "change_percent")
                 # Remove stale optional fields rather than preserving a prior guessed band/book.
-                for field in ("lower_circuit_paise", "upper_circuit_paise", "depth_json", "open_paise", "high_paise", "low_paise", "open_interest_available"):
+                for field in ("lower_circuit_paise", "upper_circuit_paise", "depth_json", "open_paise", "high_paise", "low_paise", "open_interest_available", "volume_available", "week_52_high_paise", "week_52_low_paise", "total_buy_quantity", "total_sell_quantity"):
                     if field not in sym_quote:
                         pipe.hdel(q_key, field)
                 pipe.hset(q_key, mapping={**sym_quote, "day_change_available": str(sym_quote["day_change_available"]).lower()})
@@ -1355,7 +1401,7 @@ class QuoteWriter:
                         pipe.lpush(h_key, json.dumps(candle))
                     pipe.ltrim(h_key, 0, self.history_max_items - 1)
                     pipe.expire(h_key, self.history_ttl)
-                pipe.publish("market:updates", json.dumps(sym_quote))
+                pipe.publish("market:updates", json.dumps(quote_wire_payload(sym_quote)))
             pipe.execute()
         redis_latency_ms = round((time.perf_counter() - t0) * 1000, 2)
         # Periodic or trace logging for tick persistence without log flooding
