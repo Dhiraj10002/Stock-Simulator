@@ -1,6 +1,8 @@
-# F&O screenshot layout — current Codex / Gemini handoff
+# F&O screenshot layout — previous Codex / Gemini handoff
 
-## Current decision
+> Superseded by [STOCK_AND_FNO_UI_2026-10-04.md](STOCK_AND_FNO_UI_2026-10-04.md), including the newer compact Trending stocks / Top traded index futures design and stock-detail data fixes.
+
+## Previous decision
 
 The user chose **option 1: restore the previous screenshot layout** on 4 October 2026. This supersedes the futures-only presentation in `FNO_FOCUSED_DESK_2026-10-04.md`. Restore the featured stock cards, Gainers / Losers table, compact futures cards and right account sidebar. Keep the **All stocks tab and Option Chain removed**. Use the screenshots for layout only: their example prices, expired contracts, lot quantities, chart bars and live badges are not market evidence.
 

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -322,7 +323,10 @@ func (s *Service) rawCachedQuote(symbol string) (*dto.QuoteResponse, error) {
 	return &dto.QuoteResponse{
 		OpenInterest:          openInterest,
 		OpenInterestAvailable: values["open_interest_available"] == "true",
+		VolumeAvailable:       optionalBool(values, "volume_available"),
 		OpenPaise:             optionalInt(values, "open_paise"), HighPaise: optionalInt(values, "high_paise"), LowPaise: optionalInt(values, "low_paise"),
+		Week52HighPaise: optionalInt(values, "week_52_high_paise"), Week52LowPaise: optionalInt(values, "week_52_low_paise"),
+		TotalBuyQuantity: optionalCount(values, "total_buy_quantity"), TotalSellQuantity: optionalCount(values, "total_sell_quantity"),
 		LowerCircuitPaise: optionalInt(values, "lower_circuit_paise"), UpperCircuitPaise: optionalInt(values, "upper_circuit_paise"), Depth: optionalDepth(values),
 		PreviousClosePaise: previousClose,
 		DayChangeAvailable: dayAvailable && previousClose > 0,
@@ -499,7 +503,10 @@ func (s *Service) CurrentQuote(symbol string) (*dto.QuoteResponse, error) {
 	return &dto.QuoteResponse{
 		OpenInterest:          openInterest,
 		OpenInterestAvailable: values["open_interest_available"] == "true",
+		VolumeAvailable:       optionalBool(values, "volume_available"),
 		OpenPaise:             optionalInt(values, "open_paise"), HighPaise: optionalInt(values, "high_paise"), LowPaise: optionalInt(values, "low_paise"),
+		Week52HighPaise: optionalInt(values, "week_52_high_paise"), Week52LowPaise: optionalInt(values, "week_52_low_paise"),
+		TotalBuyQuantity: optionalCount(values, "total_buy_quantity"), TotalSellQuantity: optionalCount(values, "total_sell_quantity"),
 		LowerCircuitPaise: optionalInt(values, "lower_circuit_paise"), UpperCircuitPaise: optionalInt(values, "upper_circuit_paise"), Depth: optionalDepth(values),
 		PreviousClosePaise: previousClose,
 		DayChangeAvailable: dayAvailable && previousClose > 0,
@@ -762,15 +769,36 @@ func optionalInt(values map[string]string, key string) int64 {
 }
 func optionalDepth(values map[string]string) *dto.MarketDepth {
 	var book dto.MarketDepth
-	if json.Unmarshal([]byte(values["depth_json"]), &book) != nil || len(book.Bids) != 5 || len(book.Asks) != 5 {
+	if json.Unmarshal([]byte(values["depth_json"]), &book) != nil || len(book.Bids) > 5 || len(book.Asks) > 5 || len(book.Bids)+len(book.Asks) == 0 {
 		return nil
 	}
 	for _, rows := range [][]dto.DepthLevel{book.Bids, book.Asks} {
 		for _, row := range rows {
-			if row.PricePaise <= 0 || row.Quantity <= 0 {
+			if row.PricePaise <= 0 || row.Quantity <= 0 || (row.Orders != nil && *row.Orders < 0) {
 				return nil
 			}
 		}
 	}
+	sort.Slice(book.Bids, func(i, j int) bool { return book.Bids[i].PricePaise > book.Bids[j].PricePaise })
+	sort.Slice(book.Asks, func(i, j int) bool { return book.Asks[i].PricePaise < book.Asks[j].PricePaise })
+	if len(book.Bids) > 0 && len(book.Asks) > 0 && book.Bids[0].PricePaise > book.Asks[0].PricePaise {
+		return nil
+	}
 	return &book
+}
+
+func optionalCount(values map[string]string, key string) *int64 {
+	n, err := strconv.ParseInt(values[key], 10, 64)
+	if err != nil || n < 0 {
+		return nil
+	}
+	return &n
+}
+
+func optionalBool(values map[string]string, key string) *bool {
+	value, err := strconv.ParseBool(values[key])
+	if err != nil {
+		return nil
+	}
+	return &value
 }

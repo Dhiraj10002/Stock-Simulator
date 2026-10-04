@@ -565,7 +565,7 @@ export default function TradingViewChart({
   return (
     <div
       className={`flex flex-col bg-white dark:bg-slate-900/90 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden transition-all relative ${
-        isFullscreen ? "fixed inset-0 z-50 rounded-none bg-slate-950 p-4" : ""
+        isFullscreen ? "fixed inset-0 z-50 rounded-none bg-white dark:bg-slate-950 p-4" : ""
       } ${className}`}
     >
       {/* ===================================================================== */}
@@ -573,7 +573,7 @@ export default function TradingViewChart({
       {/* ===================================================================== */}
       <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 bg-slate-50/80 dark:bg-slate-950/60 border-b border-slate-200 dark:border-slate-800/80 text-xs">
         {/* Left: Symbol & Live Status & Timeframe */}
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           {/* Symbol & Price Chip */}
           <div className="flex items-center gap-1.5 font-bold text-slate-900 dark:text-slate-100">
             <span className="font-mono text-cyan-600 dark:text-cyan-400 font-black tracking-wide">

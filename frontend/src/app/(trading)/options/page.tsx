@@ -36,7 +36,7 @@ export default function OptionsPage() {
         availableBalancePaise={wallet.data?.available_balance_paise}
         unrealizedPnlPaise={portfolio?.unrealized_pnl_paise}
       />
-      <main className="mx-auto w-full max-w-[1720px] min-w-0 flex-1 space-y-4 p-3 sm:p-5 lg:p-6">
+      <main className="mx-auto w-full max-w-7xl min-w-0 flex-1 space-y-4 p-4 sm:p-6 lg:p-8">
         <header className="flex flex-wrap items-end justify-between gap-3 border-b border-slate-200 pb-3 dark:border-slate-800">
           <div className="min-w-0">
             <p className="text-xs font-semibold uppercase tracking-wider text-cyan-800 dark:text-cyan-300">
@@ -47,7 +47,7 @@ export default function OptionsPage() {
                 aria-hidden
                 className="h-6 w-6 shrink-0 text-cyan-700 dark:text-cyan-400"
               />
-              F&O Trading Desk
+              F&O trading
             </h1>
             <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">
               Real market discovery and futures paper trading with Angel One

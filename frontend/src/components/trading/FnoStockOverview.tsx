@@ -60,7 +60,7 @@ function CandlePreview({
   if (!bars.length)
     return (
       <p
-        className={`flex h-14 w-24 shrink-0 items-center justify-center text-center text-xs ${muted}`}
+        className={`flex h-10 w-14 shrink-0 items-center justify-center text-center text-xs ${muted}`}
       >
         {history.isPending ? "Loading chart…" : "Chart unavailable"}
       </p>
@@ -74,7 +74,7 @@ function CandlePreview({
       role="img"
       aria-label={`${symbol} provider daily candles`}
       viewBox="0 0 110 52"
-      className="h-14 w-24 shrink-0"
+      className="h-10 w-14 shrink-0"
     >
       <title>
         Last {bars.length} available provider daily candles, ending{" "}
@@ -210,73 +210,85 @@ export default function FnoStockOverview({
   };
   return (
     <div className="space-y-5">
-      <section
-        aria-label="Featured F&O stocks"
-        className="grid gap-4 md:grid-cols-3"
-      >
-        {featured.map((instrument) => {
-          const underlying = equityUnderlying(instrument),
-            future = currentFuture(underlying),
-            quote = display[instrument.symbol];
-          return (
-            <article
-              key={instrument.symbol}
-              aria-label={`${underlying} stock card`}
-              className={`${panel} min-w-0 p-4`}
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <h3 className="break-words text-sm font-bold">
-                    {underlying}
-                  </h3>
-                  <p className={`mt-1 text-xs ${muted}`}>
-                    Futures lot: {future?.lot_size || "Unavailable"}
-                  </p>
-                  <p
-                    className={`mt-1 truncate text-xs ${muted}`}
-                    title={instrument.name}
+      <section aria-label="Featured F&O stocks">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-lg font-bold">Trending stocks</h2>
+          <span className={`text-xs ${muted}`}>
+            F&O eligible · NSE cash prices
+          </span>
+        </div>
+        <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-3">
+          {featured.map((instrument) => {
+            const underlying = equityUnderlying(instrument),
+              future = currentFuture(underlying),
+              quote = display[instrument.symbol];
+            return (
+              <article
+                key={instrument.symbol}
+                aria-label={`${underlying} stock card`}
+                className={`${panel} flex min-h-[160px] min-w-0 flex-col justify-between p-3.5 transition-colors hover:border-cyan-300 dark:hover:border-cyan-800`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <Link
+                    href={`/stocks/${encodeURIComponent(underlying)}`}
+                    className="flex min-w-0 items-center gap-2.5"
                   >
-                    {instrument.name || instrument.display_symbol}
-                  </p>
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-cyan-100 text-xs font-extrabold text-cyan-800 dark:bg-cyan-950 dark:text-cyan-200">
+                      {underlying.slice(0, 2)}
+                    </span>
+                    <div className="min-w-0">
+                      <h3 className="truncate text-xs font-bold">
+                        {underlying}
+                      </h3>
+                      <p
+                        title={instrument.name}
+                        className={`mt-1 truncate text-[10px] ${muted}`}
+                      >
+                        {instrument.name || instrument.display_symbol}
+                      </p>
+                    </div>
+                  </Link>
+                  <CandlePreview
+                    symbol={instrument.symbol}
+                    active={active}
+                    now={now}
+                  />
                 </div>
-                <CandlePreview
-                  symbol={instrument.symbol}
-                  active={active}
-                  now={now}
-                />
-              </div>
-              <div className="mt-3 flex flex-wrap items-end justify-between gap-2 border-t border-slate-100 pt-3 dark:border-slate-800">
-                <div>
-                  <p className="text-2xl font-bold tabular-nums">
+                <div className="mt-3 flex flex-wrap items-end justify-between gap-1 border-t border-slate-100 pt-2.5 dark:border-slate-800">
+                  <p className="text-sm font-bold tabular-nums">
                     {quote ? formatPaise(quote.price_paise) : "Unavailable"}
                   </p>
-                  <FnoMovement quote={quote} />
+                  <FnoMovement quote={quote} compact />
                 </div>
-                <button
-                  aria-label={`Trade futures for ${underlying}`}
-                  disabled={!future}
-                  title={
-                    future
-                      ? "View current canonical futures"
-                      : "No current futures with a valid lot size"
-                  }
-                  onClick={() => onTrade(underlying)}
-                  className="flex min-h-10 items-center gap-1 rounded-lg border border-cyan-300 bg-cyan-50 px-3 text-xs font-semibold text-cyan-900 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-500 dark:border-cyan-900 dark:bg-cyan-950 dark:text-cyan-200 dark:disabled:border-slate-700 dark:disabled:bg-slate-800 dark:disabled:text-slate-400"
-                >
-                  <TrendingUp aria-hidden className="h-4 w-4" />
-                  Trade
-                </button>
-              </div>
-              <div className="mt-2">
-                <FnoProvenance
-                  quote={quote}
-                  now={now}
-                  sessionLive={sessionLive}
-                />
-              </div>
-            </article>
-          );
-        })}
+                <div className="mt-2 flex items-end justify-between gap-2">
+                  <div>
+                    <FnoProvenance
+                      quote={quote}
+                      now={now}
+                      sessionLive={sessionLive}
+                      compact
+                    />
+                    <p className={`mt-0.5 text-[10px] ${muted}`}>
+                      Futures lot: {future?.lot_size || "Unavailable"}
+                    </p>
+                  </div>
+                  <button
+                    aria-label={`Trade futures for ${underlying}`}
+                    disabled={!future}
+                    onClick={() => onTrade(underlying)}
+                    className="flex min-h-9 shrink-0 items-center gap-1 rounded-lg bg-cyan-50 px-2.5 text-[11px] font-semibold text-cyan-800 disabled:opacity-40 dark:bg-cyan-950 dark:text-cyan-200"
+                  >
+                    Trade
+                    <ArrowUpRight className="h-3 w-3" aria-hidden />
+                  </button>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+        {catalog.isPending && (
+          <p className={`py-4 text-xs ${muted}`}>Loading eligible stocks…</p>
+        )}
       </section>
       <section
         aria-label="F&O stocks"
@@ -289,7 +301,7 @@ export default function FnoStockOverview({
                 aria-hidden
                 className="h-5 w-5 text-cyan-700 dark:text-cyan-400"
               />
-              F&O Stocks
+              F&O stocks
             </h2>
             <p className={`mt-1 text-xs ${muted}`}>
               Eligible underlying equities · provider day movement
@@ -430,7 +442,9 @@ export default function FnoStockOverview({
                           <td
                             className={`px-3 py-3 text-right text-xs tabular-nums ${muted}`}
                           >
-                            {Number.isFinite(quote.volume) && quote.volume! >= 0
+                            {quote.volume_available !== false &&
+                            Number.isFinite(quote.volume) &&
+                            quote.volume! >= 0
                               ? quote.volume!.toLocaleString("en-IN")
                               : "Unavailable"}
                           </td>

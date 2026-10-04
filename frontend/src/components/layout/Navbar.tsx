@@ -56,7 +56,7 @@ const NAV_LINKS = [
 ];
 
 export default function Navbar({
-  unrealizedPnlPaise = 0,
+  unrealizedPnlPaise,
   onResetSimulation,
   onSignOut,
   resetting = false,
@@ -150,7 +150,7 @@ export default function Navbar({
   const sensexPrice = sensexQuote && sensexQuote.price_paise > 0 ? sensexQuote.price_paise : undefined;
   const sensexChange = sensexQuote?.change_percent;
 
-  const isProfit = unrealizedPnlPaise >= 0;
+  const isProfit = unrealizedPnlPaise !== undefined && unrealizedPnlPaise >= 0;
 
   return (
     <>
@@ -270,7 +270,7 @@ export default function Navbar({
               Unrealized P&L
             </span>
             <div className="flex items-center justify-end gap-1">
-              {unrealizedPnlPaise === 0 ? (
+              {(unrealizedPnlPaise === undefined || unrealizedPnlPaise === 0) ? (
                 <span className="w-1.5 h-1.5 rounded-full bg-slate-400 dark:bg-slate-500 mr-0.5" />
               ) : isProfit ? (
                 <TrendingUp className="w-3 h-3 text-emerald-600 dark:text-emerald-400 shrink-0" />
@@ -279,7 +279,7 @@ export default function Navbar({
               )}
               <strong
                 className={`text-xs font-bold font-tabular ${
-                  unrealizedPnlPaise === 0
+                  (unrealizedPnlPaise === undefined || unrealizedPnlPaise === 0)
                     ? "text-slate-600 dark:text-slate-300"
                     : isProfit
                     ? "text-emerald-600 dark:text-emerald-400"

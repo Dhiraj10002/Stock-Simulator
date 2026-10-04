@@ -432,6 +432,45 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequest'
 
+  /market/quotes/{symbol}/fundamentals:
+    get:
+      summary: Get display-only company fundamentals
+      description: >
+        Optional server-side IndianAPI adapter. Requires INDIAN_API_KEY and a
+        current NSE equity. Provider ticker identity must match the instrument.
+        Metrics retain provider labels, units and reporting periods. Retrieved
+        time is not a financial reporting date. Never use these metrics for fills.
+      tags: [Market]
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Verified metrics or an explicit availability state
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      symbol: { type: string }
+                      source: { type: string, example: IndianAPI }
+                      status: { type: string, enum: [AVAILABLE, NOT_CONFIGURED, UNAVAILABLE, UPDATING, RATE_LIMITED] }
+                      message: { type: string }
+                      retrieved_at: { type: string, format: date-time }
+                      metrics:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            label: { type: string }
+                            value: { type: string }
+
   /market/quotes/{symbol}/history:
     get:
       summary: Get Historical Candles
@@ -1360,19 +1399,25 @@ components:
           properties:
             symbol: { type: string, example: "RELIANCE" }
             price_paise: { type: integer, format: int64, example: 250000 }
-            source: { type: string, example: "ANGEL_ONE" }
+            source: { type: string, example: "angelone_live" }
             is_quote_stale: { type: boolean }
             open_interest: { type: integer, format: int64 }
             open_interest_available: { type: boolean }
             open_paise: { type: integer, format: int64 }
             high_paise: { type: integer, format: int64 }
             low_paise: { type: integer, format: int64 }
+            week_52_high_paise: { type: integer, format: int64 }
+            week_52_low_paise: { type: integer, format: int64 }
+            total_buy_quantity: { type: integer, format: int64 }
+            total_sell_quantity: { type: integer, format: int64 }
+            volume: { type: integer, format: int64 }
+            volume_available: { type: boolean, description: False means the volume field is unavailable; a verified zero is distinct. }
             depth:
               type: object
               nullable: true
               properties:
-                bids: { type: array, items: { $ref: '#/components/schemas/DepthLevel' } }
-                asks: { type: array, items: { $ref: '#/components/schemas/DepthLevel' } }
+                bids: { type: array, maxItems: 5, items: { $ref: '#/components/schemas/DepthLevel' } }
+                asks: { type: array, maxItems: 5, items: { $ref: '#/components/schemas/DepthLevel' } }
             updated_at: { type: string, format: date-time }
 
     DepthLevel:
@@ -1380,7 +1425,7 @@ components:
       properties:
         price_paise: { type: integer, format: int64 }
         quantity: { type: integer, format: int64 }
-        orders: { type: integer, format: int64 }
+        orders: { type: integer, format: int64, description: Optional provider order count; omitted when unknown. }
 
     CandleItem:
       type: object

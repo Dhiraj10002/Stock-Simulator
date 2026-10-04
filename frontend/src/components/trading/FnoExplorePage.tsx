@@ -27,6 +27,8 @@ import {
   useMultiSymbolQuotes,
   useTargetedSubscription,
 } from "@/stores/market-store";
+import TopIndexFutures from "@/components/trading/TopIndexFutures";
+import { strategyJournalKey } from "@/lib/strategyExecution";
 import FnoStockOverview from "@/components/trading/FnoStockOverview";
 import {
   FnoMovement,
@@ -125,7 +127,9 @@ function FutureCard({
         <div>
           <dt className={muted}>Volume</dt>
           <dd className="mt-1 font-semibold tabular-nums">
-            {finite(quote?.volume)}
+            {quote?.volume_available === false
+              ? "Unavailable"
+              : finite(quote?.volume)}
           </dd>
         </div>
       </dl>
@@ -173,6 +177,7 @@ export default function FnoExplorePage({
     expiry: "near",
   });
   const [page, setPage] = useState(0);
+  const [browseOpen, setBrowseOpen] = useState(false);
   const [now, setNow] = useState(0);
   const [ticket, setTicket] = useState<{
     instrument: Instrument;
@@ -246,7 +251,16 @@ export default function FnoExplorePage({
     currentPage * pageSize,
     (currentPage + 1) * pageSize,
   );
-  const symbols = active ? visible.map((i) => i.symbol) : [];
+  // A top-volume card can open a ticket while the browser is collapsed or
+  // filtered to other contracts. Its parent guard needs that contract's quote.
+  const symbols = active
+    ? [
+        ...new Set([
+          ...(browseOpen ? visible.map((i) => i.symbol) : []),
+          ...(ticket ? [ticket.instrument.symbol] : []),
+        ]),
+      ]
+    : [];
   useTargetedSubscription(symbols);
   const stream = useMultiSymbolQuotes(symbols);
   const quotes = useQuery({
@@ -285,6 +299,9 @@ export default function FnoExplorePage({
   };
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: ["fno-equities"] });
+    void queryClient.invalidateQueries({
+      queryKey: ["top-index-futures-quotes"],
+    });
     void catalog.refetch();
     void market.refetch();
     if (symbols.length) void quotes.refetch();
@@ -305,14 +322,15 @@ export default function FnoExplorePage({
   const startOrder = (instrument: Instrument, side: "BUY" | "SELL") =>
     setTicket({ instrument: { ...instrument, segment: "FUTURES" }, side });
   return (
-    <div className="grid min-w-0 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_320px] 2xl:grid-cols-[minmax(0,1fr)_340px]">
-      <div className="min-w-0 space-y-5">
+    <div className="grid min-w-0 items-start gap-8 lg:grid-cols-12">
+      <div className="min-w-0 space-y-6 lg:col-span-8">
         <FnoStockOverview
           active={active}
           futures={contracts}
           now={now}
           sessionLive={confirmed}
           onTrade={(underlying) => {
+            setBrowseOpen(true);
             update({
               kind: "FUTSTK",
               underlying,
@@ -325,7 +343,31 @@ export default function FnoExplorePage({
               ?.scrollIntoView({ behavior: "smooth", block: "start" });
           }}
         />
+        <TopIndexFutures
+          contracts={contracts}
+          active={active}
+          now={now}
+          status={status}
+          onOrder={startOrder}
+        />
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-[#ffffff] px-4 py-2 dark:border-slate-800 dark:bg-[#0f172a]">
+          <div>
+            <p className="text-sm font-semibold">Browse futures</p>
+            <p className={`text-xs ${muted}`}>
+              All current expiries, search and filters
+            </p>
+          </div>
+          <button
+            aria-expanded={browseOpen}
+            aria-controls="current-futures"
+            onClick={() => setBrowseOpen(!browseOpen)}
+            className="min-h-11 rounded-lg px-3 text-xs font-semibold text-cyan-800 dark:text-cyan-300"
+          >
+            {browseOpen ? "Hide futures browser" : "Browse all futures"}
+          </button>
+        </div>
         <section
+          hidden={!browseOpen}
           id="current-futures"
           aria-label="Futures market"
           className="min-w-0 scroll-mt-24 space-y-4"
@@ -546,7 +588,7 @@ export default function FnoExplorePage({
                   execution is paused until recovery.
                 </p>
               )}
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 {visible.map((instrument) => {
                   const quote = displayQuote(
                     quotes.data?.[instrument.symbol],
@@ -605,7 +647,7 @@ export default function FnoExplorePage({
           )}
         </section>
       </div>
-      <aside className="min-w-0 space-y-4">
+      <aside className="min-w-0 space-y-4 lg:col-span-4">
         <section aria-label="F&O margin summary" className={`${panel} p-5`}>
           <h2 className="flex items-center gap-2 text-base font-bold">
             <Wallet
@@ -688,7 +730,7 @@ export default function FnoExplorePage({
       </aside>
       {ticket && (
         <FnoOrderModal
-          key={token}
+          key={strategyJournalKey(token) || token}
           submissionBlock={futuresTradeBlock(
             ticket.instrument,
             displayQuote(

@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { test, expect, type Page, type WebSocketRoute } from "@playwright/test";
 const token = `test.${Buffer.from(JSON.stringify({ user_id: "ui-trader" })).toString("base64url")}.test`;
 const future = (
@@ -61,6 +62,7 @@ async function setup(
     uncertainOrder?: boolean;
     chartError?: boolean;
     equityCount?: number;
+    compactView?: boolean;
   } = {},
 ) {
   const posts: Record<string, unknown>[] = [],
@@ -72,6 +74,7 @@ async function setup(
     statusError: false,
     catalogError: !!options.catalogError,
     price: 207640,
+    volumes: {} as Record<string, number>,
     stockCatalogError: false,
   };
   let socket: WebSocketRoute | undefined;
@@ -82,7 +85,7 @@ async function setup(
     change_percent:
       symbol === "HDFCBANK-EQ" ? -1.08 : symbol === "TCS-EQ" ? 2.16 : 1.08,
     day_change_available: !symbol.includes("DYNAMIC"),
-    volume: 2745450,
+    volume: state.volumes[symbol] ?? 2745450,
     source: symbol === "SYNTHETIC-EQ" ? "synthetic_gbm" : "angelone_live",
     updated_at: options.closed
       ? "2026-10-02T10:00:00Z"
@@ -268,8 +271,12 @@ async function setup(
   });
   await page.goto("/options");
   await expect(
-    page.getByRole("heading", { name: "F&O Trading Desk", exact: true }),
+    page.getByRole("heading", { name: "F&O trading", exact: true }),
   ).toBeVisible();
+  if (!options.compactView)
+    await page
+      .getByRole("button", { name: "Browse all futures", exact: true })
+      .click();
   return {
     posts,
     requests,
@@ -377,7 +384,7 @@ test("restored market layout excludes All stocks, option chain and test scrips; 
   expect(
     control.batches.every((batch) =>
       batch.every((symbol) => symbol.endsWith("FUT"))
-        ? batch.length <= 12
+        ? batch.length <= 100
         : batch.length <= 100,
     ),
   ).toBe(true);
@@ -635,18 +642,18 @@ test("light/dark and mobile/tablet layouts have readable cards and no overlappin
   expect(
     await summary.locator("..").evaluate((e) => getComputedStyle(e).position),
   ).toBe("static");
-  if (process.env.FNO_UI_SCREENSHOTS)
+  if (process.env.STOCK_UI_SCREENSHOTS)
     await page.screenshot({
-      path: "/tmp/fno-v2-tools/fno-light.png",
+      path: join(process.env.STOCK_UI_SCREENSHOTS!, "fno-light.png"),
       fullPage: true,
     });
   await page.evaluate(() => document.documentElement.classList.add("dark"));
   const dark = await color();
   expect(dark.background).not.toBe(light.background);
   expect(dark.color).not.toBe(dark.background);
-  if (process.env.FNO_UI_SCREENSHOTS)
+  if (process.env.STOCK_UI_SCREENSHOTS)
     await page.screenshot({
-      path: "/tmp/fno-v2-tools/fno-dark.png",
+      path: join(process.env.STOCK_UI_SCREENSHOTS!, "fno-dark.png"),
       fullPage: true,
     });
   for (const width of [1024, 768, 640, 390, 360]) {
@@ -654,9 +661,9 @@ test("light/dark and mobile/tablet layouts have readable cards and no overlappin
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth),
     ).toBeLessThanOrEqual(width);
-    if (width === 390 && process.env.FNO_UI_SCREENSHOTS)
+    if (width === 390 && process.env.STOCK_UI_SCREENSHOTS)
       await page.screenshot({
-        path: "/tmp/fno-v2-tools/fno-mobile.png",
+        path: join(process.env.STOCK_UI_SCREENSHOTS!, "fno-mobile.png"),
         fullPage: true,
       });
     await page.getByRole("tab", { name: /Positions/ }).click();
@@ -785,4 +792,77 @@ test("complete eligible stock universe uses batches of at most 100 and only visi
         path !== "/market/quotes/batch",
     ),
   ).toEqual([]);
+});
+
+test("compact F&O discovery follows the requested headings and dynamically ranks real index volume", async ({
+  page,
+}) => {
+  const control = await setup(page, { compactView: true });
+  for (const name of [
+    "Trending stocks",
+    "F&O stocks",
+    "Top traded index futures",
+  ])
+    await expect(
+      page.getByRole("heading", { name, exact: true }),
+    ).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "Futures market", exact: true }),
+  ).toBeHidden();
+  const top = page.getByRole("region", {
+    name: "Top traded index futures",
+    exact: true,
+  });
+  await expect(top.getByRole("article")).toHaveCount(4);
+  // Top cards must trade without requiring the full browser to be opened.
+  await top
+    .getByRole("button", { name: /^Trade / })
+    .first()
+    .click();
+  const topTicket = page.getByRole("dialog");
+  await expect(
+    topTicket.getByRole("button", { name: /Buy .*lot/i }),
+  ).toBeEnabled();
+  await topTicket.getByRole("button", { name: /close/i }).click();
+  for (const card of await page
+    .getByRole("region", { name: "Featured F&O stocks" })
+    .getByRole("article")
+    .all()) {
+    const box = await card.boundingBox();
+    expect(box!.height).toBeLessThanOrEqual(190);
+  }
+  control.state.volumes["NIFTY1427OCT2099FUT"] = 9999999;
+  await page
+    .getByRole("button", { name: "Browse all futures", exact: true })
+    .click();
+  await refresh(page);
+  await expect(top.getByRole("article").first()).toHaveAttribute(
+    "aria-label",
+    "NIFTY1427OCT2099FUT top traded card",
+  );
+  control.tick("NIFTY1427OCT2099FUT", 215000);
+  await expect(
+    top.getByRole("article").first().getByText("₹2,150.00", { exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Hide futures browser", exact: true })
+    .click();
+  if (process.env.STOCK_UI_SCREENSHOTS)
+    await page.evaluate(() => window.scrollTo(0, 0));
+  if (process.env.STOCK_UI_SCREENSHOTS)
+    await page.screenshot({
+      path: join(process.env.STOCK_UI_SCREENSHOTS!, "fno-compact-light.png"),
+      fullPage: true,
+    });
+  for (const width of [1024, 768, 640, 390, 360]) {
+    await page.setViewportSize({ width, height: 900 });
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth),
+    ).toBeLessThanOrEqual(width);
+  }
+  if (process.env.STOCK_UI_SCREENSHOTS)
+    await page.screenshot({
+      path: join(process.env.STOCK_UI_SCREENSHOTS!, "fno-compact-mobile.png"),
+      fullPage: true,
+    });
 });
