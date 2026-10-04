@@ -166,11 +166,16 @@ func ensurePerformanceIndexes(db *gorm.DB) {
 	indexes := []string{
 		"CREATE INDEX IF NOT EXISTS idx_orders_symbol_status_created ON orders (symbol, status, created_at ASC)",
 		"CREATE INDEX IF NOT EXISTS idx_orders_user_created ON orders (user_uuid, created_at DESC)",
+		"CREATE INDEX IF NOT EXISTS idx_orders_open_status ON orders (status, created_at ASC)",
 		"CREATE INDEX IF NOT EXISTS idx_positions_user_symbol ON positions (user_uuid, symbol)",
 		"CREATE INDEX IF NOT EXISTS idx_positions_user_qty ON positions (user_uuid, quantity)",
+		"CREATE INDEX IF NOT EXISTS idx_positions_fno_settlement ON positions (product, quantity, settlement_state)",
 		"CREATE INDEX IF NOT EXISTS idx_trades_user_executed ON trades (user_uuid, executed_at DESC)",
 		"CREATE INDEX IF NOT EXISTS idx_watchlist_user_symbol_sort ON watchlist_items (user_uuid, symbol ASC)",
 		"CREATE INDEX IF NOT EXISTS idx_wallets_user_id ON wallets (user_uuid, id ASC)",
+		"CREATE INDEX IF NOT EXISTS idx_instruments_fno_catalog ON instruments (active, is_tradable, instrument_type, symbol ASC)",
+		"CREATE INDEX IF NOT EXISTS idx_instruments_segment_expiry ON instruments (is_tradable, exchange_segment, expiry)",
+		"CREATE INDEX IF NOT EXISTS idx_wallet_tx_uuid_created ON wallet_transactions (wallet_uuid, created_at DESC, type)",
 	}
 	for _, idx := range indexes {
 		_ = db.Exec(idx).Error

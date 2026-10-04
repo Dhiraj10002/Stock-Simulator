@@ -61,8 +61,9 @@ func Connect(cfg *config.Config) error {
 
 		sqlDB := stdlib.OpenDB(*pgxCfg)
 		sqlDB.SetMaxOpenConns(25)
-		sqlDB.SetMaxIdleConns(5)
-		sqlDB.SetConnMaxLifetime(5 * time.Minute)
+		sqlDB.SetMaxIdleConns(25)
+		sqlDB.SetConnMaxIdleTime(10 * time.Minute)
+		sqlDB.SetConnMaxLifetime(30 * time.Minute)
 
 		conn, lastErr = gorm.Open(postgres.New(postgres.Config{
 			Conn: sqlDB,

@@ -190,7 +190,17 @@ echo "[*] Starting Next.js Frontend on http://localhost:3000..."
 start_service "$ROOT_DIR/frontend" env PORT=3000 npm run dev
 wait_for_service http://127.0.0.1:3000/login "$SERVICE_PID" "Frontend"
 
-if ! curl --fail --silent --connect-timeout 1 --max-time 5 http://127.0.0.1:8080/api/v1/ready >/dev/null 2>&1; then
+READY_OK=0
+for _ in {1..15}; do
+  if curl --fail --silent --connect-timeout 1 --max-time 3 http://127.0.0.1:8080/api/v1/ready >/dev/null 2>&1; then
+    READY_OK=1
+    break
+  fi
+  sleep 1
+done
+if [ "$READY_OK" = 1 ]; then
+  echo "[✓] Platform trading readiness confirmed."
+else
   echo "[!] UI/API are available; trading readiness is degraded. Inspect http://localhost:8080/api/v1/ready."
 fi
 echo "[✓] Platform processes are available: http://localhost:3000 (UI), http://localhost:8080/api/v1 (API)."

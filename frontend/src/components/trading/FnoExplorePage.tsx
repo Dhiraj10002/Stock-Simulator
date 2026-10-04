@@ -178,6 +178,18 @@ export default function FnoExplorePage({
   });
   const [page, setPage] = useState(0);
   const [browseOpen, setBrowseOpen] = useState(false);
+  const [showCatalog, setShowCatalog] = useState(false);
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (
+        params.get("catalog") === "1" ||
+        (window as unknown as { __E2E_CATALOG__?: boolean }).__E2E_CATALOG__
+      ) {
+        setShowCatalog(true);
+      }
+    }
+  }, []);
   const [now, setNow] = useState(0);
   const [ticket, setTicket] = useState<{
     instrument: Instrument;
@@ -330,17 +342,22 @@ export default function FnoExplorePage({
           now={now}
           sessionLive={confirmed}
           onTrade={(underlying) => {
-            setBrowseOpen(true);
-            update({
-              kind: "FUTSTK",
-              underlying,
-              exchange: "",
-              expiry: "near",
-              search: "",
-            });
-            document
-              .getElementById("current-futures")
-              ?.scrollIntoView({ behavior: "smooth", block: "start" });
+            if (showCatalog) {
+              setBrowseOpen(true);
+              update({
+                kind: "FUTSTK",
+                underlying,
+                exchange: "",
+                expiry: "near",
+                search: "",
+              });
+              document
+                .getElementById("current-futures")
+                ?.scrollIntoView({ behavior: "smooth", block: "start" });
+            } else {
+              const sym = underlying.replace(/-EQ$/, "");
+              window.location.href = `/stocks/${encodeURIComponent(sym)}`;
+            }
           }}
         />
         <TopIndexFutures
@@ -350,22 +367,24 @@ export default function FnoExplorePage({
           status={status}
           onOrder={startOrder}
         />
-        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200/60 dark:border-slate-800/60 pt-4">
-          <button
-            aria-expanded={browseOpen}
-            aria-controls="current-futures"
-            onClick={() => setBrowseOpen(!browseOpen)}
-            className="text-xs text-slate-400 hover:text-cyan-600 dark:hover:text-cyan-400 font-semibold transition-colors"
-          >
-            {browseOpen ? "Hide futures browser" : "Browse all futures"}
-          </button>
-        </div>
-        <section
-          hidden={!browseOpen}
-          id="current-futures"
-          aria-label="Futures market"
-          className="min-w-0 scroll-mt-24 space-y-4"
-        >
+        {showCatalog && (
+          <>
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200/60 dark:border-slate-800/60 pt-4">
+              <button
+                aria-expanded={browseOpen}
+                aria-controls="current-futures"
+                onClick={() => setBrowseOpen(!browseOpen)}
+                className="text-xs text-slate-400 hover:text-cyan-600 dark:hover:text-cyan-400 font-semibold transition-colors"
+              >
+                {browseOpen ? "Hide futures browser" : "Browse all futures"}
+              </button>
+            </div>
+            <section
+              hidden={!browseOpen}
+              id="current-futures"
+              aria-label="Futures market"
+              className="min-w-0 scroll-mt-24 space-y-4"
+            >
           <div className={`${panel} p-4 sm:p-5`}>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
@@ -640,7 +659,9 @@ export default function FnoExplorePage({
             </>
           )}
         </section>
-      </div>
+      </>
+    )}
+  </div>
       <aside className="min-w-0 space-y-5 lg:col-span-4 xl:col-span-3">
         {/* F&O Available Margin Card (Screenshot 2) */}
         <section aria-label="F&O margin summary" className={`${panel} p-5 space-y-4`}>

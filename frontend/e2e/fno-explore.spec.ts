@@ -269,7 +269,7 @@ async function setup(
     }
     await route.fulfill({ headers, json: { success: true, data } });
   });
-  await page.goto("/options");
+  await page.goto("/options?catalog=1");
   await expect(
     page.getByRole("heading", { name: "Popular stocks", exact: true }),
   ).toBeVisible();
