@@ -142,6 +142,7 @@ export interface Instrument {
   lot_size: number;
   tick_size: number;
   active: boolean;
+  is_tradable?: boolean;
 
   // Optional live quote enrichment fields
   name?: string;

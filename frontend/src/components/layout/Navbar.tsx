@@ -160,7 +160,7 @@ export default function Navbar({
       <div className="h-[1px] w-full bg-gradient-to-r from-transparent via-cyan-500/35 dark:via-cyan-500/30 to-transparent absolute -bottom-[1px] left-0 pointer-events-none" />
 
       {/* Top Utility Bar */}
-      <div className="px-4 lg:px-6 py-2 flex items-center justify-between gap-2 sm:gap-4 border-b border-slate-200/80 dark:border-white/[0.06]">
+      <div className="px-4 lg:px-6 py-2 flex flex-wrap items-center justify-between gap-2 sm:gap-4 border-b border-slate-200/80 dark:border-white/[0.06]">
         {/* Left: Brand + Market Status + Indices Ticker */}
         <div className="flex items-center gap-4 lg:gap-6">
           <Link href="/" className="flex items-center gap-2.5 group">

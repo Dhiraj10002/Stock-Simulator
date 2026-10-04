@@ -216,6 +216,7 @@ func Setup(ctx context.Context, cfg *config.Config, opts ...SetupOption) *gin.En
 		api.GET("/instruments", instruments.List)
 		api.GET("/instruments/derivative-underlyings", instruments.DerivativeUnderlyings)
 		api.GET("/instruments/derivative-stocks", instruments.DerivativeStocks)
+		api.GET("/instruments/futures", instruments.FuturesCatalog)
 		api.GET("/instruments/snapshots/active", instruments.GetActiveSnapshot)
 		api.GET("/instruments/snapshots", instruments.ListSnapshots)
 		api.GET("/instruments/master/status", instruments.GetMasterStatus)

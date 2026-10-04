@@ -723,6 +723,17 @@ paths:
                   success: { type: boolean }
                   data: { type: array, items: { type: string } }
 
+  /instruments/futures:
+    get:
+      summary: List the complete active unexpired futures catalog
+      description: Canonical FUTIDX/FUTSTK contracts excluding exchange test scrips. No general-search limit or default universe on dependency failure.
+      tags: [Instruments]
+      responses:
+        '200':
+          description: Current tradable futures identities and canonical lot sizes
+        '503':
+          description: Instrument master unavailable
+
   /instruments/derivative-stocks:
     get:
       summary: List active NSE equities with unexpired eligible derivatives
