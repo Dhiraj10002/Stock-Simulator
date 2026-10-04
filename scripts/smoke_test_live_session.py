@@ -11,7 +11,9 @@ import time
 import urllib.error
 import urllib.request
 from urllib.parse import urlparse
-from datetime import datetime, timezone
+from datetime import datetime, timezone, time as day_time
+from zoneinfo import ZoneInfo
+from urllib.parse import urlencode
 
 
 def require(condition, message):
@@ -29,6 +31,44 @@ def quote_check(quote, symbol, executable=False):
     if executable:
         require(age <= 120 and not quote.get("is_quote_stale"), f"Stale execution quote for {symbol}")
     return {key: quote.get(key) for key in ("symbol", "price_paise", "source", "updated_at", "previous_close_paise", "day_change_available", "open_interest_available")}
+
+
+IST = ZoneInfo("Asia/Kolkata")
+
+
+def future_expiry(value):
+    for fmt in ("%d%b%Y", "%Y-%m-%d", "%d-%b-%Y", "%d-%m-%Y"):
+        try:
+            date = datetime.strptime(str(value).strip().upper(), fmt).date()
+            # Match the application's present exchange expiry policy.
+            return datetime.combine(date, day_time(15, 30), IST)
+        except (ValueError, TypeError):
+            pass
+    return None
+
+
+def select_live_future(rows, underlying, now=None):
+    now = now or datetime.now(IST)
+    target = underlying.strip().upper()
+    kind = "FUTIDX" if target in ("NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "SENSEX", "BANKEX", "NIFTYNXT50") else "FUTSTK"
+    eligible = []
+    for row in rows if isinstance(rows, list) else []:
+        if not isinstance(row, dict):
+            continue
+        expiry = future_expiry(row.get("expiry"))
+        token = row.get("token", "")
+        lot = row.get("lot_size")
+        identity = row.get("underlying") or row.get("underlying_symbol") or row.get("name") or ""
+        if (str(identity).upper() == target and row.get("instrument_type") == kind
+                and row.get("exchange", row.get("exchange_segment")) in ("NFO", "BFO")
+                and row.get("active") is True and row.get("is_tradable") is True
+                and isinstance(token, str) and token.isascii() and token.isdigit()
+                and isinstance(lot, int) and not isinstance(lot, bool) and lot > 0
+                and isinstance(row.get("symbol"), str) and row["symbol"]
+                and expiry is not None and expiry > now):
+            eligible.append(row)
+    require(eligible, f"Current canonical future missing for {target}")
+    return min(eligible, key=lambda row: (future_expiry(row["expiry"]), row["symbol"]))
 
 
 def run(args, result=None):
@@ -78,25 +118,49 @@ def run(args, result=None):
     require(master.get("status") == "ACTIVE" and master.get("total_instruments", 0) > 0, "Active master missing")
     result["master_version"] = master["version"]
     # Explicit equity, index, future, call and put coverage.
-    instruments = api(f"/instruments?underlying={args.underlying}&active=true&limit=500")
-    future = next((row for row in instruments if row["instrument_type"] in ("FUTIDX", "FUTSTK")), None)
+    futures = []
+    try:
+        futures = api("/instruments/futures")
+        future = select_live_future(futures, args.underlying)
+    except RuntimeError:
+        ftype = "FUTIDX" if args.underlying.upper() in ("NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "SENSEX", "BANKEX", "NIFTYNXT50") else "FUTSTK"
+        query = urlencode({"underlying": args.underlying, "instrument_type": ftype, "active": "true", "limit": 500})
+        future = select_live_future(api(f"/instruments?{query}"), args.underlying)
+
     chain = api(f"/fno/option-chain?symbol={args.underlying}")
     rows = chain.get("strikes") or []
     require(rows, "Option chain empty")
     atm = next((row for row in rows if row.get("is_atm")), rows[len(rows)//2])
-    if future is None:
-        raise RuntimeError("Canonical future missing")
     calls = [("future", future["symbol"], future["lot_size"]), ("call", atm["call"]["symbol"], atm["call"]["lot_size"]), ("put", atm["put"]["symbol"], atm["put"]["lot_size"])]
     for kind, symbol, lot in [("equity", args.equity, 1), ("index", args.underlying, 1)] + calls:
         result["stage"] = f"quote_{kind}"
         require(lot > 0, f"Invalid lot size: {symbol}")
-        quote = api(f"/market/quotes/{symbol}?purpose=display")
+        quote = None
+        for attempt in range(4):
+            try:
+                quote = api(f"/market/quotes/{symbol}?purpose=display")
+                if quote and isinstance(quote.get("price_paise"), int) and quote["price_paise"] > 0:
+                    break
+            except Exception:
+                if attempt == 3:
+                    raise
+            time.sleep(2)
+        require(quote is not None, f"Quote missing for {symbol}")
         result["checks"].append({"kind": kind, **quote_check(quote, symbol, executable=state == "OPEN")})
         if kind in ("future", "call", "put"):
             require(quote.get("open_interest_available"), f"OI unavailable for {symbol}; coverage cannot be certified")
     for interval in ("ONE_MINUTE", "ONE_HOUR", "ONE_DAY"):
         result["stage"] = f"history_{interval}"
-        candles = api(f"/market/quotes/{args.equity}/history?interval={interval}&limit=100")
+        candles = None
+        for attempt in range(5):
+            try:
+                candles = api(f"/market/quotes/{args.equity}/history?interval={interval}&limit=100")
+                if candles:
+                    break
+            except Exception:
+                pass
+            if attempt < 4:
+                time.sleep(2)
         require(candles, f"Archive {interval} missing; allow backfill then retry")
         for candle in candles:
             require(candle["source"] == "angelone_live" and candle["feed_mode"] == "LIVE", f"Bad archive provenance: {interval}")

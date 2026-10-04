@@ -17,6 +17,7 @@ import (
 	marketService "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/service"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/product"
+	"gorm.io/gorm"
 )
 
 type OptionChainService struct {
@@ -70,12 +71,25 @@ func (s *OptionChainService) GetOptionChain(symbol, expiry string) (*dto.OptionC
 	if db != nil {
 		q := db.Where("(UPPER(underlying_symbol) = ? OR UPPER(name) = ?) AND exchange_segment IN ('NFO', 'BFO') AND (option_type = 'CE' OR option_type = 'PE' OR symbol LIKE '%CE' OR symbol LIKE '%PE')", symbol, symbol)
 		if mode == marketDto.FeedModeLive {
-			q = q.Where("active = ? AND token ~ '^[0-9]+$'", true)
+			q = q.Where("active = ? AND is_tradable = ? AND token ~ '^[0-9]+$'", true, true)
 		}
+		if expiry == "" {
+			var expiries []string
+			if err := q.Session(&gorm.Session{}).Model(&model.Instrument{}).Distinct("expiry").Pluck("expiry", &expiries).Error; err != nil {
+				return nil, fmt.Errorf("list option expiries: %w", err)
+			}
+			expiry = nearestOpenExpiry(expiries, time.Now())
+			if expiry == "" && mode != marketDto.FeedModeSynthetic {
+				return &dto.OptionChainResponse{UnderlyingSymbol: symbol, FeedMode: string(mode), Strikes: []dto.StrikeRow{}}, nil
+			}
+		}
+
 		if expiry != "" {
 			q = q.Where("expiry = ?", expiry)
 		}
-		_ = q.Find(&nfoInstruments).Error
+		if err := q.Find(&nfoInstruments).Error; err != nil {
+			return nil, fmt.Errorf("load option contracts: %w", err)
+		}
 	}
 
 	if mode == marketDto.FeedModeLive {
@@ -118,6 +132,20 @@ func (s *OptionChainService) GetOptionChain(symbol, expiry string) (*dto.OptionC
 		s.annotateDisplay(resp)
 	}
 	return resp, err
+}
+
+// ParseContractExpiry uses the exchange-local close, retaining expiry-day
+// contracts until cutoff and rejecting malformed or expired master rows.
+func nearestOpenExpiry(expiries []string, now time.Time) string {
+	selected := ""
+	var earliest time.Time
+	for _, expiry := range expiries {
+		end, err := product.ParseContractExpiry(expiry)
+		if err == nil && end.After(now) && (selected == "" || end.Before(earliest)) {
+			selected, earliest = expiry, end
+		}
+	}
+	return selected
 }
 
 func parseExpiryDate(exp string) time.Time {
@@ -270,7 +298,7 @@ func (s *OptionChainService) buildFromRealInstruments(
 			if mode == marketDto.FeedModeLive {
 				// LIVE mode: strictly read live quotes from Redis. Never write/seed to Redis!
 				if s.market != nil {
-					if q, err := s.market.CachedQuote(pair.call.Symbol); err == nil && q != nil && q.PricePaise > 0 {
+					if q, err := s.market.RawCachedQuote(pair.call.Symbol); err == nil && q != nil && q.PricePaise > 0 {
 						cePrice = q.PricePaise
 						callOI = q.OpenInterest
 						isAvailable = true
@@ -323,7 +351,7 @@ func (s *OptionChainService) buildFromRealInstruments(
 			if mode == marketDto.FeedModeLive {
 				// LIVE mode: strictly read live quotes from Redis. Never write/seed to Redis!
 				if s.market != nil {
-					if q, err := s.market.CachedQuote(pair.put.Symbol); err == nil && q != nil && q.PricePaise > 0 {
+					if q, err := s.market.RawCachedQuote(pair.put.Symbol); err == nil && q != nil && q.PricePaise > 0 {
 						pePrice = q.PricePaise
 						putOI = q.OpenInterest
 						isAvailable = true
@@ -610,7 +638,7 @@ func (s *OptionChainService) annotateDisplay(resp *dto.OptionChainResponse) {
 			if s.market == nil || !contract.IsAvailable {
 				continue
 			}
-			q, err := s.market.CachedQuote(contract.Symbol)
+			q, err := s.market.RawCachedQuote(contract.Symbol)
 			if err != nil || q == nil {
 				continue
 			}
