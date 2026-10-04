@@ -3,7 +3,7 @@
 import { useState, useMemo } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight, Layers, Sparkles, TrendingUp } from "lucide-react";
+import { ChevronDown, ChevronRight, Sparkles, TrendingUp } from "lucide-react";
 import { publicFetch } from "@/lib/api";
 import {
   eligibleEquities,
@@ -320,14 +320,11 @@ export default function FnoStockOverview({
   active,
   futures,
   now,
-  onChain,
 }: {
   active: boolean;
   futures: Instrument[];
   now: number;
   sessionLive?: boolean;
-  onTrade?: (underlying: string) => void;
-  onChain?: (symbol: string) => void;
 }) {
   const [fnoStockTab, setFnoStockTab] = useState<"GAINERS" | "LOSERS">("GAINERS");
 
@@ -544,17 +541,9 @@ export default function FnoStockOverview({
                 </div>
 
                 <div className="flex items-center gap-1.5">
-                  <button
-                    onClick={() => onChain?.(stock.symbol)}
-                    className="px-2.5 py-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 text-xs font-bold transition-colors flex items-center gap-1 cursor-pointer"
-                    title="View Option Chain"
-                  >
-                    <Layers className="w-3.5 h-3.5" />
-                    <span>Chain</span>
-                  </button>
                   <Link
                     href={`/stocks/${stock.symbol}`}
-                    className="px-2.5 py-1.5 rounded-lg bg-cyan-50 dark:bg-cyan-950/60 border border-cyan-200 dark:border-cyan-800/60 hover:bg-cyan-100 dark:hover:bg-cyan-900/60 text-cyan-700 dark:text-cyan-300 text-xs font-bold transition-colors flex items-center gap-1 cursor-pointer"
+                    className="px-3 py-1.5 rounded-lg bg-cyan-50 dark:bg-cyan-950/60 border border-cyan-200 dark:border-cyan-800/60 hover:bg-cyan-100 dark:hover:bg-cyan-900/60 text-cyan-700 dark:text-cyan-300 text-xs font-bold transition-colors flex items-center gap-1 cursor-pointer"
                     title="Trade Equity"
                   >
                     <TrendingUp className="w-3.5 h-3.5" />

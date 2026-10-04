@@ -26,11 +26,10 @@ const bounded = <T,>(path: string, signal: AbortSignal) =>
 
 export default function FnoExplorePage({
   active = true,
-  onSelectOptionChain,
+  onViewPositions,
 }: {
   active?: boolean;
   onViewPositions?: () => void;
-  onSelectOptionChain?: (symbol: string) => void;
 }) {
   const [now, setNow] = useState(0);
   const [ticket, setTicket] = useState<{
@@ -124,7 +123,6 @@ export default function FnoExplorePage({
           futures={contracts}
           now={now}
           sessionLive={confirmed}
-          onChain={onSelectOptionChain}
         />
 
         {/* 3. TOP TRADED INDEX FUTURES (4 CARDS WITH BUY / SELL) */}
@@ -199,12 +197,21 @@ export default function FnoExplorePage({
               <span>Explore Live Equities</span>
               <ArrowRight className="w-3.5 h-3.5" />
             </Link>
-            <Link
-              href="/portfolio"
-              className="w-full py-2 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors text-center"
-            >
-              <span>View Derivative Holdings</span>
-            </Link>
+            {onViewPositions ? (
+              <button
+                onClick={onViewPositions}
+                className="w-full py-2 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors text-center cursor-pointer"
+              >
+                <span>View Derivative Holdings</span>
+              </button>
+            ) : (
+              <Link
+                href="/portfolio"
+                className="w-full py-2 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors text-center"
+              >
+                <span>View Derivative Holdings</span>
+              </Link>
+            )}
           </div>
         </div>
 

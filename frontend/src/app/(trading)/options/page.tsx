@@ -6,7 +6,6 @@ import { Layers, PieChart } from "lucide-react";
 import Navbar from "@/components/layout/Navbar";
 import IndicesTickerStrip from "@/components/layout/IndicesTickerStrip";
 import FnoExplorePage from "@/components/trading/FnoExplorePage";
-import OptionChainDesk from "@/components/trading/OptionChainDesk";
 import PaperOrderRecovery from "@/components/trading/PaperOrderRecovery";
 import { useAccountWallet } from "@/hooks/useAccountWallet";
 import { useAuthToken } from "@/hooks/useAuthToken";
@@ -16,8 +15,7 @@ import { isDerivativePosition } from "@/lib/fnoExplore";
 import type { Portfolio } from "@/types";
 
 export default function OptionsPage() {
-  const [activeTab, setActiveTab] = useState<"explore" | "chain" | "positions">("explore");
-  const [chainUnderlying, setChainUnderlying] = useState<string>("NIFTY");
+  const [activeTab, setActiveTab] = useState<"explore" | "positions">("explore");
 
   const token = useAuthToken();
   const wallet = useAccountWallet();
@@ -51,30 +49,7 @@ export default function OptionsPage() {
           <FnoExplorePage
             active={activeTab === "explore"}
             onViewPositions={() => setActiveTab("positions")}
-            onSelectOptionChain={(sym) => {
-              setChainUnderlying(sym);
-              setActiveTab("chain");
-            }}
           />
-        )}
-
-        {/* 2. OPTION CHAIN DESK */}
-        {activeTab === "chain" && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between p-3 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-xs">
-              <span className="text-cyan-800 dark:text-cyan-300 font-semibold flex items-center gap-1.5">
-                <Layers className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
-                Viewing Option Chain for <strong className="font-bold underline">{chainUnderlying}</strong>
-              </span>
-              <button
-                onClick={() => setActiveTab("explore")}
-                className="text-cyan-700 dark:text-cyan-400 hover:underline font-bold cursor-pointer"
-              >
-                ← Back to F&O Explore
-              </button>
-            </div>
-            <OptionChainDesk initialUnderlying={chainUnderlying} />
-          </div>
         )}
 
         {/* 3. POSITIONS VIEW */}
