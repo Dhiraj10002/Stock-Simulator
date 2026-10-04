@@ -866,3 +866,40 @@ test("compact F&O discovery follows the requested headings and dynamically ranks
       fullPage: true,
     });
 });
+
+test("Gemini compact cards never invent contracts when the master is empty", async ({
+  page,
+}) => {
+  const control = await setup(page, { compactView: true, empty: true });
+  const top = page.getByRole("region", {
+    name: "Top traded index futures",
+    exact: true,
+  });
+  await expect(top.getByRole("article")).toHaveCount(0);
+  await expect(
+    top.getByText("No current index futures available.", { exact: false }),
+  ).toBeVisible();
+  await expect(page.getByText("NIFTY-OCT-FUT", { exact: true })).toHaveCount(0);
+  expect(control.posts).toEqual([]);
+});
+
+test("compact Buy and Sell controls block closed-session paper orders and ticker labels cached data", async ({
+  page,
+}) => {
+  const control = await setup(page, { compactView: true, closed: true });
+  const top = page.getByRole("region", {
+    name: "Top traded index futures",
+    exact: true,
+  });
+  await expect(top.getByRole("article")).toHaveCount(4);
+  const buttons = top.getByRole("button");
+  await expect(buttons).toHaveCount(8);
+  for (const button of await buttons.all()) await expect(button).toBeDisabled();
+  const strip = page.getByRole("region", { name: "Market index strip" });
+  await expect(strip.getByText("₹2,076.40", { exact: true })).toHaveCount(5);
+  await expect(strip.getByText("Last available", { exact: false })).toHaveCount(
+    5,
+  );
+  await expect(strip.getByText("22,421.95", { exact: false })).toHaveCount(0);
+  expect(control.posts).toEqual([]);
+});

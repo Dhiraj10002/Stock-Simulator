@@ -17,6 +17,7 @@ import (
 	marketService "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/service"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/product"
+	"gorm.io/gorm"
 )
 
 type OptionChainService struct {
@@ -68,33 +69,27 @@ func (s *OptionChainService) GetOptionChain(symbol, expiry string) (*dto.OptionC
 	// 3. Check for real NFO option contracts in database
 	var nfoInstruments []model.Instrument
 	if db != nil {
+		q := db.Where("(UPPER(underlying_symbol) = ? OR UPPER(name) = ?) AND exchange_segment IN ('NFO', 'BFO') AND (option_type = 'CE' OR option_type = 'PE' OR symbol LIKE '%CE' OR symbol LIKE '%PE')", symbol, symbol)
+		if mode == marketDto.FeedModeLive {
+			q = q.Where("active = ? AND is_tradable = ? AND token ~ '^[0-9]+$'", true, true)
+		}
 		if expiry == "" {
 			var expiries []string
-			_ = db.Model(&model.Instrument{}).Where("(UPPER(underlying_symbol) = ? OR UPPER(name) = ?) AND exchange_segment IN ('NFO', 'BFO') AND expiry != ''", symbol, symbol).Distinct("expiry").Pluck("expiry", &expiries).Error
-			nowDay := time.Now().Truncate(24 * time.Hour)
-			var futureExpiries []string
-			for _, expStr := range expiries {
-				tExp := parseExpiryDate(expStr)
-				if !tExp.IsZero() && !tExp.Before(nowDay) {
-					futureExpiries = append(futureExpiries, expStr)
-				}
+			if err := q.Session(&gorm.Session{}).Model(&model.Instrument{}).Distinct("expiry").Pluck("expiry", &expiries).Error; err != nil {
+				return nil, fmt.Errorf("list option expiries: %w", err)
 			}
-			sort.Slice(futureExpiries, func(i, j int) bool {
-				return parseExpiryDate(futureExpiries[i]).Before(parseExpiryDate(futureExpiries[j]))
-			})
-			if len(futureExpiries) > 0 {
-				expiry = futureExpiries[0]
+			expiry = nearestOpenExpiry(expiries, time.Now())
+			if expiry == "" && mode != marketDto.FeedModeSynthetic {
+				return &dto.OptionChainResponse{UnderlyingSymbol: symbol, FeedMode: string(mode), Strikes: []dto.StrikeRow{}}, nil
 			}
 		}
 
-		q := db.Where("(UPPER(underlying_symbol) = ? OR UPPER(name) = ?) AND exchange_segment IN ('NFO', 'BFO') AND (option_type = 'CE' OR option_type = 'PE' OR symbol LIKE '%CE' OR symbol LIKE '%PE')", symbol, symbol)
-		if mode == marketDto.FeedModeLive {
-			q = q.Where("active = ? AND token ~ '^[0-9]+$'", true)
-		}
 		if expiry != "" {
 			q = q.Where("expiry = ?", expiry)
 		}
-		_ = q.Find(&nfoInstruments).Error
+		if err := q.Find(&nfoInstruments).Error; err != nil {
+			return nil, fmt.Errorf("load option contracts: %w", err)
+		}
 	}
 
 	if mode == marketDto.FeedModeLive {
@@ -137,6 +132,20 @@ func (s *OptionChainService) GetOptionChain(symbol, expiry string) (*dto.OptionC
 		s.annotateDisplay(resp)
 	}
 	return resp, err
+}
+
+// ParseContractExpiry uses the exchange-local close, retaining expiry-day
+// contracts until cutoff and rejecting malformed or expired master rows.
+func nearestOpenExpiry(expiries []string, now time.Time) string {
+	selected := ""
+	var earliest time.Time
+	for _, expiry := range expiries {
+		end, err := product.ParseContractExpiry(expiry)
+		if err == nil && end.After(now) && (selected == "" || end.Before(earliest)) {
+			selected, earliest = expiry, end
+		}
+	}
+	return selected
 }
 
 func parseExpiryDate(exp string) time.Time {
