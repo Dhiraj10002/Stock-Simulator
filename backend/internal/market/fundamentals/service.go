@@ -127,10 +127,24 @@ func (s *Service) Get(ctx context.Context, symbol string) Snapshot {
 // EPS, currency, market-cap scale or 'as of' date from an undocumented field.
 func normalize(raw []byte, symbol string) (Snapshot, error) {
 	var payload struct {
-		Ticker  string          `json:"tickerId"`
+		Ticker         string `json:"tickerId"`
+		CompanyProfile struct {
+			ExchangeCodeNse string `json:"exchangeCodeNse"`
+			ExchangeCodeBse string `json:"exchangeCodeBse"`
+		} `json:"companyProfile"`
 		Metrics json.RawMessage `json:"keyMetrics"`
 	}
-	if json.Unmarshal(raw, &payload) != nil || !strings.EqualFold(strings.TrimSuffix(payload.Ticker, "-EQ"), symbol) {
+	if json.Unmarshal(raw, &payload) != nil {
+		return Snapshot{}, errors.New("malformed response")
+	}
+	identity := payload.Ticker
+	if identity == "" {
+		identity = payload.CompanyProfile.ExchangeCodeNse
+	}
+	if identity == "" {
+		identity = payload.CompanyProfile.ExchangeCodeBse
+	}
+	if !strings.EqualFold(strings.TrimSuffix(identity, "-EQ"), symbol) {
 		return Snapshot{}, errors.New("identity unverified")
 	}
 	var metrics any
@@ -163,7 +177,10 @@ func normalize(raw []byte, symbol string) (Snapshot, error) {
 			// Labeled rows retain a supplied period/unit; unknown array shapes are omitted.
 			for _, row := range v {
 				if obj, ok := row.(map[string]any); ok {
-					name, _ := obj["label"].(string)
+					name, _ := obj["displayName"].(string)
+					if name == "" {
+						name, _ = obj["label"].(string)
+					}
 					if name == "" {
 						name, _ = obj["name"].(string)
 					}

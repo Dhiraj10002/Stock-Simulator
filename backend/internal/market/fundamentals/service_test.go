@@ -43,6 +43,11 @@ func TestFundamentalsPreserveUnitsPeriodsAndVerifyIdentity(t *testing.T) {
 	if _, err := normalize([]byte(`{"tickerId":"TCS","keyMetrics":[{"value":100,"period":"FY2025","unit":"INR"}]}`), "TCS"); err == nil {
 		t.Fatal("period and unit without a metric identity were accepted")
 	}
+	indianApiPayload := []byte(`{"companyProfile":{"exchangeCodeNse":"INFY"},"keyMetrics":{"priceandVolume":[{"displayName":"Market Cap","key":"marketCap","value":"600000"},{"displayName":"Beta","key":"beta","value":"1.05"}]}}`)
+	infyResult, err := normalize(indianApiPayload, "INFY")
+	if err != nil || infyResult.Status != "AVAILABLE" || len(infyResult.Metrics) != 2 {
+		t.Fatalf("failed to normalize IndianAPI format: %+v %v", infyResult, err)
+	}
 }
 func TestFundamentalsUnconfiguredUnknownAndCacheFailureAreExplicit(t *testing.T) {
 	known := func(_ context.Context, s string) bool { return s == "TCS" }
