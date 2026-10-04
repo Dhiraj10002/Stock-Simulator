@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, Layers, PieChart } from "lucide-react";
 import Navbar from "@/components/layout/Navbar";
+import IndicesTickerStrip from "@/components/layout/IndicesTickerStrip";
 import FnoExplorePage from "@/components/trading/FnoExplorePage";
 import PaperOrderRecovery from "@/components/trading/PaperOrderRecovery";
 import { useAccountWallet } from "@/hooks/useAccountWallet";
@@ -36,6 +37,7 @@ export default function OptionsPage() {
         availableBalancePaise={wallet.data?.available_balance_paise}
         unrealizedPnlPaise={portfolio?.unrealized_pnl_paise}
       />
+      <IndicesTickerStrip />
       <main className="mx-auto w-full max-w-7xl min-w-0 flex-1 space-y-4 p-4 sm:p-6 lg:p-8">
         <header className="flex flex-wrap items-end justify-between gap-3 border-b border-slate-200 pb-3 dark:border-slate-800">
           <div className="min-w-0">

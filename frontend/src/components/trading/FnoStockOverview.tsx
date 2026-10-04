@@ -22,7 +22,7 @@ import { FnoMovement, FnoProvenance } from "./FnoQuoteDetails";
 import type { Candle, Instrument, Quote } from "@/types";
 
 const panel =
-  "rounded-2xl border border-slate-200 bg-[#ffffff] shadow-sm dark:border-slate-800 dark:bg-[#0f172a]";
+  "rounded-2xl border border-slate-200 bg-white shadow-xs dark:border-slate-800 dark:bg-slate-900/60";
 const muted = "text-slate-600 dark:text-slate-400";
 const bounded = <T,>(path: string, signal: AbortSignal) =>
   publicFetch<T>(path, AbortSignal.any([signal, AbortSignal.timeout(8000)]));
@@ -212,7 +212,7 @@ export default function FnoStockOverview({
     <div className="space-y-5">
       <section aria-label="Featured F&O stocks">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-lg font-bold">Trending stocks</h2>
+          <h2 className="text-base font-bold">Trending stocks</h2>
           <span className={`text-xs ${muted}`}>
             F&O eligible · NSE cash prices
           </span>
@@ -296,7 +296,7 @@ export default function FnoStockOverview({
       >
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-4 dark:border-slate-800">
           <div>
-            <h2 className="flex items-center gap-2 text-lg font-bold">
+            <h2 className="flex items-center gap-2 text-base font-bold">
               <TrendingUp
                 aria-hidden
                 className="h-5 w-5 text-cyan-700 dark:text-cyan-400"

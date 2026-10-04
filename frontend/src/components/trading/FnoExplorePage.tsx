@@ -322,8 +322,8 @@ export default function FnoExplorePage({
   const startOrder = (instrument: Instrument, side: "BUY" | "SELL") =>
     setTicket({ instrument: { ...instrument, segment: "FUTURES" }, side });
   return (
-    <div className="grid min-w-0 items-start gap-8 lg:grid-cols-12">
-      <div className="min-w-0 space-y-6 lg:col-span-8">
+    <div className="grid min-w-0 items-start gap-6 lg:grid-cols-12">
+      <div className="min-w-0 space-y-6 lg:col-span-8 xl:col-span-9">
         <FnoStockOverview
           active={active}
           futures={contracts}
@@ -647,7 +647,7 @@ export default function FnoExplorePage({
           )}
         </section>
       </div>
-      <aside className="min-w-0 space-y-4 lg:col-span-4">
+      <aside className="min-w-0 space-y-4 lg:col-span-4 xl:col-span-3">
         <section aria-label="F&O margin summary" className={`${panel} p-5`}>
           <h2 className="flex items-center gap-2 text-base font-bold">
             <Wallet

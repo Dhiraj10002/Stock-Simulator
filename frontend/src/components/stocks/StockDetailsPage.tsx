@@ -235,24 +235,32 @@ function StockDesk({ symbol, token }: { symbol: string; token: string }) {
     enabled: !!token,
     retry: false,
   });
-  const watched = watchlist.data?.some(
-    (item) =>
-      item.symbol.replace(/-EQ$/, "") ===
-      (canonical || symbol).replace(/-EQ$/, ""),
+  const getWatchlistSymbol = (item?: WatchlistDbItem): string => {
+    if (!item) return "";
+    const sym = item.symbol || (item as unknown as { Symbol?: string })?.Symbol || "";
+    return typeof sym === "string" ? sym : "";
+  };
+
+  const currentTarget = (canonical || symbol || "").replace(/-EQ$/, "");
+  const watched = Boolean(
+    watchlist.data?.some((item) => {
+      const sym = getWatchlistSymbol(item);
+      return sym ? sym.replace(/-EQ$/, "") === currentTarget : false;
+    }),
   );
   const [watchBusy, setWatchBusy] = useState(false);
   const toggleWatch = async () => {
     if (!token || !canonical || watchBusy || watchlist.isError) return;
     setWatchBusy(true);
     try {
-      const current = watchlist.data?.find(
-        (item) =>
-          item.symbol.replace(/-EQ$/, "") ===
-          (canonical || symbol).replace(/-EQ$/, ""),
-      );
+      const current = watchlist.data?.find((item) => {
+        const sym = getWatchlistSymbol(item);
+        return sym ? sym.replace(/-EQ$/, "") === currentTarget : false;
+      });
+      const symToRemove = current ? getWatchlistSymbol(current) : "";
       await apiFetch(
-        current
-          ? `/watchlist/${encodeURIComponent(current.symbol)}`
+        current && symToRemove
+          ? `/watchlist/${encodeURIComponent(symToRemove)}`
           : "/watchlist",
         {
           method: current ? "DELETE" : "POST",
