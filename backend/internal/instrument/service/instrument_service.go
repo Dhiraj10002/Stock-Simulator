@@ -1088,6 +1088,9 @@ func (s *Service) DerivativeUnderlyings(ctx context.Context) ([]string, error) {
 	}
 	seen := map[string]bool{}
 	for _, inst := range members {
+		if isExchangeTestInstrument(inst) {
+			continue
+		}
 		expiry, err := ParseExpiryDate(inst.Expiry, nil)
 		if err != nil || !time.Now().Before(expiry) {
 			continue
@@ -1134,6 +1137,9 @@ func (s *Service) DerivativeStocks(ctx context.Context) ([]dto.InstrumentRespons
 		return nil, err
 	}
 	for _, equity := range equities {
+		if isExchangeTestInstrument(equity) {
+			continue
+		}
 		out = append(out, ToCanonicalInstrument(equity))
 	}
 	return out, nil

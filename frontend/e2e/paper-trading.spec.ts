@@ -228,7 +228,11 @@ test("unavailable quote, chart and portfolio stay explicit", async ({
   await signIn(page);
   await page.goto("/stocks/RELIANCE");
   await expect(page.getByText("Chart archive request failed.")).toBeVisible();
-  await expect(page.getByText("Day movement unavailable")).toBeVisible();
+  await expect(
+    page
+      .getByRole("main")
+      .getByText("Day movement unavailable", { exact: true }),
+  ).toBeVisible();
   await page.goto("/portfolio");
   await expect(page.getByText("Valuation stale / unavailable")).toBeVisible();
 });

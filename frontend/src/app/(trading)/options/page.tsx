@@ -36,22 +36,22 @@ export default function OptionsPage() {
         availableBalancePaise={wallet.data?.available_balance_paise}
         unrealizedPnlPaise={portfolio?.unrealized_pnl_paise}
       />
-      <main className="mx-auto w-full max-w-[1720px] min-w-0 flex-1 space-y-6 p-3 sm:p-5 lg:p-6">
-        <header className="flex flex-wrap items-end justify-between gap-4 border-b border-slate-200 pb-5 dark:border-slate-800">
+      <main className="mx-auto w-full max-w-[1720px] min-w-0 flex-1 space-y-4 p-3 sm:p-5 lg:p-6">
+        <header className="flex flex-wrap items-end justify-between gap-3 border-b border-slate-200 pb-3 dark:border-slate-800">
           <div className="min-w-0">
             <p className="text-xs font-semibold uppercase tracking-wider text-cyan-800 dark:text-cyan-300">
               Paper trading · derivatives
             </p>
-            <h1 className="mt-2 flex items-center gap-2 text-2xl font-bold sm:text-3xl">
+            <h1 className="mt-1 flex items-center gap-2 text-xl font-bold sm:text-2xl">
               <Layers
                 aria-hidden
-                className="h-7 w-7 shrink-0 text-cyan-700 dark:text-cyan-400"
+                className="h-6 w-6 shrink-0 text-cyan-700 dark:text-cyan-400"
               />
               F&O Trading Desk
             </h1>
-            <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
-              Index and stock futures with Angel One quotes and your paper
-              account.
+            <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">
+              Real market discovery and futures paper trading with Angel One
+              quotes.
             </p>
           </div>
           <Link
@@ -91,7 +91,7 @@ export default function OptionsPage() {
             onClick={() => setTab("futures")}
             className={`min-h-11 rounded-lg px-4 font-semibold ${tab === "futures" ? "bg-white text-cyan-800 shadow-sm dark:bg-slate-700 dark:text-cyan-200" : "text-slate-700 dark:text-slate-300"}`}
           >
-            Futures
+            Explore
           </button>
           <button
             id="positions-tab"

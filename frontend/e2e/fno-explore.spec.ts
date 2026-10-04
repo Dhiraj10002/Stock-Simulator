@@ -33,6 +33,7 @@ const universe = [
   future("TCS", "FUTSTK", "27OCT2099", "NFO", 225),
   future("TCS", "FUTSTK", "24NOV2099", "NFO", 225),
   future("RELIANCE", "FUTSTK", "27OCT2099", "NFO", 500),
+  future("HDFCBANK", "FUTSTK", "27OCT2099", "NFO", 550),
   future("DYNAMIC", "FUTSTK"),
   future("BROKEN", "FUTSTK", "27OCT2099", "NFO", 0),
   future("011NSETEST", "FUTSTK"),
@@ -58,6 +59,8 @@ async function setup(
     catalogHang?: boolean;
     empty?: boolean;
     uncertainOrder?: boolean;
+    chartError?: boolean;
+    equityCount?: number;
   } = {},
 ) {
   const posts: Record<string, unknown>[] = [],
@@ -69,16 +72,18 @@ async function setup(
     statusError: false,
     catalogError: !!options.catalogError,
     price: 207640,
+    stockCatalogError: false,
   };
   let socket: WebSocketRoute | undefined;
   const quote = (symbol: string) => ({
     symbol,
     price_paise: state.price,
-    change_paise: 2640,
-    change_percent: 1.08,
+    change_paise: symbol === "HDFCBANK-EQ" ? -2640 : 2640,
+    change_percent:
+      symbol === "HDFCBANK-EQ" ? -1.08 : symbol === "TCS-EQ" ? 2.16 : 1.08,
     day_change_available: !symbol.includes("DYNAMIC"),
     volume: 2745450,
-    source: "angelone_live",
+    source: symbol === "SYNTHETIC-EQ" ? "synthetic_gbm" : "angelone_live",
     updated_at: options.closed
       ? "2026-10-02T10:00:00Z"
       : new Date().toISOString(),
@@ -142,6 +147,33 @@ async function setup(
         return;
       }
       data = options.empty ? [] : universe;
+    } else if (path === "/instruments/derivative-stocks") {
+      if (state.stockCatalogError) {
+        await fail();
+        return;
+      }
+      data = [
+        "RELIANCE",
+        "HDFCBANK",
+        "TCS",
+        "DYNAMIC",
+        "MISSING",
+        "SYNTHETIC",
+        "011NSETEST",
+        ...Array.from(
+          { length: options.equityCount || 0 },
+          (_, i) => `STOCK${i}`,
+        ),
+      ].map((name) => ({
+        symbol: `${name}-EQ`,
+        name,
+        token: name,
+        exchange: "NSE",
+        instrument_type: "EQUITY",
+        lot_size: 1,
+        active: true,
+        is_tradable: true,
+      }));
     } else if (path === "/instruments") data = [];
     else if (path === "/market/quotes/batch") {
       const symbols = (url.searchParams.get("symbols") || "").split(",");
@@ -152,7 +184,25 @@ async function setup(
       }
       data = options.unavailable
         ? {}
-        : Object.fromEntries(symbols.map((s) => [s, quote(s)]));
+        : Object.fromEntries(
+            symbols.filter((s) => s !== "MISSING-EQ").map((s) => [s, quote(s)]),
+          );
+    } else if (path.endsWith("/history")) {
+      if (options.chartError) {
+        await fail();
+        return;
+      }
+      expect(url.searchParams.get("interval")).toBe("ONE_DAY");
+      data = Array.from({ length: 5 }, (_, i) => ({
+        timestamp: Math.floor(Date.now() / 1000) - (5 - i) * 86400,
+        open_paise: 205000 + i * 1000,
+        high_paise: 210000 + i * 1000,
+        low_paise: 203000 + i * 1000,
+        close_paise: 207000 + i * 1000,
+        volume: 3000,
+        source: "angelone_live",
+        feed_mode: "LIVE",
+      }));
     } else if (path.startsWith("/market/quotes/")) {
       if (state.quoteError || options.unavailable) {
         await fail();
@@ -252,7 +302,7 @@ async function refresh(page: Page) {
   await expect(button).toBeEnabled();
 }
 
-test("single futures desk excludes removed sections and test scrips; filters and paged requests are dynamic", async ({
+test("restored market layout excludes All stocks, option chain and test scrips; futures filters and requests remain dynamic", async ({
   page,
 }) => {
   const control = await setup(page);
@@ -267,16 +317,28 @@ test("single futures desk excludes removed sections and test scrips; filters and
   ).toHaveCount(0);
   await expect(
     page.getByRole("region", { name: "F&O stocks", exact: true }),
-  ).toHaveCount(0);
-  await expect(page.getByRole("article")).toHaveCount(12);
+  ).toBeVisible();
+  await expect(
+    page
+      .getByRole("region", { name: "Futures market", exact: true })
+      .getByRole("article"),
+  ).toHaveCount(12);
   await page.getByRole("button", { name: "Next", exact: true }).click();
   await expect(page.getByText("Showing 13–17 of 17")).toBeVisible();
-  await expect(page.getByRole("article")).toHaveCount(5);
+  await expect(
+    page
+      .getByRole("region", { name: "Futures market", exact: true })
+      .getByRole("article"),
+  ).toHaveCount(5);
   await page
     .getByLabel("Futures exchange", { exact: true })
     .selectOption("BFO");
   await expect(card(page, "SENSEX27OCT2099FUT")).toBeVisible();
-  await expect(page.getByRole("article")).toHaveCount(1);
+  await expect(
+    page
+      .getByRole("region", { name: "Futures market", exact: true })
+      .getByRole("article"),
+  ).toHaveCount(1);
   await page
     .getByRole("button", { name: "Stock futures", exact: true })
     .click();
@@ -287,10 +349,18 @@ test("single futures desk excludes removed sections and test scrips; filters and
     card(page, "TCS27OCT2099FUT").getByText("Lot 225"),
   ).toBeVisible();
   await page.getByLabel("Futures expiry", { exact: true }).selectOption("");
-  await expect(page.getByRole("article")).toHaveCount(2);
+  await expect(
+    page
+      .getByRole("region", { name: "Futures market", exact: true })
+      .getByRole("article"),
+  ).toHaveCount(2);
   await page.getByLabel("Search futures contracts").fill("24NOV");
   await expect(card(page, "TCS24NOV2099FUT")).toBeVisible();
-  await expect(page.getByRole("article")).toHaveCount(1);
+  await expect(
+    page
+      .getByRole("region", { name: "Futures market", exact: true })
+      .getByRole("article"),
+  ).toHaveCount(1);
   await page.getByLabel("Search futures contracts").fill("missing");
   await expect(
     page.getByRole("heading", { name: "No matching futures" }),
@@ -301,15 +371,14 @@ test("single futures desk excludes removed sections and test scrips; filters and
   await expect(page.getByText(/011NSETEST/)).toHaveCount(0);
   expect(
     control.requests.filter((path) =>
-      /derivative-stocks|derivative-underlyings|option-chain|history/.test(
-        path,
-      ),
+      /derivative-underlyings|option-chain/.test(path),
     ),
   ).toEqual([]);
   expect(
-    control.batches.every(
-      (batch) =>
-        batch.length <= 12 && batch.every((symbol) => symbol.endsWith("FUT")),
+    control.batches.every((batch) =>
+      batch.every((symbol) => symbol.endsWith("FUT"))
+        ? batch.length <= 12
+        : batch.length <= 100,
     ),
   ).toBe(true);
   expect(
@@ -402,7 +471,11 @@ test("mobile order ticket stays within viewport and pauses when exchange status 
 }) => {
   await page.setViewportSize({ width: 360, height: 800 });
   const control = await setup(page);
-  await expect(page.getByRole("article")).toHaveCount(6);
+  await expect(
+    page
+      .getByRole("region", { name: "Futures market", exact: true })
+      .getByRole("article"),
+  ).toHaveCount(6);
   await card(page)
     .getByRole("button", { name: "Buy BANKNIFTY27OCT2099FUT", exact: true })
     .click();
@@ -550,7 +623,7 @@ test("light/dark and mobile/tablet layouts have readable cards and no overlappin
     await view
       .getByText("₹2,076.40", { exact: true })
       .evaluate((e) => parseFloat(getComputedStyle(e).fontSize)),
-  ).toBeGreaterThanOrEqual(28);
+  ).toBeGreaterThanOrEqual(24);
   const color = async () =>
     summary.evaluate((e) => ({
       background: getComputedStyle(e).backgroundColor,
@@ -593,6 +666,123 @@ test("light/dark and mobile/tablet layouts have readable cards and no overlappin
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth),
     ).toBeLessThanOrEqual(width);
-    await page.getByRole("tab", { name: "Futures", exact: true }).click();
+    await page.getByRole("tab", { name: "Explore", exact: true }).click();
   }
+});
+
+test("featured native candles and canonical lots lead to current futures; gainers and losers use real available movement", async ({
+  page,
+}) => {
+  const control = await setup(page);
+  const featured = page.getByRole("region", { name: "Featured F&O stocks" });
+  await expect(featured.getByRole("article")).toHaveCount(3);
+  for (const symbol of ["RELIANCE", "HDFCBANK", "TCS"])
+    await expect(
+      featured.getByRole("img", {
+        name: `${symbol}-EQ provider daily candles`,
+      }),
+    ).toBeVisible();
+  await expect(
+    featured
+      .getByRole("article", { name: "TCS stock card" })
+      .getByText("Futures lot: 225"),
+  ).toBeVisible();
+  const movers = page.getByRole("region", { name: "F&O stocks", exact: true });
+  await expect(
+    movers.getByText("4 of 6 eligible equities have provider quotes.", {
+      exact: false,
+    }),
+  ).toBeVisible();
+  await expect(movers.getByRole("row").nth(1).getByRole("link")).toContainText(
+    "TCS",
+  );
+  await expect(movers.getByRole("row")).toHaveCount(3);
+  control.tick("RELIANCE-EQ", 211500);
+  await expect(
+    featured
+      .getByRole("article", { name: "RELIANCE stock card" })
+      .getByText("₹2,115.00", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    movers
+      .getByRole("row")
+      .filter({ hasText: "RELIANCE" })
+      .getByText("₹2,115.00", { exact: true }),
+  ).toBeVisible();
+  await movers.getByRole("button", { name: "Losers", exact: true }).click();
+  await expect(movers.getByRole("row")).toHaveCount(2);
+  await expect(movers.getByRole("row").nth(1)).toContainText("HDFCBANK");
+  await expect(movers.getByRole("row").nth(1)).toContainText("-26.40 (-1.08%)");
+  await featured
+    .getByRole("button", { name: "Trade futures for TCS", exact: true })
+    .click();
+  await expect(
+    page.getByLabel("Futures underlying", { exact: true }),
+  ).toHaveValue("TCS");
+  await expect(card(page, "TCS27OCT2099FUT")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Chain", exact: true }),
+  ).toHaveCount(0);
+});
+
+test("failed archives and missing quotes stay explicit; eligible catalog retries recover", async ({
+  page,
+}) => {
+  const control = await setup(page, { chartError: true, unavailable: true });
+  const featured = page.getByRole("region", { name: "Featured F&O stocks" });
+  await expect(
+    featured.getByText("Chart unavailable", { exact: true }),
+  ).toHaveCount(3);
+  await expect(featured.getByRole("img")).toHaveCount(0);
+  await expect(featured.getByText("₹0.00", { exact: true })).toHaveCount(0);
+  const movers = page.getByRole("region", { name: "F&O stocks", exact: true });
+  await expect(
+    movers.getByText("No gainers with available provider day movement.", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(movers.getByRole("row")).toHaveCount(0);
+  control.state.stockCatalogError = true;
+  await refresh(page);
+  await expect(
+    movers.getByRole("button", { name: "Retry stock catalog" }),
+  ).toBeVisible();
+  control.state.stockCatalogError = false;
+  await movers.getByRole("button", { name: "Retry stock catalog" }).click();
+  await expect(
+    movers.getByText("No gainers with available provider day movement.", {
+      exact: true,
+    }),
+  ).toBeVisible();
+});
+
+test("complete eligible stock universe uses batches of at most 100 and only visible movers receive stream subscriptions", async ({
+  page,
+}) => {
+  const control = await setup(page, { equityCount: 205 });
+  const movers = page.getByRole("region", { name: "F&O stocks", exact: true });
+  await expect(
+    movers.getByText("209 of 211 eligible equities have provider quotes.", {
+      exact: false,
+    }),
+  ).toBeVisible();
+  const equityBatches = control.batches.filter((batch) =>
+    batch.some((s) => s.endsWith("-EQ")),
+  );
+  expect(
+    equityBatches.map((batch) => batch.length).sort((a, b) => b - a),
+  ).toEqual([100, 100, 11]);
+  const equitySubscriptions = new Set(
+    control.subscriptions.flat().filter((s) => s.endsWith("-EQ")),
+  );
+  expect(equitySubscriptions.size).toBeLessThanOrEqual(9);
+  expect(equitySubscriptions.has("STOCK204-EQ")).toBe(false);
+  expect(
+    control.requests.filter(
+      (path) =>
+        path.startsWith("/market/quotes/") &&
+        !path.endsWith("/history") &&
+        path !== "/market/quotes/batch",
+    ),
+  ).toEqual([]);
 });

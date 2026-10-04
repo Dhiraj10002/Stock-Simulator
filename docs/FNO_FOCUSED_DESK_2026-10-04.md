@@ -1,5 +1,7 @@
 # F&O desk review and implementation — 4 October 2026
 
+> **Historical implementation record:** The user later chose to restore the screenshot-style featured cards, Gainers / Losers table and compact futures layout. Read [FNO_SCREENSHOT_LAYOUT_2026-10-04.md](FNO_SCREENSHOT_LAYOUT_2026-10-04.md) for current requirements. All stocks and Option Chain remain removed. The futures-only presentation and its validation counts below describe the earlier revision.
+
 ## What you requested
 
 After merging the previous F&O UI branch, you requested removal of the unavailable All stocks section and the option chain, clearer futures information, a dynamic responsive page, and a review of related defects. This change starts from merged main `5590b5dd447b16e23d2ec4feb636f9320d915367` and is isolated on `codex/fno-focused-responsive-desk-20261004`.
@@ -75,4 +77,4 @@ Leave the development services running and open `http://localhost:3000/options`.
 
 ## Instructions for the next Codex or Gemini session
 
-Read this file and the existing runtime/startup recovery documents before changing the feed or settlement logic. Preserve this futures-only navigation, genuine provider timestamps, master-derived identity/lot sizes, missing-data semantics, derivative/cash position distinction, and account-scoped recovery. Do not restore demonstration prices or the removed option chain as a workaround. Finish issue #9 with actual open-session evidence before declaring the platform production-ready. Continue release monitoring and API/worker operational checks only after that acceptance result is known.
+Read `FNO_SCREENSHOT_LAYOUT_2026-10-04.md` and the existing runtime/startup recovery documents before changing the feed or settlement logic. Preserve the latest screenshot-style Explore / Positions navigation, genuine provider timestamps, master-derived identity/lot sizes, missing-data semantics, derivative/cash position distinction, and account-scoped recovery. Do not restore demonstration prices or the removed option chain as a workaround. Finish issue #9 with actual open-session evidence before declaring the platform production-ready. Continue release monitoring and API/worker operational checks only after that acceptance result is known.

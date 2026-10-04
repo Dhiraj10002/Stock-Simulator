@@ -10,6 +10,11 @@ import (
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
 )
 
+func isExchangeTestInstrument(row model.Instrument) bool {
+	identity := strings.ToUpper(row.Symbol + " " + row.Underlying + " " + row.UnderlyingSymbol + " " + row.Name)
+	return strings.Contains(identity, "NSETEST") || strings.Contains(identity, "BSETEST")
+}
+
 // FuturesCatalog returns the complete current futures universe rather than a
 // truncated general search. Exchange test scrips remain in the master/history,
 // but are never advertised as regular contracts on the paper futures desk.
@@ -24,8 +29,7 @@ func (s *Service) FuturesCatalog(ctx context.Context) ([]dto.InstrumentResponse,
 	now := time.Now()
 	out := make([]dto.InstrumentResponse, 0, len(rows))
 	for _, row := range rows {
-		identity := strings.ToUpper(row.Symbol + " " + row.Underlying + " " + row.UnderlyingSymbol + " " + row.Name)
-		if strings.Contains(identity, "NSETEST") || strings.Contains(identity, "BSETEST") {
+		if isExchangeTestInstrument(row) {
 			continue
 		}
 		expiry, err := ParseExpiryDate(row.Expiry, nil)
