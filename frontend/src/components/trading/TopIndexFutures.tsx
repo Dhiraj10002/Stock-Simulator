@@ -8,7 +8,6 @@ import {
   displayQuote,
   expiryLabel,
   futuresTradeBlock,
-  futuresUnderlying,
   type FuturesMarketStatus,
 } from "@/lib/fnoExplore";
 import { useAuthToken } from "@/hooks/useAuthToken";
@@ -24,46 +23,63 @@ const panel =
 
 const DEFAULT_INDEX_FUTURES = [
   {
-    symbol: "NIFTY24SEPFUT",
+    symbol: "NIFTY-OCT-FUT",
     underlying: "NIFTY",
-    name: "NIFTY 29 Sep Fut",
-    expiry: "29 Sep 2026",
+    name: "NIFTY OCT FUT",
+    expiry: "27 Oct 2026",
     price: 23378.5,
     change: 12.4,
     changePercent: 0.05,
-    lotSize: 50,
+    lotSize: 65,
   },
   {
-    symbol: "BANKNIFTY24SEPFUT",
+    symbol: "BANKNIFTY-OCT-FUT",
     underlying: "BANKNIFTY",
-    name: "BANKNIFTY 29 Sep Fut",
-    expiry: "29 Sep 2026",
-    price: 56527.0,
-    change: 217.0,
-    changePercent: 0.39,
-    lotSize: 15,
+    name: "BANKNIFTY OCT FUT",
+    expiry: "27 Oct 2026",
+    price: 54794.8,
+    change: -211.2,
+    changePercent: -0.38,
+    lotSize: 30,
   },
   {
-    symbol: "NIFTY24OCTFUT",
+    symbol: "NIFTY-NOV-FUT",
     underlying: "NIFTY",
-    name: "NIFTY 27 Oct Fut",
-    expiry: "27 Oct 2026",
+    name: "NIFTY NOV FUT",
+    expiry: "23 Nov 2026",
     price: 23480.3,
     change: 38.3,
     changePercent: 0.16,
-    lotSize: 50,
+    lotSize: 65,
   },
   {
-    symbol: "MIDCPNIFTY24SEPFUT",
+    symbol: "MIDCPNIFTY-OCT-FUT",
     underlying: "MIDCPNIFTY",
-    name: "MIDCPNIFTY 29 Sep Fut",
-    expiry: "29 Sep 2026",
-    price: 14524.4,
-    change: 85.6,
-    changePercent: 0.59,
-    lotSize: 50,
+    name: "MIDCPNIFTY OCT FUT",
+    expiry: "27 Oct 2026",
+    price: 13616.5,
+    change: -181.3,
+    changePercent: -1.31,
+    lotSize: 120,
   },
 ];
+
+function formatFutureCardName(inst: Instrument): string {
+  const u = (inst.underlying || inst.symbol.replace(/\d.*$/, "")).toUpperCase();
+  if (inst.expiry) {
+    const parsed = Date.parse(inst.expiry);
+    if (!Number.isNaN(parsed)) {
+      const month = new Date(parsed)
+        .toLocaleDateString("en-IN", {
+          timeZone: "Asia/Kolkata",
+          month: "short",
+        })
+        .toUpperCase();
+      return `${u} ${month} FUT`;
+    }
+  }
+  return inst.display_symbol || `${u} FUT`;
+}
 
 export default function TopIndexFutures({
   contracts,
@@ -130,16 +146,20 @@ export default function TopIndexFutures({
   useTargetedSubscription(active ? topRanked.map((i) => i.symbol) : []);
 
   const displayedCards = useMemo(() => {
-    if (topRanked.length >= 4) {
-      return topRanked.map((inst) => {
+    // If topRanked from live volume has at least 4 unique instruments, use them
+    const uniqueTopRanked = topRanked.filter(
+      (inst, idx, arr) => arr.findIndex((x) => x.symbol === inst.symbol) === idx,
+    );
+
+    if (uniqueTopRanked.length >= 4) {
+      return uniqueTopRanked.slice(0, 4).map((inst) => {
         const q = quotes[inst.symbol];
-        const u = futuresUnderlying(inst);
-        const price = q ? q.price_paise / 100 : 0;
+        const price = q && q.price_paise > 0 ? q.price_paise / 100 : 0;
         const change = q?.change_paise !== undefined ? q.change_paise / 100 : 0;
         const changePercent = q?.change_percent ?? 0;
         return {
           instrument: inst,
-          name: inst.display_symbol || `${u} ${expiryLabel(inst.expiry)} Fut`,
+          name: formatFutureCardName(inst),
           expiry: expiryLabel(inst.expiry),
           lotSize: inst.lot_size,
           price,
@@ -149,18 +169,81 @@ export default function TopIndexFutures({
       });
     }
 
-    return DEFAULT_INDEX_FUTURES.map((fallback) => {
-      const matched = indices.find(
-        (i) => i.symbol.toUpperCase() === fallback.symbol.toUpperCase() ||
-               (i.underlying && i.underlying.toUpperCase() === fallback.underlying.toUpperCase()),
-      );
-      const q = matched ? quotes[matched.symbol] : undefined;
-      const price = q && q.price_paise > 0 ? q.price_paise / 100 : fallback.price;
-      const change = q?.change_paise !== undefined ? q.change_paise / 100 : fallback.change;
-      const changePercent = q?.change_percent !== undefined ? q.change_percent : fallback.changePercent;
-      const lot = matched?.lot_size || fallback.lotSize;
+    // Sort index instruments by expiry date (nearest first)
+    const sortedIndices = [...indices].sort((a, b) => {
+      const expA = a.expiry ? Date.parse(a.expiry) : Infinity;
+      const expB = b.expiry ? Date.parse(b.expiry) : Infinity;
+      return expA - expB;
+    });
 
-      const inst: Instrument = matched || {
+    const usedSymbols = new Set<string>();
+    const selectedInsts: Instrument[] = [];
+
+    // Slot 1: NIFTY (1st expiry)
+    const n1 = sortedIndices.find(
+      (i) => (i.underlying || "").toUpperCase() === "NIFTY" && !usedSymbols.has(i.symbol),
+    );
+    if (n1) {
+      usedSymbols.add(n1.symbol);
+      selectedInsts.push(n1);
+    }
+
+    // Slot 2: BANKNIFTY (1st expiry)
+    const bn1 = sortedIndices.find(
+      (i) => (i.underlying || "").toUpperCase() === "BANKNIFTY" && !usedSymbols.has(i.symbol),
+    );
+    if (bn1) {
+      usedSymbols.add(bn1.symbol);
+      selectedInsts.push(bn1);
+    }
+
+    // Slot 3: NIFTY (2nd expiry) or FINNIFTY
+    const n2 =
+      sortedIndices.find(
+        (i) => (i.underlying || "").toUpperCase() === "NIFTY" && !usedSymbols.has(i.symbol),
+      ) ||
+      sortedIndices.find(
+        (i) => (i.underlying || "").toUpperCase() === "FINNIFTY" && !usedSymbols.has(i.symbol),
+      );
+    if (n2) {
+      usedSymbols.add(n2.symbol);
+      selectedInsts.push(n2);
+    }
+
+    // Slot 4: MIDCPNIFTY (1st expiry) or any remaining index
+    const mid1 =
+      sortedIndices.find(
+        (i) => (i.underlying || "").toUpperCase() === "MIDCPNIFTY" && !usedSymbols.has(i.symbol),
+      ) || sortedIndices.find((i) => !usedSymbols.has(i.symbol));
+    if (mid1) {
+      usedSymbols.add(mid1.symbol);
+      selectedInsts.push(mid1);
+    }
+
+    // If 4 distinct contracts were selected from master catalog, map them
+    if (selectedInsts.length === 4) {
+      return selectedInsts.map((inst, idx) => {
+        const fallback = DEFAULT_INDEX_FUTURES[idx];
+        const q = quotes[inst.symbol];
+        const price = q && q.price_paise > 0 ? q.price_paise / 100 : fallback?.price ?? 0;
+        const change = q?.change_paise !== undefined ? q.change_paise / 100 : fallback?.change ?? 0;
+        const changePercent = q?.change_percent ?? fallback?.changePercent ?? 0;
+
+        return {
+          instrument: inst,
+          name: formatFutureCardName(inst),
+          expiry: expiryLabel(inst.expiry),
+          lotSize: inst.lot_size,
+          price,
+          change,
+          changePercent,
+        };
+      });
+    }
+
+    // Otherwise use default fallback cards with distinct symbols
+    return DEFAULT_INDEX_FUTURES.map((fallback) => {
+      const inst: Instrument = {
         id: fallback.symbol,
         symbol: fallback.symbol,
         display_symbol: fallback.name,
@@ -172,21 +255,21 @@ export default function TopIndexFutures({
         expiry: fallback.expiry,
         strike: 0,
         option_type: "",
-        lot_size: lot,
+        lot_size: fallback.lotSize,
         tick_size: 0.05,
         active: true,
         segment: "FUTURES",
-        basePricePaise: Math.round(price * 100),
+        basePricePaise: Math.round(fallback.price * 100),
       };
 
       return {
         instrument: inst,
         name: fallback.name,
         expiry: fallback.expiry,
-        lotSize: lot,
-        price,
-        change,
-        changePercent,
+        lotSize: fallback.lotSize,
+        price: fallback.price,
+        change: fallback.change,
+        changePercent: fallback.changePercent,
       };
     });
   }, [topRanked, indices, quotes]);
@@ -212,8 +295,9 @@ export default function TopIndexFutures({
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        {displayedCards.map((card) => {
+        {displayedCards.map((card, idx) => {
           const isGain = card.changePercent >= 0;
+          const cardKey = `${card.instrument.token || card.instrument.symbol || card.name}-${card.expiry}-${idx}`;
           const block = futuresTradeBlock(
             card.instrument,
             quotes[card.instrument.symbol],
@@ -223,7 +307,7 @@ export default function TopIndexFutures({
           );
           return (
             <div
-              key={card.instrument.symbol}
+              key={cardKey}
               className={`${panel} p-4 hover:border-cyan-500/50 transition-all space-y-3 flex flex-col justify-between group`}
             >
               <div className="flex items-start justify-between gap-2">

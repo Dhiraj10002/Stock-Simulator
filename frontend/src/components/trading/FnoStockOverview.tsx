@@ -3,7 +3,7 @@
 import { useState, useMemo } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronDown, Layers, TrendingUp } from "lucide-react";
+import { ChevronDown, ChevronRight, Layers, Sparkles, TrendingUp } from "lucide-react";
 import { publicFetch } from "@/lib/api";
 import {
   eligibleEquities,
@@ -466,6 +466,26 @@ export default function FnoStockOverview({
 
   return (
     <div className="space-y-6">
+      {/* Popular Stocks Header (Matches Screenshot 1 & 3) */}
+      <div className="flex items-center justify-between pb-1">
+        <div>
+          <h2 className="text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
+            Popular stocks
+          </h2>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Highest institutional weightage and investor interest
+          </p>
+        </div>
+        <Link
+          href="/stocks"
+          className="text-xs font-semibold text-cyan-600 dark:text-cyan-400 hover:underline flex items-center gap-1"
+        >
+          <span>See more</span>
+          <ChevronRight className="w-3.5 h-3.5" />
+        </Link>
+      </div>
+
       {/* 1. TOP 3 TRENDING STOCK CARDS (RELIANCE, HDFCBANK, TCS) */}
       <section aria-label="Featured F&O stocks" className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {featuredList.map((stock) => {

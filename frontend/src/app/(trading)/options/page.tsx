@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Layers, PieChart } from "lucide-react";
 import Navbar from "@/components/layout/Navbar";
+import IndicesTickerStrip from "@/components/layout/IndicesTickerStrip";
 import FnoExplorePage from "@/components/trading/FnoExplorePage";
 import OptionChainDesk from "@/components/trading/OptionChainDesk";
 import PaperOrderRecovery from "@/components/trading/PaperOrderRecovery";
@@ -40,6 +41,9 @@ export default function OptionsPage() {
         availableBalancePaise={wallet.data?.available_balance_paise}
         unrealizedPnlPaise={portfolio?.unrealized_pnl_paise}
       />
+
+      {/* HORIZONTAL INDICES STRIP (Screenshot 3) */}
+      <IndicesTickerStrip />
 
       <main className="mx-auto w-full max-w-7xl min-w-0 flex-1 space-y-6 p-4 sm:p-6 lg:p-8">
         {/* 1. EXPLORE DESK (Matches Screenshot 4) */}
