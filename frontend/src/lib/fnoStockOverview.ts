@@ -73,7 +73,7 @@ export function featuredEquities(
     const quote = displayQuote(quotes[stock.symbol]);
     const available = quote?.source === "angelone_live" ? 0 : 10;
     const index = preferred.indexOf(equityUnderlying(stock));
-    return available + (index < 0 ? preferred.length : index);
+    return index < 0 ? preferred.length + available : index;
   };
   return [...stocks]
     .sort((a, b) => rank(a) - rank(b) || a.symbol.localeCompare(b.symbol))
@@ -81,7 +81,7 @@ export function featuredEquities(
 }
 
 type NativeCandle = Candle & { source?: string; feed_mode?: string };
-export function nativePreviewCandles(
+export function nativeCandles(
   data: NativeCandle[],
   now = Date.now(),
 ): Candle[] {
@@ -109,5 +109,46 @@ export function nativePreviewCandles(
       continue;
     bars.set(timestamp, { ...bar, timestamp });
   }
-  return [...bars.values()].sort((a, b) => a.timestamp - b.timestamp).slice(-5);
+  return [...bars.values()].sort((a, b) => a.timestamp - b.timestamp);
+}
+
+export function nativePreviewCandles(
+  data: NativeCandle[],
+  now = Date.now(),
+): Candle[] {
+  return nativeCandles(data, now).slice(-5);
+}
+
+// Compare volumes from the latest supplied IST session only. A current zero
+// volume suppresses old-session rankings; missing data is never ranked as zero.
+export const volumeSession = (quote: Quote) =>
+  Math.floor((Date.parse(quote.updated_at) + 19800000) / 86400000);
+export function topIndexFutures(
+  contracts: Instrument[],
+  quotes: Record<string, Quote | undefined>,
+) {
+  const supplied = contracts.filter((i) => {
+    const q = displayQuote(quotes[i.symbol]);
+    return (
+      i.instrument_type === "FUTIDX" &&
+      q?.source === "angelone_live" &&
+      q.volume_available !== false &&
+      Number.isSafeInteger(q.volume) &&
+      (q.volume! > 0 || (q.volume === 0 && q.volume_available === true))
+    );
+  });
+  const latest = Math.max(
+    ...supplied.map((i) => volumeSession(quotes[i.symbol]!)),
+  );
+  return supplied
+    .filter(
+      (i) =>
+        volumeSession(quotes[i.symbol]!) === latest &&
+        quotes[i.symbol]!.volume! > 0,
+    )
+    .sort(
+      (a, b) =>
+        quotes[b.symbol]!.volume! - quotes[a.symbol]!.volume! ||
+        a.symbol.localeCompare(b.symbol),
+    );
 }

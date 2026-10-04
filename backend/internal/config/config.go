@@ -26,9 +26,11 @@ type Config struct {
 	RateLimitMaxRequests     int
 	AuthRateLimitMaxRequests int
 
-	JWTSecret    string
-	GeminiAPIKey string
-	GeminiModel  string
+	JWTSecret     string
+	GeminiAPIKey  string
+	GeminiModel   string
+	IndianAPIKey  string
+	IndianAPIPlan string
 
 	CORSAllowedOrigins         string
 	InitialVirtualBalancePaise int64
@@ -60,9 +62,11 @@ func Load() (*Config, error) {
 		RateLimitMaxRequests:     viper.GetInt("RATE_LIMIT_MAX_REQUESTS"),
 		AuthRateLimitMaxRequests: viper.GetInt("AUTH_RATE_LIMIT_MAX_REQUESTS"),
 
-		JWTSecret:    viper.GetString("JWT_SECRET"),
-		GeminiAPIKey: viper.GetString("GEMINI_API_KEY"),
-		GeminiModel:  viper.GetString("GEMINI_MODEL"),
+		JWTSecret:     viper.GetString("JWT_SECRET"),
+		GeminiAPIKey:  viper.GetString("GEMINI_API_KEY"),
+		GeminiModel:   viper.GetString("GEMINI_MODEL"),
+		IndianAPIKey:  viper.GetString("INDIAN_API_KEY"),
+		IndianAPIPlan: viper.GetString("INDIAN_API_PLAN"),
 
 		CORSAllowedOrigins:         viper.GetString("CORS_ALLOWED_ORIGINS"),
 		InitialVirtualBalancePaise: viper.GetInt64("INITIAL_VIRTUAL_BALANCE_PAISE"),

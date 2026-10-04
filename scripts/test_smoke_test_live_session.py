@@ -57,8 +57,8 @@ class LiveSmokeEvidenceTest(unittest.TestCase):
                 return io.BytesIO(json.dumps(value).encode())
             if path == '/instruments/snapshots/active':
                 data = {'status': 'ACTIVE', 'total_instruments': 10, 'version': 'fixture-master'}
-            elif path.startswith('/instruments?'):
-                data = [{'instrument_type': 'FUTIDX', 'symbol': 'FUTURE', 'lot_size': 25}]
+            elif path == '/instruments/futures' or path.startswith('/instruments?'):
+                data = [{'instrument_type': 'FUTIDX', 'symbol': 'FUTURE', 'lot_size': 25, 'underlying': 'NIFTY', 'token': '1234', 'exchange': 'NFO', 'active': True, 'is_tradable': True, 'expiry': '2099-10-27'}]
             elif path.startswith('/fno/option-chain'):
                 data = {'strikes': [{'is_atm': True, 'call': {'symbol': 'CALL', 'lot_size': 25}, 'put': {'symbol': 'PUT', 'lot_size': 25}}]}
             elif '/history?' in path:
@@ -90,6 +90,24 @@ class LiveSmokeEvidenceTest(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, 'without credentials'):
                 smoke.run(args(base_url='http://user:private-password@localhost:8080/api/v1'))
         request.assert_not_called()
+
+
+class CanonicalFutureSelectionTest(unittest.TestCase):
+    def setUp(self):
+        self.now = smoke.datetime(2026, 10, 6, 12, 0, tzinfo=smoke.IST)
+        self.row = dict(symbol="NIFTY06OCT26FUT", underlying="NIFTY", token="1234", instrument_type="FUTIDX", exchange="NFO", lot_size=65, active=True, is_tradable=True, expiry="06OCT2026")
+
+    def test_exact_underlying_and_expiry_day_remain_eligible(self):
+        wrong = self.row | dict(underlying="NIFTYBANK", symbol="NIFTYBANK06OCT26FUT")
+        later = self.row | dict(symbol="NIFTY13OCT26FUT", expiry="2026-10-13")
+        self.assertEqual(smoke.select_live_future([wrong, later, self.row], "NIFTY", self.now), self.row)
+        at_close = self.now.replace(hour=15, minute=30)
+        self.assertEqual(smoke.select_live_future([later, self.row], "NIFTY", at_close), later)
+
+    def test_invalid_metadata_cannot_be_used_as_fallback(self):
+        for patch_value in [dict(expiry="nonsense"), dict(expiry="2026-10-01"), dict(token="NIFTY"), dict(token="١٢٣"), dict(active=False), dict(is_tradable=False), dict(lot_size=0), dict(lot_size=True), dict(exchange="NSE"), dict(underlying="NIFTYBANK"), dict(instrument_type="OPTIDX")]:
+            with self.subTest(patch=patch_value), self.assertRaisesRegex(RuntimeError, "Current canonical future missing"):
+                smoke.select_live_future([self.row | patch_value], "NIFTY", self.now)
 
 
 if __name__ == '__main__':

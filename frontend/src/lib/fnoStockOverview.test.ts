@@ -5,6 +5,7 @@ import {
   featuredEquities,
   nativePreviewCandles,
   rankedEquities,
+  topIndexFutures,
 } from "./fnoStockOverview";
 import type { Candle, Instrument, Quote } from "../types";
 const stock = (name: string) =>
@@ -78,7 +79,7 @@ test("gainers and losers rank authentic day movement and keep last-session times
   );
   assert.equal(quotes["TCS-EQ"].updated_at, "2026-10-02T10:00:00Z");
 });
-test("featured stocks come only from the actual eligible master and favor available provider prices", () => {
+test("featured stocks come only from the actual eligible master and keep the requested three identities even when quotes are missing", () => {
   const stocks = ["ABC", "TCS", "HDFCBANK", "RELIANCE"].map(stock);
   assert.deepEqual(
     featuredEquities(
@@ -91,7 +92,7 @@ test("featured stocks come only from the actual eligible master and favor availa
   );
   assert.deepEqual(
     featuredEquities(stocks, { "ABC-EQ": quote("ABC") }).map((i) => i.name),
-    ["ABC", "RELIANCE", "HDFCBANK"],
+    ["RELIANCE", "HDFCBANK", "TCS"],
   );
   assert.deepEqual(
     featuredEquities([stock("ONLY")], {}).map((i) => i.name),
@@ -129,4 +130,49 @@ test("candle previews require native provenance, coherent OHLC and genuine past 
   assert.ok(result[0].timestamp < result[1].timestamp);
   assert.equal(result[1].timestamp, bar.timestamp);
   assert.equal(result[1].close_paise, 10600);
+});
+
+test("top traded indices rank genuine positive volume and omit absent, zero and simulated volume", () => {
+  const contracts = ["LOW", "HIGH", "ZERO", "MISSING", "SIM"].map((name) => ({
+    ...stock(name),
+    symbol: name,
+    instrument_type: "FUTIDX",
+  }));
+  const quotes = {
+    LOW: { ...quote("LOW"), volume: 25 },
+    HIGH: { ...quote("HIGH"), volume: 100 },
+    ZERO: { ...quote("ZERO"), volume: 0 },
+    SIM: { ...quote("SIM"), volume: 500, source: "synthetic_gbm" },
+  };
+  assert.deepEqual(
+    topIndexFutures(contracts, quotes).map((i) => i.symbol),
+    ["HIGH", "LOW"],
+  );
+});
+
+test("volume rankings do not mix exchange sessions or rank yesterday after a current zero", () => {
+  const contracts = ["TODAY", "YESTERDAY"].map((name) => ({
+    ...stock(name),
+    symbol: name,
+    instrument_type: "FUTIDX",
+  }));
+  const quotes = {
+    TODAY: {
+      ...quote("TODAY"),
+      updated_at: "2026-10-03T09:00:00Z",
+      volume: 10,
+    },
+    YESTERDAY: { ...quote("YESTERDAY"), volume: 9999 },
+  };
+  assert.deepEqual(
+    topIndexFutures(contracts, quotes).map((i) => i.symbol),
+    ["TODAY"],
+  );
+  assert.deepEqual(
+    topIndexFutures(contracts, {
+      ...quotes,
+      TODAY: { ...quotes.TODAY, volume: 0, volume_available: true },
+    }),
+    [],
+  );
 });

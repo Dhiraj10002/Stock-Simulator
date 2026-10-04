@@ -124,7 +124,13 @@ async function mocks(
     else if (path === "/instruments") data = [];
     else if (path === "/instruments/futures") data = [];
     else if (path.startsWith("/instruments/"))
-      data = instrument(path.split("/").at(-1)!, 65);
+      data = {
+        ...instrument(path.split("/").at(-1)!, 1),
+        exchange: "NSE",
+        exchange_segment: "NSE",
+        instrument_type: "EQUITY",
+        expiry: "",
+      };
     else if (path.endsWith("/history") && !overrides.unavailable)
       data = [0, 1, 2].map((i) => ({
         timestamp: Math.floor(Date.now() / 60000) * 60 - 180 + i * 60,
@@ -229,9 +235,7 @@ test("unavailable quote, chart and portfolio stay explicit", async ({
   await page.goto("/stocks/RELIANCE");
   await expect(page.getByText("Chart archive request failed.")).toBeVisible();
   await expect(
-    page
-      .getByRole("main")
-      .getByText("Day movement unavailable", { exact: true }),
+    page.getByRole("main").getByText("Day change unavailable", { exact: true }),
   ).toBeVisible();
   await page.goto("/portfolio");
   await expect(page.getByText("Valuation stale / unavailable")).toBeVisible();
