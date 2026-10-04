@@ -8,6 +8,8 @@ import {
   displayQuote,
   expiryLabel,
   futuresTradeBlock,
+  futuresUnderlying,
+  futuresExpiry,
   type FuturesMarketStatus,
 } from "@/lib/fnoExplore";
 import { useAuthToken } from "@/hooks/useAuthToken";
@@ -16,70 +18,12 @@ import {
   useTargetedSubscription,
 } from "@/stores/market-store";
 import { topIndexFutures } from "@/lib/fnoStockOverview";
+import { formatPaise } from "@/lib/format";
+import { FnoMovement, FnoProvenance } from "./FnoQuoteDetails";
 import type { Instrument, Quote } from "@/types";
 
 const panel =
   "rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900/60 shadow-xs";
-
-const DEFAULT_INDEX_FUTURES = [
-  {
-    symbol: "NIFTY-OCT-FUT",
-    underlying: "NIFTY",
-    name: "NIFTY OCT FUT",
-    expiry: "27 Oct 2026",
-    price: 23378.5,
-    change: 12.4,
-    changePercent: 0.05,
-    lotSize: 65,
-  },
-  {
-    symbol: "BANKNIFTY-OCT-FUT",
-    underlying: "BANKNIFTY",
-    name: "BANKNIFTY OCT FUT",
-    expiry: "27 Oct 2026",
-    price: 54794.8,
-    change: -211.2,
-    changePercent: -0.38,
-    lotSize: 30,
-  },
-  {
-    symbol: "NIFTY-NOV-FUT",
-    underlying: "NIFTY",
-    name: "NIFTY NOV FUT",
-    expiry: "23 Nov 2026",
-    price: 23480.3,
-    change: 38.3,
-    changePercent: 0.16,
-    lotSize: 65,
-  },
-  {
-    symbol: "MIDCPNIFTY-OCT-FUT",
-    underlying: "MIDCPNIFTY",
-    name: "MIDCPNIFTY OCT FUT",
-    expiry: "27 Oct 2026",
-    price: 13616.5,
-    change: -181.3,
-    changePercent: -1.31,
-    lotSize: 120,
-  },
-];
-
-function formatFutureCardName(inst: Instrument): string {
-  const u = (inst.underlying || inst.symbol.replace(/\d.*$/, "")).toUpperCase();
-  if (inst.expiry) {
-    const parsed = Date.parse(inst.expiry);
-    if (!Number.isNaN(parsed)) {
-      const month = new Date(parsed)
-        .toLocaleDateString("en-IN", {
-          timeZone: "Asia/Kolkata",
-          month: "short",
-        })
-        .toUpperCase();
-      return `${u} ${month} FUT`;
-    }
-  }
-  return inst.display_symbol || `${u} FUT`;
-}
 
 export default function TopIndexFutures({
   contracts,
@@ -101,7 +45,6 @@ export default function TopIndexFutures({
   const symbols = useMemo(() => indices.map((i) => i.symbol), [indices]);
   const token = useAuthToken();
   const stream = useMultiSymbolQuotes(active ? symbols : []);
-
   const query = useQuery({
     queryKey: ["top-index-futures-quotes", symbols],
     queryFn: async ({ signal }) => {
@@ -130,244 +73,127 @@ export default function TopIndexFutures({
     refetchInterval: active ? 20000 : false,
     retry: false,
   });
-
-  const quotes: Record<string, Quote | undefined> = useMemo(() => {
-    const map: Record<string, Quote | undefined> = {};
-    for (const symbol of symbols) {
-      const q = displayQuote(query.data?.[symbol], stream[symbol], query.isError);
-      map[symbol] = q;
-    }
-    return map;
-  }, [symbols, query.data, stream, query.isError]);
-
-  const ranked = useMemo(() => topIndexFutures(indices, quotes), [indices, quotes]);
-  const topRanked = useMemo(() => ranked.slice(0, 4), [ranked]);
-
-  useTargetedSubscription(active ? topRanked.map((i) => i.symbol) : []);
-
-  const displayedCards = useMemo(() => {
-    // If topRanked from live volume has at least 4 unique instruments, use them
-    const uniqueTopRanked = topRanked.filter(
-      (inst, idx, arr) => arr.findIndex((x) => x.symbol === inst.symbol) === idx,
+  const quotes: Record<string, Quote | undefined> = {};
+  for (const symbol of symbols) {
+    const quote = displayQuote(
+      query.data?.[symbol],
+      stream[symbol],
+      query.isError,
     );
-
-    if (uniqueTopRanked.length >= 4) {
-      return uniqueTopRanked.slice(0, 4).map((inst) => {
-        const q = quotes[inst.symbol];
-        const price = q && q.price_paise > 0 ? q.price_paise / 100 : 0;
-        const change = q?.change_paise !== undefined ? q.change_paise / 100 : 0;
-        const changePercent = q?.change_percent ?? 0;
-        return {
-          instrument: inst,
-          name: formatFutureCardName(inst),
-          expiry: expiryLabel(inst.expiry),
-          lotSize: inst.lot_size,
-          price,
-          change,
-          changePercent,
-        };
-      });
-    }
-
-    // Sort index instruments by expiry date (nearest first)
-    const sortedIndices = [...indices].sort((a, b) => {
-      const expA = a.expiry ? Date.parse(a.expiry) : Infinity;
-      const expB = b.expiry ? Date.parse(b.expiry) : Infinity;
-      return expA - expB;
-    });
-
-    const usedSymbols = new Set<string>();
-    const selectedInsts: Instrument[] = [];
-
-    // Slot 1: NIFTY (1st expiry)
-    const n1 = sortedIndices.find(
-      (i) => (i.underlying || "").toUpperCase() === "NIFTY" && !usedSymbols.has(i.symbol),
-    );
-    if (n1) {
-      usedSymbols.add(n1.symbol);
-      selectedInsts.push(n1);
-    }
-
-    // Slot 2: BANKNIFTY (1st expiry)
-    const bn1 = sortedIndices.find(
-      (i) => (i.underlying || "").toUpperCase() === "BANKNIFTY" && !usedSymbols.has(i.symbol),
-    );
-    if (bn1) {
-      usedSymbols.add(bn1.symbol);
-      selectedInsts.push(bn1);
-    }
-
-    // Slot 3: NIFTY (2nd expiry) or FINNIFTY
-    const n2 =
-      sortedIndices.find(
-        (i) => (i.underlying || "").toUpperCase() === "NIFTY" && !usedSymbols.has(i.symbol),
-      ) ||
-      sortedIndices.find(
-        (i) => (i.underlying || "").toUpperCase() === "FINNIFTY" && !usedSymbols.has(i.symbol),
-      );
-    if (n2) {
-      usedSymbols.add(n2.symbol);
-      selectedInsts.push(n2);
-    }
-
-    // Slot 4: MIDCPNIFTY (1st expiry) or any remaining index
-    const mid1 =
-      sortedIndices.find(
-        (i) => (i.underlying || "").toUpperCase() === "MIDCPNIFTY" && !usedSymbols.has(i.symbol),
-      ) || sortedIndices.find((i) => !usedSymbols.has(i.symbol));
-    if (mid1) {
-      usedSymbols.add(mid1.symbol);
-      selectedInsts.push(mid1);
-    }
-
-    // If 4 distinct contracts were selected from master catalog, map them
-    if (selectedInsts.length === 4) {
-      return selectedInsts.map((inst, idx) => {
-        const fallback = DEFAULT_INDEX_FUTURES[idx];
-        const q = quotes[inst.symbol];
-        const price = q && q.price_paise > 0 ? q.price_paise / 100 : fallback?.price ?? 0;
-        const change = q?.change_paise !== undefined ? q.change_paise / 100 : fallback?.change ?? 0;
-        const changePercent = q?.change_percent ?? fallback?.changePercent ?? 0;
-
-        return {
-          instrument: inst,
-          name: formatFutureCardName(inst),
-          expiry: expiryLabel(inst.expiry),
-          lotSize: inst.lot_size,
-          price,
-          change,
-          changePercent,
-        };
-      });
-    }
-
-    // Otherwise use default fallback cards with distinct symbols
-    return DEFAULT_INDEX_FUTURES.map((fallback) => {
-      const inst: Instrument = {
-        id: fallback.symbol,
-        symbol: fallback.symbol,
-        display_symbol: fallback.name,
-        name: fallback.name,
-        exchange: "NFO",
-        token: fallback.symbol,
-        instrument_type: "FUTIDX",
-        underlying: fallback.underlying,
-        expiry: fallback.expiry,
-        strike: 0,
-        option_type: "",
-        lot_size: fallback.lotSize,
-        tick_size: 0.05,
-        active: true,
-        segment: "FUTURES",
-        basePricePaise: Math.round(fallback.price * 100),
-      };
-
-      return {
-        instrument: inst,
-        name: fallback.name,
-        expiry: fallback.expiry,
-        lotSize: fallback.lotSize,
-        price: fallback.price,
-        change: fallback.change,
-        changePercent: fallback.changePercent,
-      };
-    });
-  }, [topRanked, indices, quotes]);
-
+    quotes[symbol] = quote?.source === "angelone_live" ? quote : undefined;
+  }
+  const ranked = topIndexFutures(indices, quotes).slice(0, 4);
+  // Genuine master rows may be shown without a volume rank. Never invent tokens,
+  // lot sizes, expiries or prices to fill a four-card layout.
+  const displayed = ranked.length ? ranked : indices.slice(0, 4);
+  useTargetedSubscription(active ? displayed.map((i) => i.symbol) : []);
+  const sessionLive =
+    !!status &&
+    status.status === "OPEN" &&
+    status.is_open &&
+    status.feed_provider === "angel_one" &&
+    status.feed_state === "LIVE" &&
+    !status.is_synthetic;
   return (
     <section aria-label="Top traded index futures" className="space-y-4">
-      <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-800">
+      <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-200 dark:border-slate-800">
         <div>
-          <div className="flex items-center gap-2">
+          <h2 className="flex items-center gap-2 text-base font-bold text-slate-900 dark:text-slate-100">
             <Layers className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
-            <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">
-              Top traded index futures
-            </h2>
-          </div>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-            Benchmark monthly & weekly index futures contracts
+            Top traded index futures
+          </h2>
+          <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
+            {ranked.length
+              ? "Ranked by latest supplied session volume"
+              : "Volume ranking unavailable · current master contracts"}
           </p>
         </div>
-
-        <span className="text-xs text-slate-400 font-mono">
-          Cash Settled • NSE
-        </span>
+        <span className="text-xs text-slate-500 font-mono">Paper trading</span>
       </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        {displayedCards.map((card, idx) => {
-          const isGain = card.changePercent >= 0;
-          const cardKey = `${card.instrument.token || card.instrument.symbol || card.name}-${card.expiry}-${idx}`;
-          const block = futuresTradeBlock(
-            card.instrument,
-            quotes[card.instrument.symbol],
-            token,
-            status,
-            now,
+      {query.isError && (
+        <p role="alert" className="text-xs text-amber-800 dark:text-amber-300">
+          Index quote refresh failed. Retained prices are last available.
+        </p>
+      )}
+      {!displayed.length && (
+        <p role="status" className="text-sm text-slate-600 dark:text-slate-400">
+          No current index futures available. Refresh the instrument master.
+        </p>
+      )}
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3.5">
+        {displayed.map((inst) => {
+          const quote = quotes[inst.symbol];
+          const block = futuresTradeBlock(inst, quote, token, status, now);
+          const month = new Date(futuresExpiry(inst.expiry)).toLocaleDateString(
+            "en-IN",
+            { month: "short", timeZone: "Asia/Kolkata" },
           );
           return (
-            <div
-              key={cardKey}
-              className={`${panel} p-4 hover:border-cyan-500/50 transition-all space-y-3 flex flex-col justify-between group`}
+            <article
+              key={`${inst.exchange}:${inst.token}`}
+              aria-label={`${inst.symbol} top traded card`}
+              className={`${panel} min-w-0 p-3.5 hover:border-cyan-500/50 transition-all space-y-2 flex flex-col justify-between group`}
             >
               <div className="flex items-start justify-between gap-2">
-                <div>
+                <div className="min-w-0">
                   <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-cyan-100 dark:bg-cyan-950/80 text-cyan-800 dark:text-cyan-400">
-                    INDEX FUT
+                    INDEX FUT · {inst.exchange}
                   </span>
-                  <h3 className="font-bold text-xs text-slate-900 dark:text-slate-100 group-hover:text-cyan-600 dark:group-hover:text-cyan-400 transition-colors mt-1">
-                    {card.name}
+                  <h3 className="font-bold text-xs mt-1">
+                    {futuresUnderlying(inst)}{" "}
+                    {month !== "Invalid Date" ? month.toUpperCase() : ""} FUT
                   </h3>
-                  <div className="text-[10px] text-slate-400 font-mono">
-                    Expiry: {card.expiry} • Lot: {card.lotSize}
-                  </div>
+                  <p
+                    className="text-[10px] break-all text-slate-600 dark:text-slate-400"
+                    title={inst.symbol}
+                  >
+                    {inst.symbol}
+                  </p>
+                  <p className="text-[10px] text-slate-600 dark:text-slate-400">
+                    {expiryLabel(inst.expiry)} · Lot: {inst.lot_size}
+                  </p>
                 </div>
-                <div className="w-7 h-7 rounded-lg bg-slate-100 dark:bg-slate-800 text-cyan-600 dark:text-cyan-400 flex items-center justify-center shrink-0">
-                  <Zap className="w-3.5 h-3.5" />
-                </div>
+                <Zap className="w-4 h-4 shrink-0 text-cyan-600 dark:text-cyan-400" />
               </div>
-
-              <div className="flex items-baseline justify-between pt-2 border-t border-slate-100 dark:border-slate-800/60">
-                <div>
-                  <div className="text-sm font-black font-tabular text-slate-900 dark:text-slate-100">
-                    ₹{card.price.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
-                  </div>
-                  <div
-                    className={`text-[11px] font-bold font-tabular flex items-center gap-1 ${
-                      isGain
-                        ? "text-emerald-600 dark:text-emerald-400"
-                        : "text-rose-600 dark:text-rose-400"
-                    }`}
-                  >
-                    <span>
-                      {isGain ? "+" : ""}
-                      {card.change.toFixed(2)}
-                    </span>
-                    <span>
-                      ({isGain ? "+" : ""}
-                      {card.changePercent.toFixed(2)}%)
-                    </span>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-1.5">
-                  <button
-                    onClick={() => onOrder(card.instrument, "BUY")}
-                    title={block || "Paper trade · buy / long"}
-                    className="px-2.5 py-1 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold transition-all shadow-xs active:scale-95 cursor-pointer disabled:opacity-40"
-                  >
-                    Buy
-                  </button>
-                  <button
-                    onClick={() => onOrder(card.instrument, "SELL")}
-                    title={block || "Paper trade · sell / short"}
-                    className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition-all shadow-xs active:scale-95 cursor-pointer disabled:opacity-40"
-                  >
-                    Sell
-                  </button>
-                </div>
+              <div className="pt-2 border-t border-slate-100 dark:border-slate-800/60">
+                <p className="text-sm font-black tabular-nums">
+                  {quote ? formatPaise(quote.price_paise) : "Unavailable"}
+                </p>
+                <FnoMovement quote={quote} compact />
+                <FnoProvenance
+                  quote={quote}
+                  now={now}
+                  sessionLive={sessionLive}
+                  compact
+                />
               </div>
-            </div>
+              <p className="text-[10px] text-slate-600 dark:text-slate-400">
+                Volume:{" "}
+                {quote?.volume_available !== false &&
+                Number.isSafeInteger(quote?.volume)
+                  ? quote!.volume!.toLocaleString("en-IN")
+                  : "Unavailable"}
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                {(["BUY", "SELL"] as const).map((side) => (
+                  <button
+                    key={side}
+                    disabled={!!block}
+                    aria-label={`${side === "BUY" ? "Trade" : "Sell"} ${inst.symbol}`}
+                    onClick={() => onOrder(inst, side)}
+                    title={block || "Open paper order ticket"}
+                    className={`min-h-9 rounded-lg text-xs font-bold text-white disabled:opacity-40 disabled:cursor-not-allowed ${side === "BUY" ? "bg-cyan-600 hover:bg-cyan-500" : "bg-rose-600 hover:bg-rose-500"}`}
+                  >
+                    {side === "BUY" ? "Buy" : "Sell"}
+                  </button>
+                ))}
+              </div>
+              {block && (
+                <p className="text-[10px] text-slate-600 dark:text-slate-400">
+                  {block}
+                </p>
+              )}
+            </article>
           );
         })}
       </div>

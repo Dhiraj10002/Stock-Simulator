@@ -1,10 +1,12 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight, Layers, Sparkles, TrendingUp } from "lucide-react";
+import { ArrowUpRight, RefreshCw, Search, TrendingUp } from "lucide-react";
 import { publicFetch } from "@/lib/api";
+import { formatPaise } from "@/lib/format";
+import { displayQuote, futuresUnderlying } from "@/lib/fnoExplore";
 import {
   eligibleEquities,
   equityUnderlying,
@@ -16,268 +18,21 @@ import {
   useMultiSymbolQuotes,
   useTargetedSubscription,
 } from "@/stores/market-store";
+import { FnoMovement, FnoProvenance } from "./FnoQuoteDetails";
 import type { Candle, Instrument, Quote } from "@/types";
 
 const panel =
-  "rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900/60 shadow-xs";
+  "rounded-2xl border border-slate-200 bg-white shadow-xs dark:border-slate-800 dark:bg-slate-900/60";
+const muted = "text-slate-600 dark:text-slate-400";
 const bounded = <T,>(path: string, signal: AbortSignal) =>
   publicFetch<T>(path, AbortSignal.any([signal, AbortSignal.timeout(8000)]));
 
-export interface CandleData {
-  open: number;
-  high: number;
-  low: number;
-  close: number;
-}
-
-export interface FnoStaticStock {
-  symbol: string;
-  name: string;
-  price: number;
-  change: number;
-  changePercent: number;
-  volume: string;
-  isGain: boolean;
-}
-
-const DEFAULT_FEATURED_STOCKS = [
-  {
-    symbol: "RELIANCE",
-    name: "Reliance Industries",
-    lotSize: 250,
-    price: 1226.4,
-    change: -17.5,
-    changePercent: -1.41,
-    candles: [
-      { open: 1245, high: 1248, low: 1238, close: 1240 },
-      { open: 1240, high: 1242, low: 1232, close: 1235 },
-      { open: 1235, high: 1236, low: 1225, close: 1228 },
-      { open: 1228, high: 1232, low: 1222, close: 1224 },
-      { open: 1224, high: 1229, low: 1220, close: 1226.4 },
-    ],
-  },
-  {
-    symbol: "HDFCBANK",
-    name: "HDFC Bank",
-    lotSize: 550,
-    price: 731.0,
-    change: 18.0,
-    changePercent: 2.52,
-    candles: [
-      { open: 713, high: 718, low: 711, close: 716 },
-      { open: 716, high: 722, low: 715, close: 720 },
-      { open: 720, high: 725, low: 718, close: 724 },
-      { open: 724, high: 729, low: 722, close: 728 },
-      { open: 728, high: 733, low: 726, close: 731.0 },
-    ],
-  },
-  {
-    symbol: "TCS",
-    name: "Tata Consultancy Servic...",
-    lotSize: 175,
-    price: 2105.0,
-    change: -85.0,
-    changePercent: -3.88,
-    candles: [
-      { open: 2190, high: 2195, low: 2170, close: 2175 },
-      { open: 2175, high: 2180, low: 2150, close: 2155 },
-      { open: 2155, high: 2160, low: 2125, close: 2130 },
-      { open: 2130, high: 2135, low: 2095, close: 2100 },
-      { open: 2100, high: 2115, low: 2090, close: 2105.0 },
-    ],
-  },
-];
-
-const DEFAULT_GAINERS: FnoStaticStock[] = [
-  {
-    symbol: "SUPREMEIND",
-    name: "Supreme Industries Ltd",
-    price: 3580.3,
-    change: 235.9,
-    changePercent: 7.05,
-    volume: "4,69,754",
-    isGain: true,
-  },
-  {
-    symbol: "UNOMINDA",
-    name: "UNO Minda Ltd",
-    price: 1284.0,
-    change: 79.0,
-    changePercent: 6.56,
-    volume: "12,77,954",
-    isGain: true,
-  },
-  {
-    symbol: "RVNL",
-    name: "Rail Vikas Nigam Ltd",
-    price: 214.29,
-    change: 12.59,
-    changePercent: 6.24,
-    volume: "94,69,057",
-    isGain: true,
-  },
-  {
-    symbol: "ATHER",
-    name: "Ather Energy Ltd",
-    price: 1640.0,
-    change: 90.0,
-    changePercent: 5.81,
-    volume: "50,10,015",
-    isGain: true,
-  },
-  {
-    symbol: "APLAPOLLO",
-    name: "APL Apollo Tubes Ltd",
-    price: 2270.1,
-    change: 121.6,
-    changePercent: 5.66,
-    volume: "11,15,754",
-    isGain: true,
-  },
-  {
-    symbol: "TATAPOWER",
-    name: "Tata Power Co Ltd",
-    price: 442.1,
-    change: 15.2,
-    changePercent: 3.56,
-    volume: "82,40,000",
-    isGain: true,
-  },
-];
-
-const DEFAULT_LOSERS: FnoStaticStock[] = [
-  {
-    symbol: "TATACHEM",
-    name: "Tata Chemicals Ltd",
-    price: 693.25,
-    change: -86.1,
-    changePercent: -11.04,
-    volume: "68,14,200",
-    isGain: false,
-  },
-  {
-    symbol: "GODIGIT",
-    name: "Go Digit General Insurance",
-    price: 239.0,
-    change: -16.2,
-    changePercent: -6.46,
-    volume: "35,22,100",
-    isGain: false,
-  },
-  {
-    symbol: "TATATECH",
-    name: "Tata Technologies Ltd",
-    price: 722.45,
-    change: -36.2,
-    changePercent: -4.78,
-    volume: "42,80,900",
-    isGain: false,
-  },
-  {
-    symbol: "NIACL",
-    name: "New India Assurance",
-    price: 187.66,
-    change: -9.4,
-    changePercent: -4.77,
-    volume: "24,15,000",
-    isGain: false,
-  },
-  {
-    symbol: "INFY",
-    name: "Infosys Ltd",
-    price: 1842.1,
-    change: -42.3,
-    changePercent: -2.24,
-    volume: "32,15,000",
-    isGain: false,
-  },
-  {
-    symbol: "WIPRO",
-    name: "Wipro Ltd",
-    price: 512.4,
-    change: -10.8,
-    changePercent: -2.06,
-    volume: "28,40,000",
-    isGain: false,
-  },
-];
-
-function MiniCandlestickChart({
-  candles,
-}: {
-  candles: CandleData[];
-}) {
-  const w = 110;
-  const h = 48;
-  const padY = 4;
-  const padX = 6;
-
-  const allLows = candles.map((c) => c.low);
-  const allHighs = candles.map((c) => c.high);
-  const min = Math.min(...allLows);
-  const max = Math.max(...allHighs);
-  const range = max - min || 1;
-
-  const candleW = 9;
-  const candleGap =
-    candles.length > 1
-      ? (w - padX * 2 - candles.length * candleW) / (candles.length - 1)
-      : 0;
-
-  const getY = (val: number) => {
-    return h - padY - ((val - min) / range) * (h - padY * 2);
-  };
-
-  return (
-    <svg width={w} height={h} className="overflow-visible select-none">
-      {candles.map((c, i) => {
-        const isUp = c.close >= c.open;
-        const color = isUp ? "#10b981" : "#f43f5e";
-        const xCenter = padX + i * (candleW + candleGap) + candleW / 2;
-        const xLeft = padX + i * (candleW + candleGap);
-
-        const yHigh = getY(c.high);
-        const yLow = getY(c.low);
-        const yOpen = getY(c.open);
-        const yClose = getY(c.close);
-
-        const bodyY = Math.min(yOpen, yClose);
-        const bodyHeight = Math.max(Math.abs(yClose - yOpen), 2);
-
-        return (
-          <g key={i}>
-            <line
-              x1={xCenter}
-              y1={yHigh}
-              x2={xCenter}
-              y2={yLow}
-              stroke={color}
-              strokeWidth="1.2"
-              strokeLinecap="round"
-            />
-            <rect
-              x={xLeft}
-              y={bodyY}
-              width={candleW}
-              height={bodyHeight}
-              fill={color}
-              rx="1.5"
-            />
-          </g>
-        );
-      })}
-    </svg>
-  );
-}
-
-function StockCandlesWrapper({
+function CandlePreview({
   symbol,
-  fallbackCandles,
   active,
   now,
 }: {
   symbol: string;
-  fallbackCandles: CandleData[];
   active: boolean;
   now: number;
 }) {
@@ -290,47 +45,95 @@ function StockCandlesWrapper({
         `/market/quotes/${encodeURIComponent(symbol)}/history?interval=ONE_DAY&limit=5`,
         signal,
       );
-      if (!Array.isArray(data)) throw new Error("Invalid archive response");
+      if (!Array.isArray(data))
+        throw new Error("Native archive response invalid.");
       return data;
     },
     enabled: active,
     refetchInterval: active ? 60000 : false,
     retry: false,
   });
-
   const bars = nativePreviewCandles(
     history.isError ? [] : history.data || [],
     now,
   );
-
-  const candleList: CandleData[] =
-    bars.length >= 3
-      ? bars.map((b) => ({
-          open: b.open_paise / 100,
-          high: b.high_paise / 100,
-          low: b.low_paise / 100,
-          close: b.close_paise / 100,
-        }))
-      : fallbackCandles;
-
-  return <MiniCandlestickChart candles={candleList} />;
+  if (!bars.length)
+    return (
+      <p
+        className={`flex h-10 w-14 shrink-0 items-center justify-center text-center text-xs ${muted}`}
+      >
+        {history.isPending ? "Loading chart…" : "Chart unavailable"}
+      </p>
+    );
+  const low = Math.min(...bars.map((b) => b.low_paise)),
+    high = Math.max(...bars.map((b) => b.high_paise));
+  const y = (price: number) =>
+    45 - ((price - low) / Math.max(high - low, 1)) * 36;
+  return (
+    <svg
+      role="img"
+      aria-label={`${symbol} provider daily candles`}
+      viewBox="0 0 110 52"
+      className="h-10 w-14 shrink-0"
+    >
+      <title>
+        Last {bars.length} available provider daily candles, ending{" "}
+        {new Date(bars[bars.length - 1].timestamp * 1000).toLocaleString(
+          "en-IN",
+          { timeZone: "Asia/Kolkata" },
+        )}{" "}
+        IST
+      </title>
+      {bars.map((bar, index) => (
+        <g
+          key={bar.timestamp}
+          className={
+            bar.close_paise >= bar.open_paise
+              ? "text-emerald-600 dark:text-emerald-400"
+              : "text-rose-600 dark:text-rose-400"
+          }
+        >
+          <line
+            x1={12 + index * 21}
+            x2={12 + index * 21}
+            y1={y(bar.high_paise)}
+            y2={y(bar.low_paise)}
+            stroke="currentColor"
+            strokeWidth="1.5"
+          />
+          <rect
+            x={8 + index * 21}
+            y={Math.min(y(bar.open_paise), y(bar.close_paise))}
+            width="8"
+            height={Math.max(
+              Math.abs(y(bar.open_paise) - y(bar.close_paise)),
+              1.5,
+            )}
+            fill="currentColor"
+            rx="1"
+          />
+        </g>
+      ))}
+    </svg>
+  );
 }
 
 export default function FnoStockOverview({
   active,
   futures,
   now,
-  onChain,
+  sessionLive,
+  onTrade,
 }: {
   active: boolean;
   futures: Instrument[];
   now: number;
-  sessionLive?: boolean;
-  onTrade?: (underlying: string) => void;
-  onChain?: (symbol: string) => void;
+  sessionLive: boolean;
+  onTrade: (underlying: string) => void;
 }) {
-  const [fnoStockTab, setFnoStockTab] = useState<"GAINERS" | "LOSERS">("GAINERS");
-
+  const [direction, setDirection] = useState<"gainers" | "losers">("gainers");
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(0);
   const catalog = useQuery({
     queryKey: ["fno-equities", "catalog"],
     queryFn: async ({ signal }) =>
@@ -341,14 +144,9 @@ export default function FnoStockOverview({
     refetchInterval: active ? 60000 : false,
     retry: false,
   });
-
-  const stocks = useMemo(
-    () => (catalog.isError ? [] : catalog.data || []),
-    [catalog.isError, catalog.data],
-  );
-  const symbols = useMemo(() => stocks.map((i) => i.symbol), [stocks]);
+  const stocks = catalog.isError ? [] : catalog.data || [];
+  const symbols = stocks.map((i) => i.symbol);
   const stream = useMultiSymbolQuotes(active ? symbols : []);
-
   const quotes = useQuery({
     queryKey: ["fno-equities", "quotes", symbols],
     queryFn: async ({ signal }) => {
@@ -357,19 +155,20 @@ export default function FnoStockOverview({
         (_, i) => symbols.slice(i * 100, (i + 1) * 100),
       );
       const controller = AbortSignal.any([signal, AbortSignal.timeout(8000)]);
+      // At most three Redis-backed batches in flight; no per-symbol broker rescue.
       const result: Record<string, Quote> = {};
       for (let offset = 0; offset < chunks.length; offset += 3) {
-        const batches = await Promise.all(
+        const data = await Promise.all(
           chunks
             .slice(offset, offset + 3)
             .map((chunk) =>
-              bounded<Record<string, Quote>>(
+              publicFetch<Record<string, Quote>>(
                 `/market/quotes/batch?symbols=${encodeURIComponent(chunk.join(","))}`,
                 controller,
               ),
             ),
         );
-        for (const batch of batches) Object.assign(result, batch);
+        for (const batch of data) Object.assign(result, batch);
       }
       return result;
     },
@@ -377,314 +176,330 @@ export default function FnoStockOverview({
     refetchInterval: active ? 20000 : false,
     retry: false,
   });
-
-  const displayQuotes = useMemo(() => {
-    const map: Record<string, Quote | undefined> = {};
-    for (const sym of symbols) {
-      map[sym] = stream[sym] || quotes.data?.[sym];
-    }
-    return map;
-  }, [symbols, stream, quotes.data]);
-
-  const featured = useMemo(() => {
-    return featuredEquities(stocks, quotes.data || {});
-  }, [stocks, quotes.data]);
-
-  const featuredList = useMemo(() => {
-    return DEFAULT_FEATURED_STOCKS.map((fallback) => {
-      const matched = featured.find(
-        (f) =>
-          equityUnderlying(f).toUpperCase() === fallback.symbol.toUpperCase(),
-      );
-      const liveQuote = matched
-        ? displayQuotes[matched.symbol]
-        : displayQuotes[fallback.symbol] || displayQuotes[`${fallback.symbol}-EQ`];
-
-      const futMatch = futures.find(
-        (fu) =>
-          (fu.underlying || "").toUpperCase() === fallback.symbol.toUpperCase(),
-      );
-
-      const price = liveQuote && liveQuote.price_paise > 0
-        ? liveQuote.price_paise / 100
-        : fallback.price;
-
-      const change = liveQuote?.change_paise !== undefined
-        ? liveQuote.change_paise / 100
-        : fallback.change;
-
-      const changePercent = liveQuote?.change_percent !== undefined
-        ? liveQuote.change_percent
-        : fallback.changePercent;
-
-      const lot = futMatch?.lot_size || fallback.lotSize;
-
-      return {
-        symbol: fallback.symbol,
-        name: matched?.name || fallback.name,
-        lotSize: lot,
-        price,
-        change,
-        changePercent,
-        candles: fallback.candles,
-      };
-    });
-  }, [featured, displayQuotes, futures]);
-
-  useTargetedSubscription(
-    active
-      ? featuredList.map((f) => f.symbol)
-      : [],
+  const display: Record<string, Quote | undefined> = {};
+  for (const symbol of symbols) {
+    const quote = displayQuote(
+      quotes.data?.[symbol],
+      stream[symbol],
+      quotes.isError,
+    );
+    display[symbol] = quote?.source === "angelone_live" ? quote : undefined;
+  }
+  const featured = featuredEquities(stocks, display);
+  const ranked = rankedEquities(stocks, display, direction, search);
+  const currentPage = Math.min(
+    page,
+    Math.max(0, Math.ceil(ranked.length / 6) - 1),
   );
-
-  const displayedStocks = useMemo(() => {
-    const direction = fnoStockTab === "GAINERS" ? "gainers" : "losers";
-    const ranked = rankedEquities(stocks, displayQuotes, direction);
-
-    if (ranked.length >= 6) {
-      return ranked.slice(0, 6).map((inst) => {
-        const u = equityUnderlying(inst);
-        const q = displayQuotes[inst.symbol];
-        const isUp = (q?.change_percent ?? 0) >= 0;
-        return {
-          symbol: u,
-          name: inst.name || u,
-          price: (q?.price_paise ?? 0) / 100,
-          change: (q?.change_paise ?? 0) / 100,
-          changePercent: q?.change_percent ?? 0,
-          volume:
-            q?.volume && q.volume > 0
-              ? q.volume.toLocaleString("en-IN")
-              : "—",
-          isGain: isUp,
-        };
-      });
-    }
-
-    return fnoStockTab === "GAINERS" ? DEFAULT_GAINERS : DEFAULT_LOSERS;
-  }, [fnoStockTab, stocks, displayQuotes]);
-
+  const visible = ranked.slice(currentPage * 6, currentPage * 6 + 6);
+  useTargetedSubscription(
+    active ? [...featured, ...visible].map((i) => i.symbol) : [],
+  );
+  const currentFuture = (underlying: string) =>
+    futures.find(
+      (i) =>
+        i.instrument_type === "FUTSTK" &&
+        futuresUnderlying(i) === underlying &&
+        Number.isSafeInteger(i.lot_size) &&
+        i.lot_size > 0,
+    );
+  const coverage = stocks.filter((i) => display[i.symbol]).length;
+  const refresh = () => {
+    void catalog.refetch();
+    if (symbols.length) void quotes.refetch();
+  };
   return (
-    <div className="space-y-6">
-      {/* Popular Stocks Header (Matches Screenshot 1 & 3) */}
-      <div className="flex items-center justify-between pb-1">
-        <div>
-          <h2 className="text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
-            Popular stocks
-          </h2>
-          <p className="text-xs text-slate-500 dark:text-slate-400">
-            Highest institutional weightage and investor interest
-          </p>
+    <div className="space-y-5">
+      <section aria-label="Featured F&O stocks">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-base font-bold">Trending stocks</h2>
+          <span className={`text-xs ${muted}`}>
+            F&O eligible · NSE cash prices
+          </span>
         </div>
-        <Link
-          href="/stocks"
-          className="text-xs font-semibold text-cyan-600 dark:text-cyan-400 hover:underline flex items-center gap-1"
-        >
-          <span>See more</span>
-          <ChevronRight className="w-3.5 h-3.5" />
-        </Link>
-      </div>
-
-      {/* 1. TOP 3 TRENDING STOCK CARDS (RELIANCE, HDFCBANK, TCS) */}
-      <section aria-label="Featured F&O stocks" className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {featuredList.map((stock) => {
-          const isGain = stock.changePercent >= 0;
-          return (
-            <div
-              key={stock.symbol}
-              className={`${panel} p-4 flex flex-col justify-between hover:border-cyan-500/50 transition-all`}
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-bold text-sm text-slate-900 dark:text-slate-100">
-                      {stock.symbol}
+        <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-3">
+          {featured.map((instrument) => {
+            const underlying = equityUnderlying(instrument),
+              future = currentFuture(underlying),
+              quote = display[instrument.symbol];
+            return (
+              <article
+                key={instrument.symbol}
+                aria-label={`${underlying} stock card`}
+                className={`${panel} flex min-h-[160px] min-w-0 flex-col justify-between p-3.5 transition-colors hover:border-cyan-300 dark:hover:border-cyan-800`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <Link
+                    href={`/stocks/${encodeURIComponent(underlying)}`}
+                    className="flex min-w-0 items-center gap-2.5"
+                  >
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-cyan-100 text-xs font-extrabold text-cyan-800 dark:bg-cyan-950 dark:text-cyan-200">
+                      {underlying.slice(0, 2)}
                     </span>
-                    <span className="text-[10px] text-slate-400 font-mono">
-                      Lot: {stock.lotSize}
-                    </span>
-                  </div>
-                  <div className="text-xs text-slate-400 mt-0.5 truncate max-w-[140px]">
-                    {stock.name}
-                  </div>
-                </div>
-
-                <div className="shrink-0 pt-0.5">
-                  <StockCandlesWrapper
-                    symbol={stock.symbol}
-                    fallbackCandles={stock.candles}
+                    <div className="min-w-0">
+                      <h3 className="truncate text-xs font-bold">
+                        {underlying}
+                      </h3>
+                      <p
+                        title={instrument.name}
+                        className={`mt-1 truncate text-[10px] ${muted}`}
+                      >
+                        {instrument.name || instrument.display_symbol}
+                      </p>
+                    </div>
+                  </Link>
+                  <CandlePreview
+                    symbol={instrument.symbol}
                     active={active}
                     now={now}
                   />
                 </div>
-              </div>
-
-              <div className="pt-3 mt-3 border-t border-slate-100 dark:border-slate-800/60 flex items-center justify-between">
-                <div>
-                  <div className="text-base font-black font-tabular text-slate-900 dark:text-slate-100">
-                    ₹{stock.price.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
-                  </div>
-                  <div
-                    className={`text-xs font-bold font-tabular flex items-center gap-1 ${
-                      isGain
-                        ? "text-emerald-600 dark:text-emerald-400"
-                        : "text-rose-600 dark:text-rose-400"
-                    }`}
-                  >
-                    <span>
-                      {isGain ? "+" : ""}
-                      {stock.change.toFixed(2)}
-                    </span>
-                    <span>
-                      ({isGain ? "+" : ""}
-                      {stock.changePercent.toFixed(2)}%)
-                    </span>
-                  </div>
+                <div className="mt-3 flex flex-wrap items-end justify-between gap-1 border-t border-slate-100 pt-2.5 dark:border-slate-800">
+                  <p className="text-sm font-bold tabular-nums">
+                    {quote ? formatPaise(quote.price_paise) : "Unavailable"}
+                  </p>
+                  <FnoMovement quote={quote} compact />
                 </div>
-
-                <div className="flex items-center gap-1.5">
+                <div className="mt-2 flex items-end justify-between gap-2">
+                  <div>
+                    <FnoProvenance
+                      quote={quote}
+                      now={now}
+                      sessionLive={sessionLive}
+                      compact
+                    />
+                    <p className={`mt-0.5 text-[10px] ${muted}`}>
+                      Futures lot: {future?.lot_size || "Unavailable"}
+                    </p>
+                  </div>
                   <button
-                    onClick={() => onChain?.(stock.symbol)}
-                    className="px-2.5 py-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 text-xs font-bold transition-colors flex items-center gap-1 cursor-pointer"
-                    title="View Option Chain"
+                    aria-label={`Trade futures for ${underlying}`}
+                    disabled={!future}
+                    onClick={() => onTrade(underlying)}
+                    className="flex min-h-9 shrink-0 items-center gap-1 rounded-lg bg-cyan-50 px-2.5 text-[11px] font-semibold text-cyan-800 disabled:opacity-40 dark:bg-cyan-950 dark:text-cyan-200"
                   >
-                    <Layers className="w-3.5 h-3.5" />
-                    <span>Chain</span>
+                    Trade
+                    <ArrowUpRight className="h-3 w-3" aria-hidden />
                   </button>
-                  <Link
-                    href={`/stocks/${stock.symbol}`}
-                    className="px-2.5 py-1.5 rounded-lg bg-cyan-50 dark:bg-cyan-950/60 border border-cyan-200 dark:border-cyan-800/60 hover:bg-cyan-100 dark:hover:bg-cyan-900/60 text-cyan-700 dark:text-cyan-300 text-xs font-bold transition-colors flex items-center gap-1 cursor-pointer"
-                    title="Trade Equity"
-                  >
-                    <TrendingUp className="w-3.5 h-3.5" />
-                    <span>Trade</span>
-                  </Link>
                 </div>
-              </div>
-            </div>
-          );
-        })}
+              </article>
+            );
+          })}
+        </div>
+        {catalog.isPending && (
+          <p className={`py-4 text-xs ${muted}`}>Loading eligible stocks…</p>
+        )}
       </section>
-
-      {/* 2. F&O STOCKS TABLE (EXACTLY 6 STOCKS) */}
       <section
         aria-label="F&O stocks"
-        className={`${panel} p-5 space-y-4`}
+        className={`${panel} overflow-hidden p-4 sm:p-5`}
       >
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200 dark:border-slate-800">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-4 dark:border-slate-800">
           <div>
-            <div className="flex items-center gap-2">
-              <TrendingUp className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
-              <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">
-                F&O Stocks
-              </h2>
-            </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Underlying stocks eligible for futures & options trading
+            <h2 className="flex items-center gap-2 text-base font-bold">
+              <TrendingUp
+                aria-hidden
+                className="h-5 w-5 text-cyan-700 dark:text-cyan-400"
+              />
+              F&O stocks
+            </h2>
+            <p className={`mt-1 text-xs ${muted}`}>
+              Eligible underlying equities · provider day movement
             </p>
           </div>
-
-          {/* Timeframe + Gainers/Losers Tabs */}
-          <div className="flex items-center gap-2">
-            <span className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs font-semibold text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 flex items-center gap-1">
-              <span>1 Day</span>
-              <ChevronDown className="w-3 h-3 text-slate-400" />
-            </span>
-
-            <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg text-xs font-semibold">
-              {(["GAINERS", "LOSERS"] as const).map((tab) => (
-                <button
-                  key={tab}
-                  onClick={() => setFnoStockTab(tab)}
-                  className={`px-3 py-1 rounded-md transition-all cursor-pointer capitalize ${
-                    fnoStockTab === tab
-                      ? tab === "GAINERS"
-                        ? "bg-emerald-500 text-white font-bold shadow-xs"
-                        : "bg-rose-500 text-white font-bold shadow-xs"
-                      : "text-slate-500 hover:text-slate-900 dark:hover:text-white"
-                  }`}
-                >
-                  {tab.toLowerCase()}
-                </button>
-              ))}
-            </div>
+          <div className="flex flex-wrap items-center gap-1 text-xs">
+            <span className={`mr-1 ${muted}`}>1 Day</span>
+            {(["gainers", "losers"] as const).map((value) => (
+              <button
+                key={value}
+                aria-pressed={direction === value}
+                onClick={() => {
+                  setDirection(value);
+                  setPage(0);
+                }}
+                className={`min-h-10 rounded-lg px-3 font-semibold ${direction === value ? "bg-emerald-600 text-white" : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"}`}
+              >
+                {value === "gainers" ? "Gainers" : "Losers"}
+              </button>
+            ))}
           </div>
         </div>
-
-        {/* Clean 6-row Table without search or pagination */}
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead>
-              <tr className="border-b border-slate-200 dark:border-slate-800 text-[11px] uppercase font-bold tracking-wider text-slate-400 bg-slate-50/50 dark:bg-slate-900/50">
-                <th className="py-2.5 px-3">Stocks</th>
-                <th className="py-2.5 px-3 text-right">Price (LTP)</th>
-                <th className="py-2.5 px-3 text-right">1D Change</th>
-                <th className="py-2.5 px-3 text-right">Volume</th>
-                <th className="py-2.5 px-3 text-center">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
-              {displayedStocks.map((stock) => {
-                const isGain = stock.changePercent >= 0;
-                const badge = stock.symbol.slice(0, 2).toUpperCase();
-                return (
-                  <tr
-                    key={stock.symbol}
-                    className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors group"
-                  >
-                    <td className="py-3 px-3">
-                      <div className="flex items-center gap-2.5">
-                        <span className="w-8 h-8 rounded-lg bg-cyan-50 dark:bg-cyan-950/80 text-cyan-600 dark:text-cyan-400 font-bold text-xs flex items-center justify-center shrink-0">
-                          {badge}
-                        </span>
-                        <div>
-                          <div className="font-bold text-xs text-slate-900 dark:text-slate-100 group-hover:text-cyan-600 dark:group-hover:text-cyan-400 transition-colors">
-                            {stock.name}
-                          </div>
-                          <div className="text-[10px] text-slate-400 font-mono">
-                            {stock.symbol} • NSE
-                          </div>
-                        </div>
-                      </div>
-                    </td>
-
-                    <td className="py-3 px-3 text-right font-black font-tabular text-xs text-slate-900 dark:text-slate-100">
-                      ₹{stock.price.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
-                    </td>
-
-                    <td className="py-3 px-3 text-right font-bold font-tabular text-xs">
-                      <span
-                        className={`inline-block px-1.5 py-0.5 rounded text-[11px] font-bold ${
-                          isGain
-                            ? "bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400"
-                            : "bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400"
-                        }`}
-                      >
-                        {isGain ? "+" : ""}
-                        {stock.change.toFixed(2)} ({isGain ? "+" : ""}
-                        {stock.changePercent.toFixed(2)}%)
-                      </span>
-                    </td>
-
-                    <td className="py-3 px-3 text-right font-mono text-slate-600 dark:text-slate-300">
-                      {stock.volume}
-                    </td>
-
-                    <td className="py-3 px-3 text-center">
-                      <Link
-                        href={`/stocks/${stock.symbol}`}
-                        className="px-2 py-1 rounded bg-slate-100 hover:bg-cyan-50 dark:bg-slate-800 dark:hover:bg-cyan-950/60 text-slate-700 dark:text-slate-300 hover:text-cyan-600 dark:hover:text-cyan-400 font-semibold text-[11px] transition-colors inline-block"
-                      >
-                        Trade Stock →
-                      </Link>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+          <label className="flex min-h-10 min-w-0 flex-1 items-center gap-2 rounded-lg border border-slate-300 px-3 dark:border-slate-700">
+            <Search aria-hidden className="h-4 w-4 shrink-0 text-slate-500" />
+            <input
+              aria-label="Search F&O movers"
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(0);
+              }}
+              placeholder="Search eligible stocks"
+              className="min-w-0 w-full bg-transparent py-2 text-xs outline-none"
+            />
+          </label>
+          <button
+            disabled={catalog.isFetching || quotes.isFetching}
+            onClick={refresh}
+            className={`flex min-h-10 items-center gap-1 text-xs font-semibold ${muted}`}
+          >
+            <RefreshCw aria-hidden className="h-4 w-4" />
+            Refresh stocks
+          </button>
         </div>
+        <p className={`mt-3 text-xs ${muted}`}>
+          {coverage} of {stocks.length} eligible equities have provider quotes.
+          Rankings use available day movement
+          {!sessionLive ? " · last available session" : ""}.
+        </p>
+        {catalog.isError ? (
+          <p
+            role="alert"
+            className="py-6 text-sm text-amber-800 dark:text-amber-300"
+          >
+            Eligible stock catalog unavailable.{" "}
+            <button onClick={() => catalog.refetch()} className="underline">
+              Retry stock catalog
+            </button>
+          </p>
+        ) : catalog.isPending || (symbols.length > 0 && quotes.isPending) ? (
+          <p role="status" className={`py-6 text-sm ${muted}`}>
+            Loading provider stock quotes…
+          </p>
+        ) : (
+          <>
+            {quotes.isError && (
+              <p
+                role="alert"
+                className="mt-3 text-xs text-amber-800 dark:text-amber-300"
+              >
+                Stock quote refresh failed. Retained prices are last available.
+              </p>
+            )}
+            {!visible.length ? (
+              <p role="status" className={`py-8 text-center text-sm ${muted}`}>
+                No {direction} with available provider day movement
+                {search.trim() ? " match this search" : ""}.
+              </p>
+            ) : (
+              <div
+                role="region"
+                aria-label="Stock movers table"
+                tabIndex={0}
+                className="mt-3 w-full overflow-x-auto rounded-lg focus-visible:outline-2 focus-visible:outline-cyan-600"
+              >
+                <table className="w-full min-w-[590px] text-left text-sm">
+                  <thead className="border-b border-slate-200 bg-slate-50 text-xs text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
+                    <tr>
+                      <th className="px-3 py-3">Stocks</th>
+                      <th className="px-3 py-3 text-right">Price (LTP)</th>
+                      <th className="px-3 py-3 text-right">1D change</th>
+                      <th className="px-3 py-3 text-right">Volume</th>
+                      <th className="px-3 py-3 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {visible.map((stock) => {
+                      const underlying = equityUnderlying(stock),
+                        quote = display[stock.symbol]!,
+                        future = currentFuture(underlying);
+                      return (
+                        <tr
+                          key={stock.symbol}
+                          className="hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                        >
+                          <td className="px-3 py-3">
+                            <Link
+                              href={`/stocks/${encodeURIComponent(underlying)}`}
+                              className="flex items-center gap-3"
+                            >
+                              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-cyan-50 text-xs font-bold text-cyan-800 dark:bg-cyan-950 dark:text-cyan-200">
+                                {underlying.slice(0, 2)}
+                              </span>
+                              <span>
+                                <span className="block font-semibold">
+                                  {stock.name || underlying}
+                                </span>
+                                <span className={`text-xs ${muted}`}>
+                                  {underlying} · {stock.exchange}
+                                </span>
+                              </span>
+                            </Link>
+                          </td>
+                          <td className="px-3 py-3 text-right">
+                            <p className="font-bold tabular-nums">
+                              {formatPaise(quote.price_paise)}
+                            </p>
+                            <FnoProvenance
+                              quote={quote}
+                              now={now}
+                              sessionLive={sessionLive}
+                            />
+                          </td>
+                          <td className="px-3 py-3 text-right">
+                            <FnoMovement quote={quote} />
+                          </td>
+                          <td
+                            className={`px-3 py-3 text-right text-xs tabular-nums ${muted}`}
+                          >
+                            {quote.volume_available !== false &&
+                            Number.isFinite(quote.volume) &&
+                            quote.volume! >= 0
+                              ? quote.volume!.toLocaleString("en-IN")
+                              : "Unavailable"}
+                          </td>
+                          <td className="px-3 py-3 text-right">
+                            <button
+                              aria-label={`Trade futures for ${underlying}`}
+                              disabled={!future}
+                              onClick={() => onTrade(underlying)}
+                              className="min-h-10 whitespace-nowrap text-xs font-semibold text-cyan-800 disabled:text-slate-500 dark:text-cyan-300"
+                            >
+                              Trade futures{" "}
+                              <ArrowUpRight
+                                aria-hidden
+                                className="inline h-3.5 w-3.5"
+                              />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {ranked.length > 6 && (
+              <nav
+                aria-label="Stock movers pagination"
+                className={`mt-4 flex flex-wrap items-center justify-between gap-2 text-xs ${muted}`}
+              >
+                <span>
+                  {ranked.length} {direction} with available movement
+                </span>
+                <div className="flex items-center gap-3">
+                  <button
+                    disabled={currentPage === 0}
+                    onClick={() => setPage(currentPage - 1)}
+                    className="min-h-10 disabled:text-slate-400"
+                  >
+                    Previous movers
+                  </button>
+                  <span>
+                    {currentPage + 1} / {Math.ceil(ranked.length / 6)}
+                  </span>
+                  <button
+                    disabled={(currentPage + 1) * 6 >= ranked.length}
+                    onClick={() => setPage(currentPage + 1)}
+                    className="min-h-10 disabled:text-slate-400"
+                  >
+                    Next movers
+                  </button>
+                </div>
+              </nav>
+            )}
+          </>
+        )}
       </section>
     </div>
   );

@@ -11,7 +11,9 @@ import time
 import urllib.error
 import urllib.request
 from urllib.parse import urlparse
-from datetime import datetime, timezone
+from datetime import datetime, timezone, time as day_time
+from zoneinfo import ZoneInfo
+from urllib.parse import urlencode
 
 
 def require(condition, message):
@@ -29,6 +31,44 @@ def quote_check(quote, symbol, executable=False):
     if executable:
         require(age <= 120 and not quote.get("is_quote_stale"), f"Stale execution quote for {symbol}")
     return {key: quote.get(key) for key in ("symbol", "price_paise", "source", "updated_at", "previous_close_paise", "day_change_available", "open_interest_available")}
+
+
+IST = ZoneInfo("Asia/Kolkata")
+
+
+def future_expiry(value):
+    for fmt in ("%d%b%Y", "%Y-%m-%d", "%d-%b-%Y", "%d-%m-%Y"):
+        try:
+            date = datetime.strptime(str(value).strip().upper(), fmt).date()
+            # Match the application's present exchange expiry policy.
+            return datetime.combine(date, day_time(15, 30), IST)
+        except (ValueError, TypeError):
+            pass
+    return None
+
+
+def select_live_future(rows, underlying, now=None):
+    now = now or datetime.now(IST)
+    target = underlying.strip().upper()
+    kind = "FUTIDX" if target in ("NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "SENSEX", "BANKEX", "NIFTYNXT50") else "FUTSTK"
+    eligible = []
+    for row in rows if isinstance(rows, list) else []:
+        if not isinstance(row, dict):
+            continue
+        expiry = future_expiry(row.get("expiry"))
+        token = row.get("token", "")
+        lot = row.get("lot_size")
+        identity = row.get("underlying") or row.get("underlying_symbol") or row.get("name") or ""
+        if (str(identity).upper() == target and row.get("instrument_type") == kind
+                and row.get("exchange", row.get("exchange_segment")) in ("NFO", "BFO")
+                and row.get("active") is True and row.get("is_tradable") is True
+                and isinstance(token, str) and token.isascii() and token.isdigit()
+                and isinstance(lot, int) and not isinstance(lot, bool) and lot > 0
+                and isinstance(row.get("symbol"), str) and row["symbol"]
+                and expiry is not None and expiry > now):
+            eligible.append(row)
+    require(eligible, f"Current canonical future missing for {target}")
+    return min(eligible, key=lambda row: (future_expiry(row["expiry"]), row["symbol"]))
 
 
 def run(args, result=None):
@@ -80,40 +120,12 @@ def run(args, result=None):
     # Explicit equity, index, future, call and put coverage.
     futures = []
     try:
-        catalog = api("/instruments/futures")
-        for row in (catalog or []):
-            u = (row.get("underlying") or row.get("name") or "").upper()
-            sym = row.get("symbol", "").upper()
-            if u == args.underlying.upper() or sym.startswith(args.underlying.upper()):
-                futures.append(row)
-    except Exception:
-        pass
-    if not futures:
-        ftype = "FUTIDX" if args.underlying.upper() in ("NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "SENSEX") else "FUTSTK"
-        try:
-            futures = api(f"/instruments?underlying={args.underlying}&instrument_type={ftype}&active=true&limit=20")
-        except Exception:
-            pass
-    if not futures:
-        instruments = api(f"/instruments?underlying={args.underlying}&active=true&limit=500")
-        futures = [row for row in instruments if row.get("instrument_type") in ("FUTIDX", "FUTSTK")]
-
-    require(bool(futures), f"Canonical future missing for {args.underlying}")
-    def parse_exp(val):
-        for fmt in ("%d%b%Y", "%Y-%m-%d", "%d-%b-%Y"):
-            try:
-                return datetime.strptime(str(val).strip().upper(), fmt)
-            except (ValueError, TypeError):
-                pass
-        return datetime.max
-    now_dt = datetime.now()
-    unexpired = [f for f in futures if parse_exp(f.get("expiry", "")) >= now_dt]
-    if unexpired:
-        unexpired.sort(key=lambda f: parse_exp(f.get("expiry", "")))
-        future = unexpired[0]
-    else:
-        futures.sort(key=lambda f: parse_exp(f.get("expiry", "")))
-        future = futures[0]
+        futures = api("/instruments/futures")
+        future = select_live_future(futures, args.underlying)
+    except RuntimeError:
+        ftype = "FUTIDX" if args.underlying.upper() in ("NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "SENSEX", "BANKEX", "NIFTYNXT50") else "FUTSTK"
+        query = urlencode({"underlying": args.underlying, "instrument_type": ftype, "active": "true", "limit": 500})
+        future = select_live_future(api(f"/instruments?{query}"), args.underlying)
 
     chain = api(f"/fno/option-chain?symbol={args.underlying}")
     rows = chain.get("strikes") or []

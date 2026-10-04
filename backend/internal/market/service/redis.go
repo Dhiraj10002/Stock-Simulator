@@ -238,8 +238,8 @@ func (s *Service) SetQuote(symbol string, pricePaise int64, volume int64) error 
 	}).Err()
 }
 
-// CachedQuote returns the quote from Redis, with fallback to derived F&O quote
-// or on-demand worker fetch in live mode.
+// CachedQuote returns cached display data. LIVE cold-cache demand is queued
+// by CurrentQuote and fulfilled asynchronously; HTTP reads never call the broker.
 // Unlike CurrentQuote which strictly validates staleness for execution, CachedQuote
 // returns the latest cached quote data for display and search even if stale.
 func (s *Service) CachedQuote(symbol string) (*dto.QuoteResponse, error) {
@@ -256,18 +256,17 @@ func (s *Service) CachedQuote(symbol string) (*dto.QuoteResponse, error) {
 			return cq, nil
 		}
 	}
-	if (errors.Is(err, ErrQuoteNotFound) || errors.Is(err, ErrQuoteStale)) && s.FeedMode() == dto.FeedModeLive {
-		if wQuote, wErr := s.FetchLiveFromWorker(symbol); wErr == nil && wQuote != nil && wQuote.PricePaise > 0 {
-			stamp, parseErr := dto.ParseQuoteTime(wQuote.UpdatedAt)
-			if parseErr == nil && !stamp.After(time.Now().Add(5*time.Second)) {
-				return wQuote, nil
-			}
-		}
-	}
 	return nil, err
 }
 
+// RawCachedQuote skips metadata lookups for already validated contracts.
+// Retain asynchronous demand so a cold option chain recovers on refresh.
 func (s *Service) RawCachedQuote(symbol string) (*dto.QuoteResponse, error) {
+	if s != nil && s.client != nil && s.FeedMode() == dto.FeedModeLive {
+		ctx, cancel := cache.Context(context.Background(), s.timeout)
+		defer cancel()
+		_ = s.client.ZAdd(ctx, "market:quote:demand", redis.Z{Score: float64(time.Now().Unix()), Member: symbol}).Err()
+	}
 	return s.rawCachedQuote(symbol)
 }
 
