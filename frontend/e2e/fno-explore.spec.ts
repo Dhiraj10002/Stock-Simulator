@@ -271,7 +271,7 @@ async function setup(
   });
   await page.goto("/options");
   await expect(
-    page.getByRole("heading", { name: "F&O trading", exact: true }),
+    page.getByRole("heading", { name: "Popular stocks", exact: true }),
   ).toBeVisible();
   if (!options.compactView)
     await page
@@ -612,7 +612,7 @@ test("empty master and signed-out account stay explicit", async ({ page }) => {
   await expect(
     page.getByText("Sign in to view your paper account."),
   ).toBeVisible();
-  await page.getByRole("tab", { name: /Positions/ }).click();
+  await page.getByRole("button", { name: "View derivative positions" }).click();
   await expect(
     page.getByText("Sign in to view derivative positions."),
   ).toBeVisible();
@@ -666,14 +666,14 @@ test("light/dark and mobile/tablet layouts have readable cards and no overlappin
         path: join(process.env.STOCK_UI_SCREENSHOTS!, "fno-mobile.png"),
         fullPage: true,
       });
-    await page.getByRole("tab", { name: /Positions/ }).click();
+    await page.getByRole("button", { name: "View derivative positions" }).click();
     await expect(
       page.getByRole("heading", { name: "TCS27OCT2099FUT", exact: true }),
     ).toBeVisible();
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth),
     ).toBeLessThanOrEqual(width);
-    await page.getByRole("tab", { name: "Explore", exact: true }).click();
+    await page.getByRole("button", { name: /Back to F&O Explore/i }).click();
   }
 });
 
@@ -799,7 +799,7 @@ test("compact F&O discovery follows the requested headings and dynamically ranks
 }) => {
   const control = await setup(page, { compactView: true });
   for (const name of [
-    "Trending stocks",
+    "Popular stocks",
     "F&O stocks",
     "Top traded index futures",
   ])
