@@ -22,6 +22,7 @@ The four supplied screenshots show: a holiday card stretched beyond its content;
 | Dashboard could not distinguish a queued backfill from a rejected or empty broker response. | Store bounded, sanitized history outcome states. When no valid cached bars exist, return `HISTORY_UNAVAILABLE` for provider failure/empty results; show loading, waiting, error details, and a retry control. Retain authentic existing bars. |
 | Search parsed `TCS26DEC1920PE` as year `19`, strike `20`. This matches the incorrect screenshot label. | Use canonical master strikes in rupees in backend and frontend formatting; preserve the exact symbol when strike metadata is missing. Do not scale a normalized strike again. Keep the canonical exchange segment. |
 | Futures browser was accessible only through a query parameter/test flag, and the flag implementation failed ESLint. | Expose a collapsed “Browse all futures” control to normal users. Stock-card actions open filtered genuine futures. Keep the removed All stocks/option-chain UI removed. |
+| Full PostgreSQL CI found an existing query-plan test rejecting the newly added `idx_orders_user_status_created` index even though it performs a valid leading-`user_uuid` index scan. | Accept this valid composite index while retaining the index-scan assertion and index coverage checks. This fixes the stale test expectation; it does not alter database indexes or suppress a performance check. |
 
 ## How real paper trading works
 

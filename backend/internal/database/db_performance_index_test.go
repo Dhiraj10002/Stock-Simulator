@@ -135,9 +135,11 @@ func TestPhase26_QueryPlansUseIndexScans(t *testing.T) {
 		acceptableIndexes []string
 	}{
 		{
-			name:              "Order user query uses idx_orders_user_uuid",
-			query:             "EXPLAIN SELECT * FROM orders WHERE user_uuid = '00000000-0000-0000-0000-000000000000'",
-			acceptableIndexes: []string{"idx_orders_user_uuid", "idx_orders_user_created"},
+			name:  "Order user query uses a leading user_uuid index",
+			query: "EXPLAIN SELECT * FROM orders WHERE user_uuid = '00000000-0000-0000-0000-000000000000'",
+			// The status/created composite index also starts with user_uuid.
+			// PostgreSQL may legitimately choose it for the same indexed lookup.
+			acceptableIndexes: []string{"idx_orders_user_uuid", "idx_orders_user_created", "idx_orders_user_status_created"},
 		},
 		{
 			name:              "Position user query uses idx_positions_user_uuid",
