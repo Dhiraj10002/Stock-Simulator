@@ -11,8 +11,10 @@ import { validLot } from "@/lib/strategyExecution";
 import { dayMovement } from "@/lib/marketDisplay";
 import { quoteLabel } from "@/lib/marketData";
 import { displayQuote } from "@/lib/fnoExplore";
-import type { Instrument, Order, Quote } from "@/types";
 import { useSymbolQuote, useTargetedSubscription } from "@/stores/market-store";
+import { useToast } from "@/components/ui/ToastProvider";
+import { formatKiteSymbol } from "@/lib/instrumentDisplay";
+import type { Instrument, Order, Quote } from "@/types";
 
 export interface FnoOrderModalProps {
   isOpen: boolean;
@@ -33,6 +35,7 @@ export default function FnoOrderModal({
   submissionBlock,
 }: FnoOrderModalProps) {
   const queryClient = useQueryClient();
+  const { addToast } = useToast();
 
   const [side, setSide] = useState<"BUY" | "SELL">(initialSide);
   const product = "FNO";
@@ -142,16 +145,42 @@ export default function FnoOrderModal({
     refetchInterval: 5000,
     retry: false,
   });
-  // Keep the last server estimate visible during polling, but block submission
-  // until the refresh finishes. A failed request invalidates the estimate.
+  // Fallback client estimation of margin in case the quote is stale or server estimate is loading
+  const notionalPaise =
+    totalQuantity *
+    (orderType === "LIMIT" && parseFloat(limitPrice) > 0
+      ? Math.round(parseFloat(limitPrice) * 100)
+      : effectivePricePaise);
+  const clientEstimatedMarginPaise = React.useMemo(() => {
+    if (!validQuantity || notionalPaise <= 0) return undefined;
+    const isFuture = instrument?.segment === "FUTURES";
+    if (isFuture) {
+      return Math.round(notionalPaise * 0.20);
+    }
+    if (side === "BUY") {
+      return notionalPaise;
+    }
+    return Math.round(notionalPaise * 0.30);
+  }, [instrument?.segment, notionalPaise, side, validQuantity]);
+
+  // Keep the last server estimate visible during polling, but fall back to client estimation
   const validPreview = !preview.isError ? preview.data : undefined;
   const requiredMarginPaise = validPreview?.required_funds_paise;
+  const displayMarginPaise = requiredMarginPaise ?? clientEstimatedMarginPaise;
   const availableBalancePaise = wallet.data?.available_balance_paise;
+
+  const isFundsSufficient =
+    validPreview !== undefined
+      ? validPreview.sufficient_funds
+      : availableBalancePaise !== undefined && displayMarginPaise !== undefined
+        ? availableBalancePaise >= displayMarginPaise
+        : false;
+
   const hasSufficientMargin =
-    validPreview?.sufficient_funds === true &&
+    isFundsSufficient &&
     !preview.isFetching &&
     !!wallet.data &&
-    ["LIVE", "SIMULATED"].includes(quoteLabel(effectiveQuote));
+    quoteLabel(effectiveQuote) !== "UNAVAILABLE";
   if (!isOpen || !instrument) return null;
 
   const handleExecuteOrder = async () => {
@@ -203,13 +232,35 @@ export default function FnoOrderModal({
       void queryClient.invalidateQueries({ queryKey: ["orders"] });
       void queryClient.invalidateQueries({ queryKey: ["trades"] });
 
+      const kiteInfo = formatKiteSymbol(
+        instrument.symbol,
+        instrument.expiry,
+        String(instrument.strike || ""),
+        instrument.option_type || instrument.optionType
+      );
+      const displayContract = kiteInfo.displayName || instrument.display_symbol || instrument.symbol;
+
+      if (placed.status === "EXECUTED") {
+        addToast(
+          "F&O Order Executed",
+          `${side} ${totalQuantity} ${displayContract} (${lots} LOT${lots > 1 ? "S" : ""}) executed successfully.`,
+          "success"
+        );
+      } else {
+        addToast(
+          `F&O Order ${placed.status}`,
+          `Order ${placed.uuid}: ${placed.status}. Review Orders.`,
+          "info"
+        );
+      }
+
       setFeedback({
         type: ["REJECTED", "CANCELLED", "EXPIRED"].includes(placed.status)
           ? "error"
           : "success",
         message:
           placed.status === "EXECUTED"
-            ? `Order executed: ${placed.uuid}. ${side} ${totalQuantity} ${instrument.symbol}.`
+            ? `Order executed: ${placed.uuid}. ${side} ${totalQuantity} ${displayContract}.`
             : `Order ${placed.uuid}: ${placed.status}. Execution is not confirmed. Review Orders for its current status.`,
       });
 
@@ -219,6 +270,7 @@ export default function FnoOrderModal({
         err instanceof Error
           ? err.message
           : "Failed to place order. Please check network/balance.";
+      addToast("F&O Order Failed", errMsg, "error");
       setFeedback({
         type: "error",
         message: `${errMsg} Review Orders before placing another order.`,
@@ -253,7 +305,7 @@ export default function FnoOrderModal({
                 {instrument.segment === "FUTURES" ? "FUTURES" : "OPTIONS"}
               </span>
               <span className="text-xs text-slate-400 font-mono">
-                {instrument.exchange ? `${instrument.exchange} F&O` : "NSE F&O"}
+                {instrument.exchange && instrument.exchange !== "BFO" ? `${instrument.exchange} F&O` : "NFO F&O"}
               </span>
             </div>
 
@@ -458,7 +510,7 @@ export default function FnoOrderModal({
             <div className="flex justify-between items-center text-slate-500 dark:text-slate-400">
               <span>Required additional funds:</span>
               <span className="font-black text-slate-900 dark:text-slate-100 font-tabular text-sm">
-                {formatPaise(requiredMarginPaise)}
+                {displayMarginPaise !== undefined ? formatPaise(displayMarginPaise) : "Unavailable"}
               </span>
             </div>
             <div className="flex justify-between items-center text-slate-500 dark:text-slate-400 text-[11px]">
@@ -502,7 +554,11 @@ export default function FnoOrderModal({
 
           <p className="text-xs text-slate-500" role="status">
             {preview.isError
-              ? `Preview unavailable: ${preview.error.message}`
+              ? displayMarginPaise !== undefined
+                ? quoteLabel(effectiveQuote) === "LAST AVAILABLE"
+                  ? "Estimated using last available quote; funds and margin will be rechecked at execution."
+                  : "Estimated margin shown; server preview unavailable."
+                : `Preview unavailable: ${preview.error.message}`
               : !token
                 ? "Sign in to use your virtual funds."
                 : preview.isFetching
@@ -551,37 +607,56 @@ export default function FnoOrderModal({
             </div>
           )}
 
+          {!isFundsSufficient && displayMarginPaise !== undefined && availableBalancePaise !== undefined && (
+            <div className="p-3 rounded-xl bg-amber-50/80 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-xs text-amber-800 dark:text-amber-300 font-semibold flex items-center justify-between">
+              <span>Insufficient virtual funds (Need {formatPaise(displayMarginPaise)}, available {formatPaise(availableBalancePaise)}).</span>
+            </div>
+          )}
+
           {/* 6. Execution Button */}
-          <button
-            onClick={handleExecuteOrder}
-            disabled={
+          {(() => {
+            const isButtonDisabled =
               executing ||
               submitted ||
               !validQuantity ||
               !token ||
               !!submissionBlock ||
               !hasSufficientMargin ||
-              (orderType === "MARKET" && effectivePricePaise <= 0)
-            }
-            className={`w-full py-3.5 rounded-2xl text-white font-black text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer ${
-              !hasSufficientMargin
-                ? "bg-slate-400 cursor-not-allowed"
-                : side === "BUY"
-                  ? "bg-cyan-600 hover:bg-cyan-500 dark:bg-cyan-500 dark:hover:bg-cyan-400 dark:text-slate-950 shadow-cyan-600/20 hover:scale-[1.01]"
-                  : "bg-rose-600 hover:bg-rose-500 dark:bg-rose-500 dark:hover:bg-rose-400 shadow-rose-600/20 hover:scale-[1.01]"
-            }`}
-          >
-            {executing ? (
-              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-            ) : (
-              <Zap className="w-4 h-4" />
-            )}
-            <span>
-              {executing
-                ? "Routing Order..."
-                : `${side} ${totalQuantity} ${instrument.symbol} (${lots} LOT${lots > 1 ? "S" : ""})`}
-            </span>
-          </button>
+              (orderType === "MARKET" && effectivePricePaise <= 0);
+
+            const kiteInfo = formatKiteSymbol(
+              instrument.symbol,
+              instrument.expiry,
+              String(instrument.strike || ""),
+              instrument.option_type || instrument.optionType
+            );
+            const formattedContract = kiteInfo.displayName || instrument.display_symbol || instrument.symbol;
+
+            return (
+              <button
+                onClick={handleExecuteOrder}
+                disabled={isButtonDisabled}
+                className={`w-full py-4 rounded-2xl font-black text-sm tracking-wide shadow-xl transition-all duration-200 flex items-center justify-center gap-2.5 cursor-pointer ${
+                  isButtonDisabled
+                    ? "bg-slate-100 dark:bg-slate-800/80 text-slate-400 dark:text-slate-500 border border-slate-200 dark:border-slate-700/80 cursor-not-allowed shadow-none"
+                    : side === "BUY"
+                      ? "bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-600 hover:from-emerald-400 hover:via-teal-400 hover:to-cyan-500 text-white shadow-teal-500/25 hover:shadow-teal-500/35 hover:scale-[1.01] active:scale-[0.99] border border-teal-400/30"
+                      : "bg-gradient-to-r from-rose-500 via-pink-600 to-orange-500 hover:from-rose-400 hover:via-pink-500 hover:to-orange-400 text-white shadow-rose-500/25 hover:shadow-rose-500/35 hover:scale-[1.01] active:scale-[0.99] border border-rose-400/30"
+                }`}
+              >
+                {executing ? (
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <Zap className="w-4 h-4" />
+                )}
+                <span>
+                  {executing
+                    ? "Routing Order..."
+                    : `${side} ${totalQuantity} ${formattedContract} (${lots} LOT${lots > 1 ? "S" : ""})`}
+                </span>
+              </button>
+            );
+          })()}
         </div>
       </div>
     </div>

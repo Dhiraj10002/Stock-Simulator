@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/database"
@@ -15,7 +16,9 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-type OrderRepository struct{}
+type OrderRepository struct {
+	instrumentCache sync.Map
+}
 
 func New() *OrderRepository { return &OrderRepository{} }
 
@@ -148,50 +151,90 @@ func (r *OrderRepository) FindInstrument(symbol string) (*model.Instrument, erro
 	if database.GetDB() == nil {
 		return nil, errors.New("database not connected")
 	}
-	var instrument model.Instrument
 	clean := strings.ToUpper(strings.TrimSpace(symbol))
 	if clean == "" {
 		return nil, gorm.ErrRecordNotFound
 	}
+	if cached, ok := r.instrumentCache.Load(clean); ok {
+		if inst, isInst := cached.(*model.Instrument); isInst && inst != nil {
+			return inst, nil
+		}
+	}
+
+	var instrument model.Instrument
 
 	// 1. Dynamic alias resolution: check canonical symbol first if mapped
 	canonical := alias.ResolveCanonicalSymbol(clean)
 	if canonical != "" && canonical != clean {
-		err := database.GetDB().Where("UPPER(symbol) = ? OR UPPER(symbol) = ? OR (UPPER(name) = ? AND instrument_type IN ('', 'EQ', 'EQUITY', 'INDEX', 'AMXIDX'))", canonical, canonical+"-EQ", canonical).
+		if cached, ok := r.instrumentCache.Load(canonical); ok {
+			if inst, isInst := cached.(*model.Instrument); isInst && inst != nil {
+				r.instrumentCache.Store(clean, inst)
+				return inst, nil
+			}
+		}
+		err := database.GetDB().Where("UPPER(symbol) = ?", canonical).
 			Order("is_tradable DESC, active DESC, id DESC").First(&instrument).Error
 		if err == nil {
+			r.instrumentCache.Store(clean, &instrument)
+			r.instrumentCache.Store(canonical, &instrument)
 			return &instrument, nil
 		}
 	}
 
-	// 2. Direct query: exact symbol match, with -EQ suffix, or exact name
-	err := database.GetDB().Where("UPPER(symbol) = ? OR UPPER(symbol) = ? OR (UPPER(name) = ? AND instrument_type IN ('', 'EQ', 'EQUITY', 'INDEX', 'AMXIDX'))", clean, clean+"-EQ", clean).
+	// 2. Direct exact query using functional index on UPPER(symbol)
+	err := database.GetDB().Where("UPPER(symbol) = ?", clean).
 		Order("is_tradable DESC, active DESC, id DESC").First(&instrument).Error
 	if err == nil {
+		r.instrumentCache.Store(clean, &instrument)
 		return &instrument, nil
 	}
 
-	// 3. Reverse alias resolution: check any aliases that map to this symbol
+	// 2b. Direct query with / without -EQ suffix
+	cleanAlt := clean + "-EQ"
+	if strings.HasSuffix(clean, "-EQ") {
+		cleanAlt = strings.TrimSuffix(clean, "-EQ")
+	}
+	err = database.GetDB().Where("UPPER(symbol) = ?", cleanAlt).
+		Order("is_tradable DESC, active DESC, id DESC").First(&instrument).Error
+	if err == nil {
+		r.instrumentCache.Store(clean, &instrument)
+		r.instrumentCache.Store(cleanAlt, &instrument)
+		return &instrument, nil
+	}
+
+	// 3. Fallback to name or reverse alias match
 	aliases := alias.GetAliases(clean)
 	for _, a := range aliases {
-		err = database.GetDB().Where("UPPER(symbol) = ? OR UPPER(symbol) = ? OR (UPPER(name) = ? AND instrument_type IN ('', 'EQ', 'EQUITY', 'INDEX', 'AMXIDX'))", a, a+"-EQ", a).
+		err = database.GetDB().Where("UPPER(symbol) = ?", a).
 			Order("is_tradable DESC, active DESC, id DESC").First(&instrument).Error
 		if err == nil {
+			r.instrumentCache.Store(clean, &instrument)
 			return &instrument, nil
 		}
 	}
 
-	// 4. Default canonical instruments fallback (for fresh setups / initial boot)
+	// 4. Broader match by name
+	cleanWithoutEQ := strings.TrimSuffix(clean, "-EQ")
+	err = database.GetDB().Where("UPPER(name) = ? AND instrument_type IN ('', 'EQ', 'EQUITY', 'INDEX', 'AMXIDX')", cleanWithoutEQ).
+		Order("is_tradable DESC, active DESC, id DESC").First(&instrument).Error
+	if err == nil {
+		r.instrumentCache.Store(clean, &instrument)
+		return &instrument, nil
+	}
+
+	// 5. Default canonical instruments fallback (for fresh setups / initial boot)
 	for _, inst := range instrumentService.DefaultCanonicalInstruments {
 		if inst.ExchangeSegment == "NFO" {
 			continue
 		}
 		if strings.EqualFold(inst.Symbol, clean) || strings.EqualFold(inst.Symbol, clean+"-EQ") || strings.EqualFold(inst.Name, clean) {
 			cp := inst
+			r.instrumentCache.Store(clean, &cp)
 			return &cp, nil
 		}
 		if canonical != "" && (strings.EqualFold(inst.Symbol, canonical) || strings.EqualFold(inst.Symbol, canonical+"-EQ") || strings.EqualFold(inst.Name, canonical)) {
 			cp := inst
+			r.instrumentCache.Store(clean, &cp)
 			return &cp, nil
 		}
 	}

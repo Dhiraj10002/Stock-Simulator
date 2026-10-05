@@ -93,6 +93,21 @@ func Setup(ctx context.Context, cfg *config.Config, opts ...SetupOption) *gin.En
 	if database.GetDB() != nil {
 		market.Service().SetDB(database.GetDB())
 		var instrumentFinderCache sync.Map
+
+		// Preload active tradable instruments on boot in a single query
+		var activeSymbols []string
+		if err := database.GetDB().Model(&model.Instrument{}).Where("active = ? AND is_tradable = ?", true, true).Pluck("symbol", &activeSymbols).Error; err == nil {
+			for _, s := range activeSymbols {
+				sClean := strings.ToUpper(strings.TrimSpace(s))
+				instrumentFinderCache.Store(sClean, true)
+				if strings.HasSuffix(sClean, "-EQ") {
+					instrumentFinderCache.Store(strings.TrimSuffix(sClean, "-EQ"), true)
+				} else {
+					instrumentFinderCache.Store(sClean+"-EQ", true)
+				}
+			}
+		}
+
 		market.Service().SetInstrumentFinder(func(symbol string) (bool, error) {
 			clean := strings.ToUpper(strings.TrimSpace(symbol))
 			if clean == "" {
@@ -103,41 +118,39 @@ func Setup(ctx context.Context, cfg *config.Config, opts ...SetupOption) *gin.En
 			}
 
 			canonical := alias.ResolveCanonicalSymbol(clean)
+			if canonical != "" && canonical != clean {
+				if cached, ok := instrumentFinderCache.Load(canonical); ok {
+					instrumentFinderCache.Store(clean, cached)
+					return cached.(bool), nil
+				}
+			}
 
 			// 1. Fast in-memory check against default canonical instruments
 			for _, inst := range instrumentService.DefaultCanonicalInstruments {
-				if inst.Symbol == clean || inst.Symbol == clean+"-EQ" || inst.Name == clean {
-					instrumentFinderCache.Store(clean, true)
-					return true, nil
-				}
-				if canonical != "" && (inst.Symbol == canonical || inst.Symbol == canonical+"-EQ" || inst.Name == canonical) {
+				if inst.Symbol == clean || inst.Symbol == clean+"-EQ" || inst.Name == clean ||
+					(canonical != "" && (inst.Symbol == canonical || inst.Symbol == canonical+"-EQ" || inst.Name == canonical)) {
 					instrumentFinderCache.Store(clean, true)
 					return true, nil
 				}
 			}
 
-			// 2. Database query using B-tree indexed columns (symbol and name)
+			// 2. Database query using functional index on UPPER(symbol) and UPPER(name)
+			cleanWithoutEQ := strings.TrimSuffix(clean, "-EQ")
 			var found bool
-			err := database.GetDB().Raw("SELECT EXISTS (SELECT 1 FROM instruments WHERE symbol IN (?, ?) OR name = ?)", clean, clean+"-EQ", clean).Scan(&found).Error
+			err := database.GetDB().Raw(
+				"SELECT EXISTS (SELECT 1 FROM instruments WHERE UPPER(symbol) IN (?, ?) OR UPPER(name) = ?)",
+				clean, cleanWithoutEQ, cleanWithoutEQ,
+			).Scan(&found).Error
 			if err != nil {
 				return false, err
 			}
+			// Cache both positive and negative results to avoid repeated DB hits
+			instrumentFinderCache.Store(clean, found)
 			if found {
-				instrumentFinderCache.Store(clean, true)
-				return true, nil
+				instrumentFinderCache.Store(cleanWithoutEQ, true)
+				instrumentFinderCache.Store(cleanWithoutEQ+"-EQ", true)
 			}
-			if canonical != "" && canonical != clean {
-				err = database.GetDB().Raw("SELECT EXISTS (SELECT 1 FROM instruments WHERE symbol IN (?, ?) OR name = ?)", canonical, canonical+"-EQ", canonical).Scan(&found).Error
-				if err != nil {
-					return false, err
-				}
-				if found {
-					instrumentFinderCache.Store(clean, true)
-					return true, nil
-				}
-			}
-
-			return false, nil
+			return found, nil
 		})
 	}
 	portfolio := portfolioHandler.New(market.Service())

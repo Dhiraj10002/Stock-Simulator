@@ -13,6 +13,7 @@ import {
 import { formatPaise } from "@/lib/format";
 import { getApiUrl } from "@/lib/config";
 import { apiFetch } from "@/lib/api";
+import { useToast } from "@/components/ui/ToastProvider";
 import type { Wallet as WalletData } from "@/types";
 import WalletTransactionsTable from "./WalletTransactionsTable";
 
@@ -28,6 +29,7 @@ export default function AddFundsModal({
   currentBalancePaise,
 }: AddFundsModalProps) {
   const queryClient = useQueryClient();
+  const { addToast } = useToast();
   const [activeTab, setActiveTab] = useState<"DEPOSIT" | "TRANSACTIONS">("DEPOSIT");
   const [selectedAmount, setSelectedAmount] = useState<number>(500000); // ₹5,00,000
   const [customAmount, setCustomAmount] = useState<string>("");
@@ -71,6 +73,7 @@ export default function AddFundsModal({
         type: "success",
         message: `Successfully credited ₹${activeAmount.toLocaleString("en-IN")} into your paper trading margin account!`,
       });
+      addToast("Funds Added", `Successfully credited ₹${activeAmount.toLocaleString("en-IN")} to your paper wallet.`, "success");
 
       setTimeout(() => {
         onClose();
@@ -81,6 +84,7 @@ export default function AddFundsModal({
         type: "error",
         message: "Failed to allocate paper funds. Please try again.",
       });
+      addToast("Deposit Failed", "Failed to allocate paper funds. Please try again.", "error");
     } finally {
       setIsAdding(false);
     }
@@ -111,6 +115,7 @@ export default function AddFundsModal({
         type: "success",
         message: "Simulation account reset back to ₹10,00,000.00 baseline capital!",
       });
+      addToast("Simulation Reset", "Simulation account reset back to ₹10,00,000 baseline capital.", "success");
 
       setTimeout(() => {
         onClose();
@@ -121,6 +126,7 @@ export default function AddFundsModal({
         type: "error",
         message: "Could not reset simulation account.",
       });
+      addToast("Reset Failed", "Could not reset simulation account.", "error");
     } finally {
       setIsResetting(false);
     }

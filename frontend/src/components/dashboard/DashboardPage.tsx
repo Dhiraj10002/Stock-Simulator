@@ -36,6 +36,7 @@ import MarketStatusBanner from "@/components/dashboard/MarketStatusBanner";
 import MarketMoversCard from "@/components/dashboard/MarketMoversCard";
 import PortfolioSummarySnapshot from "@/components/dashboard/PortfolioSummarySnapshot";
 import AddFundsModal from "@/components/portfolio/AddFundsModal";
+import { useToast } from "@/components/ui/ToastProvider";
 
 // ---------------------------------------------------------------------------
 // TYPES & CATALOG EXPORTS (Kept for compatibility with stock details & routes)
@@ -222,6 +223,7 @@ interface DashboardPageProps {
 
 export default function DashboardPage({ onSignOut }: DashboardPageProps) {
   const queryClient = useQueryClient();
+  const { addToast } = useToast();
   const [userName] = useState<string>(() => {
     if (typeof window !== "undefined") {
       return localStorage.getItem("user_name") || "Trader";
@@ -236,7 +238,6 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
   // Market overview chart index selection
   type OverviewIndex = "NIFTY 50" | "SENSEX" | "BANK NIFTY";
   const [selectedIndex, setSelectedIndex] = useState<OverviewIndex>("NIFTY 50");
-  const [selectedTimeframe, setSelectedTimeframe] = useState<"1D" | "1W" | "1M" | "1Y">("1D");
   const [hoveredChartPoint, setHoveredChartPoint] = useState<{ price: number; time: string } | null>(null);
 
   // Sector samples Panel state (Kite left sidebar)
@@ -271,8 +272,15 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
       await apiFetch("/simulation/reset", {method: "POST"});
       await refetchWallet();
       await Promise.all(["portfolio", "orders", "trades"].map(key => queryClient.invalidateQueries({queryKey: [key]})));
+      addToast(
+        "Simulation Reset",
+        "Your portfolio and ₹10,00,000 cash balance have been restored.",
+        "success",
+      );
     } catch (error) {
-      setResetError(error instanceof Error ? error.message : "Reset failed.");
+      const msg = error instanceof Error ? error.message : "Reset failed.";
+      setResetError(msg);
+      addToast("Reset Failed", msg, "error");
     } finally {
       setResetting(false);
     }
@@ -418,16 +426,15 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
       ? "SENSEX"
       : "BANKNIFTY";
 
-  const historyInterval = selectedTimeframe === "1Y" ? "ONE_DAY" : selectedTimeframe === "1D" ? "ONE_MINUTE" : "ONE_HOUR";
   const { data: indexCandles, isError: historyError, isPending: historyPending, isFetching: historyFetching, error: historyFailure, refetch: refetchHistory } = useQuery<Candle[]>({
-    queryKey: ["index-candles", indexKey, selectedTimeframe],
-    queryFn: ({signal}) => apiFetch<Candle[]>(`/market/quotes/${indexKey}/history?limit=500&interval=${historyInterval}`, {signal: AbortSignal.any([signal, AbortSignal.timeout(15000)])}),
+    queryKey: ["index-candles", indexKey],
+    queryFn: ({signal}) => apiFetch<Candle[]>(`/market/quotes/${indexKey}/history?limit=500&interval=ONE_MINUTE`, {signal: AbortSignal.any([signal, AbortSignal.timeout(15000)])}),
     staleTime: 5_000,
     refetchInterval: (query) => query.state.data?.length ? 60_000 : 5_000,
     retry: false,
   });
 
-  // Market Overview Chart Coordinates & Values Generator
+  // Market Overview Chart Coordinates & Values Generator (1D Intraday)
   const chartData = useMemo(() => {
     const liveIdxQuote = quotes[indexKey];
     const livePrice = liveIdxQuote?.price_paise ? liveIdxQuote.price_paise / 100 : 0;
@@ -437,11 +444,8 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
 
     const allCandles = indexCandles || [];
     const latestTimestamp = allCandles.at(-1)?.timestamp ?? 0;
-    const windowSeconds = selectedTimeframe === "1W" ? 7 * 86400 : selectedTimeframe === "1M" ? 31 * 86400 : 370 * 86400;
     const istDate = (timestamp: number) => new Date(timestamp * 1000).toLocaleDateString("en-CA", {timeZone: "Asia/Kolkata"});
-    const candles = allCandles.filter((c) => selectedTimeframe === "1D"
-      ? istDate(c.timestamp) === istDate(latestTimestamp)
-      : c.timestamp >= latestTimestamp - windowSeconds);
+    const candles = allCandles.filter((c) => istDate(c.timestamp) === istDate(latestTimestamp));
     if (candles.length === 0) {
       return {
         pts: [],
@@ -459,7 +463,7 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
 
     const pts = candles.map((c) => {
       const d = new Date(c.timestamp * 1000);
-      const time = d.toLocaleString("en-IN", {timeZone: "Asia/Kolkata", ...(selectedTimeframe === "1D" ? {hour: "2-digit", minute: "2-digit"} as const : {day: "2-digit", month: "short"} as const)});
+      const time = d.toLocaleString("en-IN", {timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit"});
       return { price: c.close_paise / 100, time };
     });
 
@@ -472,11 +476,16 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
     const height = 180;
     const padding = 12;
 
-    const coords = pts.map((pt, idx) => {
-      const x = (idx / (pts.length - 1 || 1)) * (width - padding * 2) + padding;
-      const y = height - padding - ((pt.price - min) / range) * (height - padding * 2);
-      return { x, y, pt };
-    });
+    const coords = pts.length === 1
+      ? [
+          { x: padding, y: height / 2, pt: pts[0] },
+          { x: width - padding, y: height / 2, pt: pts[0] },
+        ]
+      : pts.map((pt, idx) => {
+          const x = (idx / (pts.length - 1 || 1)) * (width - padding * 2) + padding;
+          const y = max === min ? height / 2 : height - padding - ((pt.price - min) / range) * (height - padding * 2);
+          return { x, y, pt };
+        });
 
     const linePath = coords.length > 0 ? `M ${coords.map((c) => `${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(" L ")}` : "";
     const areaPath =
@@ -506,7 +515,7 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
       change: finalChange,
       changePercent: finalChangePercent,
     };
-  }, [indexKey, indexCandles, quotes, selectedTimeframe]);
+  }, [indexKey, indexCandles, quotes]);
 
   const availableBalance = wallet?.available_balance_paise;
   const unrealizedPnl = portfolio?.unrealized_pnl_paise ?? 0;
@@ -851,21 +860,11 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
                 </div>
               </div>
 
-              {/* Timeframe Buttons */}
-              <div className="flex items-center gap-1 text-[11px] font-semibold text-slate-500">
-                {(["1D", "1W", "1M", "1Y"] as const).map((tf) => (
-                  <button
-                    key={tf}
-                    onClick={() => setSelectedTimeframe(tf)}
-                    className={`px-2 py-0.5 rounded-md transition-all cursor-pointer ${
-                      selectedTimeframe === tf
-                        ? "bg-cyan-100 dark:bg-cyan-950/80 text-cyan-800 dark:text-cyan-300 font-bold"
-                        : "hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500"
-                    }`}
-                  >
-                    {tf}
-                  </button>
-                ))}
+              {/* 1D Timeframe Badge */}
+              <div className="flex items-center text-[11px] font-semibold">
+                <span className="px-2.5 py-0.5 rounded-md bg-cyan-100 dark:bg-cyan-950/80 text-cyan-800 dark:text-cyan-300 font-bold">
+                  1D
+                </span>
               </div>
             </div>
 

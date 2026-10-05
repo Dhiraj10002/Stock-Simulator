@@ -178,7 +178,7 @@ func New(redisURL string, timeout time.Duration) (*Service, error) {
 }
 
 var workerHTTPClient = &http.Client{
-	Timeout: 3 * time.Second,
+	Timeout: 5 * time.Second,
 }
 
 func (s *Service) FetchLiveFromWorker(symbol string) (*dto.QuoteResponse, error) {

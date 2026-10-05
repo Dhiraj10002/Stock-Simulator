@@ -70,6 +70,12 @@ var activationMu sync.Mutex
 type Service struct {
 	db                 *gorm.DB
 	hasInstrumentsInDB atomic.Bool
+	derivativeStocksMu sync.RWMutex
+	derivativeStocks   []dto.InstrumentResponse
+	derivativeStocksAt time.Time
+	futuresCatalogMu   sync.RWMutex
+	futuresCatalog     []dto.InstrumentResponse
+	futuresCatalogAt   time.Time
 }
 
 // NewService creates a new instrument service.
@@ -291,6 +297,8 @@ func (s *Service) List(query, exchange, instrumentType, underlying string, activ
 	}
 
 	tx := db.Model(&model.Instrument{})
+	// Strictly enforce policy: Never return BFO instruments (paper trading only allowed on NSE & NFO)
+	tx = tx.Where("exchange != 'BFO' AND exchange_segment != 'BFO'")
 	if activeOnly {
 		tx = tx.Where("(active = ? OR active IS NULL) AND (is_tradable = ? OR is_tradable IS NULL)", true, true)
 	}
@@ -1146,6 +1154,15 @@ func (s *Service) DerivativeUnderlyings(ctx context.Context) ([]string, error) {
 // DerivativeStocks returns the complete eligible NSE equity universe without
 // truncating a general instrument search or presenting derivative-only test names.
 func (s *Service) DerivativeStocks(ctx context.Context) ([]dto.InstrumentResponse, error) {
+	s.derivativeStocksMu.RLock()
+	if len(s.derivativeStocks) > 0 && time.Since(s.derivativeStocksAt) < 5*time.Minute {
+		res := make([]dto.InstrumentResponse, len(s.derivativeStocks))
+		copy(res, s.derivativeStocks)
+		s.derivativeStocksMu.RUnlock()
+		return res, nil
+	}
+	s.derivativeStocksMu.RUnlock()
+
 	names, err := s.DerivativeUnderlyings(ctx)
 	if err != nil {
 		return nil, err
@@ -1174,5 +1191,12 @@ func (s *Service) DerivativeStocks(ctx context.Context) ([]dto.InstrumentRespons
 		}
 		out = append(out, ToCanonicalInstrument(equity))
 	}
+
+	s.derivativeStocksMu.Lock()
+	s.derivativeStocks = make([]dto.InstrumentResponse, len(out))
+	copy(s.derivativeStocks, out)
+	s.derivativeStocksAt = time.Now()
+	s.derivativeStocksMu.Unlock()
+
 	return out, nil
 }

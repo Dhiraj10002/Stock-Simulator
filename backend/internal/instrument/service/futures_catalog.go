@@ -22,6 +22,15 @@ func (s *Service) FuturesCatalog(ctx context.Context) ([]dto.InstrumentResponse,
 	if s.db == nil {
 		return nil, fmt.Errorf("instrument master unavailable")
 	}
+	s.futuresCatalogMu.RLock()
+	if len(s.futuresCatalog) > 0 && time.Since(s.futuresCatalogAt) < 5*time.Minute {
+		res := make([]dto.InstrumentResponse, len(s.futuresCatalog))
+		copy(res, s.futuresCatalog)
+		s.futuresCatalogMu.RUnlock()
+		return res, nil
+	}
+	s.futuresCatalogMu.RUnlock()
+
 	var rows []model.Instrument
 	if err := s.db.WithContext(ctx).Where("active = ? AND is_tradable = ? AND instrument_type IN ?", true, true, []string{"FUTIDX", "FUTSTK"}).Order("symbol ASC").Find(&rows).Error; err != nil {
 		return nil, err
@@ -38,5 +47,12 @@ func (s *Service) FuturesCatalog(ctx context.Context) ([]dto.InstrumentResponse,
 		}
 		out = append(out, ToCanonicalInstrument(row))
 	}
+
+	s.futuresCatalogMu.Lock()
+	s.futuresCatalog = make([]dto.InstrumentResponse, len(out))
+	copy(s.futuresCatalog, out)
+	s.futuresCatalogAt = time.Now()
+	s.futuresCatalogMu.Unlock()
+
 	return out, nil
 }

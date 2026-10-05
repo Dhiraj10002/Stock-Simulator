@@ -1,12 +1,15 @@
 package service
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/config"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/calendar"
+	marketDTO "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/dto"
+	marketService "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/service"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/order/dto"
 	"github.com/google/uuid"
@@ -200,5 +203,64 @@ func TestOrderService_SegmentSessionTimings(t *testing.T) {
 			t.Fatalf("expected NFO order error containing 'closed at 15:40 IST', got: %v", err)
 		}
 	})
+}
+
+func TestOrderService_PreviewStaleQuoteFallback(t *testing.T) {
+	service := New(nil, &config.Config{
+		MISLeverage:             5,
+		FuturesMarginPercent:    20,
+		OptionSellMarginPercent: 30,
+	})
+	inst := model.Instrument{
+		Symbol:           "HCLTECH26OCTFUT",
+		UnderlyingSymbol: "HCLTECH",
+		LotSize:          400,
+		InstrumentType:   "FUTSTK",
+		ExchangeSegment:  "NFO",
+		Expiry:           "2030-10-27",
+		Active:           true,
+		IsTradable:       true,
+	}
+	service.SetInstrumentFinder(func(sym string) (*model.Instrument, error) {
+		if sym == inst.Symbol {
+			return &inst, nil
+		}
+		return nil, errors.New("not found")
+	})
+
+	calls := 0
+	service.SetExecutableQuoteFunc(func(symbol string) (*marketDTO.QuoteResponse, error) {
+		calls++
+		if calls == 1 {
+			return nil, marketService.ErrQuoteStale
+		}
+		return &marketDTO.QuoteResponse{
+			Symbol:     symbol,
+			PricePaise: 119570,
+			Source:     "angelone_live",
+			UpdatedAt:  "2026-10-05T10:00:00Z",
+		}, nil
+	})
+
+	preview, err := service.Preview(uuid.New().String(), dto.CreateOrderRequest{
+		Symbol:   inst.Symbol,
+		Side:     model.OrderSideBuy,
+		Type:     model.OrderTypeMarket,
+		Product:  model.OrderProductFNO,
+		Quantity: 400,
+	})
+	if err != nil {
+		t.Fatalf("expected preview to succeed on stale quote fallback, got err: %v", err)
+	}
+	if preview == nil {
+		t.Fatal("expected non-nil preview")
+	}
+	// 400 * 1195.70 = ~478,280. Margin 20% = ~95,656
+	if preview.RequiredFundsPaise <= 0 {
+		t.Fatalf("expected positive required funds, got: %d", preview.RequiredFundsPaise)
+	}
+	if preview.EstimatedPricePaise <= 0 {
+		t.Fatalf("expected positive estimated price, got: %d", preview.EstimatedPricePaise)
+	}
 }
 

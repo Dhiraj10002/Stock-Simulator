@@ -23,6 +23,7 @@ import { useSymbolQuote, useTargetedSubscription } from "@/stores/market-store";
 import { publicFetch, apiFetch } from "@/lib/api";
 import { useAuthToken } from "@/hooks/useAuthToken";
 import { useAccountWallet } from "@/hooks/useAccountWallet";
+import { useToast } from "@/components/ui/ToastProvider";
 import { formatPaise } from "@/lib/format";
 import { aggregateCandles, historyRequest, quoteLabel } from "@/lib/marketData";
 import { displayQuote, type FuturesMarketStatus } from "@/lib/fnoExplore";
@@ -142,6 +143,7 @@ function StockDesk({ symbol, token }: { symbol: string; token: string }) {
   const [submitted, setSubmitted] = useState(false);
   const [confirmation, setConfirmation] = useState(false);
   const postStarted = useRef(false);
+  const { addToast } = useToast();
   const instrument = useQuery({
     queryKey: ["instrument", symbol],
     queryFn: ({ signal }) =>
@@ -257,6 +259,7 @@ function StockDesk({ symbol, token }: { symbol: string; token: string }) {
         const sym = getWatchlistSymbol(item);
         return sym ? sym.replace(/-EQ$/, "") === currentTarget : false;
       });
+      const isAdding = !current;
       const symToRemove = current ? getWatchlistSymbol(current) : "";
       await apiFetch(
         current && symToRemove
@@ -269,8 +272,14 @@ function StockDesk({ symbol, token }: { symbol: string; token: string }) {
       );
       await watchlist.refetch();
       setWatchFeedback(undefined);
+      addToast(
+        isAdding ? "Added to Watchlist" : "Removed from Watchlist",
+        `${currentTarget} has been ${isAdding ? "added to" : "removed from"} your watchlist.`,
+        "success",
+      );
     } catch {
       setWatchFeedback("Watchlist update failed. Try again.");
+      addToast("Watchlist Error", "Watchlist update failed. Try again.", "error");
     } finally {
       setWatchBusy(false);
     }
@@ -316,11 +325,25 @@ function StockDesk({ symbol, token }: { symbol: string; token: string }) {
         signal: AbortSignal.timeout(15000),
       });
       if (!placed?.uuid) throw new Error("Order result unknown.");
-      setFeedback(
-        placed.status === "EXECUTED"
-          ? `Paper order executed: ${placed.uuid}.`
-          : `Order ${placed.uuid}: ${placed.status}. Execution is not confirmed. Review Orders.`,
-      );
+      if (placed.status === "EXECUTED") {
+        setFeedback(undefined);
+        setSubmitted(false);
+        postStarted.current = false;
+        addToast(
+          "Order Executed",
+          `${order.side} ${order.quantity} shares of ${symbol.replace(/-EQ$/, "")} executed successfully.`,
+          "success",
+        );
+      } else {
+        setFeedback(
+          `Order ${placed.uuid}: ${placed.status}. Execution is not confirmed. Review Orders.`,
+        );
+        addToast(
+          `Order ${placed.status}`,
+          `Order for ${order.quantity} shares: ${placed.status}. Review Orders.`,
+          "info",
+        );
+      }
       for (const queryKey of [
         ["portfolio"],
         ["wallet"],
@@ -331,6 +354,11 @@ function StockDesk({ symbol, token }: { symbol: string; token: string }) {
     } catch {
       setFeedback(
         "Order result is uncertain. Review Orders before placing another order.",
+      );
+      addToast(
+        "Order Notice",
+        "Order result is uncertain. Review Orders before placing another order.",
+        "error",
       );
     } finally {
       setSubmitting(false);

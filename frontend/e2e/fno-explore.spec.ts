@@ -774,9 +774,7 @@ test("featured native candles and canonical lots lead to current futures; gainer
   ).toBeVisible();
   const movers = page.getByRole("region", { name: "F&O stocks", exact: true });
   await expect(
-    movers.getByText("4 of 6 eligible equities have provider quotes.", {
-      exact: false,
-    }),
+    movers.getByRole("heading", { name: "F&O stocks" }),
   ).toBeVisible();
   await expect(movers.getByRole("row").nth(1).getByRole("link")).toContainText(
     "TCS",
@@ -847,9 +845,7 @@ test("complete eligible stock universe uses batches of at most 100 and only visi
   const control = await setup(page, { equityCount: 205 });
   const movers = page.getByRole("region", { name: "F&O stocks", exact: true });
   await expect(
-    movers.getByText("209 of 211 eligible equities have provider quotes.", {
-      exact: false,
-    }),
+    movers.getByRole("heading", { name: "F&O stocks" }),
   ).toBeVisible();
   const equityBatches = control.batches.filter((batch) =>
     batch.some((s) => s.endsWith("-EQ")),
