@@ -263,4 +263,3 @@ func TestOrderService_PreviewStaleQuoteFallback(t *testing.T) {
 		t.Fatalf("expected positive estimated price, got: %d", preview.EstimatedPricePaise)
 	}
 }
-

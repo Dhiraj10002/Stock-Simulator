@@ -97,6 +97,7 @@ func TestOrderHandler_ErrorSemantics(t *testing.T) {
 		h.Service().SetNowFunc(func() time.Time { return tradingTime })
 		h.Service().SetInstrumentFinder(func(symbol string) (*model.Instrument, error) {
 			return &model.Instrument{
+				Active: true, IsTradable: true,
 				Symbol:          symbol,
 				ExchangeSegment: "NSE",
 				InstrumentType:  "EQUITY",
@@ -137,6 +138,7 @@ func TestOrderHandler_ErrorSemantics(t *testing.T) {
 		h.Service().SetNowFunc(func() time.Time { return tradingTime })
 		h.Service().SetInstrumentFinder(func(symbol string) (*model.Instrument, error) {
 			return &model.Instrument{
+				Active: true, IsTradable: true,
 				Symbol:          symbol,
 				ExchangeSegment: "NSE",
 				InstrumentType:  "EQUITY",
@@ -177,6 +179,7 @@ func TestOrderHandler_ErrorSemantics(t *testing.T) {
 		h.Service().SetNowFunc(func() time.Time { return tradingTime })
 		h.Service().SetInstrumentFinder(func(symbol string) (*model.Instrument, error) {
 			return &model.Instrument{
+				Active: true, IsTradable: true,
 				Symbol:          symbol,
 				ExchangeSegment: "NSE",
 				InstrumentType:  "EQUITY",
@@ -217,6 +220,7 @@ func TestOrderHandler_ErrorSemantics(t *testing.T) {
 		h.Service().SetNowFunc(func() time.Time { return tradingTime })
 		h.Service().SetInstrumentFinder(func(symbol string) (*model.Instrument, error) {
 			return &model.Instrument{
+				Active: true, IsTradable: true,
 				Symbol:          symbol,
 				ExchangeSegment: "NSE",
 				InstrumentType:  "EQUITY",

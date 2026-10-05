@@ -26,7 +26,7 @@ func TestFNO_RealVsSimulated_Separation(t *testing.T) {
 		OptionSellMarginPercent: 30,
 	}
 
-	canonicalDBInst := &model.Instrument{
+	canonicalDBInst := &model.Instrument{IsTradable: true,
 		ID:               99,
 		Symbol:           "NIFTY24OCT25000CE",
 		DisplaySymbol:    "NIFTY 24OCT 25000 CE",

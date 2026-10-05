@@ -1069,14 +1069,14 @@ class InstrumentStore:
                     if len(versions) != 1:
                         raise RuntimeError("LIVE requires exactly one activated master")
                     version = versions[0]["version"]
-                    cursor.execute("SELECT COUNT(*) AS count, MAX(updated_at) AS modified FROM instruments WHERE active = true AND is_tradable = true AND snapshot_version = %s", (version,))
+                    cursor.execute("SELECT COUNT(*) AS count, MAX(updated_at) AS modified FROM instruments WHERE active = true AND (is_tradable = true OR instrument_type IN ('INDEX', 'AMXIDX')) AND snapshot_version = %s", (version,))
                     meta = cursor.fetchone()
                     if not meta or meta["count"] == 0:
                         raise RuntimeError("activated master is empty")
                     signature = (version, meta["count"], str(meta["modified"]))
                     if signature == self._master_signature:
                         return False
-                    cursor.execute("SELECT token,symbol,name,underlying_symbol,expiry,strike,lot_size AS lotsize,instrument_type AS instrumenttype,exchange_segment AS exch_seg,tick_size FROM instruments WHERE active = true AND is_tradable = true AND snapshot_version = %s", (version,))
+                    cursor.execute("SELECT token,symbol,name,underlying_symbol,expiry,strike,lot_size AS lotsize,instrument_type AS instrumenttype,exchange_segment AS exch_seg,tick_size FROM instruments WHERE active = true AND (is_tradable = true OR instrument_type IN ('INDEX', 'AMXIDX')) AND snapshot_version = %s", (version,))
                     rows = list(cursor.fetchall())
             if not rows:
                 raise RuntimeError("active master is empty; run sync-instruments before starting LIVE")
@@ -1458,7 +1458,7 @@ class QuoteWriter:
             symbols_to_write.append(canonical)
 
         for sym in symbols_to_write:
-            self.settlement_recorder.record(sym, price_paise, source, mode, now)
+            self.settlement_recorder.record(sym, price_paise, source, mode, now, subscription.exchange_segment)
 
         t0 = time.perf_counter()
         with self.history_lock, self.client.pipeline() as pipe:

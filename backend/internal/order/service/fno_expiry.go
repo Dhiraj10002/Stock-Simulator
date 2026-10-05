@@ -114,13 +114,17 @@ func (s *OrderService) finalQuotePrice(symbol, expiry string) (int64, error) {
 	if db == nil {
 		return 0, fmt.Errorf("settlement reference database unavailable")
 	}
+	segment := calendar.SegmentNSE
+	if inst, err := s.repo.FindInstrument(symbol); err == nil && inst != nil && strings.EqualFold(inst.ExchangeSegment, calendar.SegmentNFO) {
+		segment = calendar.SegmentNFO
+	}
 	var ref model.SettlementReference
 	err = db.Where("symbol = ? AND session_date = ? AND feed_mode = ?", symbol, day.Format("2006-01-02"), string(mode)).First(&ref).Error
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return 0, fmt.Errorf("read settlement reference: %w", err)
 	}
 	if err == nil {
-		if err := validateSettlementReference(ref, day, mode); err == nil {
+		if err := validateSettlementReference(ref, day, mode, segment); err == nil {
 			return ref.PricePaise, nil
 		}
 	}
@@ -139,7 +143,7 @@ func (s *OrderService) finalQuotePrice(symbol, expiry string) (int64, error) {
 		}
 	}
 	ref = model.SettlementReference{Symbol: symbol, SessionDate: day.Format("2006-01-02"), FeedMode: string(mode), Source: quote.Source, PricePaise: quote.PricePaise, ObservedAt: observed}
-	if err := validateSettlementReference(ref, day, mode); err != nil {
+	if err := validateSettlementReference(ref, day, mode, segment); err != nil {
 		return 0, err
 	}
 	if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&ref).Error; err != nil {
@@ -150,14 +154,18 @@ func (s *OrderService) finalQuotePrice(symbol, expiry string) (int64, error) {
 	if err := db.Where("symbol = ? AND session_date = ? AND feed_mode = ?", symbol, ref.SessionDate, string(mode)).First(&ref).Error; err != nil {
 		return 0, err
 	}
-	if err := validateSettlementReference(ref, day, mode); err != nil {
+	if err := validateSettlementReference(ref, day, mode, segment); err != nil {
 		return 0, err
 	}
 	return ref.PricePaise, nil
 }
 
-func validateSettlementReference(ref model.SettlementReference, day time.Time, mode marketDTO.FeedMode) error {
-	close := time.Date(day.Year(), day.Month(), day.Day(), 15, 30, 0, 0, day.Location())
+func validateSettlementReference(ref model.SettlementReference, day time.Time, mode marketDTO.FeedMode, segments ...string) error {
+	segment := calendar.SegmentNSE
+	if len(segments) > 0 {
+		segment = segments[0]
+	}
+	_, _, close := calendar.SegmentSessionBounds(day, segment)
 	if ref.PricePaise <= 0 || ref.FeedMode != string(mode) || ref.SessionDate != day.Format("2006-01-02") || !marketDTO.IsSourceExecutableInMode(marketDTO.NormalizeQuoteSource(ref.Source), mode) || ref.ObservedAt.Before(close.Add(-time.Minute)) || ref.ObservedAt.After(close) {
 		return fmt.Errorf("valid closing-window settlement reference unavailable")
 	}
@@ -307,7 +315,7 @@ func isExpired(value string, now time.Time) bool {
 		// Fail closed: contracts with missing or malformed expiry dates cannot be traded.
 		return true
 	}
-	cutoff := time.Date(date.Year(), date.Month(), date.Day(), 15, 30, 0, 0, date.Location())
+	_, _, cutoff := calendar.SegmentSessionBounds(date, calendar.SegmentNFO)
 	return !now.Before(cutoff)
 }
 

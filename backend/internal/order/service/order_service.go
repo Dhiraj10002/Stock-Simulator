@@ -212,19 +212,7 @@ func (s *OrderService) Create(userID string, request dto.CreateOrderRequest) (*d
 	}
 
 	if instrument != nil {
-		if instrument.SnapshotVersion != "" {
-			if !instrument.IsTradable || !instrument.Active {
-				return nil, fmt.Errorf("instrument %q is not tradable (benchmark index or unsupported segment)", request.Symbol)
-			}
-		} else {
-			seg := strings.ToUpper(strings.TrimSpace(instrument.ExchangeSegment))
-			if seg == "BSE" || seg == "BFO" || strings.ToUpper(strings.TrimSpace(instrument.InstrumentType)) == "INDEX" {
-				if !instrument.IsTradable {
-					return nil, fmt.Errorf("instrument %q is not tradable (benchmark index or unsupported segment)", request.Symbol)
-				}
-			}
-		}
-		if err := product.ValidateInstrumentProduct(*instrument, request.Product); err != nil {
+		if err := product.ValidateNewInstrument(*instrument, request.Product); err != nil {
 			return nil, err
 		}
 	}

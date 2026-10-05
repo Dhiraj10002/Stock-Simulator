@@ -90,7 +90,11 @@ func SegmentSessionBounds(t time.Time, segment string) (marketOpen, misCutoff, m
 	switch {
 	case seg == "NFO" || seg == "FO" || seg == "FNO" || seg == "DERIVATIVES":
 		// Equity derivatives (NFO): 09:15 to 15:40 IST per August 2026 circular
-		marketClose = time.Date(y, m, d, 15, 40, 0, 0, istLocation)
+		closeMinute := 30
+		if !ist.Before(time.Date(2026, time.August, 3, 0, 0, 0, 0, istLocation)) {
+			closeMinute = 40
+		}
+		marketClose = time.Date(y, m, d, 15, closeMinute, 0, 0, istLocation)
 	case seg == "NSE_CAS" || seg == "CAS":
 		// Closing Auction Session (CAS): 15:15 to 15:35 IST
 		marketOpen = time.Date(y, m, d, 15, 15, 0, 0, istLocation)
@@ -129,7 +133,7 @@ func IsMarketOpenForSegment(t time.Time, segment string) bool {
 	}
 	ist := t.In(istLocation)
 	open, _, closeTime := SegmentSessionBounds(ist, segment)
-	return !ist.Before(open) && !ist.After(closeTime)
+	return !ist.Before(open) && ist.Before(closeTime)
 }
 
 // ValidateNewOrderSession checks whether new cash equity orders can be accepted.
@@ -157,7 +161,7 @@ func ValidateNewOrderSessionForSegment(t time.Time, segment string) error {
 	if ist.Before(open) {
 		return fmt.Errorf("market is closed; trading session opens at %s (current time: %s)", open.Format("15:04 IST"), ist.Format("15:04:05 IST"))
 	}
-	if ist.After(closeTime) {
+	if !ist.Before(closeTime) {
 		return fmt.Errorf("market is closed; trading session closed at %s (current time: %s)", closeTime.Format("15:04 IST"), ist.Format("15:04:05 IST"))
 	}
 	return nil

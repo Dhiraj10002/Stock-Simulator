@@ -1,7 +1,7 @@
 """Archive sourced closing-window ticks outside Redis and the quote hot path."""
 import logging
 import threading
-from datetime import datetime
+from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
 
@@ -13,10 +13,14 @@ class SettlementRecorder:
         if database_url:
             threading.Thread(target=self._run, daemon=True, name="settlement-archive").start()
 
-    def record(self, symbol: str, price: int, source: str, mode: str, observed: datetime):
+    def record(self, symbol: str, price: int, source: str, mode: str, observed: datetime, segment: str = "NSE"):
         local = observed.astimezone(ZoneInfo("Asia/Kolkata"))
         allowed = (mode == "live" and source == "angelone_live") or (mode == "synthetic" and source in ("synthetic_gbm", "synthetic", "fno_engine", "simulated_deriv"))
-        if not self.database_url or not allowed or price <= 0 or local.weekday() >= 5 or (local.hour, local.minute) != (15, 29):
+        # Match the Go closing-window proxy for each segment, including the
+        # NFO schedule change effective 2026-08-03. Cash remains separate.
+        minute = 40 if segment.upper() == "NFO" and local.date() >= date(2026, 8, 3) else 30
+        close = local.replace(hour=15, minute=minute, second=0, microsecond=0)
+        if not self.database_url or not allowed or price <= 0 or local.weekday() >= 5 or not close.timestamp() - 60 <= local.timestamp() <= close.timestamp():
             return
         key = (symbol, local.date().isoformat(), mode.upper())
         with self.lock:

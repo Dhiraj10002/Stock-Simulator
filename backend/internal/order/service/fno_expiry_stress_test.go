@@ -205,7 +205,7 @@ func TestFNOExpiry_Stress_MultiLegPortfolioMarginRelease(t *testing.T) {
 	orderSvc.SetExecutableQuoteFunc(func(symbol string) (*marketDTO.QuoteResponse, error) {
 		switch symbol {
 		case "STRESS_NIFTY_FUT":
-			return &marketDTO.QuoteResponse{Symbol: symbol, PricePaise: 21500, UpdatedAt: quoteTimeStr, Source: "angelone_live"}, nil
+			return &marketDTO.QuoteResponse{Symbol: symbol, PricePaise: 21500, UpdatedAt: time.Date(2026, 9, 24, 15, 39, 55, 0, ist).Format(time.RFC3339), Source: "angelone_live"}, nil
 		case "STRESS_NIFTY":
 			return &marketDTO.QuoteResponse{Symbol: symbol, PricePaise: 24500, UpdatedAt: quoteTimeStr, Source: "angelone_live"}, nil
 		default:
@@ -255,7 +255,7 @@ func TestFNOExpiry_Stress_HighVolumeBatchConcurrency(t *testing.T) {
 	ist := calendar.Location()
 	expiryDateStr := "2026-09-24"
 	expiryTime := time.Date(2026, 9, 24, 15, 35, 0, 0, ist)
-	quoteTimeStr := time.Date(2026, 9, 24, 15, 29, 55, 0, ist).Format(time.RFC3339)
+	quoteTimeStr := time.Date(2026, 9, 24, 15, 39, 55, 0, ist).Format(time.RFC3339)
 
 	inst := model.Instrument{
 		Token:            "CONCURR_NIFTY_FUT_TOK",

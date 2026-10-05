@@ -43,8 +43,8 @@ func TestParseExpiryDate(t *testing.T) {
 			if dt.Year() != tt.expYear || dt.Month() != tt.expMonth || dt.Day() != tt.expDay {
 				t.Errorf("ParseExpiryDate(%s) = %v; want %d-%d-%d", tt.expiry, dt, tt.expYear, tt.expMonth, tt.expDay)
 			}
-			if dt.Hour() != 15 || dt.Minute() != 30 {
-				t.Errorf("expected 15:30 IST, got %02d:%02d", dt.Hour(), dt.Minute())
+			if dt.Hour() != 15 || dt.Minute() != 40 {
+				t.Errorf("expected 15:40 IST, got %02d:%02d", dt.Hour(), dt.Minute())
 			}
 		} else {
 			if err == nil {

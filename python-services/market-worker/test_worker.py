@@ -1061,6 +1061,7 @@ class CanonicalRefreshReadinessTest(unittest.TestCase):
         self.assertEqual(store.master_version,"v2")
         queries = [call.args[0] for call in cursor.execute.call_args_list]
         self.assertEqual(sum("SELECT token" in query for query in queries),1)
+        self.assertTrue(any("instrument_type IN ('INDEX', 'AMXIDX')" in query for query in queries))
         self.assertTrue(any("instrument_snapshots" in query for query in queries))
 
 

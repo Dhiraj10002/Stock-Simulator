@@ -63,10 +63,10 @@ func TestRegression_F06_ExpiryParsingResolved(t *testing.T) {
 			t.Fatalf("expected 29SEP2026 to be active on morning of expiry")
 		}
 
-		// Cutoff at 15:30:00 IST on expiry day must be expired
-		cutoffTime := time.Date(2026, 9, 29, 15, 30, 0, 0, loc)
+		// Cutoff at 15:40:00 IST on expiry day must be expired
+		cutoffTime := time.Date(2026, 9, 29, 15, 40, 0, 0, loc)
 		if !isExpired("29SEP2026", cutoffTime) {
-			t.Fatalf("expected 29SEP2026 to be expired at 15:30:00 IST cutoff")
+			t.Fatalf("expected 29SEP2026 to be expired at 15:40:00 IST cutoff")
 		}
 
 		// Malformed/unparseable expiry date must FAIL CLOSED (return true) to prevent trading bad contracts
