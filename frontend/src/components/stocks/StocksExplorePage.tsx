@@ -39,7 +39,6 @@ interface PopularStock {
   symbol: string;
   name: string;
   sector: string;
-  marketCap: string;
   tag: string;
   color: string;
 }
@@ -49,7 +48,6 @@ const POPULAR_STOCKS: PopularStock[] = [
     symbol: "RELIANCE",
     name: "Reliance Industries Ltd",
     sector: "Energy & Conglomerate",
-    marketCap: "₹20.1 Lakh Cr",
     tag: "Large Cap",
     color: "from-blue-600 to-indigo-700",
   },
@@ -57,7 +55,6 @@ const POPULAR_STOCKS: PopularStock[] = [
     symbol: "HDFCBANK",
     name: "HDFC Bank Ltd",
     sector: "Banking & Financials",
-    marketCap: "₹12.5 Lakh Cr",
     tag: "Large Cap",
     color: "from-sky-600 to-blue-800",
   },
@@ -65,7 +62,6 @@ const POPULAR_STOCKS: PopularStock[] = [
     symbol: "TCS",
     name: "Tata Consultancy Services",
     sector: "IT & Technology",
-    marketCap: "₹15.2 Lakh Cr",
     tag: "Large Cap",
     color: "from-cyan-600 to-teal-700",
   },
@@ -73,7 +69,6 @@ const POPULAR_STOCKS: PopularStock[] = [
     symbol: "INFY",
     name: "Infosys Ltd",
     sector: "IT & Software Services",
-    marketCap: "₹7.4 Lakh Cr",
     tag: "Large Cap",
     color: "from-indigo-600 to-purple-800",
   },
@@ -81,7 +76,6 @@ const POPULAR_STOCKS: PopularStock[] = [
     symbol: "TATAMOTORS",
     name: "Tata Motors Ltd",
     sector: "Automotive & EV",
-    marketCap: "₹3.5 Lakh Cr",
     tag: "Large Cap",
     color: "from-emerald-600 to-teal-800",
   },
@@ -89,7 +83,6 @@ const POPULAR_STOCKS: PopularStock[] = [
     symbol: "BHARTIARTL",
     name: "Bharti Airtel Ltd",
     sector: "Telecom & Cloud",
-    marketCap: "₹8.8 Lakh Cr",
     tag: "Large Cap",
     color: "from-rose-600 to-red-800",
   },
@@ -98,30 +91,27 @@ const POPULAR_STOCKS: PopularStock[] = [
 interface MostTradedStock {
   symbol: string;
   name: string;
-  volume: string;
-  turnoverCr: number;
 }
 
 const MOST_TRADED_STOCKS: MostTradedStock[] = [
-  { symbol: "ZOMATO", name: "Zomato Ltd (Eternal)", volume: "6.8 Cr", turnoverCr: 1850 },
-  { symbol: "SUZLON", name: "Suzlon Energy Ltd", volume: "14.2 Cr", turnoverCr: 1058 },
-  { symbol: "TRENT", name: "Trent Ltd (Westside & Zudio)", volume: "38.5 Lakh", turnoverCr: 2748 },
-  { symbol: "ADANIENT", name: "Adani Enterprises Ltd", volume: "42.1 Lakh", turnoverCr: 1320 },
-  { symbol: "YESBANK", name: "YES Bank Ltd", volume: "18.5 Cr", turnoverCr: 446 },
-  { symbol: "BEL", name: "Bharat Electronics Ltd", volume: "2.4 Cr", turnoverCr: 750 },
+  { symbol: "ZOMATO", name: "Zomato Ltd (Eternal)" },
+  { symbol: "SUZLON", name: "Suzlon Energy Ltd" },
+  { symbol: "TRENT", name: "Trent Ltd (Westside & Zudio)" },
+  { symbol: "ADANIENT", name: "Adani Enterprises Ltd" },
+  { symbol: "YESBANK", name: "YES Bank Ltd" },
+  { symbol: "BEL", name: "Bharat Electronics Ltd" },
 ];
 
 interface IntradayStock {
   symbol: string;
   name: string;
-  volatility: string;
 }
 
 const TOP_INTRADAY_STOCKS: IntradayStock[] = [
-  { symbol: "ATGL", name: "Adani Total Gas Ltd", volatility: "High Beta" },
-  { symbol: "POONAWALLA", name: "Poonawalla Fincorp Ltd", volatility: "High Beta" },
-  { symbol: "TATACHEM", name: "Tata Chemicals Ltd", volatility: "Reversal Setup" },
-  { symbol: "TATAPOWER", name: "Tata Power Co Ltd", volatility: "Breakout" },
+  { symbol: "ATGL", name: "Adani Total Gas Ltd" },
+  { symbol: "POONAWALLA", name: "Poonawalla Fincorp Ltd" },
+  { symbol: "TATACHEM", name: "Tata Chemicals Ltd" },
+  { symbol: "TATAPOWER", name: "Tata Power Co Ltd" },
 ];
 
 interface SectorTrending {
@@ -152,37 +142,6 @@ const MAJOR_INDICES_STRIP = [
   { name: "FIN NIFTY", symbolKey: "FINNIFTY" },
 ];
 
-// Helper to render mini SVG sparklines for table rows
-function MiniSparkline({ isGain, points }: { isGain: boolean; points: number[] }) {
-  const min = Math.min(...points);
-  const max = Math.max(...points);
-  const range = max - min || 1;
-  const w = 100;
-  const h = 28;
-  const pad = 2;
-
-  const coords = points.map((p, i) => {
-    const x = (i / (points.length - 1)) * (w - pad * 2) + pad;
-    const y = h - pad - ((p - min) / range) * (h - pad * 2);
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
-  });
-
-  const path = `M ${coords.join(" L ")}`;
-
-  return (
-    <svg width={w} height={h} className="overflow-visible">
-      <path
-        d={path}
-        fill="none"
-        stroke={isGain ? "#10b981" : "#f43f5e"}
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
 export default function StocksExplorePage() {
   // Mover tabs & scope
   const [moverTab, setMoverTab] = useState<"gainers" | "losers" | "volume">("gainers");
@@ -205,49 +164,32 @@ export default function StocksExplorePage() {
   const { data: wallet } = useAccountWallet();
 
   // 2. Fetch Portfolio for Unrealized P&L
-  const { data: portfolio } = useQuery<Portfolio>({
+  const {
+    data: portfolio,
+    isError: isPortfolioError,
+    refetch: refetchPortfolio,
+    isFetching: isPortfolioFetching,
+  } = useQuery<Portfolio>({
     queryKey: ["portfolio", token],
     queryFn: async () => {
       if (!token) {
-        return {
-          invested_value_paise: 0,
-          current_value_paise: 0,
-          unrealized_pnl_paise: 0,
-          positions: [],
-        };
+        throw new Error("Authentication required");
       }
-      try {
-        const res = await fetch(`${apiUrl}/portfolio`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!res.ok) {
-          return {
-            invested_value_paise: 0,
-            current_value_paise: 0,
-            unrealized_pnl_paise: 0,
-            positions: [],
-          };
-        }
-        const json: ApiResponse<Portfolio> = await res.json();
-        return (
-          json.data || {
-            invested_value_paise: 0,
-            current_value_paise: 0,
-            unrealized_pnl_paise: 0,
-            positions: [],
-          }
-        );
-      } catch {
-        return {
-          invested_value_paise: 0,
-          current_value_paise: 0,
-          unrealized_pnl_paise: 0,
-          positions: [],
-        };
+      const res = await fetch(`${apiUrl}/portfolio`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        throw new Error(`Failed to fetch portfolio: ${res.statusText}`);
       }
+      const json: ApiResponse<Portfolio> = await res.json();
+      if (!json.data) {
+        throw new Error("Invalid portfolio response");
+      }
+      return json.data;
     },
     enabled: !!token,
     refetchInterval: token ? 5000 : false,
+    placeholderData: (prev) => prev,
   });
 
   const exploreSymbols = useMemo(() => {
@@ -272,16 +214,28 @@ export default function StocksExplorePage() {
     return MASTER_STOCKS_CATALOG.map((item) => {
       const live = quotes[item.symbol] || (item.symbol === "ZOMATO" ? quotes["ETERNAL"] : undefined) || getCachedQuote(item.symbol);
       if (!live || !live.price_paise) {
-        return { ...item, isQuoteAvailable: false };
+        return {
+          ...item,
+          dayLow: undefined as number | undefined,
+          dayHigh: undefined as number | undefined,
+          volume: undefined as number | undefined,
+          isQuoteAvailable: false,
+        };
       }
       const price = live.price_paise / 100;
       const change = live.change_paise !== undefined ? live.change_paise / 100 : 0;
       const changePercent = live.change_percent ?? (price > 0 && change !== 0 ? +((change / (price - change || 1)) * 100).toFixed(2) : 0);
+      const dayLow = live.low_paise && live.low_paise > 0 ? live.low_paise / 100 : undefined;
+      const dayHigh = live.high_paise && live.high_paise > 0 ? live.high_paise / 100 : undefined;
+      const volume = live.volume && live.volume > 0 ? live.volume : 0;
       return {
         ...item,
         price,
         change,
         changePercent,
+        dayLow,
+        dayHigh,
+        volume,
         isQuoteAvailable: true,
       };
     });
@@ -312,7 +266,7 @@ export default function StocksExplorePage() {
 
   // Generate mover list based on tab
   const moverList = useMemo(() => {
-    let sourceList: { symbol: string; name?: string; price_paise: number; change_paise: number; change_percent: number; volume: number }[] = [];
+    let sourceList: { symbol: string; name?: string; price_paise: number; change_paise: number; change_percent: number; volume: number; high_paise?: number; low_paise?: number }[] = [];
     if (moverTab === "gainers") {
       sourceList = marketMovers?.gainers || [];
     } else if (moverTab === "losers") {
@@ -332,8 +286,12 @@ export default function StocksExplorePage() {
             : vol >= 100000
             ? `${(vol / 100000).toFixed(1)} Lakh`
             : vol > 0
-            ? vol.toLocaleString()
+            ? vol.toLocaleString("en-IN")
             : "—";
+
+        const live = quotes[item.symbol];
+        const dayLow = (item.low_paise && item.low_paise > 0 ? item.low_paise : live?.low_paise ? live.low_paise : 0) / 100;
+        const dayHigh = (item.high_paise && item.high_paise > 0 ? item.high_paise : live?.high_paise ? live.high_paise : 0) / 100;
 
         return {
           symbol: item.symbol,
@@ -342,50 +300,47 @@ export default function StocksExplorePage() {
           change,
           changePercent: item.change_percent,
           volume: volumeStr,
-          sparkline: [
-            price - change,
-            price - change * 0.7,
-            price - change * 0.4,
-            price - change * 0.8,
-            price - change * 0.2,
-            price + change * 0.1,
-            price,
-          ],
+          dayLow: dayLow > 0 ? dayLow : undefined,
+          dayHigh: dayHigh > 0 ? dayHigh : undefined,
         };
       });
     }
 
     const validStocks = liveCatalog.filter((s) => s.isQuoteAvailable && s.price > 0);
+    const mapStock = (s: (typeof validStocks)[0]) => {
+      const vol = s.volume ?? 0;
+      const volumeStr =
+        vol >= 10000000
+          ? `${(vol / 10000000).toFixed(2)} Cr`
+          : vol >= 100000
+          ? `${(vol / 100000).toFixed(1)} Lakh`
+          : vol > 0
+          ? vol.toLocaleString("en-IN")
+          : "—";
+      return {
+        ...s,
+        volume: volumeStr,
+        dayLow: s.dayLow,
+        dayHigh: s.dayHigh,
+      };
+    };
+
     if (moverTab === "gainers") {
       return validStocks
         .filter((s) => s.changePercent > 0)
         .sort((a, b) => b.changePercent - a.changePercent)
         .slice(0, 6)
-        .map((s) => ({
-          ...s,
-          volume: "—",
-          sparkline: [s.price - s.change, s.price - s.change * 0.5, s.price],
-        }));
+        .map(mapStock);
     } else if (moverTab === "losers") {
       return validStocks
         .filter((s) => s.changePercent < 0)
         .sort((a, b) => a.changePercent - b.changePercent)
         .slice(0, 6)
-        .map((s) => ({
-          ...s,
-          volume: "—",
-          sparkline: [s.price - s.change, s.price - s.change * 0.5, s.price],
-        }));
+        .map(mapStock);
     } else {
-      return validStocks
-        .slice(0, 6)
-        .map((s) => ({
-          ...s,
-          volume: "—",
-          sparkline: [s.price * 0.98, s.price * 1.01, s.price],
-        }));
+      return validStocks.slice(0, 6).map(mapStock);
     }
-  }, [moverTab, marketMovers, liveCatalog]);
+  }, [moverTab, marketMovers, liveCatalog, quotes]);
 
   // Dynamic Trending Sectors calculated from live constituent prices
   const dynamicExploreSectors = useMemo(() => {
@@ -478,6 +433,25 @@ export default function StocksExplorePage() {
 
       {/* 3. MAIN WORKSPACE */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-8">
+        {token && isPortfolioError && (
+          <div className="flex items-center justify-between p-3.5 rounded-xl border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200 text-xs">
+            <div className="flex items-center gap-2">
+              <Activity className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+              <span>
+                {portfolio
+                  ? "Portfolio network update failed: valuation may be stale."
+                  : "Unable to load portfolio data. Please check your network connection."}
+              </span>
+            </div>
+            <button
+              onClick={() => refetchPortfolio()}
+              disabled={isPortfolioFetching}
+              className="px-3 py-1 rounded bg-amber-200 dark:bg-amber-900/60 hover:bg-amber-300 dark:hover:bg-amber-800 text-amber-900 dark:text-amber-100 font-semibold text-xs transition cursor-pointer disabled:opacity-50"
+            >
+              {isPortfolioFetching ? "Retrying..." : "Retry"}
+            </button>
+          </div>
+        )}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
           {/* ================================================================= */}
           {/* LEFT 8-COLS: Primary Stocks Discovery Desk                         */}
@@ -640,7 +614,7 @@ export default function StocksExplorePage() {
                       )}
 
                       <div className="text-[10px] text-slate-400 font-mono mt-1">
-                        Vol: {stock.volume}
+                        {live?.volume && live.volume > 0 ? `Vol: ${live.volume.toLocaleString("en-IN")}` : "NSE Live Feed"}
                       </div>
                     </Link>
                   );
@@ -657,7 +631,7 @@ export default function StocksExplorePage() {
                     Top movers today
                   </h2>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
-                    Real-time index price leaders with live 1D intraday sparklines
+                    Real-time index price leaders with live LTP and day movement
                   </p>
                 </div>
 
@@ -716,7 +690,7 @@ export default function StocksExplorePage() {
                     <tr className="text-[11px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100 dark:border-slate-800/80 pb-2">
                       <th className="py-2 font-semibold">Company</th>
                       <th className="py-2 font-semibold text-center hidden sm:table-cell">
-                        Market price (1D)
+                        Day Range (L · H)
                       </th>
                       <th className="py-2 font-semibold text-right">LTP & 1D Change</th>
                       <th className="py-2 font-semibold text-right hidden md:table-cell">Volume</th>
@@ -751,11 +725,15 @@ export default function StocksExplorePage() {
                               </div>
                             </td>
 
-                            {/* 1D Mini Sparkline Curve */}
-                            <td className="py-3 px-2 text-center hidden sm:table-cell">
-                              <div className="flex justify-center">
-                                <MiniSparkline isGain={isGain} points={stock.sparkline} />
-                              </div>
+                            {/* Day Range (L · H) */}
+                            <td className="py-3 px-2 text-center hidden sm:table-cell font-mono text-[11px] text-slate-500 dark:text-slate-400">
+                              {stock.dayLow && stock.dayHigh ? (
+                                <span>
+                                  ₹{stock.dayLow.toFixed(1)} · ₹{stock.dayHigh.toFixed(1)}
+                                </span>
+                              ) : (
+                                <span>—</span>
+                              )}
                             </td>
 
                             {/* Price & Change */}
@@ -1042,7 +1020,27 @@ export default function StocksExplorePage() {
                 </span>
               </div>
 
-              {positionsCount === 0 ? (
+              {isPortfolioError && !portfolio ? (
+                /* Error state when initial load fails */
+                <div className="py-4 text-center space-y-2">
+                  <div className="w-10 h-10 mx-auto rounded-full bg-amber-50 dark:bg-amber-950/60 flex items-center justify-center text-amber-600 dark:text-amber-400">
+                    <Activity className="w-5 h-5" />
+                  </div>
+                  <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                    Portfolio Unavailable
+                  </h4>
+                  <p className="text-[11px] text-slate-400 max-w-[200px] mx-auto">
+                    Could not connect to portfolio server.
+                  </p>
+                  <button
+                    onClick={() => refetchPortfolio()}
+                    disabled={isPortfolioFetching}
+                    className="mt-1 px-3 py-1 rounded-md bg-amber-100 dark:bg-amber-900/40 hover:bg-amber-200 dark:hover:bg-amber-800/60 text-amber-800 dark:text-amber-200 font-semibold text-xs transition cursor-pointer"
+                  >
+                    {isPortfolioFetching ? "Retrying..." : "Retry"}
+                  </button>
+                </div>
+              ) : positionsCount === 0 ? (
                 /* Empty state matching the reference */
                 <div className="py-4 text-center space-y-3">
                   <div className="w-12 h-12 mx-auto rounded-full bg-cyan-50 dark:bg-cyan-950/60 flex items-center justify-center text-cyan-600 dark:text-cyan-400">
@@ -1076,6 +1074,12 @@ export default function StocksExplorePage() {
                       {formatPaise(unrealizedPnl)}
                     </span>
                   </div>
+                  {isPortfolioError && (
+                    <div className="text-[10px] text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                      <Activity className="w-3 h-3" />
+                      <span>Valuation may be stale</span>
+                    </div>
+                  )}
                 </div>
               )}
 

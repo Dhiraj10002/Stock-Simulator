@@ -108,3 +108,97 @@ func TestOrderService_MarketSessionRejection(t *testing.T) {
 		})
 	}
 }
+
+func TestOrderService_SegmentSessionTimings(t *testing.T) {
+	loc := calendar.Location()
+	service := New(nil, &config.Config{
+		MISLeverage:             5,
+		FuturesMarginPercent:    20,
+		OptionSellMarginPercent: 30,
+	})
+	service.SetInstrumentFinder(func(symbol string) (*model.Instrument, error) {
+		if symbol == "NIFTY26OCT25000CE" {
+			return &model.Instrument{
+				Symbol:          "NIFTY26OCT25000CE",
+				Name:            "NIFTY Option",
+				ExchangeSegment: "NFO",
+				InstrumentType:  "OPTIDX",
+				Expiry:          "2026-10-29",
+				LotSize:         25,
+				Active:          true,
+				IsTradable:      true,
+			}, nil
+		}
+		return &model.Instrument{
+			Symbol:          symbol,
+			Name:            symbol,
+			ExchangeSegment: "NSE",
+			InstrumentType:  "EQUITY",
+			LotSize:         1,
+			Active:          true,
+			IsTradable:      true,
+		}, nil
+	})
+
+	userID := uuid.New().String()
+
+	t.Run("Cash equity rejected at 15:35 IST", func(t *testing.T) {
+		service.SetNowFunc(func() time.Time {
+			return time.Date(2026, 9, 16, 15, 35, 0, 0, loc)
+		})
+		_, err := service.Create(userID, dto.CreateOrderRequest{
+			Symbol:     "RELIANCE",
+			Side:       model.OrderSideBuy,
+			Type:       model.OrderTypeLimit,
+			Product:    model.OrderProductDelivery,
+			Quantity:   10,
+			PricePaise: 250000,
+		})
+		if err == nil || !strings.Contains(err.Error(), "closed at 15:30 IST") {
+			t.Fatalf("expected cash order error containing 'closed at 15:30 IST', got: %v", err)
+		}
+	})
+
+	t.Run("NFO derivative accepted at 15:35 IST", func(t *testing.T) {
+		service.SetNowFunc(func() time.Time {
+			return time.Date(2026, 9, 16, 15, 35, 0, 0, loc)
+		})
+		var createdOrder *model.Order
+		service.createOrderFunc = func(o *model.Order) error {
+			createdOrder = o
+			return nil
+		}
+		_, err := service.Create(userID, dto.CreateOrderRequest{
+			Symbol:     "NIFTY26OCT25000CE",
+			Side:       model.OrderSideBuy,
+			Type:       model.OrderTypeLimit,
+			Product:    model.OrderProductFNO,
+			Quantity:   25,
+			PricePaise: 15000,
+		})
+		if err != nil {
+			t.Fatalf("expected NFO order to be accepted at 15:35 IST, got: %v", err)
+		}
+		if createdOrder == nil || createdOrder.Symbol != "NIFTY26OCT25000CE" {
+			t.Fatalf("expected order to be created, got %v", createdOrder)
+		}
+	})
+
+	t.Run("NFO derivative rejected at 15:41 IST", func(t *testing.T) {
+		service.SetNowFunc(func() time.Time {
+			return time.Date(2026, 9, 16, 15, 41, 0, 0, loc)
+		})
+		_, err := service.Create(userID, dto.CreateOrderRequest{
+			Symbol:     "NIFTY26OCT25000CE",
+			Side:       model.OrderSideBuy,
+			Type:       model.OrderTypeLimit,
+			Product:    model.OrderProductFNO,
+			Quantity:   25,
+			PricePaise: 15000,
+		})
+		if err == nil || !strings.Contains(err.Error(), "closed at 15:40 IST") {
+			t.Fatalf("expected NFO order error containing 'closed at 15:40 IST', got: %v", err)
+		}
+	})
+}
+

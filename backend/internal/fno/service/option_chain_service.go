@@ -69,7 +69,7 @@ func (s *OptionChainService) GetOptionChain(symbol, expiry string) (*dto.OptionC
 	// 3. Check for real NFO option contracts in database
 	var nfoInstruments []model.Instrument
 	if db != nil {
-		q := db.Where("(UPPER(underlying_symbol) = ? OR UPPER(name) = ?) AND exchange_segment IN ('NFO', 'BFO') AND (option_type = 'CE' OR option_type = 'PE' OR symbol LIKE '%CE' OR symbol LIKE '%PE')", symbol, symbol)
+		q := db.Where("(UPPER(underlying_symbol) = ? OR UPPER(name) = ?) AND exchange_segment = 'NFO' AND (option_type = 'CE' OR option_type = 'PE' OR symbol LIKE '%CE' OR symbol LIKE '%PE')", symbol, symbol)
 		if mode == marketDto.FeedModeLive {
 			q = q.Where("active = ? AND is_tradable = ? AND token ~ '^[0-9]+$'", true, true)
 		}

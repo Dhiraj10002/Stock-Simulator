@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/database"
@@ -21,6 +22,7 @@ type OrderPreview struct {
 	AvailableBalancePaise int64  `json:"available_balance_paise"`
 	EstimatedPricePaise   int64  `json:"estimated_price_paise"`
 	SufficientFunds       bool   `json:"sufficient_funds"`
+	MarginDisclosure      string `json:"margin_disclosure,omitempty"`
 }
 
 // Preview validates using Create's existing dry-run hook. Projection uses the
@@ -28,7 +30,11 @@ type OrderPreview struct {
 func (s *OrderService) Preview(user string, request dto.CreateOrderRequest) (*OrderPreview, error) {
 	var order model.Order
 	previewNow := s.now
-	if err := calendar.ValidateNewOrderSession(s.now()); err != nil {
+	segment := calendar.SegmentNSE
+	if request.Product == model.OrderProductFNO {
+		segment = calendar.SegmentNFO
+	}
+	if err := calendar.ValidateNewOrderSessionForSegment(s.now(), segment); err != nil {
 		n := s.now()
 		previewNow = func() time.Time {
 			return time.Date(n.Year(), n.Month(), n.Day(), 11, 0, 0, 0, calendar.Location())
@@ -88,8 +94,15 @@ func (s *OrderService) Preview(user string, request dto.CreateOrderRequest) (*Or
 			if inst == nil {
 				return nil, errors.New("instrument not found")
 			}
-			if inst.SnapshotVersion != "" && (!inst.IsTradable || !inst.Active) {
-				return nil, fmt.Errorf("instrument %q is not tradable in active master snapshot", order.Symbol)
+			if inst.SnapshotVersion != "" {
+				if (!inst.IsTradable || !inst.Active) && order.ExitPositionUUID == nil {
+					return nil, fmt.Errorf("instrument %q is not tradable (benchmark index or unsupported segment)", order.Symbol)
+				}
+			} else {
+				seg := strings.ToUpper(strings.TrimSpace(inst.ExchangeSegment))
+				if (seg == "BSE" || seg == "BFO" || strings.ToUpper(strings.TrimSpace(inst.InstrumentType)) == "INDEX") && !inst.IsTradable && order.ExitPositionUUID == nil {
+					return nil, fmt.Errorf("instrument %q is not tradable (benchmark index or unsupported segment)", order.Symbol)
+				}
 			}
 			kind, err = product.ValidateFNOInstrument(*inst, order.Quantity)
 			if err != nil {
@@ -129,5 +142,17 @@ func (s *OrderService) Preview(user string, request dto.CreateOrderRequest) (*Or
 			required = max(required, delta, afterCash, 0)
 		}
 	}
-	return &OrderPreview{QuoteSource: quoteSource, QuoteUpdatedAt: quoteUpdatedAt, RequiredFundsPaise: required, AvailableBalancePaise: wallet.AvailableBalancePaise(), EstimatedPricePaise: price, SufficientFunds: wallet.AvailableBalancePaise() >= required}, nil
+	disclosure := ""
+	if order.Product == model.OrderProductFNO {
+		disclosure = product.MarginDisclosure
+	}
+	return &OrderPreview{
+		QuoteSource:           quoteSource,
+		QuoteUpdatedAt:        quoteUpdatedAt,
+		RequiredFundsPaise:    required,
+		AvailableBalancePaise: wallet.AvailableBalancePaise(),
+		EstimatedPricePaise:   price,
+		SufficientFunds:       wallet.AvailableBalancePaise() >= required,
+		MarginDisclosure:      disclosure,
+	}, nil
 }

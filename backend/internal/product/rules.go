@@ -17,12 +17,20 @@ import (
 const (
 	InstrumentFuture = "FUTURE"
 	InstrumentOption = "OPTION"
+
+	// MarginDisclosure provides explicit regulatory and model clarification for simulated margin.
+	MarginDisclosure = "Simulated Margin Model: Margin requirements are calculated based on simulator parameters and do not represent broker SPAN + Exposure margin."
 )
 
 type Rules struct {
 	MISLeverage             int64
 	FuturesMarginPercent    int64
 	OptionSellMarginPercent int64
+}
+
+// MarginDisclosure returns the official simulator margin policy disclosure.
+func (r Rules) MarginDisclosure() string {
+	return MarginDisclosure
 }
 
 func FromConfig(cfg *config.Config) Rules {

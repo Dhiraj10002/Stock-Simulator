@@ -51,12 +51,12 @@ var DefaultCanonicalInstruments = []model.Instrument{
 	{ID: 23, Symbol: "KOTAKBANK", DisplaySymbol: "KOTAKBANK", Name: "Kotak Mahindra Bank", Underlying: "KOTAKBANK", Token: "1922", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "EQUITY", LotSize: 1, TickSize: "0.05", Active: true, IsTradable: true},
 	{ID: 24, Symbol: "APARINDS", DisplaySymbol: "APARINDS", Name: "Apar Industries Ltd", Underlying: "APARINDS", Token: "10794", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "EQUITY", LotSize: 1, TickSize: "0.05", Active: true, IsTradable: true},
 	{ID: 25, Symbol: "MARUTI", DisplaySymbol: "MARUTI", Name: "Maruti Suzuki India", Underlying: "MARUTI", Token: "10999", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "EQUITY", LotSize: 1, TickSize: "0.05", Active: true, IsTradable: true},
-	// Indices
-	{ID: 26, Symbol: "NIFTY", DisplaySymbol: "NIFTY 50", Name: "NIFTY 50", Underlying: "NIFTY", Token: "99926000", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "INDEX", LotSize: 25, TickSize: "0.05", Active: true, IsTradable: true},
-	{ID: 27, Symbol: "BANKNIFTY", DisplaySymbol: "NIFTY BANK", Name: "NIFTY BANK", Underlying: "BANKNIFTY", Token: "99926009", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "INDEX", LotSize: 15, TickSize: "0.05", Active: true, IsTradable: true},
-	{ID: 28, Symbol: "FINNIFTY", DisplaySymbol: "NIFTY FINANCIAL", Name: "NIFTY FINANCIAL SERVICES", Underlying: "FINNIFTY", Token: "99926037", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "INDEX", LotSize: 25, TickSize: "0.05", Active: true, IsTradable: true},
-	{ID: 29, Symbol: "MIDCPNIFTY", DisplaySymbol: "NIFTY MIDCAP SELECT", Name: "NIFTY MIDCAP SELECT", Underlying: "MIDCPNIFTY", Token: "99926074", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "INDEX", LotSize: 50, TickSize: "0.05", Active: true, IsTradable: true},
-	{ID: 30, Symbol: "SENSEX", DisplaySymbol: "BSE SENSEX", Name: "BSE SENSEX", Underlying: "SENSEX", Token: "99919000", Exchange: "BSE", ExchangeSegment: "BSE", InstrumentType: "INDEX", LotSize: 10, TickSize: "0.05", Active: true, IsTradable: true},
+	// Indices (Benchmark only, non-tradable)
+	{ID: 26, Symbol: "NIFTY", DisplaySymbol: "NIFTY 50", Name: "NIFTY 50", Underlying: "NIFTY", Token: "99926000", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "INDEX", LotSize: 25, TickSize: "0.05", Active: true, IsTradable: false},
+	{ID: 27, Symbol: "BANKNIFTY", DisplaySymbol: "NIFTY BANK", Name: "NIFTY BANK", Underlying: "BANKNIFTY", Token: "99926009", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "INDEX", LotSize: 15, TickSize: "0.05", Active: true, IsTradable: false},
+	{ID: 28, Symbol: "FINNIFTY", DisplaySymbol: "NIFTY FINANCIAL", Name: "NIFTY FINANCIAL SERVICES", Underlying: "FINNIFTY", Token: "99926037", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "INDEX", LotSize: 25, TickSize: "0.05", Active: true, IsTradable: false},
+	{ID: 29, Symbol: "MIDCPNIFTY", DisplaySymbol: "NIFTY MIDCAP SELECT", Name: "NIFTY MIDCAP SELECT", Underlying: "MIDCPNIFTY", Token: "99926074", Exchange: "NSE", ExchangeSegment: "NSE", InstrumentType: "INDEX", LotSize: 50, TickSize: "0.05", Active: true, IsTradable: false},
+	{ID: 30, Symbol: "SENSEX", DisplaySymbol: "BSE SENSEX", Name: "BSE SENSEX", Underlying: "SENSEX", Token: "99919000", Exchange: "BSE", ExchangeSegment: "BSE", InstrumentType: "INDEX", LotSize: 10, TickSize: "0.05", Active: true, IsTradable: false},
 	// Benchmark Derivatives
 	{ID: 31, Symbol: "NIFTY24SEPFUT", DisplaySymbol: "NIFTY SEP FUT", Name: "NIFTY 50 Futures", Underlying: "NIFTY", Token: "NFO_NIFTY_FUT", Exchange: "NFO", ExchangeSegment: "NFO", InstrumentType: "FUTIDX", Expiry: "2026-09-24", LotSize: 25, TickSize: "0.05", Active: true, IsTradable: true},
 	{ID: 32, Symbol: "BANKNIFTY24SEPFUT", DisplaySymbol: "BANKNIFTY SEP FUT", Name: "BANKNIFTY Futures", Underlying: "BANKNIFTY", Token: "NFO_BN_FUT", Exchange: "NFO", ExchangeSegment: "NFO", InstrumentType: "FUTIDX", Expiry: "2026-09-24", LotSize: 15, TickSize: "0.05", Active: true, IsTradable: true},
@@ -450,9 +450,14 @@ func ParseAngelScripItem(raw AngelScripItem) (*model.Instrument, bool) {
 		return nil, false
 	}
 
-	// Supported exchanges for canonical trading
-	if segment != "NSE" && segment != "NFO" && segment != "BSE" {
-		return nil, false
+	// Supported exchanges for canonical instruments:
+	// - NSE: Cash equities & indices
+	// - NFO: Futures & options
+	// - BSE: SENSEX benchmark index only (Token 99919000). All other BSE and BFO instruments are rejected.
+	if segment != "NSE" && segment != "NFO" {
+		if segment != "BSE" || (token != "99919000" && strings.ToUpper(raw.Symbol) != "SENSEX" && strings.ToUpper(raw.Name) != "SENSEX") {
+			return nil, false
+		}
 	}
 
 	symbol := strings.ToUpper(strings.TrimSpace(raw.Symbol))
@@ -559,6 +564,20 @@ func ParseAngelScripItem(raw AngelScripItem) (*model.Instrument, bool) {
 
 	displaySymbol := FormatCanonicalDisplaySymbol(symbol, expiry, strike, optType, name)
 
+	// Tradability policy:
+	// - NSE Equities: paper trading allowed (IsTradable: true)
+	// - NFO Derivatives: paper trading allowed (IsTradable: true)
+	// - Indices (NIFTY, BANKNIFTY, FINNIFTY, MIDCPNIFTY, SENSEX): benchmark data only (IsTradable: false)
+	// - BSE instruments: benchmark data only (IsTradable: false)
+	isTradable := false
+	if instType != "INDEX" && instType != "AMXIDX" && underlying != "SENSEX" && symbol != "SENSEX" {
+		if segment == "NSE" && instType == "EQUITY" {
+			isTradable = true
+		} else if segment == "NFO" && (instType == "OPTIDX" || instType == "OPTSTK" || instType == "FUTIDX" || instType == "FUTSTK") {
+			isTradable = true
+		}
+	}
+
 	return &model.Instrument{
 		Token:            token,
 		Symbol:           symbol,
@@ -575,7 +594,7 @@ func ParseAngelScripItem(raw AngelScripItem) (*model.Instrument, bool) {
 		ExchangeSegment:  segment,
 		TickSize:         tickSize,
 		Active:           true,
-		IsTradable:       true,
+		IsTradable:       isTradable,
 	}, true
 }
 
@@ -719,7 +738,7 @@ func (s *Service) StageSnapshot(ctx context.Context, version, source string, r i
 		seenTokens[tokenKey] = true
 
 		// Check contract specifications for derivatives
-		if inst.ExchangeSegment == "NFO" || inst.ExchangeSegment == "BFO" {
+		if inst.ExchangeSegment == "NFO" {
 			rawLot, _ := strconv.ParseInt(raw.LotSize, 10, 64)
 			if rawLot <= 0 {
 				if len(validationErrors) < 100 {
@@ -752,7 +771,7 @@ func (s *Service) StageSnapshot(ctx context.Context, version, source string, r i
 		}
 
 		inst.SnapshotVersion = version
-		inst.IsTradable = true
+		// Retain inst.IsTradable set by ParseAngelScripItem (benchmark indices/SENSEX are false, NSE equities & NFO derivatives are true).
 		inst.Active = true
 
 		batch = append(batch, *inst)
@@ -785,7 +804,7 @@ func (s *Service) StageSnapshot(ctx context.Context, version, source string, r i
 		return nil, stats, err
 	}
 	snapshot := &model.InstrumentSnapshot{
-		Payload: string(payload), Partial: targetUnderlyings != nil || (targetSegments != nil && !(targetSegments["NSE"] && targetSegments["BSE"] && targetSegments["NFO"] && targetSegments["BFO"])),
+		Payload: string(payload), Partial: targetUnderlyings != nil || (targetSegments != nil && !(targetSegments["NSE"] && targetSegments["NFO"])),
 		Version:          version,
 		Source:           source,
 		TotalInstruments: stats.TotalUpserted,

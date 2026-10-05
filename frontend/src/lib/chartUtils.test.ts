@@ -124,6 +124,47 @@ test("calculateVWAP: accurately computes volume-weighted typical price", () => {
   assert.equal(vwap[1].value, 113.33);
 });
 
+test("calculateVWAP: returns empty array when all candles have zero volume (e.g. index data)", () => {
+  const data = [
+    { time: 100, open: 24000, high: 24100, low: 23900, close: 24050, volume: 0 },
+    { time: 200, open: 24050, high: 24200, low: 24000, close: 24150, volume: 0 },
+  ];
+  const vwap = calculateVWAP(data);
+  assert.deepEqual(vwap, []);
+});
+
+test("calculateVWAP: zero-volume candles contribute zero weight in mixed datasets", () => {
+  const data = [
+    { time: 100, open: 100, high: 110, low: 90, close: 100, volume: 100 }, // typical: 100, cumVol: 100, vwap: 100
+    { time: 200, open: 200, high: 250, low: 150, close: 200, volume: 0 },   // volume 0: contributes 0 weight, vwap stays 100
+    { time: 300, open: 120, high: 130, low: 110, close: 120, volume: 100 }, // typical: 120, cumVol: 200, cum: 10000 + 12000 = 22000 / 200 = 110
+  ];
+  const vwap = calculateVWAP(data);
+  assert.equal(vwap.length, 3);
+  assert.equal(vwap[0].value, 100.0);
+  assert.equal(vwap[1].value, 100.0);
+  assert.equal(vwap[2].value, 110.0);
+});
+
+test("calculateVWAP: resets cumulative typical price and volume on new day session", () => {
+  // Day 1: 2026-09-16 09:15 IST (1789530300) and 10:15 IST (1789533900)
+  // Day 2: 2026-09-17 09:15 IST (1789616700)
+  const t1 = 1789530300;
+  const t2 = 1789533900;
+  const t3 = 1789616700;
+
+  const data = [
+    { time: t1, open: 100, high: 110, low: 90, close: 100, volume: 100 }, // typical: 100, vwap: 100
+    { time: t2, open: 200, high: 210, low: 190, close: 200, volume: 100 }, // typical: 200, cum: 30000 / 200 = 150
+    { time: t3, open: 50, high: 50, low: 50, close: 50, volume: 100 },    // new day session: reset! typical: 50, vwap: 50
+  ];
+  const vwap = calculateVWAP(data);
+  assert.equal(vwap.length, 3);
+  assert.equal(vwap[0].value, 100.0);
+  assert.equal(vwap[1].value, 150.0);
+  assert.equal(vwap[2].value, 50.0);
+});
+
 test("calculateSMA & calculateEMA: return expected moving average series", () => {
   const candles = [
     { time: 1, open: 10, high: 10, low: 10, close: 10, volume: 1 },

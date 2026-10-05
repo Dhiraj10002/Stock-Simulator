@@ -3,7 +3,15 @@ package calendar
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"time"
+)
+
+const (
+	SegmentNSE    = "NSE"
+	SegmentNFO    = "NFO"
+	SegmentBSE    = "BSE"
+	SegmentNSECAS = "NSE_CAS"
 )
 
 var (
@@ -64,21 +72,52 @@ func IsTradingHoliday(t time.Time) (bool, string) {
 	return found, name
 }
 
-// SessionBounds returns the 09:15 open, 15:20 MIS cutoff, and 15:30 close
-// for the given day in IST.
-func SessionBounds(t time.Time) (marketOpen, misCutoff, marketClose time.Time) {
+// SegmentSessionBounds returns segment-specific session open, MIS cutoff, and close
+// for the given day in IST per the official exchange schedules:
+// - Non-CAS cash equities (NSE/BSE): 09:15 to 15:30 IST
+// - Closing Auction Session (CAS) cash: 15:15 to 15:35 IST
+// - Equity derivatives (NFO): 09:15 to 15:40 IST (trading and matching until 15:40 IST)
+// - Simulator MIS Cutoff: 15:20 IST (simulator risk policy, not exchange closing)
+func SegmentSessionBounds(t time.Time, segment string) (marketOpen, misCutoff, marketClose time.Time) {
 	ist := t.In(istLocation)
 	y, m, d := ist.Year(), ist.Month(), ist.Day()
 	marketOpen = time.Date(y, m, d, 9, 15, 0, 0, istLocation)
+	// Simulator MIS Cutoff: 15:20 IST is an internal simulator risk policy for
+	// intraday square-off, distinct from official exchange closing hours.
 	misCutoff = time.Date(y, m, d, 15, 20, 0, 0, istLocation)
-	marketClose = time.Date(y, m, d, 15, 30, 0, 0, istLocation)
+
+	seg := strings.ToUpper(strings.TrimSpace(segment))
+	switch {
+	case seg == "NFO" || seg == "FO" || seg == "FNO" || seg == "DERIVATIVES":
+		// Equity derivatives (NFO): 09:15 to 15:40 IST per August 2026 circular
+		marketClose = time.Date(y, m, d, 15, 40, 0, 0, istLocation)
+	case seg == "NSE_CAS" || seg == "CAS":
+		// Closing Auction Session (CAS): 15:15 to 15:35 IST
+		marketOpen = time.Date(y, m, d, 15, 15, 0, 0, istLocation)
+		marketClose = time.Date(y, m, d, 15, 35, 0, 0, istLocation)
+	default:
+		// Regular Non-CAS Cash equity session: 09:15 to 15:30 IST
+		marketClose = time.Date(y, m, d, 15, 30, 0, 0, istLocation)
+	}
 	return
+}
+
+// SessionBounds returns the 09:15 open, 15:20 MIS cutoff, and 15:30 close
+// for regular cash equity trading in IST.
+func SessionBounds(t time.Time) (marketOpen, misCutoff, marketClose time.Time) {
+	return SegmentSessionBounds(t, SegmentNSE)
 }
 
 // IsMarketOpen reports whether Indian stock exchanges (NSE/BSE) are currently
 // in regular trading session (09:15 to 15:30 IST, Monday through Friday,
 // excluding exchange holidays).
 func IsMarketOpen(t time.Time) bool {
+	return IsMarketOpenForSegment(t, SegmentNSE)
+}
+
+// IsMarketOpenForSegment reports whether the specified market segment is currently
+// in trading session for the given IST timestamp.
+func IsMarketOpenForSegment(t time.Time, segment string) bool {
 	if t.In(istLocation).Year() != 2026 {
 		return false
 	}
@@ -89,15 +128,21 @@ func IsMarketOpen(t time.Time) bool {
 		return false
 	}
 	ist := t.In(istLocation)
-	open, _, closeTime := SessionBounds(ist)
+	open, _, closeTime := SegmentSessionBounds(ist, segment)
 	return !ist.Before(open) && !ist.After(closeTime)
 }
 
-// ValidateNewOrderSession checks whether new orders can be accepted.
+// ValidateNewOrderSession checks whether new cash equity orders can be accepted.
 // Per product specification:
 // - New orders are rejected outside the trading session (09:15-15:30 IST, Mon-Fri).
 // - Existing open limit orders remain open across sessions and are not rejected here.
 func ValidateNewOrderSession(t time.Time) error {
+	return ValidateNewOrderSessionForSegment(t, SegmentNSE)
+}
+
+// ValidateNewOrderSessionForSegment checks whether new orders can be accepted for the
+// given segment (e.g. NFO derivatives open until 15:40 IST; cash equities until 15:30 IST).
+func ValidateNewOrderSessionForSegment(t time.Time, segment string) error {
 	ist := t.In(istLocation)
 	if ist.Year() != 2026 {
 		return fmt.Errorf("verified exchange calendar unavailable for %d", ist.Year())
@@ -108,18 +153,19 @@ func ValidateNewOrderSession(t time.Time) error {
 	if isHoliday, holidayName := IsTradingHoliday(ist); isHoliday {
 		return fmt.Errorf("market is closed for %s; regular trading hours are Monday to Friday 09:15 to 15:30 IST", holidayName)
 	}
-	open, _, closeTime := SessionBounds(ist)
+	open, _, closeTime := SegmentSessionBounds(ist, segment)
 	if ist.Before(open) {
-		return fmt.Errorf("market is closed; trading session opens at 09:15 IST (current time: %s)", ist.Format("15:04:05 IST"))
+		return fmt.Errorf("market is closed; trading session opens at %s (current time: %s)", open.Format("15:04 IST"), ist.Format("15:04:05 IST"))
 	}
 	if ist.After(closeTime) {
-		return fmt.Errorf("market is closed; trading session closed at 15:30 IST (current time: %s)", ist.Format("15:04:05 IST"))
+		return fmt.Errorf("market is closed; trading session closed at %s (current time: %s)", closeTime.Format("15:04 IST"), ist.Format("15:04:05 IST"))
 	}
 	return nil
 }
 
 // ValidateMISCutoff checks whether new MIS (intraday) orders are allowed.
 // MIS orders are rejected if the market is closed or after 15:20 IST.
+// Note: 15:20 MIS Cutoff is a simulator risk policy, not an exchange closing.
 func ValidateMISCutoff(t time.Time) error {
 	if err := ValidateNewOrderSession(t); err != nil {
 		return err

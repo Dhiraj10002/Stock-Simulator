@@ -48,20 +48,43 @@ export function formatHistoricalCandles(candles?: Candle[]): FormattedCandle[] {
 export function calculateVWAP(candles: FormattedCandle[]): IndicatorPoint[] {
   if (!candles || candles.length === 0) return [];
 
+  // Check if any genuine volume exists across the dataset.
+  // For volume-less instruments (e.g. cash indices NIFTY, BANKNIFTY, SENSEX),
+  // VWAP is mathematically unavailable; return empty series instead of artificial weights.
+  const hasVolume = candles.some((c) => c.volume > 0);
+  if (!hasVolume) return [];
+
   const vwapData: IndicatorPoint[] = [];
   let cumTypicalVol = 0;
   let cumVol = 0;
+  let currentSessionKey = "";
+
+  // IST offset in seconds: UTC + 5:30 = 19800 seconds
+  const IST_OFFSET_SEC = 19800;
+  const getSessionKey = (t: number) => {
+    const d = new Date((t + IST_OFFSET_SEC) * 1000);
+    return `${d.getUTCFullYear()}-${d.getUTCMonth() + 1}-${d.getUTCDate()}`;
+  };
 
   for (const d of candles) {
+    const sessionKey = getSessionKey(d.time);
+    if (sessionKey !== currentSessionKey) {
+      currentSessionKey = sessionKey;
+      cumTypicalVol = 0;
+      cumVol = 0;
+    }
+
+    const vol = d.volume > 0 ? d.volume : 0;
     const typical = (d.high + d.low + d.close) / 3;
-    const vol = d.volume > 0 ? d.volume : 1;
     cumTypicalVol += typical * vol;
     cumVol += vol;
 
-    vwapData.push({
-      time: d.time,
-      value: Number((cumTypicalVol / cumVol).toFixed(2)),
-    });
+    if (cumVol > 0) {
+      vwapData.push({
+        time: d.time,
+        value: Number((cumTypicalVol / cumVol).toFixed(2)),
+      });
+    }
   }
 
   return vwapData;

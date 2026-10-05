@@ -168,6 +168,10 @@ func TestParseAngelScripItem(t *testing.T) {
 		t.Errorf("expected instrument type EQUITY, got %s", eqInst.InstrumentType)
 	}
 
+	if !eqInst.IsTradable {
+		t.Errorf("expected equity to be tradable")
+	}
+
 	// 2. Index AMXIDX
 	idxRaw := AngelScripItem{
 		Token:          "99926000",
@@ -186,6 +190,9 @@ func TestParseAngelScripItem(t *testing.T) {
 	}
 	if idxInst.InstrumentType != "INDEX" || idxInst.LotSize != 25 {
 		t.Errorf("unexpected index mapping: %+v", idxInst)
+	}
+	if idxInst.IsTradable {
+		t.Errorf("expected index instrument to be non-tradable benchmark only")
 	}
 
 	// 3. NFO Option with strike in paise
@@ -213,8 +220,54 @@ func TestParseAngelScripItem(t *testing.T) {
 	if optInst.InstrumentType != "OPTIDX" {
 		t.Errorf("expected instrument type OPTIDX, got %s", optInst.InstrumentType)
 	}
+	if !optInst.IsTradable {
+		t.Errorf("expected NFO option to be tradable")
+	}
 
-	// 4. Unsupported commodity segment (MCX)
+	// 4. BSE SENSEX benchmark index (accepted, but non-tradable)
+	sensexRaw := AngelScripItem{
+		Token:          "99919000",
+		Symbol:         "SENSEX",
+		Name:           "SENSEX",
+		Expiry:         "",
+		Strike:         "-1.000000",
+		LotSize:        "10",
+		InstrumentType: "AMXIDX",
+		ExchSeg:        "BSE",
+		TickSize:       "5.000000",
+	}
+	sensexInst, ok := ParseAngelScripItem(sensexRaw)
+	if !ok || sensexInst == nil {
+		t.Fatalf("expected SENSEX benchmark index to be parsed")
+	}
+	if sensexInst.IsTradable {
+		t.Errorf("expected SENSEX to be non-tradable benchmark data only")
+	}
+
+	// 5. Non-SENSEX BSE stock (rejected)
+	bseStock := AngelScripItem{
+		Token:   "500325",
+		Symbol:  "RELIANCE",
+		Name:    "RELIANCE",
+		ExchSeg: "BSE",
+	}
+	if _, ok := ParseAngelScripItem(bseStock); ok {
+		t.Errorf("expected non-SENSEX BSE stock to be rejected")
+	}
+
+	// 6. BFO derivative (rejected)
+	bfoRaw := AngelScripItem{
+		Token:          "888123",
+		Symbol:         "SENSEX26OCTFUT",
+		Name:           "SENSEX",
+		ExchSeg:        "BFO",
+		InstrumentType: "FUTIDX",
+	}
+	if _, ok := ParseAngelScripItem(bfoRaw); ok {
+		t.Errorf("expected BFO derivative to be rejected")
+	}
+
+	// 7. Unsupported commodity segment (MCX)
 	mcxRaw := AngelScripItem{
 		Token:   "123",
 		Symbol:  "GOLD",

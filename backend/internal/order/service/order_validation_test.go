@@ -323,3 +323,67 @@ func TestOrderService_SeededQuoteExecutableValidation(t *testing.T) {
 		})
 	}
 }
+
+func TestOrderService_NonTradableIndexRejection(t *testing.T) {
+	loc := calendar.Location()
+	tradingTime := time.Date(2026, 9, 16, 11, 0, 0, 0, loc)
+	userID := uuid.New().String()
+
+	service := New(nil, &config.Config{
+		MISLeverage:             5,
+		FuturesMarginPercent:    20,
+		OptionSellMarginPercent: 30,
+	})
+	service.SetNowFunc(func() time.Time { return tradingTime })
+	service.SetInstrumentFinder(func(symbol string) (*model.Instrument, error) {
+		switch symbol {
+		case "NIFTY":
+			return &model.Instrument{
+				Symbol:          "NIFTY",
+				Name:            "NIFTY 50",
+				ExchangeSegment: "NSE",
+				InstrumentType:  "INDEX",
+				IsTradable:      false,
+				Active:          true,
+			}, nil
+		case "SENSEX":
+			return &model.Instrument{
+				Symbol:          "SENSEX",
+				Name:            "BSE SENSEX",
+				ExchangeSegment: "BSE",
+				InstrumentType:  "INDEX",
+				IsTradable:      false,
+				Active:          true,
+			}, nil
+		case "BSESTOCK":
+			return &model.Instrument{
+				Symbol:          "BSESTOCK",
+				Name:            "BSE STOCK",
+				ExchangeSegment: "BSE",
+				InstrumentType:  "EQUITY",
+				IsTradable:      false,
+				Active:          false,
+			}, nil
+		default:
+			return nil, nil
+		}
+	})
+
+	for _, sym := range []string{"NIFTY", "SENSEX", "BSESTOCK"} {
+		req := dto.CreateOrderRequest{
+			Symbol:     sym,
+			Side:       model.OrderSideBuy,
+			Type:       model.OrderTypeLimit,
+			Product:    model.OrderProductDelivery,
+			Quantity:   1,
+			PricePaise: 100000,
+		}
+		_, err := service.Create(userID, req)
+		if err == nil {
+			t.Fatalf("expected order for %s to be rejected as not tradable, got success", sym)
+		}
+		if !strings.Contains(err.Error(), "not tradable") {
+			t.Fatalf("expected 'not tradable' error for %s, got: %v", sym, err)
+		}
+	}
+}

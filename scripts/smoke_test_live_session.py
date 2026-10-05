@@ -40,8 +40,8 @@ def future_expiry(value):
     for fmt in ("%d%b%Y", "%Y-%m-%d", "%d-%b-%Y", "%d-%m-%Y"):
         try:
             date = datetime.strptime(str(value).strip().upper(), fmt).date()
-            # Match the application's present exchange expiry policy.
-            return datetime.combine(date, day_time(15, 30), IST)
+            # Match the application's exchange expiry policy (NFO closes at 15:40 IST).
+            return datetime.combine(date, day_time(15, 40), IST)
         except (ValueError, TypeError):
             pass
     return None
@@ -60,7 +60,7 @@ def select_live_future(rows, underlying, now=None):
         lot = row.get("lot_size")
         identity = row.get("underlying") or row.get("underlying_symbol") or row.get("name") or ""
         if (str(identity).upper() == target and row.get("instrument_type") == kind
-                and row.get("exchange", row.get("exchange_segment")) in ("NFO", "BFO")
+                and row.get("exchange", row.get("exchange_segment")) == "NFO"
                 and row.get("active") is True and row.get("is_tradable") is True
                 and isinstance(token, str) and token.isascii() and token.isdigit()
                 and isinstance(lot, int) and not isinstance(lot, bool) and lot > 0
@@ -69,6 +69,7 @@ def select_live_future(rows, underlying, now=None):
             eligible.append(row)
     require(eligible, f"Current canonical future missing for {target}")
     return min(eligible, key=lambda row: (future_expiry(row["expiry"]), row["symbol"]))
+
 
 
 def run(args, result=None):
@@ -186,6 +187,9 @@ def run(args, result=None):
             raise RuntimeError("Paper order not executed; inspect account before retrying")
         for symbol, product, qty, direction in [(args.equity, "DELIVERY", 1, "BUY"), (args.equity, "INTRADAY", 1, "BUY"), (args.equity, "INTRADAY", 1, "SELL")] + [(symbol, "FNO", lot, direction) for _, symbol, lot in calls for direction in ("BUY", "SELL")]:
             order(symbol, product, qty, direction)
+            # Verify position is recorded and repriced in portfolio before closing
+            mid_portfolio = api("/portfolio")
+            require(any(pos.get("symbol") == symbol for pos in mid_portfolio.get("positions", [])), f"Position not found in portfolio after opening {direction} on {symbol}")
             order(symbol, product, qty, "SELL" if direction == "BUY" else "BUY")
         require(not api("/portfolio")["positions"], "Paper positions did not flatten")
         require(all(row.get("status") in ("EXECUTED", "CANCELLED", "REJECTED", "EXPIRED") for row in api("/orders")), "Pending paper orders remain; inspect account before retrying")
