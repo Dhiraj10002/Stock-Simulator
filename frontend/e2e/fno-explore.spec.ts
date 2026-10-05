@@ -450,7 +450,7 @@ test("paper buy and sell use canonical lots, preserve pending and block invalid 
   });
   await expect(submit).toBeEnabled();
   await submit.click();
-  await expect(page.getByText(/Order paper-1: PENDING/)).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Paper order ticket" }).getByText(/Order paper-1: PENDING/)).toBeVisible();
   await expect(submit).toBeDisabled();
   expect(posts).toHaveLength(1);
   expect(posts[0]).toMatchObject({
@@ -538,6 +538,7 @@ test("paper ticket retains virtual funds while preview refreshes and blocks fail
   await expect(ticket.getByText("₹1,00,000.00", { exact: true })).toBeVisible();
   await expect(ticket.getByText("₹9,00,000.00", { exact: true })).toBeVisible();
   await expect(submit).toBeDisabled();
+  await expect.poll(() => typeof release).toBe("function");
   release?.();
   await expect(
     ticket.getByText("Preview unavailable: Market quote is stale", {

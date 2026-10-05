@@ -106,7 +106,7 @@ func TestExpiredManualExitUsesArchiveWithOneConnection(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { db.Delete(&inst); db.Where("symbol = ?", symbol).Delete(&model.SettlementReference{}) })
-	ref := model.SettlementReference{Symbol: symbol, SessionDate: "2026-09-24", FeedMode: "LIVE", Source: "angelone_live", PricePaise: 12000, ObservedAt: time.Date(2026, 9, 24, 15, 29, 30, 0, calendar.Location())}
+	ref := model.SettlementReference{Symbol: symbol, SessionDate: "2026-09-24", FeedMode: "LIVE", Source: "angelone_live", PricePaise: 12000, ObservedAt: time.Date(2026, 9, 24, 15, 39, 30, 0, calendar.Location())}
 	if err := db.Create(&ref).Error; err != nil {
 		t.Fatal(err)
 	}

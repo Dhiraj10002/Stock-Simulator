@@ -49,7 +49,7 @@ func TestPositionCrossing_IntradayReversals(t *testing.T) {
 	// Ensure RELIANCE instrument exists
 	var inst model.Instrument
 	if err := db.Where("symbol = ?", "RELIANCE").First(&inst).Error; err != nil {
-		_ = db.Create(&model.Instrument{Symbol: "RELIANCE", LotSize: 1, InstrumentType: "EQUITY"}).Error
+		_ = db.Create(&model.Instrument{Symbol: "RELIANCE", LotSize: 1, ExchangeSegment: "NSE", InstrumentType: "EQUITY", Active: true, IsTradable: true}).Error
 	}
 
 	userUUID := uuid.New()
@@ -247,7 +247,7 @@ func TestConcurrency_CancelVsExecuteCompetition(t *testing.T) {
 	// Ensure RELIANCE instrument exists
 	var inst model.Instrument
 	if err := db.Where("symbol = ?", "RELIANCE").First(&inst).Error; err != nil {
-		_ = db.Create(&model.Instrument{Symbol: "RELIANCE", LotSize: 1, InstrumentType: "EQUITY"}).Error
+		_ = db.Create(&model.Instrument{Symbol: "RELIANCE", LotSize: 1, ExchangeSegment: "NSE", InstrumentType: "EQUITY", Active: true, IsTradable: true}).Error
 	}
 
 	userUUID := uuid.New()

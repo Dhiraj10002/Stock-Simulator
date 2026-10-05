@@ -113,11 +113,23 @@ func setupTradingLifecycleEnv(t *testing.T) *lifecycleTestEnv {
 	db := getLifecycleTestDB(t)
 	rClient := getLifecycleTestRedis(t)
 
-	// Seed canonical instruments from default list if missing
+	// Seed cash instruments and explicit, non-expired canonical derivatives.
 	for _, inst := range instrumentService.DefaultCanonicalInstruments {
+		if inst.ExchangeSegment == "NFO" {
+			continue
+		}
 		instCopy := inst
 		instCopy.ID = 0
 		_ = db.Clauses(clause.OnConflict{DoNothing: true}).Create(&instCopy).Error
+	}
+
+	for _, inst := range []model.Instrument{
+		{Symbol: "NIFTY24SEP2099FUT", Token: "TEST_NIFTY_FUT", Name: "NIFTY Future", Underlying: "NIFTY", UnderlyingSymbol: "NIFTY", ExchangeSegment: "NFO", InstrumentType: "FUTIDX", Expiry: "2099-09-24", LotSize: 25, TickSize: "0.05", Active: true, IsTradable: true},
+		{Symbol: "NIFTY24SEP209925000CE", Token: "TEST_NIFTY_CE", Name: "NIFTY Call", Underlying: "NIFTY", UnderlyingSymbol: "NIFTY", ExchangeSegment: "NFO", InstrumentType: "OPTIDX", Expiry: "2099-09-24", Strike: "25000", OptionType: "CE", LotSize: 25, TickSize: "0.05", Active: true, IsTradable: true},
+	} {
+		if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&inst).Error; err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	jwtSecret := "phase6_trading_lifecycle_jwt_secret_key"
@@ -751,7 +763,7 @@ func TestTradingLifecycle_FNO_Future_BuyLimit_SellMarket(t *testing.T) {
 	}
 
 	// 4. INSTRUMENT & 5. QUOTE (NIFTY SEP FUT at ₹25,000.00 = 2,500,000 paise)
-	futureSymbol := "NIFTY24SEPFUT"
+	futureSymbol := "NIFTY24SEP2099FUT"
 	env.setQuote(futureSymbol, 2500000)
 
 	// 6. ORDER (F&O BUY LIMIT 25 units [1 lot] at 2,500,000 paise)
@@ -857,7 +869,7 @@ func TestTradingLifecycle_FNO_Future_ShortSellMarket_BuyToCover(t *testing.T) {
 	}
 
 	// 4. INSTRUMENT & 5. QUOTE (NIFTY SEP FUT at ₹25,000.00 = 2,500,000 paise)
-	futureSymbol := "NIFTY24SEPFUT"
+	futureSymbol := "NIFTY24SEP2099FUT"
 	env.setQuote(futureSymbol, 2500000)
 
 	// 6. ORDER & 7. EXECUTION (F&O SELL MARKET 25 units [1 lot])
@@ -942,7 +954,7 @@ func TestTradingLifecycle_FNO_Option_CE_BuyMarket_SellSquareOff(t *testing.T) {
 	}
 
 	// 4. INSTRUMENT & 5. QUOTE (NIFTY 25000 CE at ₹200.00 = 20,000 paise premium)
-	ceSymbol := "NIFTY 25000 CE"
+	ceSymbol := "NIFTY24SEP209925000CE"
 	env.setQuote(ceSymbol, 20000)
 
 	// 6. ORDER & 7. EXECUTION (F&O CE BUY MARKET: 25 units [1 lot])
@@ -1040,7 +1052,7 @@ func TestTradingLifecycle_FNO_Option_CE_ShortWriting_BuyToCover(t *testing.T) {
 	}
 
 	// 4. INSTRUMENT & 5. QUOTE (NIFTY 25000 CE at ₹200.00 = 20,000 paise premium)
-	ceSymbol := "NIFTY 25000 CE"
+	ceSymbol := "NIFTY24SEP209925000CE"
 	env.setQuote(ceSymbol, 20000)
 
 	// 6. ORDER & 7. EXECUTION (F&O CE SELL MARKET 25 units [1 lot])

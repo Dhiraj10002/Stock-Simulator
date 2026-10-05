@@ -14,6 +14,7 @@ import (
 
 func TestRegression_StopActivationPersistsOutsideLimit(t *testing.T) {
 	db := accountingDB(t)
+	ensureInstrumentExists(t, db, "STOPRETRY", "EQUITY")
 	for _, prod := range []string{model.OrderProductDelivery, model.OrderProductIntraday} {
 		for _, side := range []string{model.OrderSideBuy, model.OrderSideSell} {
 			t.Run(prod+side, func(t *testing.T) {
@@ -186,6 +187,7 @@ func TestRegression_PreviewUsesConfiguredRulesWithoutWrites(t *testing.T) {
 
 func TestRegression_MatcherRemembersStopActivation(t *testing.T) {
 	db := accountingDB(t)
+	ensureInstrumentExists(t, db, "MATCHSTOP", "EQUITY")
 	w := accountingWallet(t, db)
 	s := accountingService()
 	o := model.Order{UserUUID: w.UserUUID, Symbol: "MATCHSTOP", Product: model.OrderProductIntraday, Side: model.OrderSideBuy, Type: model.OrderTypeSL, Quantity: 10, TriggerPricePaise: 10500, PricePaise: 10600, Status: model.OrderStatusTriggerPending}

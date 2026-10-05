@@ -49,6 +49,9 @@ func accountingService() *OrderService {
 
 func accountingFill(t *testing.T, db *gorm.DB, s *OrderService, w model.Wallet, symbol, prod, side string, qty, quote int64) model.Trade {
 	t.Helper()
+	if prod != model.OrderProductFNO {
+		ensureInstrumentExists(t, db, symbol, "EQUITY")
+	}
 	s.SetExecutableQuoteFunc(func(symbol string) (*marketDTO.QuoteResponse, error) {
 		return &marketDTO.QuoteResponse{Symbol: symbol, PricePaise: quote}, nil
 	})

@@ -85,10 +85,12 @@ func ensureInstrumentExists(t *testing.T, db *gorm.DB, symbol, instType string) 
 			InstrumentType:  instType,
 			LotSize:         1,
 			Active:          true,
+			IsTradable:      true,
 		}
 		if err := db.Create(&inst).Error; err != nil {
 			t.Fatalf("create instrument: %v", err)
 		}
+		t.Cleanup(func() { db.Delete(&inst) })
 	}
 }
 

@@ -26,7 +26,7 @@ func TestFNOExpiry_Stress_MultiLegPortfolioMarginRelease(t *testing.T) {
 	clearReferences()
 	t.Cleanup(clearReferences)
 
-	expiryTime := time.Date(2026, 9, 24, 15, 35, 0, 0, ist)
+	expiryTime := time.Date(2026, 9, 24, 15, 45, 0, 0, ist)
 	quoteTimeStr := time.Date(2026, 9, 24, 15, 29, 55, 0, ist).Format(time.RFC3339)
 
 	instruments := []model.Instrument{
@@ -254,7 +254,7 @@ func TestFNOExpiry_Stress_HighVolumeBatchConcurrency(t *testing.T) {
 	db := getTestDB(t)
 	ist := calendar.Location()
 	expiryDateStr := "2026-09-24"
-	expiryTime := time.Date(2026, 9, 24, 15, 35, 0, 0, ist)
+	expiryTime := time.Date(2026, 9, 24, 15, 45, 0, 0, ist)
 	quoteTimeStr := time.Date(2026, 9, 24, 15, 39, 55, 0, ist).Format(time.RFC3339)
 
 	inst := model.Instrument{

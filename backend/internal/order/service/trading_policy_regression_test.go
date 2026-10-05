@@ -62,7 +62,7 @@ func TestNFOExpiryAndSessionAgreeAtClose(t *testing.T) {
 func TestLegacyExchangeOpeningExecutionIsBlockedButManagedPositionExitSurvives(t *testing.T) {
 	db := accountingDB(t)
 	w := accountingWallet(t, db)
-	symbol := "LEGACYBSE" + uuid.NewString()
+	symbol := "LEGACYBSE" + uuid.NewString()[:12]
 	inst := model.Instrument{Symbol: symbol, Token: "legacy-token", Name: symbol, InstrumentType: "EQUITY", ExchangeSegment: "BSE", Active: true, IsTradable: true}
 	if err := db.Create(&inst).Error; err != nil {
 		t.Fatal(err)

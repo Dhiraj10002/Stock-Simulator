@@ -179,6 +179,7 @@ export default function FnoOrderModal({
   const hasSufficientMargin =
     isFundsSufficient &&
     !preview.isFetching &&
+    !preview.isError &&
     !!wallet.data &&
     quoteLabel(effectiveQuote) !== "UNAVAILABLE";
   if (!isOpen || !instrument) return null;
@@ -554,11 +555,7 @@ export default function FnoOrderModal({
 
           <p className="text-xs text-slate-500" role="status">
             {preview.isError
-              ? displayMarginPaise !== undefined
-                ? quoteLabel(effectiveQuote) === "LAST AVAILABLE"
-                  ? "Estimated using last available quote; funds and margin will be rechecked at execution."
-                  : "Estimated margin shown; server preview unavailable."
-                : `Preview unavailable: ${preview.error.message}`
+              ? `Preview unavailable: ${preview.error.message}`
               : !token
                 ? "Sign in to use your virtual funds."
                 : preview.isFetching

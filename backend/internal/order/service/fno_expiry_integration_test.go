@@ -22,7 +22,7 @@ func TestFNOExpiry_ExpiryDetectionTiming(t *testing.T) {
 		t.Fatalf("isExpired should be false on expiry day morning (10:00 IST)")
 	}
 
-	// 2. On expiry day at 15:29:59 IST -> Not expired yet
+	// 2. On expiry day at 15:39:59 IST -> Not expired yet
 	preCloseTime := time.Date(2026, 9, 24, 15, 39, 59, 0, ist)
 	if isExpired(expiryStr, preCloseTime) {
 		t.Fatalf("isExpired should be false before 15:40 IST market close")
@@ -59,7 +59,7 @@ func TestFNOExpiry_EndToEndSettlement(t *testing.T) {
 	}
 	clearReferences()
 	t.Cleanup(clearReferences)
-	expiryTime := time.Date(2026, 9, 24, 15, 35, 0, 0, ist)
+	expiryTime := time.Date(2026, 9, 24, 15, 45, 0, 0, ist)
 	quoteTimeStr := time.Date(2026, 9, 24, 15, 29, 55, 0, ist).Format(time.RFC3339)
 
 	// Instruments setup

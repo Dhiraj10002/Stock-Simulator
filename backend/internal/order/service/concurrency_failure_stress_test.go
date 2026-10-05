@@ -62,7 +62,7 @@ func TestAttack_DuplicateExecution_NoDoubleExecution(t *testing.T) {
 	// Ensure instrument exists
 	var inst model.Instrument
 	if err := db.Where("symbol = ?", "INFY").First(&inst).Error; err != nil {
-		_ = db.Create(&model.Instrument{Symbol: "INFY", LotSize: 1, InstrumentType: "EQUITY"}).Error
+		_ = db.Create(&model.Instrument{Symbol: "INFY", LotSize: 1, ExchangeSegment: "NSE", InstrumentType: "EQUITY", Active: true, IsTradable: true}).Error
 	}
 
 	userUUID, walletUUID := setupAttackUser(t, db, 500000) // ₹5,000 cash
@@ -168,7 +168,7 @@ func TestAttack_DoubleSpending_NoNegativeWalletCorruption(t *testing.T) {
 
 	var inst model.Instrument
 	if err := db.Where("symbol = ?", "TCS").First(&inst).Error; err != nil {
-		_ = db.Create(&model.Instrument{Symbol: "TCS", LotSize: 1, InstrumentType: "EQUITY"}).Error
+		_ = db.Create(&model.Instrument{Symbol: "TCS", LotSize: 1, ExchangeSegment: "NSE", InstrumentType: "EQUITY", Active: true, IsTradable: true}).Error
 	}
 
 	// User has exactly 10,000 paise (₹100)
@@ -251,7 +251,7 @@ func TestAttack_DoubleSelling_NoPhantomPosition(t *testing.T) {
 
 	var inst model.Instrument
 	if err := db.Where("symbol = ?", "RELIANCE").First(&inst).Error; err != nil {
-		_ = db.Create(&model.Instrument{Symbol: "RELIANCE", LotSize: 1, InstrumentType: "EQUITY"}).Error
+		_ = db.Create(&model.Instrument{Symbol: "RELIANCE", LotSize: 1, ExchangeSegment: "NSE", InstrumentType: "EQUITY", Active: true, IsTradable: true}).Error
 	}
 
 	userUUID, walletUUID := setupAttackUser(t, db, 1000000)
@@ -337,7 +337,7 @@ func TestAttack_SquareOffVsExecution_NoPhantomPosition(t *testing.T) {
 
 	var inst model.Instrument
 	if err := db.Where("symbol = ?", "TATAMOTORS").First(&inst).Error; err != nil {
-		_ = db.Create(&model.Instrument{Symbol: "TATAMOTORS", LotSize: 1, InstrumentType: "EQUITY"}).Error
+		_ = db.Create(&model.Instrument{Symbol: "TATAMOTORS", LotSize: 1, ExchangeSegment: "NSE", InstrumentType: "EQUITY", Active: true, IsTradable: true}).Error
 	}
 
 	userUUID, walletUUID := setupAttackUser(t, db, 1000000)
@@ -637,7 +637,7 @@ func TestAttack_ServerRestart_StatePreservation(t *testing.T) {
 
 	var inst model.Instrument
 	if err := db.Where("symbol = ?", "SBIN").First(&inst).Error; err != nil {
-		_ = db.Create(&model.Instrument{Symbol: "SBIN", LotSize: 1, InstrumentType: "EQUITY"}).Error
+		_ = db.Create(&model.Instrument{Symbol: "SBIN", LotSize: 1, ExchangeSegment: "NSE", InstrumentType: "EQUITY", Active: true, IsTradable: true}).Error
 	}
 
 	userUUID, walletUUID := setupAttackUser(t, db, 100000) // ₹1,000 cash
@@ -702,7 +702,7 @@ func TestAttack_PositionRace_CrossingConsistency(t *testing.T) {
 
 	var inst model.Instrument
 	if err := db.Where("symbol = ?", "BHARTIARTL").First(&inst).Error; err != nil {
-		_ = db.Create(&model.Instrument{Symbol: "BHARTIARTL", LotSize: 1, InstrumentType: "EQUITY"}).Error
+		_ = db.Create(&model.Instrument{Symbol: "BHARTIARTL", LotSize: 1, ExchangeSegment: "NSE", InstrumentType: "EQUITY", Active: true, IsTradable: true}).Error
 	}
 
 	userUUID, walletUUID := setupAttackUser(t, db, 10000000) // ₹1,00,000 cash
@@ -828,11 +828,12 @@ func TestAttack_ConcurrentOrderCreationVsWalletReset_ZeroCorruption(t *testing.T
 	var inst model.Instrument
 	if err := db.Where("symbol = ?", "WIPRO").First(&inst).Error; err != nil {
 		_ = db.Create(&model.Instrument{
-			Token:          "3787",
-			Symbol:         "WIPRO",
-			Exchange:       "NSE",
-			LotSize:        1,
-			InstrumentType: "EQUITY",
+			Token:           "3787",
+			Symbol:          "WIPRO",
+			Exchange:        "NSE",
+			ExchangeSegment: "NSE",
+			LotSize:         1,
+			InstrumentType:  "EQUITY",
 		}).Error
 	}
 
