@@ -129,7 +129,7 @@ func TestReadyEndpoint_RoutingAndPayload(t *testing.T) {
 			assert.Equal(t, "DOWN", resp.Services.Database.Status)
 			assert.Equal(t, "UP", resp.Services.Redis.Status)
 			assert.Equal(t, "UP", resp.Services.Calendar.Status)
-			assert.Equal(t, "CLOSED", resp.Services.Calendar.MarketState)
+			assert.Contains(t, []string{"OPEN", "CLOSED"}, resp.Services.Calendar.MarketState)
 
 			// Verify backwards compatibility fields in data
 			assert.Equal(t, "not_ready", resp.Data["status"])

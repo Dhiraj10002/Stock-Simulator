@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/database"
@@ -67,7 +68,8 @@ var activationMu sync.Mutex
 
 // Service provides access to authoritative canonical instruments.
 type Service struct {
-	db *gorm.DB
+	db                 *gorm.DB
+	hasInstrumentsInDB atomic.Bool
 }
 
 // NewService creates a new instrument service.
@@ -274,8 +276,15 @@ func (s *Service) List(query, exchange, instrumentType, underlying string, activ
 	}
 
 	var hasInstruments bool
-	if err := db.Raw("SELECT EXISTS (SELECT 1 FROM instruments LIMIT 1)").Scan(&hasInstruments).Error; err != nil {
-		return nil, err
+	if s.hasInstrumentsInDB.Load() {
+		hasInstruments = true
+	} else {
+		if err := db.Raw("SELECT EXISTS (SELECT 1 FROM instruments LIMIT 1)").Scan(&hasInstruments).Error; err != nil {
+			return nil, err
+		}
+		if hasInstruments {
+			s.hasInstrumentsInDB.Store(true)
+		}
 	}
 	if !hasInstruments {
 		return s.filterDefaults(query, exchange, instrumentType, underlying, activeOnly, limit), nil

@@ -424,7 +424,7 @@ def smart_api_session() -> tuple[Any, dict[str, Any]]:
         GLOBAL_SMART_API = None
         SMART_API_SESSION = None
         SMART_API_LOGIN_RETRY_AFTER = now + 30
-        api = SmartConnect(api_key=api_key)
+        api = SmartConnect(api_key=api_key, timeout=15)
         session = api.generateSession(client_id, password, pyotp.TOTP(totp_secret).now())
         data = session.get("data") or {}
         if not session.get("status") or not data.get("jwtToken") or not data.get("feedToken"):
@@ -983,7 +983,7 @@ class InstrumentStore:
                 raise RuntimeError("LIVE feed requires the canonical database master")
             import psycopg
             from psycopg.rows import dict_row
-            with psycopg.connect(self.database_url, connect_timeout=5, row_factory=dict_row) as connection:
+            with psycopg.connect(self.database_url, connect_timeout=15, row_factory=dict_row) as connection:
                 with connection.cursor() as cursor:
                     cursor.execute("SELECT version FROM instrument_snapshots WHERE status = 'ACTIVE'")
                     versions = list(cursor.fetchall())
@@ -1611,11 +1611,30 @@ def write_worker_heartbeat(client: Any, store: InstrumentStore) -> None:
     client.hset("market:feed_state", mapping={"worker_heartbeat": stamp, "worker_master_version": store.master_version})
 
 
+def is_transient_db_error(error: Exception) -> bool:
+    err_str = str(error).lower()
+    transient_indicators = (
+        "connection timeout",
+        "timeout expired",
+        "could not connect",
+        "connection refused",
+        "network is unreachable",
+        "server closed the connection",
+        "terminating connection",
+        "failed to connect",
+        "handshake failed",
+    )
+    return any(ind in err_str for ind in transient_indicators)
+
+
 def refresh_once(store: InstrumentStore, control: FeedControl, client: Any) -> None:
     try:
         if store.refresh():
             control.reconnect("activated master or tradable contracts changed")
     except Exception as error:
+        if store.master_version and is_transient_db_error(error):
+            print(f"market worker: transient instrument refresh error (keeping active master {store.master_version}): {error}", flush=True)
+            return
         if get_feed_mode() == "live":
             global GLOBAL_TOKEN_MAP
             with store._lock:
@@ -1737,20 +1756,24 @@ def run_feed(store: InstrumentStore, writer: QuoteWriter, control: FeedControl) 
             subscription = store.lookup(clean(message.get("token")), exchange_type, master_epoch)
             if subscription is None:
                 return
-            price_paise = paise(message.get("last_traded_price"))
+            price_paise = integer(message.get("last_traded_price"))
+            if price_paise <= 0:
+                # Discard non-trade packets (depth-only updates, heartbeats) silently without log spam
+                return
             volume = integer(message.get("volume_trade_for_the_day"))
             control.tick()
             stamp = broker_quote_time(message.get("exchange_timestamp"))
             if stamp is None:
                 return
-            lower_c = paise(message.get("lower_circuit_limit") or message.get("lower_circuit") or message.get("lowerCircuit"))
-            upper_c = paise(message.get("upper_circuit_limit") or message.get("upper_circuit") or message.get("upperCircuit"))
+            lower_c = integer(message.get("lower_circuit_limit") or message.get("lower_circuit") or message.get("lowerCircuit"))
+            upper_c = integer(message.get("upper_circuit_limit") or message.get("upper_circuit") or message.get("upperCircuit"))
+            prev_close = integer(message.get("closed_price"))
             writer.write(subscription, price_paise, volume, source="angelone_live",
-                         previous_close_paise=paise(message.get("closed_price")), event_time=stamp,
+                         previous_close_paise=prev_close, event_time=stamp,
                          open_interest=integer(message.get("open_interest")),
                          lower_circuit_paise=lower_c, upper_circuit_paise=upper_c, market_fields=provider_market_fields(message, scaled=True))
         except (ValueError, redis.RedisError) as error:
-            print(f"market worker: discarded Angel One tick: {error}", flush=True)
+            print(f"market worker: error processing Angel One tick: {error}", flush=True)
 
     def on_error(_wsapp: Any, error: Any) -> None:
         print(f"market worker: Angel One WebSocket error: {error}", flush=True)
