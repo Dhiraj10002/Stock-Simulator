@@ -155,10 +155,15 @@ func (s *OrderService) Create(userID string, request dto.CreateOrderRequest) (*d
 		return nil, fmt.Errorf("stop-loss orders require a positive trigger price")
 	}
 
-	// Market Session Check: New orders are rejected outside trading hours (09:15-15:30 IST, Mon-Fri).
+	// Market Session Check: New orders are rejected outside trading hours.
+	// Equity derivatives (NFO) close at 15:40 IST; cash equities close at 15:30 IST.
 	// Existing open LIMIT orders remain open across sessions and are not rejected here.
 	now := s.now()
-	if err := calendar.ValidateNewOrderSession(now); err != nil {
+	segment := calendar.SegmentNSE
+	if request.Product == model.OrderProductFNO {
+		segment = calendar.SegmentNFO
+	}
+	if err := calendar.ValidateNewOrderSessionForSegment(now, segment); err != nil {
 		return nil, err
 	}
 
@@ -207,8 +212,17 @@ func (s *OrderService) Create(userID string, request dto.CreateOrderRequest) (*d
 	}
 
 	if instrument != nil {
-		if instrument.SnapshotVersion != "" && (!instrument.IsTradable || !instrument.Active) {
-			return nil, fmt.Errorf("instrument %q is not tradable in active master snapshot", request.Symbol)
+		if instrument.SnapshotVersion != "" {
+			if !instrument.IsTradable || !instrument.Active {
+				return nil, fmt.Errorf("instrument %q is not tradable (benchmark index or unsupported segment)", request.Symbol)
+			}
+		} else {
+			seg := strings.ToUpper(strings.TrimSpace(instrument.ExchangeSegment))
+			if seg == "BSE" || seg == "BFO" || strings.ToUpper(strings.TrimSpace(instrument.InstrumentType)) == "INDEX" {
+				if !instrument.IsTradable {
+					return nil, fmt.Errorf("instrument %q is not tradable (benchmark index or unsupported segment)", request.Symbol)
+				}
+			}
 		}
 		if err := product.ValidateInstrumentProduct(*instrument, request.Product); err != nil {
 			return nil, err

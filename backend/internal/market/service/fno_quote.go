@@ -25,7 +25,7 @@ func (s *Service) DerivedFNOQuote(symbol string) (*dto.QuoteResponse, error) {
 	var inst *model.Instrument
 	if s.db != nil {
 		var row model.Instrument
-		err := s.db.Where("symbol = ? AND exchange_segment IN ?", symbol, []string{"NFO", "BFO"}).First(&row).Error
+		err := s.db.Where("symbol = ? AND exchange_segment = ?", symbol, "NFO").First(&row).Error
 		if err == nil {
 			inst = &row
 		} else if !errors.Is(err, gorm.ErrRecordNotFound) {

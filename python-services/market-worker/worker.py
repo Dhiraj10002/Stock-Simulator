@@ -394,7 +394,7 @@ def init_global_token_map() -> None:
                     name = d.get("name", "").strip().upper()
                     if name:
                         GLOBAL_TOKEN_MAP[name] = d
-                elif exch in ("NFO", "BFO"):
+                elif exch == "NFO":
                     sym = d.get("symbol", "").strip().upper()
                     if sym:
                         GLOBAL_TOKEN_MAP[sym] = d
@@ -1130,7 +1130,7 @@ class InstrumentStore:
             by_symbol = {}
             for row in rows:
                 segment, symbol = clean(row.get("exch_seg")), clean(row.get("symbol")).upper()
-                if segment in ("NFO", "BFO"):
+                if segment == "NFO":
                     try:
                         expiry = datetime.strptime(clean(row.get("expiry")), "%d%b%Y").date()
                     except ValueError:
@@ -1138,7 +1138,7 @@ class InstrumentStore:
                     if expiry < datetime.now(timezone.utc).astimezone(ZoneInfo("Asia/Kolkata")).date():
                         continue
                     index_master_identity(by_symbol, symbol, row)
-                elif segment in ("NSE","BSE") and (symbol.endswith("-EQ") or clean(row.get("instrumenttype")) in ("EQUITY","INDEX","AMXIDX")):
+                elif (segment == "NSE" and (symbol.endswith("-EQ") or clean(row.get("instrumenttype")) in ("EQUITY","INDEX","AMXIDX"))) or (segment == "BSE" and (symbol == "SENSEX" or clean(row.get("name")).upper() == "SENSEX" or clean(row.get("instrumenttype")) in ("INDEX","AMXIDX"))):
                     index_master_identity(by_symbol, symbol, row)
                     index_master_identity(by_symbol, symbol.removesuffix("-EQ"), row)
                     index_master_identity(by_symbol, resolve_canonical_symbol(symbol.removesuffix("-EQ")), row)
@@ -1160,7 +1160,7 @@ class InstrumentStore:
                 if row is None:
                     continue
                 token, segment = clean(row.get("token")), clean(row.get("exch_seg"))
-                if segment in ("NFO", "BFO"):
+                if segment == "NFO":
                     symbol = clean(row.get("symbol")).upper()
             if not token or segment not in EXCHANGE_TYPES:
                 continue

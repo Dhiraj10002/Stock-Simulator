@@ -268,8 +268,8 @@ func (s *OrderService) executeMarginProduct(userUUID, orderUUID uuid.UUID, pendi
 			}
 			return fmt.Errorf("cannot execute expired contract %s (expiry: %s)", pending.Symbol, instrument.Expiry)
 		}
-		if instrument.SnapshotVersion != "" && (!instrument.Active || !instrument.IsTradable) && pending.ExitPositionUUID == nil {
-			return fmt.Errorf("contract retired before execution")
+		if (!instrument.Active || !instrument.IsTradable) && pending.ExitPositionUUID == nil {
+			return fmt.Errorf("contract retired or not tradable before execution")
 		}
 		instrumentType, err = product.ValidateFNOInstrument(*instrument, pending.Quantity)
 		if err != nil {

@@ -178,3 +178,71 @@ func TestMarketCalendar_UTCConversion(t *testing.T) {
 		t.Fatalf("expected UTC time %v to be recognized as market closed in IST", utcAfterClose)
 	}
 }
+
+func TestMarketCalendar_SegmentSession(t *testing.T) {
+	loc := Location()
+	wednesday := func(hour, min, sec int) time.Time {
+		return time.Date(2026, 9, 16, hour, min, sec, 0, loc)
+	}
+
+	t.Run("NFO derivatives stay open until 15:40 IST", func(t *testing.T) {
+		t1535 := wednesday(15, 35, 0)
+		if !IsMarketOpenForSegment(t1535, SegmentNFO) {
+			t.Fatalf("expected NFO to be open at 15:35 IST")
+		}
+		if err := ValidateNewOrderSessionForSegment(t1535, SegmentNFO); err != nil {
+			t.Fatalf("expected NFO new orders allowed at 15:35 IST: %v", err)
+		}
+
+		// At the same time, cash equity (NSE) must be closed
+		if IsMarketOpenForSegment(t1535, SegmentNSE) {
+			t.Fatalf("expected NSE cash to be closed at 15:35 IST")
+		}
+		errNSE := ValidateNewOrderSessionForSegment(t1535, SegmentNSE)
+		if errNSE == nil || !strings.Contains(errNSE.Error(), "closed at 15:30 IST") {
+			t.Fatalf("expected NSE error containing 'closed at 15:30 IST', got: %v", errNSE)
+		}
+
+		// Exact 15:40:00 is still open
+		t1540 := wednesday(15, 40, 0)
+		if !IsMarketOpenForSegment(t1540, SegmentNFO) {
+			t.Fatalf("expected NFO to be open at exact 15:40:00 IST")
+		}
+
+		// 15:40:01 is closed
+		t1540After := wednesday(15, 40, 1)
+		if IsMarketOpenForSegment(t1540After, SegmentNFO) {
+			t.Fatalf("expected NFO to be closed at 15:40:01 IST")
+		}
+		errNFOAfter := ValidateNewOrderSessionForSegment(t1540After, SegmentNFO)
+		if errNFOAfter == nil || !strings.Contains(errNFOAfter.Error(), "closed at 15:40 IST") {
+			t.Fatalf("expected NFO error containing 'closed at 15:40 IST', got: %v", errNFOAfter)
+		}
+	})
+
+	t.Run("Closing Auction Session (CAS) runs 15:15 to 15:35 IST", func(t *testing.T) {
+		t1510 := wednesday(15, 10, 0)
+		if IsMarketOpenForSegment(t1510, SegmentNSECAS) {
+			t.Fatalf("expected CAS to be closed before 15:15")
+		}
+		errCASPre := ValidateNewOrderSessionForSegment(t1510, SegmentNSECAS)
+		if errCASPre == nil || !strings.Contains(errCASPre.Error(), "opens at 15:15 IST") {
+			t.Fatalf("expected CAS error containing 'opens at 15:15 IST', got: %v", errCASPre)
+		}
+
+		t1525 := wednesday(15, 25, 0)
+		if !IsMarketOpenForSegment(t1525, SegmentNSECAS) {
+			t.Fatalf("expected CAS to be open at 15:25 IST")
+		}
+
+		t1536 := wednesday(15, 36, 0)
+		if IsMarketOpenForSegment(t1536, SegmentNSECAS) {
+			t.Fatalf("expected CAS to be closed after 15:35 IST")
+		}
+		errCASPost := ValidateNewOrderSessionForSegment(t1536, SegmentNSECAS)
+		if errCASPost == nil || !strings.Contains(errCASPost.Error(), "closed at 15:35 IST") {
+			t.Fatalf("expected CAS error containing 'closed at 15:35 IST', got: %v", errCASPost)
+		}
+	})
+}
+

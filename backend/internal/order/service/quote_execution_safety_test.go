@@ -27,6 +27,8 @@ func TestOrderService_QuoteExecutionSafety(t *testing.T) {
 		InstrumentType:  "EQUITY",
 		LotSize:         1,
 		TickSize:        "0.05",
+		Active:          true,
+		IsTradable:      true,
 	}
 
 	testCases := []struct {
@@ -248,6 +250,8 @@ func TestOrderService_FNOValidationAndSafety(t *testing.T) {
 		LotSize:          25,
 		TickSize:         "0.05",
 		Expiry:           "2026-09-24", // Future relative to 2026-09-16
+		Active:           true,
+		IsTradable:       true,
 	}
 
 	fnoInstrumentExpired := &model.Instrument{
@@ -259,6 +263,8 @@ func TestOrderService_FNOValidationAndSafety(t *testing.T) {
 		LotSize:          25,
 		TickSize:         "0.05",
 		Expiry:           "2026-08-27", // Past relative to 2026-09-16
+		Active:           true,
+		IsTradable:       true,
 	}
 
 	tests := []struct {

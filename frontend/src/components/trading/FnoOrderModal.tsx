@@ -495,6 +495,9 @@ export default function FnoOrderModal({
                   ? "Long options require 100% upfront cash premium and block ₹0 margin. Maximum possible loss is capped strictly at the premium paid."
                   : "Short options block ~30% fixed margin against contract value to absorb non-linear risk. Real broker SPAN + Exposure margins fluctuate dynamically."}
             </p>
+            <div className="mt-2 pt-2 border-t border-indigo-200/60 dark:border-indigo-800/40 text-[10px] text-indigo-700 dark:text-indigo-400 font-medium">
+              Simulated Margin Model: Margin requirements are calculated based on simulator parameters and do not represent broker SPAN + Exposure margin.
+            </div>
           </div>
 
           <p className="text-xs text-slate-500" role="status">
