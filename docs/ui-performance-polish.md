@@ -49,6 +49,8 @@ The script writes to `frontend/artifacts/performance/` (ignored by Git). Supply 
 
 Lint, TypeScript, production build and 86 unit tests pass. All 35 browser cases pass across the full suite and targeted reruns. Checks cover the original homepage without JavaScript, working footer links, lazy login/register, still particles with reduced motion, no public private requests/socket, authentication recovery, original mobile tickets, pending/uncertain order locks, one socket across navigation and reconnect replay. Normal-motion desktop parallax and tilt/glare were separately verified while capturing the desktop screenshot.
 
+CI exposed integration-test database pools that remained open between router fixtures and exhausted PostgreSQL connections. The fixtures now close their pools and register router-worker cancellation with test cleanup, including early failures. Production database behavior is unchanged.
+
 Field INP, production-host mobile measurements, open-market delivery/intraday/futures/options entry and exit with wallet/P&L, and the three-beginner usability check remain release acceptance tasks. Targets remain LCP ≤ 2.5 s, INP ≤ 200 ms and CLS ≤ 0.1. Backend/worker throughput is outside this homepage navigation benchmark.
 
 ## Review images

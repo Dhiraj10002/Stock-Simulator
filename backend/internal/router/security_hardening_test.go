@@ -149,9 +149,18 @@ func TestSecurity_RefreshTokenRotation_And_ReuseDetection(t *testing.T) {
 		t.Fatalf("failed to connect to test DB: %v", err)
 	}
 	db := database.GetDB()
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("failed to get test database pool: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = sqlDB.Close()
+	})
 	_ = db.AutoMigrate(&model.User{}, &model.RefreshSession{}, &model.Wallet{}, &model.WalletTransaction{})
 
-	r := Setup(context.Background(), cfg)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	r := Setup(ctx, cfg)
 
 	// 1. Register a test user
 	userEmail := "sec-test-" + uuid.NewString()[:8] + "@domain.com"

@@ -63,6 +63,13 @@ func getLifecycleTestDB(t *testing.T) *gorm.DB {
 		t.Skip("PostgreSQL database connection is nil; skipping lifecycle integration test")
 		return nil
 	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("failed to get test database pool: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = sqlDB.Close()
+	})
 	err = db.AutoMigrate(
 		&model.User{},
 		&model.Wallet{},
@@ -150,6 +157,7 @@ func setupTradingLifecycleEnv(t *testing.T) *lifecycleTestEnv {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
 
 	// Create market handler
 	mktHandler, err := marketHandler.New(cfg.RedisURL, cfg.RedisOperationTimeout)
