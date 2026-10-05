@@ -14,6 +14,7 @@ import (
 // has NOT satisfied the stop trigger condition.
 func TestRegression_F05_DirectExecutionBypassesStopTrigger(t *testing.T) {
 	db := accountingDB(t)
+	ensureInstrumentExists(t, db, "TRIGGERTEST", "EQUITY")
 	w := accountingWallet(t, db)
 	s := accountingService()
 

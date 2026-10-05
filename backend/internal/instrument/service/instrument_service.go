@@ -20,7 +20,9 @@ import (
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/database"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/instrument/dto"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/alias"
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/calendar"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/product"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -240,10 +242,8 @@ func ToCanonicalInstrument(inst model.Instrument) dto.InstrumentResponse {
 
 	active := inst.Active
 	isTradable := inst.IsTradable
-	if !active {
+	if !active || !product.IsSupportedTradingInstrument(inst) {
 		isTradable = false
-	} else if !inst.IsTradable && inst.SnapshotVersion == "" {
-		isTradable = true
 	}
 
 	return dto.InstrumentResponse{
@@ -606,7 +606,7 @@ func ParseAngelScripItem(raw AngelScripItem) (*model.Instrument, bool) {
 	}, true
 }
 
-// ParseExpiryDate parses Indian market expiry strings (e.g. "24SEP2026", "2026-09-24", "24-09-2026") into a 15:30 IST timestamp.
+// ParseExpiryDate parses Indian market expiry strings (e.g. "24SEP2026", "2026-09-24", "24-09-2026") into the date-specific NFO closing timestamp.
 func ParseExpiryDate(expiry string, loc *time.Location) (time.Time, error) {
 	clean := strings.ToUpper(strings.TrimSpace(expiry))
 	if clean == "" {
@@ -625,7 +625,8 @@ func ParseExpiryDate(expiry string, loc *time.Location) (time.Time, error) {
 	}
 	for _, layout := range layouts {
 		if t, err := time.ParseInLocation(layout, clean, loc); err == nil {
-			return time.Date(t.Year(), t.Month(), t.Day(), 15, 30, 0, 0, loc), nil
+			_, _, closeTime := calendar.SegmentSessionBounds(t, calendar.SegmentNFO)
+			return closeTime.In(loc), nil
 		}
 	}
 	return time.Time{}, fmt.Errorf("unrecognized expiry date layout: %s", expiry)
@@ -887,7 +888,7 @@ func (s *Service) ActivateSnapshot(ctx context.Context, version string) (*model.
 			inst.CreatedAt = time.Time{}
 			inst.UpdatedAt = time.Time{}
 			inst.Active = true
-			inst.IsTradable = true
+			inst.IsTradable = product.IsSupportedTradingInstrument(*inst)
 			if inst.Expiry != "" {
 				expiry, err := ParseExpiryDate(inst.Expiry, nil)
 				if err != nil {
@@ -905,6 +906,26 @@ func (s *Service) ActivateSnapshot(ctx context.Context, version string) (*model.
 
 		}
 		if err := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "symbol"}, {Name: "exchange_segment"}}, DoUpdates: clause.AssignmentColumns([]string{"token", "display_symbol", "exchange", "name", "underlying", "underlying_symbol", "expiry", "strike", "option_type", "lot_size", "instrument_type", "tick_size", "active", "is_tradable", "snapshot_version", "updated_at"})}).CreateInBatches(&members, 500).Error; err != nil {
+			return err
+		}
+
+		for _, inst := range members {
+			if inst.Expiry != "" {
+				expiry, err := ParseExpiryDate(inst.Expiry, nil)
+				if err != nil {
+					return err
+				}
+				if !now.Before(expiry) {
+					if err := tx.Model(&model.Instrument{}).Where("symbol = ? AND exchange_segment = ?", inst.Symbol, inst.ExchangeSegment).Updates(map[string]any{"active": false, "is_tradable": false}).Error; err != nil {
+						return err
+					}
+				}
+			}
+		}
+
+		// GORM default:true can replace false fields during insertion. Enforce
+		// benchmark/segment policy with an explicit update in the same transaction.
+		if err := tx.Model(&model.Instrument{}).Where("instrument_type IN ? OR token LIKE ? OR exchange_segment NOT IN ?", []string{"INDEX", "AMXIDX"}, "999%", []string{"NSE", "NFO"}).Update("is_tradable", false).Error; err != nil {
 			return err
 		}
 

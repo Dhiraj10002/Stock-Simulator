@@ -22,16 +22,16 @@ func TestFNOExpiry_ExpiryDetectionTiming(t *testing.T) {
 		t.Fatalf("isExpired should be false on expiry day morning (10:00 IST)")
 	}
 
-	// 2. On expiry day at 15:29:59 IST -> Not expired yet
-	preCloseTime := time.Date(2026, 9, 24, 15, 29, 59, 0, ist)
+	// 2. On expiry day at 15:39:59 IST -> Not expired yet
+	preCloseTime := time.Date(2026, 9, 24, 15, 39, 59, 0, ist)
 	if isExpired(expiryStr, preCloseTime) {
-		t.Fatalf("isExpired should be false before 15:30 IST market close")
+		t.Fatalf("isExpired should be false before 15:40 IST market close")
 	}
 
-	// 3. On expiry day at exactly 15:30:00 IST -> Expired
-	closeTime := time.Date(2026, 9, 24, 15, 30, 0, 0, ist)
+	// 3. On expiry day at exactly 15:40:00 IST -> Expired
+	closeTime := time.Date(2026, 9, 24, 15, 40, 0, 0, ist)
 	if !isExpired(expiryStr, closeTime) {
-		t.Fatalf("isExpired should be true at 15:30:00 IST on expiry day")
+		t.Fatalf("isExpired should be true at 15:40:00 IST on expiry day")
 	}
 
 	// 4. On expiry day evening at 18:00 IST -> Expired
@@ -59,7 +59,7 @@ func TestFNOExpiry_EndToEndSettlement(t *testing.T) {
 	}
 	clearReferences()
 	t.Cleanup(clearReferences)
-	expiryTime := time.Date(2026, 9, 24, 15, 35, 0, 0, ist)
+	expiryTime := time.Date(2026, 9, 24, 15, 45, 0, 0, ist)
 	quoteTimeStr := time.Date(2026, 9, 24, 15, 29, 55, 0, ist).Format(time.RFC3339)
 
 	// Instruments setup
@@ -267,7 +267,7 @@ func TestFNOExpiry_EndToEndSettlement(t *testing.T) {
 	orderSvc.SetExecutableQuoteFunc(func(symbol string) (*marketDTO.QuoteResponse, error) {
 		switch symbol {
 		case "NIFTY24SEP26FUT":
-			return &marketDTO.QuoteResponse{Symbol: symbol, PricePaise: 21000, UpdatedAt: quoteTimeStr, Source: "angelone_live"}, nil
+			return &marketDTO.QuoteResponse{Symbol: symbol, PricePaise: 21000, UpdatedAt: time.Date(2026, 9, 24, 15, 39, 55, 0, ist).Format(time.RFC3339), Source: "angelone_live"}, nil
 		case "NIFTY":
 			return &marketDTO.QuoteResponse{Symbol: symbol, PricePaise: 24500, UpdatedAt: quoteTimeStr, Source: "angelone_live"}, nil
 		default:

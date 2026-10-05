@@ -7,7 +7,8 @@ import { useQuery } from "@tanstack/react-query";
 import Navbar from "@/components/layout/Navbar";
 import { useMultiSymbolQuotes } from "@/stores/market-store";
 import { fetchBatchQuotes, getCachedQuote } from "@/lib/quoteService";
-import { getApiUrl } from "@/lib/config";
+import { useAuthToken } from "@/hooks/useAuthToken";
+import { dayMovement, valuationStatus } from "@/lib/marketDisplay";
 import { apiFetch } from "@/lib/api";
 import {
   TrendingUp,
@@ -30,7 +31,7 @@ import {
 } from "lucide-react";
 import { formatPaise } from "@/lib/format";
 import { MASTER_STOCKS_CATALOG, SECTOR_CONSTITUENTS } from "@/components/dashboard/DashboardPage";
-import type { Portfolio, ApiResponse } from "@/types";
+import type { Portfolio } from "@/types";
 
 // ---------------------------------------------------------------------------
 // TYPES & DATASETS FOR STOCKS EXPLORE
@@ -147,18 +148,7 @@ export default function StocksExplorePage() {
   const [moverTab, setMoverTab] = useState<"gainers" | "losers" | "volume">("gainers");
   const [indexScope, setIndexScope] = useState<"NIFTY 100" | "NIFTY 500">("NIFTY 100");
 
-  const [token] = useState<string>(() => {
-    if (typeof window !== "undefined") {
-      return (
-        localStorage.getItem("auth_token") ||
-        localStorage.getItem("stock-simulator-access-token") ||
-        ""
-      );
-    }
-    return "";
-  });
-
-  const apiUrl = getApiUrl();
+  const token = useAuthToken();
 
   // 1. Fetch Wallet for Available Margin
   const { data: wallet } = useAccountWallet();
@@ -171,25 +161,10 @@ export default function StocksExplorePage() {
     isFetching: isPortfolioFetching,
   } = useQuery<Portfolio>({
     queryKey: ["portfolio", token],
-    queryFn: async () => {
-      if (!token) {
-        throw new Error("Authentication required");
-      }
-      const res = await fetch(`${apiUrl}/portfolio`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) {
-        throw new Error(`Failed to fetch portfolio: ${res.statusText}`);
-      }
-      const json: ApiResponse<Portfolio> = await res.json();
-      if (!json.data) {
-        throw new Error("Invalid portfolio response");
-      }
-      return json.data;
-    },
+    queryFn: () => apiFetch<Portfolio>("/portfolio"),
     enabled: !!token,
     refetchInterval: token ? 5000 : false,
-    placeholderData: (prev) => prev,
+    retry: false,
   });
 
   const exploreSymbols = useMemo(() => {
@@ -220,14 +195,16 @@ export default function StocksExplorePage() {
           dayHigh: undefined as number | undefined,
           volume: undefined as number | undefined,
           isQuoteAvailable: false,
+          hasMovement: false,
         };
       }
       const price = live.price_paise / 100;
-      const change = live.change_paise !== undefined ? live.change_paise / 100 : 0;
-      const changePercent = live.change_percent ?? (price > 0 && change !== 0 ? +((change / (price - change || 1)) * 100).toFixed(2) : 0);
+      const movement = dayMovement(live);
+      const change = movement?.change ?? 0;
+      const changePercent = movement?.percent ?? 0;
       const dayLow = live.low_paise && live.low_paise > 0 ? live.low_paise / 100 : undefined;
       const dayHigh = live.high_paise && live.high_paise > 0 ? live.high_paise / 100 : undefined;
-      const volume = live.volume && live.volume > 0 ? live.volume : 0;
+      const volume = live.volume_available === true && typeof live.volume === "number" && live.volume > 0 ? live.volume : undefined;
       return {
         ...item,
         price,
@@ -237,6 +214,7 @@ export default function StocksExplorePage() {
         dayHigh,
         volume,
         isQuoteAvailable: true,
+        hasMovement: movement !== undefined,
       };
     });
   }, [quotes]);
@@ -298,6 +276,7 @@ export default function StocksExplorePage() {
           name: item.name || item.symbol,
           price,
           change,
+          hasMovement: true,
           changePercent: item.change_percent,
           volume: volumeStr,
           dayLow: dayLow > 0 ? dayLow : undefined,
@@ -327,13 +306,13 @@ export default function StocksExplorePage() {
 
     if (moverTab === "gainers") {
       return validStocks
-        .filter((s) => s.changePercent > 0)
+        .filter((s) => s.hasMovement && s.changePercent > 0)
         .sort((a, b) => b.changePercent - a.changePercent)
         .slice(0, 6)
         .map(mapStock);
     } else if (moverTab === "losers") {
       return validStocks
-        .filter((s) => s.changePercent < 0)
+        .filter((s) => s.hasMovement && s.changePercent < 0)
         .sort((a, b) => a.changePercent - b.changePercent)
         .slice(0, 6)
         .map(mapStock);
@@ -346,19 +325,20 @@ export default function StocksExplorePage() {
   const dynamicExploreSectors = useMemo(() => {
     return SECTORS_TRENDING.map((sec) => {
       const symbols = SECTOR_CONSTITUENTS[sec.id] || [];
-      const constituents = liveCatalog.filter((s) => symbols.includes(s.symbol) && s.isQuoteAvailable && s.price > 0);
+      const constituents = liveCatalog.filter((s) => symbols.includes(s.symbol) && s.isQuoteAvailable && s.hasMovement && s.price > 0);
       if (constituents.length === 0) {
         return {
           ...sec,
           gainersCount: 0,
           losersCount: 0,
+          neutralCount: 0,
           changePercent: 0,
           topStock: "—",
         };
       }
 
-      const gainers = constituents.filter((s) => s.changePercent >= 0).length;
-      const losers = constituents.filter((s) => s.changePercent < 0).length;
+      const gainers = constituents.filter((s) => s.changePercent > 0).length;
+      const losers = constituents.filter((s) => s.hasMovement && s.changePercent < 0).length;
       const avgChange = constituents.reduce((acc, s) => acc + s.changePercent, 0) / constituents.length;
       const sorted = [...constituents].sort((a, b) => b.changePercent - a.changePercent);
       const top = sorted[0];
@@ -367,6 +347,7 @@ export default function StocksExplorePage() {
         ...sec,
         gainersCount: gainers,
         losersCount: losers,
+        neutralCount: constituents.length - gainers - losers,
         changePercent: +avgChange.toFixed(2),
         topStock: `${top.symbol} (${top.changePercent >= 0 ? "+" : ""}${top.changePercent.toFixed(2)}%)`,
       };
@@ -374,8 +355,10 @@ export default function StocksExplorePage() {
   }, [liveCatalog]);
 
   const availableBalance = wallet?.available_balance_paise;
-  const unrealizedPnl = portfolio?.unrealized_pnl_paise ?? 0;
-  const isProfit = unrealizedPnl >= 0;
+  const baseValuation = valuationStatus(portfolio);
+  const valuation = isPortfolioError && baseValuation === "REALTIME" ? "STALE" : baseValuation;
+  const unrealizedPnl = token && valuation !== "DEGRADED" ? portfolio?.unrealized_pnl_paise : undefined;
+  const isProfit = unrealizedPnl !== undefined && unrealizedPnl >= 0;
   const positionsCount = portfolio?.positions?.length ?? 0;
 
   return (
@@ -384,6 +367,7 @@ export default function StocksExplorePage() {
       <Navbar
         availableBalancePaise={availableBalance}
         unrealizedPnlPaise={unrealizedPnl}
+        unrealizedPnlStale={valuation === "STALE"}
       />
 
       {/* 2. HORIZONTAL INDICES STRIP (Marked by user in Green) */}
@@ -395,11 +379,10 @@ export default function StocksExplorePage() {
             const livePrice = hasQuote
               ? (live.price_paise / 100).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
               : "—";
-            const livePct = live?.change_percent !== undefined ? live.change_percent : 0;
+            const movement = dayMovement(live);
+            const livePct = movement?.percent ?? 0;
             const isGain = livePct >= 0;
-            const liveChange = hasQuote
-              ? `${isGain ? "+" : ""}${live.change_paise !== undefined ? (live.change_paise / 100).toFixed(2) : ((live.price_paise * (livePct / 100)) / 100).toFixed(2)}`
-              : "—";
+            const liveChange = movement ? `${isGain ? "+" : ""}${movement.change.toFixed(2)}` : "—";
 
             return (
               <div key={idx.name} className="flex items-center gap-2 shrink-0">
@@ -409,7 +392,7 @@ export default function StocksExplorePage() {
                 <span className="font-semibold text-slate-900 dark:text-slate-100 font-tabular">
                   {livePrice}
                 </span>
-                {hasQuote ? (
+                {hasQuote && movement ? (
                   <span
                     className={`flex items-center gap-0.5 text-[11px] font-bold ${
                       isGain
@@ -484,7 +467,8 @@ export default function StocksExplorePage() {
                   const live = quotes[stock.symbol];
                   const hasQuote = live && live.price_paise > 0;
                   const currentPrice = hasQuote ? live.price_paise / 100 : 0;
-                  const currentPct = live?.change_percent !== undefined ? live.change_percent : 0;
+                  const movement = dayMovement(live);
+                  const currentPct = movement?.percent ?? 0;
                   const isGain = currentPct >= 0;
 
                   return (
@@ -525,7 +509,7 @@ export default function StocksExplorePage() {
                           </div>
                         </div>
 
-                        {hasQuote ? (
+                        {hasQuote && movement ? (
                           <div
                             className={`text-xs font-bold font-tabular flex items-center gap-0.5 ${
                               isGain
@@ -537,7 +521,7 @@ export default function StocksExplorePage() {
                           </div>
                         ) : (
                           <div className="text-[10px] font-medium text-amber-500">
-                            Awaiting Tick
+                            Day movement unavailable
                           </div>
                         )}
                       </div>
@@ -574,9 +558,10 @@ export default function StocksExplorePage() {
                   const live = quotes[stock.symbol] || (stock.symbol === "ZOMATO" ? quotes["ETERNAL"] : undefined);
                   const hasQuote = live && live.price_paise > 0;
                   const currentPrice = hasQuote ? live.price_paise / 100 : 0;
-                  const currentPct = live?.change_percent !== undefined ? live.change_percent : 0;
+                  const movement = dayMovement(live);
+                  const currentPct = movement?.percent ?? 0;
                   const isGain = currentPct >= 0;
-                  const currentChange = hasQuote ? (live.change_paise !== undefined ? live.change_paise / 100 : (currentPrice * currentPct) / 100) : 0;
+                  const currentChange = movement?.change ?? 0;
 
                   return (
                     <Link
@@ -596,7 +581,7 @@ export default function StocksExplorePage() {
                         {hasQuote ? `₹${currentPrice.toFixed(2)}` : "₹—"}
                       </div>
 
-                      {hasQuote ? (
+                      {hasQuote && movement ? (
                         <div
                           className={`text-[11px] font-bold font-tabular mt-0.5 ${
                             isGain
@@ -609,7 +594,7 @@ export default function StocksExplorePage() {
                         </div>
                       ) : (
                         <div className="text-[10px] font-medium text-amber-500 mt-0.5">
-                          Awaiting Tick
+                          Day movement unavailable
                         </div>
                       )}
 
@@ -748,8 +733,8 @@ export default function StocksExplorePage() {
                                     : "text-rose-600 dark:text-rose-400"
                                 }`}
                               >
-                                {isGain ? "+" : ""}
-                                {stock.change.toFixed(2)} ({stock.changePercent.toFixed(2)}%)
+                                {stock.hasMovement && isGain ? "+" : ""}
+                                {stock.hasMovement ? `${stock.change.toFixed(2)} (${stock.changePercent.toFixed(2)}%)` : "Day movement unavailable"}
                               </div>
                             </td>
 
@@ -818,12 +803,13 @@ export default function StocksExplorePage() {
                   const live = quotes[stock.symbol];
                   const hasQuote = live && live.price_paise > 0;
                   const price = hasQuote ? live.price_paise / 100 : 0;
-                  const pct = live?.change_percent !== undefined ? live.change_percent : 0;
+                  const movement = dayMovement(live);
+                  const pct = movement?.percent ?? 0;
                   const isGain = pct >= 0;
-                  const change = hasQuote ? (live.change_paise !== undefined ? live.change_paise / 100 : (price * pct) / 100) : 0;
-                  const dayLow = live?.low_paise ? live.low_paise / 100 : price;
-                  const dayHigh = live?.high_paise ? live.high_paise / 100 : price;
-                  const rangePercent = dayHigh > dayLow ? ((price - dayLow) / (dayHigh - dayLow)) * 100 : 50;
+                  const change = movement?.change ?? 0;
+                  const dayLow = live?.low_paise && live.low_paise > 0 ? live.low_paise / 100 : undefined;
+                  const dayHigh = live?.high_paise && live.high_paise > 0 ? live.high_paise / 100 : undefined;
+                  const rangePercent = dayLow !== undefined && dayHigh !== undefined && dayHigh > dayLow ? ((price - dayLow) / (dayHigh - dayLow)) * 100 : undefined;
 
                   return (
                     <Link
@@ -849,7 +835,7 @@ export default function StocksExplorePage() {
                         <div className="text-xs font-bold font-tabular text-slate-900 dark:text-slate-100">
                           {hasQuote ? `₹${price.toFixed(2)}` : "₹—"}
                         </div>
-                        {hasQuote ? (
+                        {hasQuote && movement ? (
                           <div
                             className={`text-[11px] font-bold font-tabular ${
                               isGain
@@ -862,7 +848,7 @@ export default function StocksExplorePage() {
                           </div>
                         ) : (
                           <div className="text-[10px] font-medium text-amber-500">
-                            Awaiting Tick
+                            Day movement unavailable
                           </div>
                         )}
                       </div>
@@ -874,12 +860,12 @@ export default function StocksExplorePage() {
                             className={`h-full rounded-full ${
                               isGain ? "bg-emerald-500" : "bg-rose-500"
                             }`}
-                            style={{ width: `${Math.min(Math.max(rangePercent, 10), 90)}%` }}
+                            style={{ width: rangePercent === undefined ? "0%" : `${Math.min(Math.max(rangePercent, 0), 100)}%` }}
                           />
                         </div>
                         <div className="flex justify-between text-[9px] text-slate-400 font-mono">
-                          <span>L: {hasQuote && dayLow > 0 ? `₹${dayLow.toFixed(2)}` : "—"}</span>
-                          <span>H: {hasQuote && dayHigh > 0 ? `₹${dayHigh.toFixed(2)}` : "—"}</span>
+                          <span>L: {hasQuote && dayLow !== undefined ? `₹${dayLow.toFixed(2)}` : "—"}</span>
+                          <span>H: {hasQuote && dayHigh !== undefined ? `₹${dayHigh.toFixed(2)}` : "—"}</span>
                         </div>
                       </div>
                     </Link>
@@ -922,7 +908,7 @@ export default function StocksExplorePage() {
                     {dynamicExploreSectors.map((sec) => {
                       const Icon = sec.icon;
                       const isGain = sec.changePercent >= 0;
-                      const total = sec.gainersCount + sec.losersCount;
+                      const total = sec.gainersCount + sec.losersCount + sec.neutralCount;
                       const gainerPercent = total > 0 ? (sec.gainersCount / total) * 100 : 50;
 
                       return (
@@ -969,7 +955,7 @@ export default function StocksExplorePage() {
                                   />
                                   <div
                                     className="h-full bg-rose-500 rounded-r-full transition-all"
-                                    style={{ width: `${100 - gainerPercent}%` }}
+                                    style={{ width: `${total > 0 ? sec.losersCount / total * 100 : 0}%` }}
                                   />
                                 </div>
                               </div>
@@ -1040,6 +1026,10 @@ export default function StocksExplorePage() {
                     {isPortfolioFetching ? "Retrying..." : "Retry"}
                   </button>
                 </div>
+              ) : !portfolio ? (
+                <p role="status" className="py-4 text-center text-xs text-slate-500">
+                  {token ? "Loading portfolio..." : "Sign in to view your portfolio."}
+                </p>
               ) : positionsCount === 0 ? (
                 /* Empty state matching the reference */
                 <div className="py-4 text-center space-y-3">
@@ -1051,7 +1041,7 @@ export default function StocksExplorePage() {
                       You haven&apos;t invested yet
                     </h4>
                     <p className="text-[11px] text-slate-400 mt-1 max-w-[220px] mx-auto">
-                      Trade stocks and build your portfolio with your ₹10,00,000 simulated balance.
+                      Trade stocks and build your portfolio with virtual money.
                     </p>
                   </div>
                 </div>
@@ -1068,16 +1058,16 @@ export default function StocksExplorePage() {
                     <span className="text-slate-500 dark:text-slate-400">Unrealized Returns:</span>
                     <span
                       className={`font-bold font-tabular ${
-                        isProfit ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
+                        unrealizedPnl === undefined ? "text-slate-500" : isProfit ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
                       }`}
                     >
                       {formatPaise(unrealizedPnl)}
                     </span>
                   </div>
-                  {isPortfolioError && (
+                  {valuation !== "REALTIME" && (
                     <div className="text-[10px] text-amber-600 dark:text-amber-400 flex items-center gap-1">
                       <Activity className="w-3 h-3" />
-                      <span>Valuation may be stale</span>
+                      <span>{valuation === "STALE" ? "Last available valuation" : "Valuation unavailable"}</span>
                     </div>
                   )}
                 </div>

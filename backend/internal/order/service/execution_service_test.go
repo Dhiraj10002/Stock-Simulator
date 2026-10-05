@@ -419,6 +419,9 @@ func TestResolveCircuitLimits_RealExchangeLimits(t *testing.T) {
 func TestOrderService_CircuitBreakerEnforcement_RealExchangeLimits(t *testing.T) {
 	// Tests order validation against real circuit limits vs naive ±10% bands
 	orderSvc := New(nil, &config.Config{})
+	orderSvc.SetInstrumentFinder(func(symbol string) (*model.Instrument, error) {
+		return &model.Instrument{Symbol: symbol, ExchangeSegment: "NSE", InstrumentType: "EQUITY", Active: true, IsTradable: true, LotSize: 1}, nil
+	})
 	loc, _ := time.LoadLocation("Asia/Kolkata")
 	tradingTime := time.Date(2026, 9, 16, 10, 0, 0, 0, loc)
 	orderSvc.SetNowFunc(func() time.Time { return tradingTime })

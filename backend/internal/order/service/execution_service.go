@@ -39,6 +39,15 @@ func (s *OrderService) Execute(userID, orderID string) error {
 	if err := database.GetDB().Where("uuid = ? AND user_uuid = ?", orderUUID, userUUID).First(&pendingOrder).Error; err != nil {
 		return err
 	}
+	if pendingOrder.ExitPositionUUID == nil {
+		inst, err := s.repo.FindInstrument(pendingOrder.Symbol)
+		if err != nil {
+			return err
+		}
+		if err := product.ValidateNewInstrument(*inst, pendingOrder.Product); err != nil {
+			return err
+		}
+	}
 	if pendingOrder.Product != model.OrderProductDelivery {
 		return s.executeMarginProduct(userUUID, orderUUID, pendingOrder, execStart)
 	}

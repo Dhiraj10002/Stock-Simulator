@@ -116,7 +116,6 @@ test("dashboard calendar fits content and index history recovers from provider r
   await desk.getByRole("button", { name: "Show full year" }).click();
   await expect(desk.getByText("Republic Day", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "SENSEX", exact: true }).click();
-  await page.getByRole("button", { name: "1M", exact: true }).click();
   await expect(
     page.getByText("Index Chart Unavailable", { exact: true }),
   ).toBeVisible();
@@ -135,7 +134,7 @@ test("dashboard calendar fits content and index history recovers from provider r
     requests.some(
       (url) =>
         url.pathname.includes("/SENSEX/history") &&
-        url.searchParams.get("interval") === "ONE_HOUR",
+        url.searchParams.get("interval") === "ONE_MINUTE",
     ),
   ).toBe(true);
   await page.setViewportSize({ width: 360, height: 800 });

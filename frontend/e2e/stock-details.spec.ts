@@ -278,7 +278,7 @@ for (const uncertain of [false, true])
     await expect(place).toBeEnabled();
     await place.click();
     await expect(
-      page.getByText(
+      page.getByRole("region", { name: "Paper order ticket" }).getByText(
         uncertain
           ? "Order result is uncertain. Review Orders before placing another order."
           : "Order fixture-order: PENDING. Execution is not confirmed. Review Orders.",

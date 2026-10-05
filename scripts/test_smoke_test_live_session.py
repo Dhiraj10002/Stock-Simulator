@@ -101,7 +101,9 @@ class CanonicalFutureSelectionTest(unittest.TestCase):
         wrong = self.row | dict(underlying="NIFTYBANK", symbol="NIFTYBANK06OCT26FUT")
         later = self.row | dict(symbol="NIFTY13OCT26FUT", expiry="2026-10-13")
         self.assertEqual(smoke.select_live_future([wrong, later, self.row], "NIFTY", self.now), self.row)
-        at_close = self.now.replace(hour=15, minute=30)
+        before_close = self.now.replace(hour=15, minute=35)
+        self.assertEqual(smoke.select_live_future([later, self.row], "NIFTY", before_close), self.row)
+        at_close = self.now.replace(hour=15, minute=40)
         self.assertEqual(smoke.select_live_future([later, self.row], "NIFTY", at_close), later)
 
     def test_invalid_metadata_cannot_be_used_as_fallback(self):

@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { formatPaise, getIndianMarketStatus } from "@/lib/format";
 import { useMarketStore, useSymbolQuote } from "@/stores/market-store";
+import { dayMovement } from "@/lib/marketDisplay";
 import { getAuthoritativeFeedStatus } from "@/lib/feedStatus";
 import { useUIStore } from "@/stores/ui-store";
 import { useTheme } from "@/providers/theme-provider";
@@ -39,6 +40,7 @@ interface NavbarProps {
   cashBalancePaise?: number;
   availableBalancePaise?: number;
   unrealizedPnlPaise?: number;
+  unrealizedPnlStale?: boolean;
   onResetSimulation?: () => void;
   onSignOut?: () => void;
   resetting?: boolean;
@@ -58,6 +60,7 @@ const NAV_LINKS = [
 
 export default function Navbar({
   unrealizedPnlPaise,
+  unrealizedPnlStale = false,
   onResetSimulation,
   onSignOut,
   resetting = false,
@@ -147,11 +150,11 @@ export default function Navbar({
   // Indices — targeted symbol selectors prevent full navbar rerenders on unrelated ticks
   const niftyQuote = useSymbolQuote("NIFTY");
   const niftyPrice = niftyQuote && niftyQuote.price_paise > 0 ? niftyQuote.price_paise : undefined;
-  const niftyChange = niftyQuote?.change_percent;
+  const niftyChange = dayMovement(niftyQuote)?.percent;
 
   const sensexQuote = useSymbolQuote("SENSEX");
   const sensexPrice = sensexQuote && sensexQuote.price_paise > 0 ? sensexQuote.price_paise : undefined;
-  const sensexChange = sensexQuote?.change_percent;
+  const sensexChange = dayMovement(sensexQuote)?.percent;
 
   const isProfit = unrealizedPnlPaise !== undefined && unrealizedPnlPaise >= 0;
 
@@ -270,7 +273,7 @@ export default function Navbar({
           {/* Unrealized P&L */}
           <div className="hidden md:flex flex-col text-right border-l border-slate-200 dark:border-white/[0.08] pl-3">
             <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">
-              Unrealized P&L
+              Unrealized P&L{unrealizedPnlStale ? " · Last available" : ""}
             </span>
             <div className="flex items-center justify-end gap-1">
               {(unrealizedPnlPaise === undefined || unrealizedPnlPaise === 0) ? (

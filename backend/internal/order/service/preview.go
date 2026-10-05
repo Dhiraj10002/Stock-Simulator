@@ -3,7 +3,6 @@ package service
 import (
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/database"
@@ -151,14 +150,9 @@ func (s *OrderService) Preview(user string, request dto.CreateOrderRequest) (*Or
 			if inst == nil {
 				return nil, fmt.Errorf("instrument %q not found", order.Symbol)
 			}
-			if inst.SnapshotVersion != "" {
-				if (!inst.IsTradable || !inst.Active) && order.ExitPositionUUID == nil {
-					return nil, fmt.Errorf("instrument %q is not tradable (benchmark index or unsupported segment)", order.Symbol)
-				}
-			} else {
-				seg := strings.ToUpper(strings.TrimSpace(inst.ExchangeSegment))
-				if (seg == "BSE" || seg == "BFO" || strings.ToUpper(strings.TrimSpace(inst.InstrumentType)) == "INDEX") && !inst.IsTradable && order.ExitPositionUUID == nil {
-					return nil, fmt.Errorf("instrument %q is not tradable (benchmark index or unsupported segment)", order.Symbol)
+			if order.ExitPositionUUID == nil {
+				if err := product.ValidateNewInstrument(*inst, order.Product); err != nil {
+					return nil, err
 				}
 			}
 			kind, err = product.ValidateFNOInstrument(*inst, order.Quantity)

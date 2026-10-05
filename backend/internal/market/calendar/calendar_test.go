@@ -36,8 +36,8 @@ func TestMarketCalendar_TradingSession(t *testing.T) {
 		{
 			name:      "Weekday exact market close (15:30:00)",
 			timeInIST: time.Date(2026, 9, 16, 15, 30, 0, 0, loc), // Wednesday
-			wantOpen:  true,
-			wantErr:   "",
+			wantOpen:  false,
+			wantErr:   "closed at 15:30 IST",
 		},
 		{
 			name:      "Weekday after market close (15:30:01)",
@@ -168,8 +168,8 @@ func TestMarketCalendar_UTCConversion(t *testing.T) {
 
 	// 15:30 IST is 10:00 UTC
 	utcClose := time.Date(2026, 9, 16, 10, 0, 0, 0, time.UTC)
-	if !IsMarketOpen(utcClose) {
-		t.Fatalf("expected UTC time %v to be recognized as market open in IST", utcClose)
+	if IsMarketOpen(utcClose) {
+		t.Fatalf("expected UTC time %v to be recognized as market closed in IST", utcClose)
 	}
 
 	// 15:31 IST is 10:01 UTC (closed)
@@ -203,10 +203,10 @@ func TestMarketCalendar_SegmentSession(t *testing.T) {
 			t.Fatalf("expected NSE error containing 'closed at 15:30 IST', got: %v", errNSE)
 		}
 
-		// Exact 15:40:00 is still open
+		// The closing instant is the expiry boundary, so new orders are closed.
 		t1540 := wednesday(15, 40, 0)
-		if !IsMarketOpenForSegment(t1540, SegmentNFO) {
-			t.Fatalf("expected NFO to be open at exact 15:40:00 IST")
+		if IsMarketOpenForSegment(t1540, SegmentNFO) {
+			t.Fatalf("expected NFO to be closed at exact 15:40:00 IST")
 		}
 
 		// 15:40:01 is closed
@@ -245,4 +245,3 @@ func TestMarketCalendar_SegmentSession(t *testing.T) {
 		}
 	})
 }
-

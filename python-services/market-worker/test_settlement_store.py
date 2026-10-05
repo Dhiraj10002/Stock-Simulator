@@ -6,6 +6,16 @@ from settlement_store import SettlementRecorder
 
 
 class SettlementRecorderTest(unittest.TestCase):
+    def test_nfo_archive_uses_new_close_and_retains_historical_schedule(self):
+        with patch("settlement_store.threading.Thread"):
+            recorder = SettlementRecorder("unused-test-url")
+        for day, minute, valid in [("2026-09-29", 29, False), ("2026-09-29", 35, False), ("2026-09-29", 39, True), ("2026-09-29", 41, False), ("2026-07-30", 29, True), ("2026-07-30", 39, False)]:
+            with self.subTest(day=day, minute=minute):
+                recorder.pending.clear()
+                observed = datetime.fromisoformat(day).replace(hour=15, minute=minute, second=55, tzinfo=ZoneInfo("Asia/Kolkata"))
+                recorder.record("NIFTYFUT", 100, "angelone_live", "live", observed, "NFO")
+                self.assertEqual(bool(recorder.pending), valid)
+
     def test_only_sourced_closing_window_is_recorded_and_latest_wins(self):
         with patch("settlement_store.threading.Thread"):
             recorder = SettlementRecorder("unused-test-url")

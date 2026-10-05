@@ -120,6 +120,34 @@ func percentage(notional, percent int64) (int64, error) {
 	return notional * percent / 100, nil
 }
 
+// IsSupportedTradingInstrument is independent of imported/legacy tradability flags.
+func IsSupportedTradingInstrument(instrument model.Instrument) bool {
+	segment := strings.ToUpper(strings.TrimSpace(instrument.ExchangeSegment))
+	if segment == "" {
+		segment = strings.ToUpper(strings.TrimSpace(instrument.Exchange))
+	}
+	kind := strings.ToUpper(strings.TrimSpace(instrument.InstrumentType))
+	if kind == "INDEX" || kind == "AMXIDX" || strings.HasPrefix(instrument.Token, "999") {
+		return false
+	}
+	if classifyInstrument(kind) != "" {
+		return segment == "NFO"
+	}
+	return segment == "NSE" && (kind == "" || kind == "EQ" || kind == "EQUITY")
+}
+
+// ValidateNewInstrument also rejects retired legacy rows without a snapshot version.
+// Managed position exits bypass this opening policy, while retaining product validation.
+func ValidateNewInstrument(instrument model.Instrument, orderProduct string) error {
+	if !IsSupportedTradingInstrument(instrument) {
+		return fmt.Errorf("instrument %q is not tradable; only NSE equities and NFO derivatives are supported", instrument.Symbol)
+	}
+	if !instrument.Active || !instrument.IsTradable {
+		return fmt.Errorf("instrument %q is retired or not tradable", instrument.Symbol)
+	}
+	return ValidateInstrumentProduct(instrument, orderProduct)
+}
+
 // ValidateInstrumentProduct keeps cash indices view-only and derivatives out of cash products.
 func ValidateInstrumentProduct(instrument model.Instrument, orderProduct string) error {
 	kind := strings.ToUpper(strings.TrimSpace(instrument.InstrumentType))

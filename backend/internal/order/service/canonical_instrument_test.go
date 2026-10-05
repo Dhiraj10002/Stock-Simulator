@@ -19,6 +19,7 @@ import (
 // Both Equity and F&O share this exact schema and store.
 var canonicalInstrumentsDB = map[string]model.Instrument{
 	"PRAJIND-EQ": {
+		Active: true, IsTradable: true,
 		Token:            "2705",
 		Symbol:           "PRAJIND-EQ",
 		Name:             "PRAJIND",
@@ -32,6 +33,7 @@ var canonicalInstrumentsDB = map[string]model.Instrument{
 		TickSize:         "5.000000",
 	},
 	"ETERNAL-EQ": {
+		Active: true, IsTradable: true,
 		Token:            "5097",
 		Symbol:           "ETERNAL-EQ",
 		Name:             "ETERNAL",
@@ -45,6 +47,7 @@ var canonicalInstrumentsDB = map[string]model.Instrument{
 		TickSize:         "5.000000",
 	},
 	"TMPV-EQ": {
+		Active: true, IsTradable: true,
 		Token:            "3456",
 		Symbol:           "TMPV-EQ",
 		Name:             "TMPV",
@@ -58,6 +61,7 @@ var canonicalInstrumentsDB = map[string]model.Instrument{
 		TickSize:         "5.000000",
 	},
 	"NIFTY24OCT25000CE": {
+		Active: true, IsTradable: true,
 		Token:            "NFO_25000_CE",
 		Symbol:           "NIFTY24OCT25000CE",
 		Name:             "NIFTY",
@@ -71,6 +75,7 @@ var canonicalInstrumentsDB = map[string]model.Instrument{
 		TickSize:         "5.000000",
 	},
 	"BANKNIFTY24OCT50000PE": {
+		Active: true, IsTradable: true,
 		Token:            "NFO_50000_PE",
 		Symbol:           "BANKNIFTY24OCT50000PE",
 		Name:             "BANKNIFTY",
