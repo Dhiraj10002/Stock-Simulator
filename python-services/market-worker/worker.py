@@ -504,6 +504,23 @@ def broker_call(call):
             BROKER_REST_LAST_CALL = time.monotonic()
 
 
+def broker_request(method: str, *args, api=None):
+    """Resolve the shared session at request time, including after REST expiry."""
+    def request():
+        current = api if api is not None else smart_api_session()[0]
+        result = getattr(current, method)(*args)
+        if isinstance(result, dict) and result.get('errorcode') in {'AG8001', 'AG8002', 'AG8003', 'AB1010', 'AB1011'}:
+            global GLOBAL_SMART_API, SMART_API_SESSION, SMART_API_SESSION_EXPIRES
+            with SMART_API_SESSION_LOCK:
+                if current is GLOBAL_SMART_API:
+                    GLOBAL_SMART_API = None
+                    SMART_API_SESSION = None
+                    SMART_API_SESSION_EXPIRES = 0
+            raise RuntimeError('Angel One session expired; renewal queued for next request')
+        return result
+    return broker_call(request)
+
+
 def fetch_full_snapshots(api, subscriptions) -> dict:
     groups = {}
     expected = set()
@@ -512,7 +529,7 @@ def fetch_full_snapshots(api, subscriptions) -> dict:
         expected.add((item.exchange_segment, item.token))
     if not groups:
         return {}
-    result = broker_call(lambda: api.getMarketData('FULL', groups))
+    result = broker_request('getMarketData', 'FULL', groups, api=api)
     if not isinstance(result, dict) or result.get('status') is not True:
         # Never print a raw broker response: it can contain private session data.
         print(f'market worker: FULL snapshot request rejected; requested={len(expected)}', flush=True)
@@ -559,7 +576,13 @@ def normalize_broker_candles(rows, now: datetime) -> list[dict]:
     return [candles[t] for t in sorted(candles, reverse=True)]
 
 
-def backfill_history(writer, api, subscription, interval: str) -> bool:
+def history_state(writer, subscription, interval, state):
+    writer.client.hset(f'market:history:status:{subscription.symbol}:{interval}', mapping={
+        'state': state, 'attempted_at': datetime.now(timezone.utc).isoformat()})
+    writer.client.expire(f'market:history:status:{subscription.symbol}:{interval}', 300)
+
+
+def backfill_history(writer, api, subscription, interval: str, still_current=None) -> bool:
     if writer.feed_mode != 'live' or interval not in HISTORY_INTERVALS:
         return False
     now = datetime.now(timezone.utc)
@@ -567,15 +590,25 @@ def backfill_history(writer, api, subscription, interval: str) -> bool:
     params = {'exchange': subscription.exchange_segment, 'symboltoken': subscription.token,
               'interval': interval, 'fromdate': (local_now - timedelta(days=HISTORY_INTERVALS[interval])).strftime('%Y-%m-%d %H:%M'),
               'todate': local_now.strftime('%Y-%m-%d %H:%M')}
-    result = broker_call(lambda: api.getCandleData(params))
+    history_state(writer, subscription, interval, 'PENDING')
+    try:
+        result = broker_request('getCandleData', params, api=api)
+    except Exception:
+        history_state(writer, subscription, interval, 'ERROR')
+        raise
     if not isinstance(result, dict) or result.get('status') is not True:
+        history_state(writer, subscription, interval, 'REJECTED')
         return False
     candles = normalize_broker_candles(result.get('data') or [], now)
     if not candles:
+        history_state(writer, subscription, interval, 'EMPTY')
         return False
     symbol = subscription.symbol
     key = f'market:history:{symbol}' if interval == 'ONE_MINUTE' else f'market:history:{symbol}:{interval}'
     with writer.history_lock:
+        if still_current is not None and not still_current():
+            history_state(writer, subscription, interval, 'IDENTITY_CHANGED')
+            return False
         # Merge at commit time, preserving newer stream buckets received during REST.
         merged = {c['timestamp']: c for c in candles}
         for raw in writer.client.lrange(key, 0, writer.history_max_items - 1):
@@ -591,6 +624,7 @@ def backfill_history(writer, api, subscription, interval: str) -> bool:
             pipe.rpush(key, *[json.dumps(merged[t]) for t in newest])
             pipe.expire(key, writer.history_ttl)
             pipe.execute()
+    history_state(writer, subscription, interval, 'READY')
     return True
 
 
@@ -604,13 +638,15 @@ def history_demand_loop(store, writer, api, stopped):
             requests.sort(key=lambda request: attempts.get(request.decode() if isinstance(request, bytes) else request, 0))
             for request in requests:
                 request = request.decode() if isinstance(request, bytes) else request
-                if time.monotonic() - attempts.get(request, 0) < 60:
+                if request in attempts and time.monotonic() - attempts[request] < 30:
                     continue
                 symbol, interval = request.rsplit('|', 1)
                 attempts[request] = time.monotonic()
                 subscriptions = store._build_subscriptions(store._rows, [symbol])
                 if subscriptions and interval in HISTORY_INTERVALS:
-                    backfill_history(writer, api, subscriptions[0], interval)
+                    epoch = store.canonical_epoch()
+                    backfill_history(writer, api, subscriptions[0], interval,
+                                     still_current=lambda: store.canonical_epoch() == epoch)
                     break
             # Bound cooldown memory to the active demand set.
             active = {r.decode() if isinstance(r, bytes) else r for r in requests}
@@ -640,9 +676,9 @@ def fetch_quote_for_symbol(symbol: str) -> dict[str, Any] | None:
         exch = info.get("exch_seg") or "NSE"
         inst_type = info.get("instrumenttype") or ""
 
-    if mode == "live" and GLOBAL_SMART_API and token:
+    if mode == "live" and token:
         try:
-            data = fetch_full_snapshot(GLOBAL_SMART_API, exch, str(token))
+            data = fetch_full_snapshot(None, exch, str(token))
             if GLOBAL_TOKEN_MAP is not token_map:
                 # Provider tokens can be reused after canonical activation.
                 # Never assign an in-flight response using the previous identity.
@@ -1666,6 +1702,44 @@ def refresh_daily(store: InstrumentStore, control: FeedControl, client: Any = No
             print(f"market worker: reconciliation state update failed: {error}", flush=True)
 
 
+def recover_quote_snapshots(store, writer, attempts, epoch):
+    """Recover exact demanded identities without waiting for a WebSocket tick."""
+    active = store.demanded_subscriptions(writer.client)
+    active_symbols = {item.symbol for item in active}
+    for symbol in list(attempts):
+        if symbol not in active_symbols:
+            attempts.pop(symbol, None)
+    pending = []
+    # New/cold contracts first; repeated base-universe polling cannot starve them.
+    for item in sorted(active, key=lambda item: attempts.get(item.symbol, -1)):
+        if item.symbol in attempts and time.monotonic() - attempts[item.symbol] < 10:
+            continue
+        stamp = broker_quote_time(writer.client.hget(f'market:quote:{item.symbol}', 'updated_at'))
+        if stamp and 0 <= (datetime.now(timezone.utc) - stamp).total_seconds() < 45:
+            continue
+        attempts[item.symbol] = time.monotonic()
+        pending.append(item)
+        if len(pending) == 50:
+            break
+    snapshots = fetch_full_snapshots(None, pending)
+    if store.canonical_epoch() != epoch:
+        return False
+    for item in pending:
+        data = snapshots.get((item.exchange_segment, item.token))
+        stamp = full_snapshot_time(data) if data else None
+        price = rupees_to_paise(data.get('ltp')) if data else 0
+        if data and stamp and price > 0:
+            writer.write(item, price, integer(data.get('tradeVolume')), source='angelone_live',
+                         previous_close_paise=rupees_to_paise(data.get('close')), event_time=stamp,
+                         build_history=False, open_interest=integer(data.get('opnInterest')),
+                         market_fields=provider_market_fields(data),
+                         lower_circuit_paise=rupees_to_paise(data.get('lowerCircuit')),
+                         upper_circuit_paise=rupees_to_paise(data.get('upperCircuit')))
+        elif data:
+            print(f'market worker: FULL snapshot discarded; positive_price={price > 0} exchange_time={stamp is not None}', flush=True)
+    return True
+
+
 def run_feed(store: InstrumentStore, writer: QuoteWriter, control: FeedControl) -> bool:
     global GLOBAL_SMART_API, GLOBAL_WRITER
     if not store.master_version:
@@ -1693,46 +1767,15 @@ def run_feed(store: InstrumentStore, writer: QuoteWriter, control: FeedControl) 
 
     def demand_loop():
         while not stopped.wait(2):
-            if not connected.is_set():
-                continue
             try:
                 if store.canonical_epoch() != master_epoch:
                     control.reconnect("canonical master changed during feed")
                     return
-                sync_demand_subscriptions(store, writer.client, websocket)
-                # Up to 50 exact identities per FULL request, across all segments.
-                pending = []
-                active = store.subscriptions()
-                active_symbols = {item.symbol for item in active}
-                for symbol in list(snapshot_attempts):
-                    if symbol not in active_symbols:
-                        snapshot_attempts.pop(symbol, None)
-                for item in active:
-                    if time.monotonic() - snapshot_attempts.get(item.symbol, 0) < 60:
-                        continue
-                    updated = writer.client.hget(f"market:quote:{item.symbol}", "updated_at")
-                    stamp = broker_quote_time(updated)
-                    if stamp and (datetime.now(timezone.utc) - stamp).total_seconds() < 90:
-                        continue
-                    snapshot_attempts[item.symbol] = time.monotonic()
-                    pending.append(item)
-                    if len(pending) == 50:
-                        break
-                snapshots = fetch_full_snapshots(smart_api, pending)
-                if store.canonical_epoch() != master_epoch:
+                if connected.is_set():
+                    sync_demand_subscriptions(store, writer.client, websocket)
+                if not recover_quote_snapshots(store, writer, snapshot_attempts, master_epoch):
                     control.reconnect("canonical master changed during snapshot request")
                     return
-                for item in pending:
-                    data = snapshots.get((item.exchange_segment, item.token))
-                    stamp = full_snapshot_time(data) if data else None
-                    price = rupees_to_paise(data.get("ltp")) if data else 0
-                    if data and stamp and price > 0:
-                        writer.write(item, rupees_to_paise(data.get("ltp")), integer(data.get("tradeVolume")),
-                                     source="angelone_live", previous_close_paise=rupees_to_paise(data.get("close")),
-                                     event_time=stamp, build_history=False, open_interest=integer(data.get("opnInterest")), market_fields=provider_market_fields(data),
-                                     lower_circuit_paise=rupees_to_paise(data.get("lowerCircuit")), upper_circuit_paise=rupees_to_paise(data.get("upperCircuit")))
-                    elif data:
-                        print(f'market worker: FULL snapshot discarded; positive_price={price > 0} exchange_time={stamp is not None}', flush=True)
             except Exception as error:
                 print(f"market worker: demand subscription refresh failed: {error}", flush=True)
 
@@ -1791,7 +1834,7 @@ def run_feed(store: InstrumentStore, writer: QuoteWriter, control: FeedControl) 
     websocket.on_error = on_error
     websocket.on_close = on_close
     threading.Thread(target=demand_loop, daemon=True).start()
-    threading.Thread(target=history_demand_loop, args=(store, writer, smart_api, stopped), daemon=True).start()
+    threading.Thread(target=history_demand_loop, args=(store, writer, None, stopped), daemon=True).start()
     try:
         websocket.connect()
     finally:

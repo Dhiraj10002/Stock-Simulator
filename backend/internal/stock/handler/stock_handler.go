@@ -53,22 +53,26 @@ func formatKiteDisplayName(symbol, expiry, strike, optionType string) (displayNa
 	// 2. Options: e.g. TCS29SEP261940CE, TCS27OCT262300CE, KEI27OCT264500PE
 	if m := optRegex.FindStringSubmatch(cleanSym); len(m) > 0 {
 		under = m[1]
-		month := m[3]
-		strikeVal := m[5]
 		oType := m[6]
-		return fmt.Sprintf("%s %s %s %s", under, month, strikeVal, oType), oType, under
+		// The optional year in a broker symbol is ambiguous: TCS26DEC1920PE
+		// can be misread as year 19, strike 20. The master strike is in rupees.
+		return instrumentService.FormatCanonicalDisplaySymbol(symbol, expiry, strike, oType, ""), oType, under
 	}
 
 	// 3. Spaced option e.g. "TCS 4150 CE"
 	if strings.Contains(cleanSym, " CE") || strings.Contains(cleanSym, " PE") {
 		parts := strings.Fields(cleanSym)
 		if len(parts) >= 3 {
-			month := "SEP"
-			monthRe := regexp.MustCompile(`(?i)[A-Z]{3}`)
-			if found := monthRe.FindString(expiry); len(found) == 3 {
-				month = strings.ToUpper(found)
+			month := ""
+			if date, err := instrumentService.ParseExpiryDate(expiry, calendar.Location()); err == nil {
+				month = strings.ToUpper(date.Format("Jan"))
 			}
-			return fmt.Sprintf("%s %s %s %s", parts[0], month, parts[1], parts[2]), parts[2], parts[0]
+			strikeValue := strike
+			if strikeValue == "" {
+				strikeValue = parts[1]
+			}
+			label := strings.Join(strings.Fields(fmt.Sprintf("%s %s %s %s", parts[0], month, strikeValue, parts[2])), " ")
+			return label, parts[2], parts[0]
 		}
 	}
 

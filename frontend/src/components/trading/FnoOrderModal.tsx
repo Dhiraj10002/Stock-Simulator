@@ -6,6 +6,7 @@ import { Zap, X, CheckCircle2, AlertCircle } from "lucide-react";
 import { formatPaise } from "@/lib/format";
 import { API_URL, apiFetch } from "@/lib/api";
 import { useAuthToken } from "@/hooks/useAuthToken";
+import { useAccountWallet } from "@/hooks/useAccountWallet";
 import { validLot } from "@/lib/strategyExecution";
 import { dayMovement } from "@/lib/marketDisplay";
 import { quoteLabel } from "@/lib/marketData";
@@ -34,7 +35,7 @@ export default function FnoOrderModal({
   const queryClient = useQueryClient();
 
   const [side, setSide] = useState<"BUY" | "SELL">(initialSide);
-  const [product, setProduct] = useState<"FNO" | "INTRADAY">("FNO");
+  const product = "FNO";
   const [orderType, setOrderType] = useState<"MARKET" | "LIMIT">("MARKET");
   const [lots, setLots] = useState<number>(1);
   const [limitPrice, setLimitPrice] = useState<string>("");
@@ -46,6 +47,7 @@ export default function FnoOrderModal({
   } | null>(null);
 
   const token = useAuthToken();
+  const wallet = useAccountWallet();
 
   // Active targeted WebSocket subscription while modal is open
   useTargetedSubscription(
@@ -130,21 +132,25 @@ export default function FnoOrderModal({
     sufficient_funds: boolean;
   }>({
     queryKey: ["order-preview", token, previewBody],
-    queryFn: () =>
+    queryFn: ({ signal }) =>
       apiFetch("/orders/preview", {
         method: "POST",
         body: JSON.stringify(previewBody),
+        signal: AbortSignal.any([signal, AbortSignal.timeout(12000)]),
       }),
     enabled: isOpen && !!instrument && !!token && validQuantity && !submitted,
     refetchInterval: 5000,
     retry: false,
   });
-  const validPreview =
-    !preview.isError && !preview.isFetching ? preview.data : undefined;
+  // Keep the last server estimate visible during polling, but block submission
+  // until the refresh finishes. A failed request invalidates the estimate.
+  const validPreview = !preview.isError ? preview.data : undefined;
   const requiredMarginPaise = validPreview?.required_funds_paise;
-  const availableBalancePaise = validPreview?.available_balance_paise;
+  const availableBalancePaise = wallet.data?.available_balance_paise;
   const hasSufficientMargin =
     validPreview?.sufficient_funds === true &&
+    !preview.isFetching &&
+    !!wallet.data &&
     ["LIVE", "SIMULATED"].includes(quoteLabel(effectiveQuote));
   if (!isOpen || !instrument) return null;
 
@@ -336,7 +342,6 @@ export default function FnoOrderModal({
               </label>
               <div className="grid grid-cols-2 gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
                 <button
-                  onClick={() => setProduct("FNO")}
                   className={`py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
                     product === "FNO"
                       ? "bg-white dark:bg-slate-700 text-cyan-700 dark:text-cyan-300 shadow-xs"
@@ -346,12 +351,9 @@ export default function FnoOrderModal({
                   NRML
                 </button>
                 <button
-                  onClick={() => setProduct("INTRADAY")}
-                  className={`py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
-                    product === "INTRADAY"
-                      ? "bg-white dark:bg-slate-700 text-cyan-700 dark:text-cyan-300 shadow-xs"
-                      : "text-slate-500 hover:text-slate-800 dark:hover:text-white"
-                  }`}
+                  disabled
+                  title="Derivative intraday accounting is not supported yet. Use NRML for F&O paper orders."
+                  className="py-1.5 rounded-md text-xs font-bold text-slate-400 cursor-not-allowed"
                 >
                   MIS (Intraday)
                 </button>
@@ -460,14 +462,14 @@ export default function FnoOrderModal({
               </span>
             </div>
             <div className="flex justify-between items-center text-slate-500 dark:text-slate-400 text-[11px]">
-              <span>Available Margin:</span>
+              <span>Available virtual funds:</span>
               <span className="font-bold text-emerald-600 dark:text-emerald-400 font-tabular">
                 {formatPaise(availableBalancePaise)}
               </span>
             </div>
             <div className="flex justify-between items-center text-slate-400 text-[10px] pt-1 border-t border-slate-200/60 dark:border-slate-700/40">
-              <span>Simulated Brokerage:</span>
-              <span className="font-mono">₹20.00 (Paper Desk)</span>
+              <span>Paper fees:</span>
+              <span className="font-mono">Not charged by simulator</span>
             </div>
           </div>
 
@@ -498,10 +500,23 @@ export default function FnoOrderModal({
           <p className="text-xs text-slate-500" role="status">
             {preview.isError
               ? `Preview unavailable: ${preview.error.message}`
-              : preview.isFetching
-                ? "Checking price and funds…"
-                : "Server estimate; price and funds are rechecked at execution."}
+              : !token
+                ? "Sign in to use your virtual funds."
+                : preview.isFetching
+                  ? validPreview
+                    ? "Refreshing server estimate…"
+                    : "Checking price and funds…"
+                  : "Server estimate; price and funds are rechecked at execution."}
           </p>
+          {wallet.isError && (
+            <p
+              role="alert"
+              className="text-xs text-amber-700 dark:text-amber-300"
+            >
+              Virtual funds could not be refreshed. Retry when the account
+              service recovers.
+            </p>
+          )}
           {submissionBlock && (
             <p
               role="alert"

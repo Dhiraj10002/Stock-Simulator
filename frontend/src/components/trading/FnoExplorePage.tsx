@@ -3,10 +3,18 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowRight, RefreshCw, Search, Sparkles, TrendingUp, Wallet } from "lucide-react";
+import {
+  ArrowRight,
+  RefreshCw,
+  Search,
+  Sparkles,
+  TrendingUp,
+  Wallet,
+} from "lucide-react";
 import { publicFetch, apiFetch } from "@/lib/api";
 import { useAuthToken } from "@/hooks/useAuthToken";
 import { useAccountWallet } from "@/hooks/useAccountWallet";
+import { isDerivativePosition } from "@/lib/fnoExplore";
 import { formatPaise } from "@/lib/format";
 import { feedLabel } from "@/lib/marketDisplay";
 import {
@@ -17,7 +25,6 @@ import {
   futuresExpiry,
   futuresTradeBlock,
   futuresUnderlying,
-  isDerivativePosition,
   sortedFutures,
   parseFuturesCatalog,
   type FuturesFilters,
@@ -178,18 +185,6 @@ export default function FnoExplorePage({
   });
   const [page, setPage] = useState(0);
   const [browseOpen, setBrowseOpen] = useState(false);
-  const [showCatalog, setShowCatalog] = useState(false);
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const params = new URLSearchParams(window.location.search);
-      if (
-        params.get("catalog") === "1" ||
-        (window as unknown as { __E2E_CATALOG__?: boolean }).__E2E_CATALOG__
-      ) {
-        setShowCatalog(true);
-      }
-    }
-  }, []);
   const [now, setNow] = useState(0);
   const [ticket, setTicket] = useState<{
     instrument: Instrument;
@@ -300,11 +295,6 @@ export default function FnoExplorePage({
     .filter(isDerivativePosition)
     .filter((p) => p.quantity !== 0);
   const pnl = account ? derivativePnl(account.positions) : undefined;
-  const blocked = positions?.every((p) =>
-    Number.isFinite(p.margin_blocked_paise),
-  )
-    ? positions.reduce((total, p) => total + p.margin_blocked_paise!, 0)
-    : undefined;
   const update = (patch: Partial<FuturesFilters>) => {
     setFilters((previous) => ({ ...previous, ...patch }));
     setPage(0);
@@ -342,22 +332,17 @@ export default function FnoExplorePage({
           now={now}
           sessionLive={confirmed}
           onTrade={(underlying) => {
-            if (showCatalog) {
-              setBrowseOpen(true);
-              update({
-                kind: "FUTSTK",
-                underlying,
-                exchange: "",
-                expiry: "near",
-                search: "",
-              });
-              document
-                .getElementById("current-futures")
-                ?.scrollIntoView({ behavior: "smooth", block: "start" });
-            } else {
-              const sym = underlying.replace(/-EQ$/, "");
-              window.location.href = `/stocks/${encodeURIComponent(sym)}`;
-            }
+            setBrowseOpen(true);
+            update({
+              kind: "FUTSTK",
+              underlying,
+              exchange: "",
+              expiry: "near",
+              search: "",
+            });
+            document
+              .getElementById("current-futures")
+              ?.scrollIntoView({ behavior: "smooth", block: "start" });
           }}
         />
         <TopIndexFutures
@@ -367,304 +352,305 @@ export default function FnoExplorePage({
           status={status}
           onOrder={startOrder}
         />
-        {showCatalog && (
-          <>
-            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200/60 dark:border-slate-800/60 pt-4">
-              <button
-                aria-expanded={browseOpen}
-                aria-controls="current-futures"
-                onClick={() => setBrowseOpen(!browseOpen)}
-                className="text-xs text-slate-400 hover:text-cyan-600 dark:hover:text-cyan-400 font-semibold transition-colors"
-              >
-                {browseOpen ? "Hide futures browser" : "Browse all futures"}
-              </button>
-            </div>
-            <section
-              hidden={!browseOpen}
-              id="current-futures"
-              aria-label="Futures market"
-              className="min-w-0 scroll-mt-24 space-y-4"
+        <>
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200/60 dark:border-slate-800/60 pt-4">
+            <button
+              aria-expanded={browseOpen}
+              aria-controls="current-futures"
+              onClick={() => setBrowseOpen(!browseOpen)}
+              className="text-xs text-slate-400 hover:text-cyan-600 dark:hover:text-cyan-400 font-semibold transition-colors"
             >
-          <div className={`${panel} p-4 sm:p-5`}>
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-bold">
-                  {filters.kind === "FUTIDX"
-                    ? "Current index futures"
-                    : filters.kind === "FUTSTK"
-                      ? "Current stock futures"
-                      : "Current futures"}
-                </h2>
-                <p className={`mt-1 text-sm ${muted}`}>
-                  Explore current contracts and trade in canonical lots.
-                </p>
-              </div>
-              <button
-                disabled={refreshing}
-                onClick={refresh}
-                className={`${button} flex items-center gap-2`}
-              >
-                <RefreshCw
-                  aria-hidden
-                  className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`}
-                />
-                {refreshing ? "Refreshing…" : "Refresh data"}
-              </button>
-            </div>
-            <div
-              role="status"
-              className={`mt-3 rounded-xl border px-3 py-2 text-xs ${confirmed ? "border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200" : "border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200"}`}
-            >
-              <strong>{feedLabel(status, now)}</strong>
-              <span className="block mt-1">
-                {!status
-                  ? "Exchange status cannot be confirmed. Paper trading is paused."
-                  : status.status !== "OPEN" || !status.is_open
-                    ? "Exchange session closed. Last available quotes may be shown; paper trading is paused."
-                    : !confirmed
-                      ? "Live provider connection required. Paper trading is paused."
-                      : "Prices update by stream and refresh every 10 seconds. Each order needs a fresh contract quote."}
-              </span>
-            </div>
-            <div
-              className="mt-3 flex flex-wrap gap-2"
-              role="group"
-              aria-label="Futures category"
-            >
-              {(
-                [
-                  ["FUTIDX", "Index futures"],
-                  ["FUTSTK", "Stock futures"],
-                  ["all", "All futures"],
-                ] as const
-              ).map(([kind, label]) => (
+              {browseOpen ? "Hide futures browser" : "Browse all futures"}
+            </button>
+          </div>
+          <section
+            hidden={!browseOpen}
+            id="current-futures"
+            aria-label="Futures market"
+            className="min-w-0 scroll-mt-24 space-y-4"
+          >
+            <div className={`${panel} p-4 sm:p-5`}>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-bold">
+                    {filters.kind === "FUTIDX"
+                      ? "Current index futures"
+                      : filters.kind === "FUTSTK"
+                        ? "Current stock futures"
+                        : "Current futures"}
+                  </h2>
+                  <p className={`mt-1 text-sm ${muted}`}>
+                    Explore current contracts and trade in canonical lots.
+                  </p>
+                </div>
                 <button
-                  key={kind}
-                  aria-pressed={filters.kind === kind}
+                  disabled={refreshing}
+                  onClick={refresh}
+                  className={`${button} flex items-center gap-2`}
+                >
+                  <RefreshCw
+                    aria-hidden
+                    className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`}
+                  />
+                  {refreshing ? "Refreshing…" : "Refresh data"}
+                </button>
+              </div>
+              <div
+                role="status"
+                className={`mt-3 rounded-xl border px-3 py-2 text-xs ${confirmed ? "border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200" : "border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200"}`}
+              >
+                <strong>{feedLabel(status, now)}</strong>
+                <span className="block mt-1">
+                  {!status
+                    ? "Exchange status cannot be confirmed. Paper trading is paused."
+                    : status.status !== "OPEN" || !status.is_open
+                      ? "Exchange session closed. Last available quotes may be shown; paper trading is paused."
+                      : !confirmed
+                        ? "Live provider connection required. Paper trading is paused."
+                        : "Prices update by stream and refresh every 10 seconds. Each order needs a fresh contract quote."}
+                </span>
+              </div>
+              <div
+                className="mt-3 flex flex-wrap gap-2"
+                role="group"
+                aria-label="Futures category"
+              >
+                {(
+                  [
+                    ["FUTIDX", "Index futures"],
+                    ["FUTSTK", "Stock futures"],
+                    ["all", "All futures"],
+                  ] as const
+                ).map(([kind, label]) => (
+                  <button
+                    key={kind}
+                    aria-pressed={filters.kind === kind}
+                    onClick={() =>
+                      update({
+                        kind,
+                        underlying: "",
+                        exchange: "",
+                        expiry: "near",
+                        search: "",
+                      })
+                    }
+                    className={`${button} ${filters.kind === kind ? "border-cyan-700 bg-cyan-700 text-white hover:bg-cyan-800 dark:border-cyan-500 dark:bg-cyan-700" : ""}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <label
+                  className={`min-w-0 text-xs font-semibold sm:col-span-2 ${muted}`}
+                >
+                  Search contracts
+                  <div className="relative">
+                    <Search
+                      aria-hidden
+                      className="absolute left-3 top-4 h-4 w-4"
+                    />
+                    <input
+                      aria-label="Search futures contracts"
+                      value={filters.search}
+                      onChange={(e) => update({ search: e.target.value })}
+                      placeholder="Search symbol or underlying"
+                      className={`${input} pl-9`}
+                    />
+                  </div>
+                </label>
+                <label className={`min-w-0 text-xs font-semibold ${muted}`}>
+                  Exchange
+                  <select
+                    aria-label="Futures exchange"
+                    value={filters.exchange}
+                    onChange={(e) =>
+                      update({
+                        exchange: e.target.value,
+                        underlying: "",
+                        expiry: "near",
+                      })
+                    }
+                    className={input}
+                  >
+                    <option value="">All exchanges</option>
+                    {exchanges.map((value) => (
+                      <option key={value}>{value}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className={`min-w-0 text-xs font-semibold ${muted}`}>
+                  Expiry
+                  <select
+                    aria-label="Futures expiry"
+                    value={filters.expiry}
+                    onChange={(e) => update({ expiry: e.target.value })}
+                    className={input}
+                  >
+                    <option value="near">Nearest per underlying</option>
+                    <option value="">All current expiries</option>
+                    {expiries.map((value) => (
+                      <option key={value} value={String(value)}>
+                        {new Date(value).toLocaleDateString("en-IN", {
+                          timeZone: "Asia/Kolkata",
+                          day: "2-digit",
+                          month: "short",
+                          year: "numeric",
+                        })}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label
+                  className={`min-w-0 text-xs font-semibold sm:col-span-2 ${muted}`}
+                >
+                  Underlying
+                  <select
+                    aria-label="Futures underlying"
+                    value={filters.underlying}
+                    onChange={(e) =>
+                      update({ underlying: e.target.value, expiry: "near" })
+                    }
+                    className={input}
+                  >
+                    <option value="">All underlyings</option>
+                    {underlyings.map((value) => (
+                      <option key={value}>{value}</option>
+                    ))}
+                  </select>
+                </label>
+                <div className="flex items-end sm:col-span-2">
+                  <p className={`pb-3 text-sm ${muted}`}>
+                    {filtered.length} matching contracts · {contracts.length} in
+                    current master
+                  </p>
+                </div>
+              </div>
+            </div>
+            {catalog.isError ? (
+              <div
+                role="alert"
+                className={`${panel} p-6 text-amber-800 dark:text-amber-300`}
+              >
+                <p>
+                  Futures catalog unavailable. Check backend and instrument
+                  master health.
+                </p>
+                <button
+                  className={`${button} mt-4`}
+                  onClick={() => catalog.refetch()}
+                >
+                  Retry futures catalog
+                </button>
+              </div>
+            ) : catalog.isPending ? (
+              <p role="status" className={muted}>
+                Loading current futures contracts…
+              </p>
+            ) : !visible.length ? (
+              <div className={`${panel} p-8 text-center`}>
+                <h3 className="text-lg font-semibold">
+                  {contracts.length
+                    ? "No matching futures"
+                    : "No current futures in the instrument master"}
+                </h3>
+                <p className={`mt-2 text-sm ${muted}`}>
+                  {contracts.length
+                    ? "Adjust the search, category, exchange or expiry."
+                    : "Wait for the instrument sync, then refresh the catalog."}
+                </p>
+                <button
+                  className={`${button} mt-4`}
                   onClick={() =>
                     update({
-                      kind,
-                      underlying: "",
-                      exchange: "",
-                      expiry: "near",
+                      kind: "all",
                       search: "",
-                    })
-                  }
-                  className={`${button} ${filters.kind === kind ? "border-cyan-700 bg-cyan-700 text-white hover:bg-cyan-800 dark:border-cyan-500 dark:bg-cyan-700" : ""}`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <label
-                className={`min-w-0 text-xs font-semibold sm:col-span-2 ${muted}`}
-              >
-                Search contracts
-                <div className="relative">
-                  <Search
-                    aria-hidden
-                    className="absolute left-3 top-4 h-4 w-4"
-                  />
-                  <input
-                    aria-label="Search futures contracts"
-                    value={filters.search}
-                    onChange={(e) => update({ search: e.target.value })}
-                    placeholder="Search symbol or underlying"
-                    className={`${input} pl-9`}
-                  />
-                </div>
-              </label>
-              <label className={`min-w-0 text-xs font-semibold ${muted}`}>
-                Exchange
-                <select
-                  aria-label="Futures exchange"
-                  value={filters.exchange}
-                  onChange={(e) =>
-                    update({
-                      exchange: e.target.value,
+                      exchange: "",
                       underlying: "",
-                      expiry: "near",
+                      expiry: "",
                     })
                   }
-                  className={input}
                 >
-                  <option value="">All exchanges</option>
-                  {exchanges.map((value) => (
-                    <option key={value}>{value}</option>
-                  ))}
-                </select>
-              </label>
-              <label className={`min-w-0 text-xs font-semibold ${muted}`}>
-                Expiry
-                <select
-                  aria-label="Futures expiry"
-                  value={filters.expiry}
-                  onChange={(e) => update({ expiry: e.target.value })}
-                  className={input}
-                >
-                  <option value="near">Nearest per underlying</option>
-                  <option value="">All current expiries</option>
-                  {expiries.map((value) => (
-                    <option key={value} value={String(value)}>
-                      {new Date(value).toLocaleDateString("en-IN", {
-                        timeZone: "Asia/Kolkata",
-                        day: "2-digit",
-                        month: "short",
-                        year: "numeric",
-                      })}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label
-                className={`min-w-0 text-xs font-semibold sm:col-span-2 ${muted}`}
-              >
-                Underlying
-                <select
-                  aria-label="Futures underlying"
-                  value={filters.underlying}
-                  onChange={(e) =>
-                    update({ underlying: e.target.value, expiry: "near" })
-                  }
-                  className={input}
-                >
-                  <option value="">All underlyings</option>
-                  {underlyings.map((value) => (
-                    <option key={value}>{value}</option>
-                  ))}
-                </select>
-              </label>
-              <div className="flex items-end sm:col-span-2">
-                <p className={`pb-3 text-sm ${muted}`}>
-                  {filtered.length} matching contracts · {contracts.length} in
-                  current master
-                </p>
+                  Reset filters
+                </button>
               </div>
-            </div>
-          </div>
-          {catalog.isError ? (
-            <div
-              role="alert"
-              className={`${panel} p-6 text-amber-800 dark:text-amber-300`}
-            >
-              <p>
-                Futures catalog unavailable. Check backend and instrument master
-                health.
-              </p>
-              <button
-                className={`${button} mt-4`}
-                onClick={() => catalog.refetch()}
-              >
-                Retry futures catalog
-              </button>
-            </div>
-          ) : catalog.isPending ? (
-            <p role="status" className={muted}>
-              Loading current futures contracts…
-            </p>
-          ) : !visible.length ? (
-            <div className={`${panel} p-8 text-center`}>
-              <h3 className="text-lg font-semibold">
-                {contracts.length
-                  ? "No matching futures"
-                  : "No current futures in the instrument master"}
-              </h3>
-              <p className={`mt-2 text-sm ${muted}`}>
-                {contracts.length
-                  ? "Adjust the search, category, exchange or expiry."
-                  : "Wait for the instrument sync, then refresh the catalog."}
-              </p>
-              <button
-                className={`${button} mt-4`}
-                onClick={() =>
-                  update({
-                    kind: "all",
-                    search: "",
-                    exchange: "",
-                    underlying: "",
-                    expiry: "",
-                  })
-                }
-              >
-                Reset filters
-              </button>
-            </div>
-          ) : (
-            <>
-              {quotes.isError && (
-                <p
-                  role="alert"
-                  className="rounded-xl bg-amber-50 p-4 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-200"
-                >
-                  Quote refresh failed. Retained prices are last available;
-                  execution is paused until recovery.
-                </p>
-              )}
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                {visible.map((instrument) => {
-                  const quote = displayQuote(
-                    quotes.data?.[instrument.symbol],
-                    stream[instrument.symbol],
-                    quotes.isError,
-                  );
-                  return (
-                    <FutureCard
-                      key={`${instrument.exchange}:${instrument.token}`}
-                      instrument={instrument}
-                      quote={quote}
-                      now={now}
-                      statusConfirmed={confirmed}
-                      block={futuresTradeBlock(
-                        instrument,
-                        quote,
-                        token,
-                        status,
-                        now,
-                      )}
-                      onOrder={startOrder}
-                    />
-                  );
-                })}
-              </div>
-              <nav
-                aria-label="Futures pagination"
-                className="flex flex-wrap items-center justify-between gap-3 text-sm"
-              >
-                <span className={muted}>
-                  Showing {currentPage * pageSize + 1}–
-                  {Math.min((currentPage + 1) * pageSize, filtered.length)} of{" "}
-                  {filtered.length}
-                </span>
-                <div className="flex items-center gap-3">
-                  <button
-                    className={button}
-                    disabled={currentPage === 0}
-                    onClick={() => setPage(currentPage - 1)}
+            ) : (
+              <>
+                {quotes.isError && (
+                  <p
+                    role="alert"
+                    className="rounded-xl bg-amber-50 p-4 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-200"
                   >
-                    Previous
-                  </button>
-                  <span>
-                    {currentPage + 1} / {pageCount}
-                  </span>
-                  <button
-                    className={button}
-                    disabled={currentPage + 1 >= pageCount}
-                    onClick={() => setPage(currentPage + 1)}
-                  >
-                    Next
-                  </button>
+                    Quote refresh failed. Retained prices are last available;
+                    execution is paused until recovery.
+                  </p>
+                )}
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  {visible.map((instrument) => {
+                    const quote = displayQuote(
+                      quotes.data?.[instrument.symbol],
+                      stream[instrument.symbol],
+                      quotes.isError,
+                    );
+                    return (
+                      <FutureCard
+                        key={`${instrument.exchange}:${instrument.token}`}
+                        instrument={instrument}
+                        quote={quote}
+                        now={now}
+                        statusConfirmed={confirmed}
+                        block={futuresTradeBlock(
+                          instrument,
+                          quote,
+                          token,
+                          status,
+                          now,
+                        )}
+                        onOrder={startOrder}
+                      />
+                    );
+                  })}
                 </div>
-              </nav>
-            </>
-          )}
-        </section>
-      </>
-    )}
-  </div>
+                <nav
+                  aria-label="Futures pagination"
+                  className="flex flex-wrap items-center justify-between gap-3 text-sm"
+                >
+                  <span className={muted}>
+                    Showing {currentPage * pageSize + 1}–
+                    {Math.min((currentPage + 1) * pageSize, filtered.length)} of{" "}
+                    {filtered.length}
+                  </span>
+                  <div className="flex items-center gap-3">
+                    <button
+                      className={button}
+                      disabled={currentPage === 0}
+                      onClick={() => setPage(currentPage - 1)}
+                    >
+                      Previous
+                    </button>
+                    <span>
+                      {currentPage + 1} / {pageCount}
+                    </span>
+                    <button
+                      className={button}
+                      disabled={currentPage + 1 >= pageCount}
+                      onClick={() => setPage(currentPage + 1)}
+                    >
+                      Next
+                    </button>
+                  </div>
+                </nav>
+              </>
+            )}
+          </section>
+        </>
+      </div>
       <aside className="min-w-0 space-y-5 lg:col-span-4 xl:col-span-3">
         {/* F&O Available Margin Card (Screenshot 2) */}
-        <section aria-label="F&O margin summary" className={`${panel} p-5 space-y-4`}>
+        <section
+          aria-label="F&O margin summary"
+          className={`${panel} p-5 space-y-4`}
+        >
           <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
             <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
               <Wallet className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
@@ -691,13 +677,17 @@ export default function FnoExplorePage({
           {/* Quick Stats Box (Screenshot 2) */}
           <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60 space-y-2 text-xs">
             <div className="flex justify-between items-center">
-              <span className="text-slate-500 dark:text-slate-400">Active F&O Contracts:</span>
+              <span className="text-slate-500 dark:text-slate-400">
+                Active F&O Contracts:
+              </span>
               <span className="font-bold text-slate-900 dark:text-slate-100">
                 {positions ? `${positions.length} Open` : "Unavailable"}
               </span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-slate-500 dark:text-slate-400">Unrealized F&O P&L:</span>
+              <span className="text-slate-500 dark:text-slate-400">
+                Unrealized F&O P&L:
+              </span>
               <span
                 className={`font-bold font-tabular ${
                   (pnl ?? 0) >= 0
@@ -709,7 +699,9 @@ export default function FnoExplorePage({
               </span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-slate-500 dark:text-slate-400">Span + Exposure:</span>
+              <span className="text-slate-500 dark:text-slate-400">
+                Span + Exposure:
+              </span>
               <span className="font-mono font-semibold text-slate-700 dark:text-slate-300">
                 {account ? "₹0.00" : "Unavailable"}
               </span>
@@ -751,7 +743,9 @@ export default function FnoExplorePage({
             <span>Real-Time Greek Analytics</span>
           </div>
           <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
-            Delta, Theta, Gamma, and Vega calculations update dynamically using Black-Scholes formulas alongside live Put-Call Ratios and Max Pain strike analysis.
+            Delta, Theta, Gamma, and Vega calculations update dynamically using
+            Black-Scholes formulas alongside live Put-Call Ratios and Max Pain
+            strike analysis.
           </p>
         </div>
       </aside>

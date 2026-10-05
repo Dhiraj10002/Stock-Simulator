@@ -269,7 +269,7 @@ async function setup(
     }
     await route.fulfill({ headers, json: { success: true, data } });
   });
-  await page.goto("/options?catalog=1");
+  await page.goto("/options");
   await expect(
     page.getByRole("heading", { name: "Popular stocks", exact: true }),
   ).toBeVisible();
@@ -473,6 +473,82 @@ test("paper buy and sell use canonical lots, preserve pending and block invalid 
   expect(posts[1]).toMatchObject({ quantity: 225, side: "SELL" });
 });
 
+test("paper ticket retains virtual funds while preview refreshes and blocks failed estimates", async ({
+  page,
+}) => {
+  const { posts } = await setup(page);
+  let hold = false;
+  let release: (() => void) | undefined;
+  await page.route("**/api/v1/orders/preview", async (route) => {
+    const headers = {
+      "access-control-allow-origin": "http://127.0.0.1:3100",
+      "access-control-allow-methods": "POST,OPTIONS",
+      "access-control-allow-headers": "authorization,content-type",
+    };
+    if (route.request().method() === "OPTIONS") {
+      await route.fulfill({ status: 204, headers });
+      return;
+    }
+    if (hold) {
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      await route.fulfill({
+        status: 503,
+        headers,
+        json: { success: false, message: "Market quote is stale" },
+      });
+      return;
+    }
+    await route.fulfill({
+      headers,
+      json: {
+        success: true,
+        data: {
+          required_funds_paise: 10000000,
+          available_balance_paise: 90000000,
+          estimated_price_paise: 207640,
+          sufficient_funds: true,
+        },
+      },
+    });
+  });
+  await page
+    .getByRole("button", { name: "Stock futures", exact: true })
+    .click();
+  await card(page, "TCS27OCT2099FUT")
+    .getByRole("button", { name: "Buy TCS27OCT2099FUT", exact: true })
+    .click();
+  const ticket = page.getByRole("dialog", { name: "Paper order ticket" });
+  const submit = ticket.getByRole("button", {
+    name: "BUY 225 TCS27OCT2099FUT (1 LOT)",
+    exact: true,
+  });
+  await expect(submit).toBeEnabled();
+  hold = true;
+  await expect(
+    ticket.getByRole("button", { name: "MIS (Intraday)" }),
+  ).toBeDisabled();
+  await expect(
+    ticket.getByText("Not charged by simulator", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    ticket.getByText("Refreshing server estimate…", { exact: true }),
+  ).toBeVisible();
+  await expect(ticket.getByText("₹1,00,000.00", { exact: true })).toBeVisible();
+  await expect(ticket.getByText("₹9,00,000.00", { exact: true })).toBeVisible();
+  await expect(submit).toBeDisabled();
+  release?.();
+  await expect(
+    ticket.getByText("Preview unavailable: Market quote is stale", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(ticket.getByText("₹9,00,000.00", { exact: true })).toBeVisible();
+  await expect(submit).toBeDisabled();
+  expect(posts).toHaveLength(0);
+});
+
 test("mobile order ticket stays within viewport and pauses when exchange status fails", async ({
   page,
 }) => {
@@ -666,7 +742,9 @@ test("light/dark and mobile/tablet layouts have readable cards and no overlappin
         path: join(process.env.STOCK_UI_SCREENSHOTS!, "fno-mobile.png"),
         fullPage: true,
       });
-    await page.getByRole("button", { name: "View derivative positions" }).click();
+    await page
+      .getByRole("button", { name: "View derivative positions" })
+      .click();
     await expect(
       page.getByRole("heading", { name: "TCS27OCT2099FUT", exact: true }),
     ).toBeVisible();
