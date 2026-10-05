@@ -198,7 +198,6 @@ export default function FnoStockOverview({
         Number.isSafeInteger(i.lot_size) &&
         i.lot_size > 0,
     );
-  const coverage = stocks.filter((i) => display[i.symbol]).length;
 
   return (
     <div className="space-y-6">
@@ -338,10 +337,6 @@ export default function FnoStockOverview({
             </div>
           </div>
         </div>
-
-        <p className="text-xs text-slate-500 dark:text-slate-400">
-          {coverage} of {stocks.length} eligible equities have provider quotes.
-        </p>
 
         {catalog.isError ? (
           <p

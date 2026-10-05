@@ -91,3 +91,36 @@ class MarketRecoveryTest(unittest.TestCase):
             self.assertFalse(worker.backfill_history(writer, api, worker.Subscription('SENSEX', '99919000', 'BSE', 3), 'ONE_HOUR', still_current=lambda: False))
         client.pipeline.assert_not_called()
         self.assertEqual(client.hset.call_args.kwargs['mapping']['state'], 'IDENTITY_CHANGED')
+
+    def test_canonical_index_tokens_prioritized_in_live_and_non_live_modes(self):
+        conflicting_rows = [
+            {"token": "26000", "symbol": "NIFTY", "name": "NIFTY", "exch_seg": "NSE", "instrumenttype": "INDEX"},
+            {"token": "26009", "symbol": "BANKNIFTY", "name": "BANKNIFTY", "exch_seg": "NSE", "instrumenttype": "INDEX"},
+            {"token": "99926000", "symbol": "NIFTY 50", "name": "NIFTY", "exch_seg": "NSE", "instrumenttype": "INDEX"},
+            {"token": "99926009", "symbol": "NIFTY BANK", "name": "BANKNIFTY", "exch_seg": "NSE", "instrumenttype": "INDEX"},
+            {"token": "99919000", "symbol": "SENSEX", "name": "SENSEX", "exch_seg": "BSE", "instrumenttype": "INDEX"},
+        ]
+        store = worker.InstrumentStore("", [])
+        for mode in ("live", "synthetic"):
+            with patch.object(worker, "get_feed_mode", return_value=mode):
+                subs = store._build_subscriptions(conflicting_rows, ["NIFTY", "NIFTY 50", "BANKNIFTY", "BANK NIFTY", "SENSEX"])
+                sub_map = {s.symbol: (s.token, s.exchange_segment) for s in subs}
+                self.assertEqual(sub_map.get("NIFTY"), ("99926000", "NSE"))
+                self.assertEqual(sub_map.get("BANKNIFTY"), ("99926009", "NSE"))
+                self.assertEqual(sub_map.get("SENSEX"), ("99919000", "BSE"))
+
+    def test_backfill_history_writes_all_canonical_and_display_aliases(self):
+        client, api = MagicMock(), MagicMock()
+        stamp = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
+        api.getCandleData.return_value = {'status': True, 'data': [[stamp, 22500, 22550, 22490, 22540, 100]]}
+        pipe = client.pipeline.return_value.__enter__.return_value
+        writer = worker.QuoteWriter(client, 300, 86400, 500, feed_mode='live')
+        sub = worker.Subscription('NIFTY', '99926000', 'NSE', 1)
+        with patch.object(worker, 'broker_call', side_effect=lambda call: call()):
+            self.assertTrue(worker.backfill_history(writer, api, sub, 'ONE_MINUTE'))
+        rpush_keys = [call.args[0] for call in pipe.rpush.call_args_list]
+        self.assertIn('market:history:NIFTY', rpush_keys)
+        self.assertIn('market:history:NIFTY 50', rpush_keys)
+        hset_keys = [call.args[0] for call in client.hset.call_args_list]
+        self.assertIn('market:history:status:NIFTY:ONE_MINUTE', hset_keys)
+        self.assertIn('market:history:status:NIFTY 50:ONE_MINUTE', hset_keys)

@@ -33,6 +33,7 @@ import { useTheme } from "@/providers/theme-provider";
 import { useRiskOverview } from "@/hooks/useRiskOverview";
 import { API_URL } from "@/lib/api";
 import ResetSimulationModal from "@/components/modals/ResetSimulationModal";
+import { useToast } from "@/components/ui/ToastProvider";
 
 interface NavbarProps {
   cashBalancePaise?: number;
@@ -85,6 +86,7 @@ export default function Navbar({
   const [userName, setUserName] = useState("Dhiraj");
   const profileMenuRef = useRef<HTMLDivElement>(null);
   const { overview, isBreached } = useRiskOverview();
+  const { addToast } = useToast();
 
   useEffect(() => {
     queueMicrotask(() => {
@@ -116,6 +118,7 @@ export default function Navbar({
   // Universal Logout Handler across all sections
   const handleLogout = async () => {
     setShowProfileMenu(false);
+    addToast("Signed Out", "You have been logged out successfully.", "info");
     if (onSignOut) {
       onSignOut();
       return;

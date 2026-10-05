@@ -9,7 +9,7 @@ import unittest
 from datetime import date, datetime, timezone
 
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 class DummySmartWebSocketV2:
     ROOT_URI = "wss://mock"
@@ -481,9 +481,10 @@ class BenchmarkFallbackSourceTest(unittest.TestCase):
         mock_writer = MagicMock()
         worker.GLOBAL_WRITER = mock_writer
 
-        quote = worker.fetch_quote_for_symbol("RELIANCE")
-        self.assertIsNone(quote, "LIVE mode must return None when Angel One quote is missing")
-        self.assertEqual(mock_writer.write.call_count, 0, "LIVE mode must never write benchmark fallback to Redis")
+        with patch.object(worker, "fetch_full_snapshot", return_value=None):
+            quote = worker.fetch_quote_for_symbol("RELIANCE")
+            self.assertIsNone(quote, "LIVE mode must return None when Angel One quote is missing")
+            self.assertEqual(mock_writer.write.call_count, 0, "LIVE mode must never write benchmark fallback to Redis")
 
     def test_b_live_mode_rejects_simulated_derivative_and_makes_no_fake_redis_write(self):
         """Test B: In LIVE mode, missing underlying or Angel One must not generate simulated derivatives or write to Redis."""
@@ -908,7 +909,7 @@ class BrokerHistoryIntegrationBoundaryTest(unittest.TestCase):
         with patch.object(worker, "broker_call", side_effect=lambda call: call()):
             self.assertTrue(worker.backfill_history(writer, api, sub, "ONE_MINUTE"))
         pipe = client.pipeline.return_value.__enter__.return_value
-        args = pipe.rpush.call_args.args
+        args = pipe.rpush.call_args_list[0].args
         self.assertEqual(args[0], "market:history:NIFTY")
         self.assertEqual(json.loads(args[1])["close_paise"], 10150)
         self.assertEqual(json.loads(args[2])["volume"], 0)

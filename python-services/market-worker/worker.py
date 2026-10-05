@@ -590,41 +590,56 @@ def backfill_history(writer, api, subscription, interval: str, still_current=Non
     params = {'exchange': subscription.exchange_segment, 'symboltoken': subscription.token,
               'interval': interval, 'fromdate': (local_now - timedelta(days=HISTORY_INTERVALS[interval])).strftime('%Y-%m-%d %H:%M'),
               'todate': local_now.strftime('%Y-%m-%d %H:%M')}
-    history_state(writer, subscription, interval, 'PENDING')
+    symbols_to_write = [subscription.symbol]
+    canonical = resolve_canonical_symbol(subscription.symbol)
+    for alias in get_symbol_aliases(canonical):
+        if alias not in symbols_to_write:
+            symbols_to_write.append(alias)
+    if canonical not in symbols_to_write:
+        symbols_to_write.append(canonical)
+
+    for sym in symbols_to_write:
+        history_state(writer, Subscription(sym, subscription.token, subscription.exchange_segment, subscription.exchange_type), interval, 'PENDING')
     try:
         result = broker_request('getCandleData', params, api=api)
     except Exception:
-        history_state(writer, subscription, interval, 'ERROR')
+        for sym in symbols_to_write:
+            history_state(writer, Subscription(sym, subscription.token, subscription.exchange_segment, subscription.exchange_type), interval, 'ERROR')
         raise
     if not isinstance(result, dict) or result.get('status') is not True:
-        history_state(writer, subscription, interval, 'REJECTED')
+        for sym in symbols_to_write:
+            history_state(writer, Subscription(sym, subscription.token, subscription.exchange_segment, subscription.exchange_type), interval, 'REJECTED')
         return False
     candles = normalize_broker_candles(result.get('data') or [], now)
     if not candles:
-        history_state(writer, subscription, interval, 'EMPTY')
+        for sym in symbols_to_write:
+            history_state(writer, Subscription(sym, subscription.token, subscription.exchange_segment, subscription.exchange_type), interval, 'EMPTY')
         return False
-    symbol = subscription.symbol
-    key = f'market:history:{symbol}' if interval == 'ONE_MINUTE' else f'market:history:{symbol}:{interval}'
+
     with writer.history_lock:
         if still_current is not None and not still_current():
-            history_state(writer, subscription, interval, 'IDENTITY_CHANGED')
+            for sym in symbols_to_write:
+                history_state(writer, Subscription(sym, subscription.token, subscription.exchange_segment, subscription.exchange_type), interval, 'IDENTITY_CHANGED')
             return False
         # Merge at commit time, preserving newer stream buckets received during REST.
-        merged = {c['timestamp']: c for c in candles}
-        for raw in writer.client.lrange(key, 0, writer.history_max_items - 1):
-            try:
-                existing = json.loads(raw)
-                if existing.get('source') == 'angelone_live' and existing.get('feed_mode') == 'LIVE':
-                    merged.setdefault(int(existing['timestamp']), existing)
-            except (ValueError, TypeError, KeyError):
-                pass
-        newest = sorted(merged, reverse=True)[:writer.history_max_items]
         with writer.client.pipeline() as pipe:
-            pipe.delete(key)
-            pipe.rpush(key, *[json.dumps(merged[t]) for t in newest])
-            pipe.expire(key, writer.history_ttl)
+            for sym in symbols_to_write:
+                key = f'market:history:{sym}' if interval == 'ONE_MINUTE' else f'market:history:{sym}:{interval}'
+                merged = {c['timestamp']: c for c in candles}
+                for raw in writer.client.lrange(key, 0, writer.history_max_items - 1):
+                    try:
+                        existing = json.loads(raw)
+                        if existing.get('source') == 'angelone_live' and existing.get('feed_mode') == 'LIVE':
+                            merged.setdefault(int(existing['timestamp']), existing)
+                    except (ValueError, TypeError, KeyError):
+                        pass
+                newest = sorted(merged, reverse=True)[:writer.history_max_items]
+                pipe.delete(key)
+                pipe.rpush(key, *[json.dumps(merged[t]) for t in newest])
+                pipe.expire(key, writer.history_ttl)
             pipe.execute()
-    history_state(writer, subscription, interval, 'READY')
+    for sym in symbols_to_write:
+        history_state(writer, Subscription(sym, subscription.token, subscription.exchange_segment, subscription.exchange_type), interval, 'READY')
     return True
 
 
@@ -671,7 +686,17 @@ def fetch_quote_for_symbol(symbol: str) -> dict[str, Any] | None:
     token = None
     exch = "NSE"
     inst_type = ""
-    if info:
+    indexes = {
+        "NIFTY": ("99926000", "NSE"),
+        "BANKNIFTY": ("99926009", "NSE"),
+        "FINNIFTY": ("99926037", "NSE"),
+        "MIDCPNIFTY": ("99926074", "NSE"),
+        "SENSEX": ("99919000", "BSE"),
+    }
+    if canonical_sym in indexes:
+        token, exch = indexes[canonical_sym]
+        inst_type = "INDEX"
+    elif info:
         token = info.get("token")
         exch = info.get("exch_seg") or "NSE"
         inst_type = info.get("instrumenttype") or ""
@@ -820,51 +845,69 @@ class QuoteRequestHandler(BaseHTTPRequestHandler):
             self.end_headers(); self.wfile.write(body)
             return
 
-        if parsed.path == "/health":
+        try:
+            if parsed.path == "/health":
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                body = b'{"status": "ok", "service": "market-worker"}'
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+
+            if parsed.path != "/quote":
+                self.send_response(404)
+                self.send_header("Content-Type", "application/json")
+                body = b'{"error": "not found"}'
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+
+            qs = parse_qs(parsed.query)
+            symbol = qs.get("symbol", [""])[0].strip().upper()
+            if not symbol:
+                self.send_response(400)
+                self.send_header("Content-Type", "application/json")
+                body = b'{"error": "symbol required"}'
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+
+            quote = fetch_quote_for_symbol(symbol)
+            if not quote:
+                self.send_response(404)
+                self.send_header("Content-Type", "application/json")
+                body = b'{"error": "quote not found"}'
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+
+            body = json.dumps(quote).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
-            body = b'{"status": "ok", "service": "market-worker"}'
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
-            return
+        except (BrokenPipeError, ConnectionResetError):
+            pass
 
-        if parsed.path != "/quote":
-            self.send_response(404)
-            self.send_header("Content-Type", "application/json")
-            body = b'{"error": "not found"}'
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-            return
+    def finish(self):
+        try:
+            super().finish()
+        except (BrokenPipeError, ConnectionResetError):
+            pass
 
-        qs = parse_qs(parsed.query)
-        symbol = qs.get("symbol", [""])[0].strip().upper()
-        if not symbol:
-            self.send_response(400)
-            self.send_header("Content-Type", "application/json")
-            body = b'{"error": "symbol required"}'
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-            return
 
-        quote = fetch_quote_for_symbol(symbol)
-        if not quote:
-            self.send_response(404)
-            self.send_header("Content-Type", "application/json")
-            body = b'{"error": "quote not found"}'
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
+class QuoteServer(HTTPServer):
+    def handle_error(self, request, client_address):
+        import sys
+        exc_type, _, _ = sys.exc_info()
+        if exc_type in (BrokenPipeError, ConnectionResetError):
             return
-
-        body = json.dumps(quote).encode("utf-8")
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
+        super().handle_error(request, client_address)
 
 
 GLOBAL_QUOTE_SERVER: HTTPServer | None = None
@@ -878,7 +921,7 @@ def start_quote_server(host: str = "", port: int = 8085) -> HTTPServer | None:
     except ValueError:
         port = 8085
     try:
-        server = HTTPServer((host, port), QuoteRequestHandler)
+        server = QuoteServer((host, port), QuoteRequestHandler)
         GLOBAL_QUOTE_SERVER = server
         t = threading.Thread(target=server.serve_forever, daemon=True)
         t.start()
@@ -1145,16 +1188,32 @@ class InstrumentStore:
                     if clean(row.get("instrumenttype")) in ("INDEX","AMXIDX"):
                         index_master_identity(by_symbol, resolve_canonical_symbol(clean(row.get("name"))), row)
             self._subscription_index = (rows, today, by_symbol)
-        indexes = {"NIFTY": ("99926000", "NSE"), "BANKNIFTY": ("99926009", "NSE"),
-                   "FINNIFTY": ("99926037", "NSE"), "MIDCPNIFTY": ("99926074", "NSE"),
-                   "SENSEX": ("99919000", "BSE")}
+        indexes = {
+            "NIFTY": ("99926000", "NSE"),
+            "NIFTY 50": ("99926000", "NSE"),
+            "BANKNIFTY": ("99926009", "NSE"),
+            "BANK NIFTY": ("99926009", "NSE"),
+            "NIFTY BANK": ("99926009", "NSE"),
+            "FINNIFTY": ("99926037", "NSE"),
+            "NIFTY FIN SERVICE": ("99926037", "NSE"),
+            "MIDCPNIFTY": ("99926074", "NSE"),
+            "NIFTY MID SELECT": ("99926074", "NSE"),
+            "SENSEX": ("99919000", "BSE"),
+            "BSE SENSEX": ("99919000", "BSE"),
+        }
         subscriptions = {}
         for requested in (self.symbols if requested_symbols is None else requested_symbols):
-            symbol = resolve_canonical_symbol(requested)
-            if symbol in indexes and get_feed_mode() != "live":
-                token, segment = indexes[symbol]
+            canonical = resolve_canonical_symbol(requested)
+            req_upper = clean(requested).upper()
+            if canonical in indexes:
+                token, segment = indexes[canonical]
+                symbol = canonical
+            elif req_upper in indexes:
+                token, segment = indexes[req_upper]
+                symbol = canonical
             else:
-                row = by_symbol.get(symbol) or by_symbol.get(requested.upper())
+                symbol = canonical
+                row = by_symbol.get(symbol) or by_symbol.get(req_upper)
                 if row is None and get_feed_mode() != "live":
                     row = next((r for r in FALLBACK_INSTRUMENT_MASTER if r["name"] == symbol and r["symbol"].endswith("-EQ")), None)
                 if row is None:

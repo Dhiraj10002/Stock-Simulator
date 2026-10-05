@@ -119,6 +119,7 @@ func (h *Handler) Search(c *gin.Context) {
 
 	// Imported masters contain historical contracts and non-equity NSE securities.
 	dbQuery = dbQuery.Where("active = ?", true).
+		Where("exchange != 'BFO' AND exchange_segment != 'BFO'").
 		Where("instrument_type IN ?", []string{"", "EQ", "EQUITY", "INDEX", "AMXIDX", "FUTSTK", "FUTIDX", "OPTSTK", "OPTIDX"}).
 		Where("(exchange_segment = 'NFO') OR (exchange_segment = 'NSE' AND (instrument_type IN ('INDEX', 'AMXIDX') OR symbol NOT LIKE '%-%' OR symbol LIKE '%-EQ')) OR (exchange_segment = 'BSE' AND (symbol = 'SENSEX' OR instrument_type IN ('INDEX', 'AMXIDX')))")
 	// Legacy demo tokens cannot be resolved by the live broker.

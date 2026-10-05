@@ -35,6 +35,7 @@ import { useMultiSymbolQuotes, useTargetedSubscription } from "@/stores/market-s
 import { resolveCanonicalSymbol } from "@/lib/alias";
 import { API_URL, apiFetch, extractApiDiagnostic, type ApiDiagnostic } from "@/lib/api";
 import ErrorDiagnosticModal from "@/components/ui/ErrorDiagnosticModal";
+import { useToast } from "@/components/ui/ToastProvider";
 import type { Portfolio, Position } from "@/types";
 
 const STOCK_INFO_MAP: Record<
@@ -79,6 +80,7 @@ type PortfolioTab = "HOLDINGS" | "POSITIONS" | "ALLOCATION" | "ANALYTICS" | "LED
 
 export default function PortfolioPage() {
   const queryClient = useQueryClient();
+  const { addToast } = useToast();
 
   // Active Portfolio Tab
   const [activeTab, setActiveTab] = useState<PortfolioTab>("HOLDINGS");
@@ -314,11 +316,18 @@ export default function PortfolioPage() {
       if (result.data?.status !== "EXECUTED") throw new Error(`Exit ${result.data?.status?.toLowerCase() || "pending"}; refresh the position before trying again.`);
       void queryClient.invalidateQueries({ queryKey: ["portfolio"] });
       void queryClient.invalidateQueries({ queryKey: ["wallet"] });
+      addToast(
+        "Position Squared Off",
+        `Successfully squared off ${pos.quantity} shares of ${pos.symbol}.`,
+        "success",
+      );
     } catch (err: unknown) {
       setDiagnosticTitle(`Square Off Network Error: ${pos.symbol}`);
+      const msg = err instanceof Error ? err.message : "Network error squaring off position";
+      addToast("Square Off Failed", msg, "error");
       setDiagnosticError({
         status: 0,
-        message: err instanceof Error ? err.message : "Network error squaring off position",
+        message: msg,
         timestamp: new Date().toISOString(),
       });
     }
@@ -340,15 +349,19 @@ export default function PortfolioPage() {
         const diag = extractApiDiagnostic(res, data, endpoint);
         setDiagnosticTitle("Bulk MIS Square-Off Failed");
         setDiagnosticError(diag);
+        addToast("Bulk Square-Off Failed", "Unable to square off MIS positions.", "error");
         return;
       }
       void queryClient.invalidateQueries({ queryKey: ["portfolio"] });
       void queryClient.invalidateQueries({ queryKey: ["wallet"] });
+      addToast("Bulk MIS Squared Off", "All intraday MIS positions have been squared off.", "success");
     } catch (err: unknown) {
       setDiagnosticTitle("Bulk MIS Square-Off Network Error");
+      const msg = err instanceof Error ? err.message : "Network error during bulk square-off";
+      addToast("Bulk Square-Off Error", msg, "error");
       setDiagnosticError({
         status: 0,
-        message: err instanceof Error ? err.message : "Network error during bulk square-off",
+        message: msg,
         timestamp: new Date().toISOString(),
       });
     }
@@ -390,6 +403,7 @@ export default function PortfolioPage() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    addToast("Portfolio Exported", "Portfolio summary CSV downloaded successfully.", "success");
   };
 
   return (

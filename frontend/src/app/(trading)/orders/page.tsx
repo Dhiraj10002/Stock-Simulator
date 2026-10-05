@@ -24,11 +24,13 @@ import {
   Trash2,
 } from "lucide-react";
 import type { Order, Trade, Portfolio, ApiResponse } from "@/types";
+import { useToast } from "@/components/ui/ToastProvider";
 
 type OrdersTab = "orders" | "trades" | "contract-note";
 
 export default function OrdersPage() {
   const queryClient = useQueryClient();
+  const { addToast } = useToast();
   const [activeTab, setActiveTab] = useState<OrdersTab>("orders");
 
   const [mounted, setMounted] = useState(false);
@@ -154,14 +156,24 @@ export default function OrdersPage() {
   // Cancel order action
   const handleCancelOrder = async (order: Order) => {
     if (!token) return;
-    await fetch(`${apiUrl}/orders/${order.uuid}`, {
-      method: "DELETE",
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
-    void queryClient.invalidateQueries({ queryKey: ["orders"] });
-    void queryClient.invalidateQueries({ queryKey: ["wallet"] });
+    try {
+      const res = await fetch(`${apiUrl}/orders/${order.uuid}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      if (!res.ok) throw new Error("Failed to cancel order");
+      void queryClient.invalidateQueries({ queryKey: ["orders"] });
+      void queryClient.invalidateQueries({ queryKey: ["wallet"] });
+      addToast(
+        "Order Cancelled",
+        `Order for ${order.quantity} shares of ${order.symbol} has been cancelled.`,
+        "info",
+      );
+    } catch (err: unknown) {
+      addToast("Cancel Failed", err instanceof Error ? err.message : "Failed to cancel order", "error");
+    }
   };
 
   const [clearedOrderHistory, setClearedOrderHistory] = useState(false);
@@ -253,6 +265,7 @@ export default function OrdersPage() {
       void queryClient.invalidateQueries({ queryKey: ["trades"] });
       void queryClient.invalidateQueries({ queryKey: ["wallet"] });
       setToastMsg("✓ Live order history deleted successfully");
+      addToast("History Deleted", "Live order history has been deleted successfully.", "success");
       setTimeout(() => setToastMsg(null), 4000);
     } catch (e) {
       console.error("Clear order history error:", e);

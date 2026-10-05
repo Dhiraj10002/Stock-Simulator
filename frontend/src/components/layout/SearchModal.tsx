@@ -21,6 +21,7 @@ import { apiFetch } from "@/lib/api";
 import { fetchBatchQuotes } from "@/lib/quoteService";
 import type { StockSearchResult } from "@/types";
 import FnoOrderModal from "@/components/trading/FnoOrderModal";
+import { useToast } from "@/components/ui/ToastProvider";
 
 type SearchSegmentFilter = "ALL" | "EQUITY" | "FUTURES" | "OPTIONS";
 
@@ -31,6 +32,7 @@ export default function SearchModal() {
   const router = useRouter();
   const { isSearchPaletteOpen, setSearchPaletteOpen } = useUIStore();
   const setSelectedSymbol = useTradingStore((s) => s.setSelectedSymbol);
+  const { addToast } = useToast();
 
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
@@ -69,13 +71,16 @@ export default function SearchModal() {
       if (inWl) {
         await apiFetch(`/watchlist/${encodeURIComponent(clean)}`, { method: "DELETE" });
         useMarketStore.getState().removeWatchlistSymbol(clean);
+        addToast("Removed from Watchlist", `${clean} removed from your watchlist.`, "info");
       } else {
         await apiFetch("/watchlist", { method: "POST", body: JSON.stringify({ symbol: clean }) });
         useMarketStore.getState().addWatchlistSymbol(clean);
+        addToast("Added to Watchlist", `${clean} added to your watchlist.`, "success");
       }
       refetchWatchlist();
     } catch (err) {
       console.error("Failed to toggle watchlist:", err);
+      addToast("Watchlist Error", "Failed to update watchlist.", "error");
     }
   };
 
@@ -217,6 +222,11 @@ export default function SearchModal() {
 
     for (const item of apiResults) {
       if (seenSymbols.has(item.symbol)) continue;
+
+      // Project policy: strictly exclude any BFO derivative instruments from search
+      const rawExch = (item.exchange_segment || "").toUpperCase();
+      if (rawExch === "BFO" || rawExch.includes("BFO") || item.symbol.includes("BFO")) continue;
+
       seenSymbols.add(item.symbol);
 
       const kite = formatKiteSymbol(item.symbol, item.expiry, item.strike, item.option_type);
@@ -252,13 +262,15 @@ export default function SearchModal() {
       const parsedStrike = item.strike ? parseFloat(item.strike) : 0;
       const parsedTickSize = item.tick_size ? parseFloat(item.tick_size) : 0.05;
 
+      const safeExch = rawExch === "BFO" ? "NFO" : (item.exchange_segment || kite.exchangeTag);
+
       items.push({
         id: item.token || item.symbol,
         symbol: item.symbol,
         display_symbol: displaySym,
         displayName: displaySym,
-        exchange: item.exchange_segment || kite.exchangeTag,
-        exchangeTag: item.exchange_segment || kite.exchangeTag,
+        exchange: safeExch,
+        exchangeTag: safeExch,
         token: item.token || "",
         instrument_type: item.instrument_type || seg,
         underlying: item.name || item.symbol,

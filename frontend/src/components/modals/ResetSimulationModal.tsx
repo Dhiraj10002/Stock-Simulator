@@ -14,6 +14,7 @@ import {
   ShieldAlert,
 } from "lucide-react";
 import { apiFetch, getAuthToken } from "@/lib/api";
+import { useToast } from "@/components/ui/ToastProvider";
 
 interface ResetSimulationModalProps {
   isOpen: boolean;
@@ -27,6 +28,7 @@ export default function ResetSimulationModal({
   onSuccess,
 }: ResetSimulationModalProps) {
   const queryClient = useQueryClient();
+  const { addToast } = useToast();
   const [mounted, setMounted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -63,6 +65,7 @@ export default function ResetSimulationModal({
       ]);
 
       setSuccess(true);
+      addToast("Simulation Reset", "Your portfolio and balance have been reset to ₹10,00,000.", "success");
       if (onSuccess) onSuccess();
 
       setTimeout(() => {
@@ -70,7 +73,9 @@ export default function ResetSimulationModal({
         onClose();
       }, 1400);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to reset simulation account.");
+      const msg = err instanceof Error ? err.message : "Failed to reset simulation account.";
+      setError(msg);
+      addToast("Reset Failed", msg, "error");
     } finally {
       setLoading(false);
     }

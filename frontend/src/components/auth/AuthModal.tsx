@@ -14,6 +14,7 @@ import {
   Zap,
 } from "lucide-react";
 import { getApiUrl } from "@/lib/config";
+import { useToast } from "@/components/ui/ToastProvider";
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -45,6 +46,7 @@ export default function AuthModal({
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { addToast } = useToast();
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -174,15 +176,24 @@ export default function AuthModal({
       }
 
       const { access_token, refresh_token } = loginBody.data;
+      const userDisplay = name || (email === "trader@example.com" ? "Demo Scalper" : email.split("@")[0]);
       localStorage.setItem("auth_token", access_token);
       localStorage.setItem("stock-simulator-access-token", access_token);
       localStorage.setItem("stock-simulator-refresh-token", refresh_token);
       localStorage.setItem("user_name", name || (email === "trader@example.com" ? "Demo Scalper" : "Trader"));
       localStorage.setItem("user_email", email);
 
+      if (mode === "register") {
+        addToast("Account Created", `Welcome to Stock Simulator, ${userDisplay}!`, "success");
+      } else {
+        addToast("Signed In", `Welcome back, ${userDisplay}!`, "success");
+      }
+
       onSuccess();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Authentication failed");
+      const msg = err instanceof Error ? err.message : "Authentication failed";
+      setError(msg);
+      addToast("Authentication Failed", msg, "error");
     } finally {
       setLoading(false);
     }
