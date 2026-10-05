@@ -44,7 +44,7 @@ The chart and quote APIs are separate. A SENSEX quote cannot produce an authenti
 - Go: vet and backend suite; market-service recovery also exercised against disposable Redis. GitHub CI supplies disposable PostgreSQL/Redis for full database integration and order-accounting race checks, and uses a production frontend server for browser tests.
 - Startup/script and news-worker checks are included. A local launcher test may skip when its OS utility is unavailable; CI checks its supported environment.
 
-Mocked browser/provider tests prove application behavior, not that the user's Angel One account currently supplies executable quotes. No private user database, local broker credentials, deployed host or live market account was accessed for this review. Issue [#9](https://github.com/Dhiraj10002/Stock-Simulator/issues/9) stays open until real OPEN-session evidence is collected.
+Mocked browser/provider tests prove application behavior, not that the user's Angel One account currently supplies executable quotes. No private user database, local broker credentials, deployed host or live market account was accessed for this review. Issue [#9](https://github.com/Dhiraj10002/Stock-Simulator/issues/9) was closed on 4 October with the comment that its related PR had merged. Its report-pass boxes are checked, but sanitized report attachments and stock-F&O/UI/portfolio/recovery observations remain unchecked. This review cannot independently verify those live results. Complete and review that evidence before production acceptance; the issue's closed status does not prove the feed works.
 
 ## Apply and verify locally
 
@@ -88,7 +88,7 @@ Recommended sequence: verify this PR on the configured local host; implement the
 
 ## Instructions for the next Codex/Gemini task
 
-Start from the latest reviewed `main` on a new focused branch. Read `frontend/AGENTS.md` and the installed Next.js documentation before frontend edits. Use disposable integration services, keep genuine quote freshness and master identity checks, and preserve the compact UI. Do not reintroduce sample price fallbacks, fake capital, synthetic LIVE candles, a permanent Live badge or hidden test-only product features. Do not close issue #9 on CI evidence alone.
+Start from the latest reviewed `main` on a new focused branch. Read `frontend/AGENTS.md` and the installed Next.js documentation before frontend edits. Use disposable integration services, keep genuine quote freshness and master identity checks, and preserve the compact UI. Do not reintroduce sample price fallbacks, fake capital, synthetic LIVE candles, a permanent Live badge or hidden test-only product features. Treat PR merges and CI success as code evidence, not proof of live-market acceptance.
 
 Official provider/schedule references checked during this review:
 
