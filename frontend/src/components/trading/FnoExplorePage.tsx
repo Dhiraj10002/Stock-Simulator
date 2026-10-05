@@ -7,7 +7,6 @@ import {
   ArrowRight,
   RefreshCw,
   Search,
-  Sparkles,
   TrendingUp,
   Wallet,
 } from "lucide-react";
@@ -41,11 +40,12 @@ import {
   FnoMovement,
   FnoProvenance,
 } from "@/components/trading/FnoQuoteDetails";
-import FnoOrderModal from "@/components/trading/FnoOrderModal";
+import dynamic from "next/dynamic";
+const FnoOrderModal = dynamic(() => import("@/components/trading/FnoOrderModal"), { ssr: false });
 import type { Instrument, Portfolio, Quote } from "@/types";
 
-const panel =
-  "rounded-2xl border border-slate-200 bg-[#ffffff] shadow-sm dark:border-slate-800 dark:bg-[#0f172a]";
+import { tradingPanel } from "@/components/shared/tradingStyles";
+const panel = tradingPanel;
 const muted = "text-slate-600 dark:text-slate-400";
 const input =
   "mt-1 min-h-11 w-full min-w-0 rounded-xl border border-slate-300 bg-[#ffffff] px-3 text-sm text-slate-900 outline-none focus:border-cyan-600 focus:ring-2 focus:ring-cyan-600/20 dark:border-slate-700 dark:bg-[#020617] dark:text-slate-100";
@@ -736,17 +736,10 @@ export default function FnoExplorePage({
           </div>
         </section>
 
-        {/* Real-Time Greek Analytics Card (Screenshot 2) */}
-        <div className="p-4 rounded-2xl bg-cyan-500/5 dark:bg-cyan-500/10 border border-cyan-500/20 text-xs space-y-2">
-          <div className="flex items-center gap-1.5 font-bold text-cyan-800 dark:text-cyan-300">
-            <Sparkles className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
-            <span>Real-Time Greek Analytics</span>
-          </div>
-          <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
-            Delta, Theta, Gamma, and Vega calculations update dynamically using
-            Black-Scholes formulas alongside live Put-Call Ratios and Max Pain
-            strike analysis.
-          </p>
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-xs leading-5 text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
+          <h3 className="font-bold">Understand derivative risk</h3>
+          <p className="mt-2">Futures and written options use margin. Losses can exceed the initial margin; long options can lose their paid premium.</p>
+          <details className="mt-3"><summary className="cursor-pointer font-semibold">About simulator estimates</summary><p className="mt-2">Paper margin is a simplified estimate. Review expiry, lot size and required funds before each order.</p></details>
         </div>
       </aside>
       {ticket && (

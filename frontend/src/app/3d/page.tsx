@@ -3,5 +3,5 @@
 import LandingPage from "@/components/landing/LandingPage";
 
 export default function ThreeDPage() {
-  return <LandingPage />;
+  return <div className="showcase-3d"><LandingPage /></div>;
 }

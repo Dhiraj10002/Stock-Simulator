@@ -4,6 +4,8 @@ import type { Instrument } from "@/types";
 // In-memory cache for canonical instruments
 let cachedInstruments: Instrument[] | null = null;
 let cachePromise: Promise<Instrument[]> | null = null;
+let cachedAt = 0;
+const DISPLAY_METADATA_TTL_MS = 60_000;
 
 export interface FetchInstrumentsParams {
   q?: string;
@@ -34,7 +36,7 @@ export async function fetchInstruments(params?: FetchInstrumentsParams): Promise
   // If fetching full unfiltered active list, reuse in-memory promise/cache
   const isFullList = !params || (Object.keys(params).length === 0 || (Object.keys(params).length === 1 && params.active === true));
 
-  if (isFullList && cachedInstruments) {
+  if (isFullList && cachedInstruments && Date.now() - cachedAt < DISPLAY_METADATA_TTL_MS) {
     return cachedInstruments;
   }
   if (isFullList && cachePromise) {
@@ -51,8 +53,9 @@ export async function fetchInstruments(params?: FetchInstrumentsParams): Promise
         const json = await res.json();
         if (json.success && Array.isArray(json.data)) {
           const list: Instrument[] = json.data.map(normalizeInstrument);
-          if (isFullList && list.length > 0) {
+          if (isFullList) {
             cachedInstruments = list;
+            cachedAt = Date.now();
           }
           return list;
         }
@@ -74,7 +77,7 @@ export async function fetchInstruments(params?: FetchInstrumentsParams): Promise
   };
 
   if (isFullList) {
-    cachePromise = doFetch();
+    cachePromise = doFetch().finally(() => { cachePromise = null; });
     return cachePromise;
   }
 
@@ -86,7 +89,7 @@ export async function fetchInstruments(params?: FetchInstrumentsParams): Promise
  */
 export async function fetchInstrumentBySymbol(symbol: string): Promise<Instrument | null> {
   const clean = symbol.trim().toUpperCase();
-  if (cachedInstruments) {
+  if (cachedInstruments && Date.now() - cachedAt < DISPLAY_METADATA_TTL_MS) {
     const found = cachedInstruments.find(
       (i) => i.symbol.toUpperCase() === clean || i.symbol.toUpperCase() === `${clean}-EQ`
     );

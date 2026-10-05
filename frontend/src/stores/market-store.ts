@@ -33,6 +33,7 @@ interface MarketStoreState {
   // Actions
   setQuotes: (quotes: Record<string, Quote>) => void;
   updateQuote: (quote: Quote) => void;
+  mergeQuotes: (quotes: Record<string, Quote>) => void;
   setInstruments: (instruments: Instrument[]) => void;
   setMarketStatus: (status: MarketStatus) => void;
   setConnectionState: (state: ConnectionState) => void;
@@ -58,6 +59,20 @@ function deriveFeedProviderLegacy(feedStatus: FeedStatus, connectionState: Conne
     return "Angel One";
   }
   return "Synthetic";
+}
+
+function mergeIncomingQuotes(state: MarketStoreState, incoming: Record<string, Quote>) {
+  const quotes = { ...state.quotes };
+  let changed = false;
+  for (const [key, quote] of Object.entries(incoming)) {
+    const symbol = key.trim().toUpperCase();
+    if (!symbol || !Number.isSafeInteger(quote.price_paise) || quote.price_paise <= 0) continue;
+    const current = quotes[symbol];
+    const observed = Date.parse(quote.updated_at), previous = Date.parse(current?.updated_at || "");
+    if (current && Number.isFinite(previous) && (!Number.isFinite(observed) || observed < previous)) continue;
+    if (current !== quote) { quotes[symbol] = quote; changed = true; }
+  }
+  return changed ? { quotes, lastTickTimestamp: Date.now() } : state;
 }
 
 export const useMarketStore = create<MarketStoreState>((set) => ({
@@ -90,14 +105,8 @@ export const useMarketStore = create<MarketStoreState>((set) => ({
     }
     set({ instruments: map, instrumentList });
   },
-  updateQuote: (quote) =>
-    set((state) => ({
-      quotes: {
-        ...state.quotes,
-        [quote.symbol]: quote,
-      },
-      lastTickTimestamp: Date.now(),
-    })),
+  updateQuote: (quote) => set((state) => mergeIncomingQuotes(state, { [quote.symbol]: quote })),
+  mergeQuotes: (quotes) => set((state) => mergeIncomingQuotes(state, quotes)),
   setMarketStatus: (marketStatus) => set({ marketStatus }),
   setConnectionState: (connectionState) =>
     set((state) => ({

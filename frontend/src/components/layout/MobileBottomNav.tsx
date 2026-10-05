@@ -19,7 +19,7 @@ interface NavItem {
 }
 
 const MOBILE_NAV_ITEMS: NavItem[] = [
-  { href: "/", label: "Home", icon: LayoutDashboard },
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/watchlist", label: "Watchlist", icon: Bookmark },
   { href: "/stocks", label: "Stocks", icon: TrendingUp, isCenter: true },
   { href: "/orders", label: "Orders", icon: ClipboardList },

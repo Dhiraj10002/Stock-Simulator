@@ -13,6 +13,8 @@ async function setup(
   page.on("pageerror", (e) => errors.push(e.message));
   const posts: Record<string, unknown>[] = [];
   let socket: WebSocketRoute | undefined;
+  let connections = 0;
+  const messages: { action: string; symbols?: string[] }[] = [];
   const quote = (symbol: string, price = 147250) => ({
     symbol,
     price_paise: price,
@@ -46,8 +48,10 @@ async function setup(
     localStorage.setItem("stock_sim_theme", "light");
   }, token);
   await page.routeWebSocket("**/ws/market", (ws) => {
+    connections++;
     socket = ws;
     ws.onMessage((message) => {
+      messages.push(JSON.parse(String(message)));
       if (JSON.parse(String(message)).action === "ping")
         ws.send(JSON.stringify({ type: "pong" }));
     });
@@ -178,6 +182,9 @@ async function setup(
   return {
     errors,
     posts,
+    messages,
+    connectionCount: () => connections,
+    disconnect: () => socket?.close({ code: 1012, reason: "Fixture reconnect" }),
     tick: (price: number) =>
       socket?.send(
         JSON.stringify({ type: "quote", quote: quote("RELIANCE-EQ", price) }),
@@ -211,6 +218,12 @@ test("stock detail restores the light desk and transports real snapshot fields a
   ).toBeVisible();
   control.tick(148000);
   await expect(header.getByText("₹1,480.00", { exact: true })).toBeVisible();
+  if (process.env.PLATFORM_PREVIEW_CAPTURE) {
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await expect(page.locator("canvas").first()).toBeVisible();
+    await page.evaluate(() => document.fonts.ready);
+    await page.screenshot({ path: process.env.PLATFORM_PREVIEW_CAPTURE });
+  }
   if (process.env.STOCK_UI_SCREENSHOTS)
     await page.evaluate(() => window.scrollTo(0, 0));
   if (process.env.STOCK_UI_SCREENSHOTS)
@@ -229,6 +242,54 @@ test("stock detail restores the light desk and transports real snapshot fields a
       path: join(process.env.STOCK_UI_SCREENSHOTS!, "stock-dark.png"),
       fullPage: true,
     });
+  expect(control.errors).toEqual([]);
+});
+
+test("mobile stock ticket preserves inputs, traps focus and stays locked after an uncertain order", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const control = await setup(page, { uncertain: true });
+  const open = page.getByRole("button", { name: "Open paper order ticket", exact: true });
+  await expect(open).toBeVisible();
+  await open.click();
+  const ticket = page.getByRole("dialog", { name: "Paper order ticket" });
+  await expect(ticket).toBeVisible();
+  await ticket.getByLabel("Quantity", { exact: true }).fill("3");
+  await ticket.getByLabel("Product", { exact: true }).selectOption("INTRADAY");
+  await page.keyboard.press("Escape");
+  await expect(ticket).not.toBeVisible();
+  await expect(open).toBeFocused();
+  await open.click();
+  await expect(ticket.getByLabel("Quantity", { exact: true })).toHaveValue("3");
+  await expect(ticket.getByLabel("Product", { exact: true })).toHaveValue("INTRADAY");
+  await expect(ticket.getByRole("button", { name: "Close order ticket", exact: true })).toBeFocused();
+  if (process.env.STOCK_UI_SCREENSHOTS) await page.screenshot({ path: join(process.env.STOCK_UI_SCREENSHOTS, "stock-order-mobile.png") });
+  await page.keyboard.press("Shift+Tab");
+  expect(await ticket.evaluate(e => e.contains(document.activeElement))).toBe(true);
+  await ticket.getByRole("checkbox", { name: /Confirm BUY/ }).check();
+  await ticket.getByRole("button", { name: "Place paper order", exact: true }).click();
+  await expect(ticket.getByText("Order result is uncertain. Review Orders before placing another order.", { exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Review paper order", exact: true }).click();
+  await expect(ticket.getByLabel("Quantity", { exact: true })).toBeDisabled();
+  expect(control.posts).toHaveLength(1);
+  expect(control.errors).toEqual([]);
+});
+
+test("trading navigation updates subscriptions on one socket and reconnect replays current targets", async ({ page }) => {
+  const control = await setup(page);
+  await expect.poll(() => control.messages.some(m => m.action === "subscribe" && m.symbols?.includes("RELIANCE-EQ"))).toBe(true);
+  const initialConnections = control.connectionCount();
+  await page.getByRole("link", { name: "Stocks", exact: true }).first().click();
+  await expect(page).toHaveURL(/\/stocks$/);
+  await expect.poll(() => control.messages.some(m => m.action === "unsubscribe" && m.symbols?.includes("RELIANCE-EQ"))).toBe(true);
+  expect(control.connectionCount()).toBe(initialConnections);
+  await page.goBack();
+  await expect(page.getByRole("heading", { name: "Reliance Industries", exact: true })).toBeVisible();
+  expect(control.connectionCount()).toBe(initialConnections);
+  const beforeReconnect = control.messages.length;
+  await control.disconnect();
+  await expect.poll(control.connectionCount).toBe(initialConnections + 1);
+  await expect.poll(() => control.messages.slice(beforeReconnect).some(m => m.action === "subscribe" && m.symbols?.includes("RELIANCE-EQ"))).toBe(true);
   expect(control.errors).toEqual([]);
 });
 test("closed and missing stock data stay honest and stock detail is responsive", async ({

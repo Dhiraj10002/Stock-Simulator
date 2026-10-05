@@ -87,7 +87,7 @@ export default function MarketStatusBanner({ className = "" }: MarketStatusBanne
       badgeBg: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30",
       dot: "bg-emerald-500 animate-pulse",
       label: "MARKET OPEN",
-      subtext: "Regular Trading Session active (09:15 - 15:30)",
+      subtext: "Session open. Each product follows its exchange timetable.",
     },
     PRE_OPEN: {
       badgeBg: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30",
@@ -99,7 +99,7 @@ export default function MarketStatusBanner({ className = "" }: MarketStatusBanne
       badgeBg: "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/30",
       dot: "bg-indigo-500",
       label: "POST-MARKET / CLOSING",
-      subtext: "Closing price determination session (15:30 - 16:00)",
+      subtext: "Check the instrument’s session and quote status before placing an order.",
     },
     HOLIDAY: {
       badgeBg: "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/30",

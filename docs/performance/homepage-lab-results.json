@@ -1,0 +1,76 @@
+{
+  "baseline_commit": "be21004b6e027e832292aed2f0c524efb72d7f60",
+  "date": "2026-10-05",
+  "before": {
+    "conditions": "Local production build, mobile 390x844, CPU 4x, 1.6 Mbps download, 150 ms latency, cold browser contexts, 3 runs. Lab LCP/CLS, not field INP.",
+    "runs": [
+      {
+        "lcp": 3184,
+        "cls": 0,
+        "jsBytes": 349506,
+        "jsRequests": 23,
+        "fcp": 1348,
+        "h1": "MASTERTHEMARKET.ZERO FINANCIAL RISK.",
+        "overflow": false,
+        "privateRequests": 1
+      },
+      {
+        "lcp": 3124,
+        "cls": 0,
+        "jsBytes": 349506,
+        "jsRequests": 23,
+        "fcp": 1300,
+        "h1": "MASTERTHEMARKET.ZERO FINANCIAL RISK.",
+        "overflow": false,
+        "privateRequests": 1
+      },
+      {
+        "lcp": 2980,
+        "cls": 0,
+        "jsBytes": 349506,
+        "jsRequests": 23,
+        "fcp": 1276,
+        "h1": "MASTERTHEMARKET.ZERO FINANCIAL RISK.",
+        "overflow": false,
+        "privateRequests": 1
+      }
+    ]
+  },
+  "after": {
+    "conditions": "Local production build, mobile 390x844, CPU 4x, 1.6 Mbps download, 150 ms latency, cold browser contexts, 3 runs. Lab LCP/CLS, not field INP.",
+    "browser": "153.0.8010.0",
+    "node": "v24.19.0",
+    "runs": [
+      {
+        "lcp": 1316,
+        "cls": 0,
+        "jsBytes": 173098,
+        "jsRequests": 11,
+        "fcp": 1316,
+        "h1": "Practice Indian stock trading with virtual money.",
+        "overflow": false,
+        "privateRequests": 0
+      },
+      {
+        "lcp": 1248,
+        "cls": 0,
+        "jsBytes": 173098,
+        "jsRequests": 11,
+        "fcp": 1248,
+        "h1": "Practice Indian stock trading with virtual money.",
+        "overflow": false,
+        "privateRequests": 0
+      },
+      {
+        "lcp": 1296,
+        "cls": 0,
+        "jsBytes": 173098,
+        "jsRequests": 11,
+        "fcp": 1296,
+        "h1": "Practice Indian stock trading with virtual money.",
+        "overflow": false,
+        "privateRequests": 0
+      }
+    ]
+  }
+}

@@ -527,7 +527,7 @@ test("paper ticket retains virtual funds while preview refreshes and blocks fail
   await expect(submit).toBeEnabled();
   hold = true;
   await expect(
-    ticket.getByRole("button", { name: "MIS (Intraday)" }),
+    ticket.getByRole("button", { name: "Intraday (MIS)" }),
   ).toBeDisabled();
   await expect(
     ticket.getByText("Not charged by simulator", { exact: true }),
@@ -565,12 +565,18 @@ test("mobile order ticket stays within viewport and pauses when exchange status 
     .click();
   const dialog = page.getByRole("dialog", { name: "Paper order ticket" });
   await expect(dialog).toBeVisible();
+  for (const label of ["Expiry", "Lot size", "Total quantity"]) await expect(dialog.getByText(label, { exact: true })).toBeVisible();
+  await expect(dialog.locator("details")).not.toHaveAttribute("open");
   const box = await dialog.boundingBox();
   expect(box!.width).toBeLessThanOrEqual(360);
   expect(box!.height).toBeLessThanOrEqual(800);
   expect(await dialog.evaluate((e) => e.scrollWidth)).toBeLessThanOrEqual(
     Math.ceil(box!.width),
   );
+  const submit = dialog.getByRole("button", { name: "BUY 65 BANKNIFTY27OCT2099FUT (1 LOT)", exact: true });
+  await expect(submit).toBeInViewport();
+  await expect(dialog.getByText("Required additional funds:", { exact: true })).toBeInViewport();
+  if (process.env.STOCK_UI_SCREENSHOTS) await page.screenshot({ path: join(process.env.STOCK_UI_SCREENSHOTS, "fno-ticket-mobile.png") });
   control.state.statusError = true;
   await expect(
     dialog.getByText("Exchange status unavailable. Trading paused.", {
@@ -584,6 +590,13 @@ test("mobile order ticket stays within viewport and pauses when exchange status 
     }),
   ).toBeDisabled();
   expect(control.posts).toHaveLength(0);
+  await dialog.getByRole("button", { name: "Close paper order ticket", exact: true }).focus();
+  await page.keyboard.press("Shift+Tab");
+  await expect(dialog.locator("summary")).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(dialog.locator("details")).toHaveAttribute("open", "");
+  await page.keyboard.press("Escape");
+  await expect(dialog).not.toBeVisible();
 });
 
 test("uncertain order response never permits resubmission from the ticket", async ({

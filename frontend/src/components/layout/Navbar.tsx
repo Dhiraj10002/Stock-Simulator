@@ -47,10 +47,10 @@ interface NavbarProps {
 }
 
 const NAV_LINKS = [
-  { href: "/", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/stocks", label: "Stocks", icon: TrendingUp },
   { href: "/news", label: "News", icon: Newspaper },
-  { href: "/options", label: "F&O Hub", icon: Layers },
+  { href: "/options", label: "Futures & Options", icon: Layers },
   { href: "/portfolio", label: "Portfolio", icon: PieChart },
   { href: "/orders", label: "Orders", icon: ClipboardList },
   { href: "/watchlist", label: "Watchlist", icon: Bookmark },
@@ -169,7 +169,7 @@ export default function Navbar({
       <div className="px-4 lg:px-6 py-2 flex flex-wrap items-center justify-between gap-2 sm:gap-4 border-b border-slate-200/80 dark:border-white/[0.06]">
         {/* Left: Brand + Market Status + Indices Ticker */}
         <div className="flex items-center gap-4 lg:gap-6">
-          <Link href="/" className="flex items-center gap-2.5 group">
+          <Link href="/dashboard" className="flex items-center gap-2.5 group">
             <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-cyan-500 to-indigo-600 flex items-center justify-center font-black text-sm text-slate-950 shadow-md group-hover:scale-105 transition-transform">
               SS
             </div>
@@ -271,7 +271,7 @@ export default function Navbar({
           </div>
 
           {/* Unrealized P&L */}
-          <div className="hidden md:flex flex-col text-right border-l border-slate-200 dark:border-white/[0.08] pl-3">
+          <div role="group" aria-label="Portfolio unrealized P&L" className="hidden md:flex flex-col text-right border-l border-slate-200 dark:border-white/[0.08] pl-3">
             <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">
               Unrealized P&L{unrealizedPnlStale ? " · Last available" : ""}
             </span>

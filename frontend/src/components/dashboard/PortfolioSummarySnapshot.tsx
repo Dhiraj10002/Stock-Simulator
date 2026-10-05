@@ -41,34 +41,35 @@ export default function PortfolioSummarySnapshot({
   const blockedPaise = wallet?.blocked_paise;
 
   const investedPaise = portfolio?.invested_value_paise ?? 0;
-  const currentValuationPaise = portfolio?.current_value_paise ?? 0;
-  const unrealizedPnlPaise = portfolio?.unrealized_pnl_paise ?? 0;
-  const realizedPnlPaise = portfolio?.realized_pnl_paise ?? 0;
-  const totalNetPnlPaise = unrealizedPnlPaise + realizedPnlPaise;
+  const currentValuationPaise = portfolio?.current_value_paise;
+  const unrealizedPnlPaise = portfolio?.unrealized_pnl_paise;
+  const realizedPnlPaise = portfolio?.realized_pnl_paise;
+  const totalNetPnlPaise = unrealizedPnlPaise !== undefined && realizedPnlPaise !== undefined ? unrealizedPnlPaise + realizedPnlPaise : undefined;
 
-  const totalPortfolioValuePaise = portfolio ? currentValuationPaise : undefined;
+  const valuationAvailable = getValuationStatus(portfolio) !== "DEGRADED";
+  const totalPortfolioValuePaise = portfolio && valuationAvailable ? currentValuationPaise : undefined;
 
   const returnPercent =
-    investedPaise > 0 ? (unrealizedPnlPaise / investedPaise) * 100 : 0;
-  const isProfit = unrealizedPnlPaise >= 0;
-  const isTotalProfit = totalNetPnlPaise >= 0;
+    investedPaise > 0 && unrealizedPnlPaise !== undefined ? (unrealizedPnlPaise / investedPaise) * 100 : undefined;
+  const isProfit = (unrealizedPnlPaise ?? 0) >= 0;
+  const isTotalProfit = (totalNetPnlPaise ?? 0) >= 0;
 
   const positionsCount = portfolio?.positions?.length ?? 0;
   const valuationStatus = getValuationStatus(portfolio);
 
   const statusBadge = {
     REALTIME: {
-      label: "Live Valuation",
+      label: "Live valuation",
       bg: "bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-400 border-emerald-300 dark:border-emerald-800",
       icon: <ShieldCheck className="w-3 h-3" />,
     },
     STALE: {
-      label: "Delayed Valuation",
+      label: "Last available valuation",
       bg: "bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-400 border-amber-300 dark:border-amber-800",
       icon: <Clock className="w-3 h-3" />,
     },
     DEGRADED: {
-      label: "Degraded Feed",
+      label: "Valuation unavailable",
       bg: "bg-rose-100 dark:bg-rose-950/80 text-rose-700 dark:text-rose-400 border-rose-300 dark:border-rose-800",
       icon: <AlertTriangle className="w-3 h-3" />,
     },
@@ -78,13 +79,13 @@ export default function PortfolioSummarySnapshot({
     <div
       className={`rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 p-5 shadow-xs space-y-5 ${className}`}
     >
-      {/* Top Banner: Gross Position Value & Valuation Status */}
+      {/* Top Banner: Virtual cash balance & Valuation Status */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100 dark:border-slate-800/80">
         <div>
           <div className="flex items-center gap-2">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
               <PieChart className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
-              Gross Position Value
+              Virtual cash balance
             </span>
             <span
               className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-md border ${statusBadge.bg}`}
@@ -95,10 +96,10 @@ export default function PortfolioSummarySnapshot({
           </div>
 
           <div className="text-3xl font-black font-tabular tracking-tight text-slate-900 dark:text-white mt-1">
-            {formatPaise(totalPortfolioValuePaise)}
+            {formatPaise(cashBalance)}
           </div>
           <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-            Cash balance: {formatPaise(cashBalance)} • Position value excludes cash
+            Position value: {formatPaise(totalPortfolioValuePaise)} • excludes cash
           </div>
         </div>
 
@@ -110,7 +111,7 @@ export default function PortfolioSummarySnapshot({
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cyan-50 dark:bg-cyan-950/60 border border-cyan-200 dark:border-cyan-800/60 text-xs font-bold text-cyan-700 dark:text-cyan-300 hover:bg-cyan-100 dark:hover:bg-cyan-900/40 transition-colors cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5" />
-              <span>Deposit</span>
+              <span>Add virtual funds</span>
             </button>
           )}
 
@@ -130,7 +131,7 @@ export default function PortfolioSummarySnapshot({
             href="/portfolio"
             className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 text-white dark:text-slate-900 text-xs font-bold shadow-xs transition-colors"
           >
-            <span>View Ledger</span>
+            <span>View portfolio</span>
             <ArrowRight className="w-3 h-3" />
           </Link>
         </div>
@@ -142,7 +143,7 @@ export default function PortfolioSummarySnapshot({
         <div className="p-3.5 rounded-xl bg-slate-50/70 dark:bg-slate-950/40 border border-slate-100 dark:border-slate-800/60 space-y-1">
           <div className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide flex items-center gap-1">
             <WalletIcon className="w-3 h-3 text-cyan-600" />
-            <span>Available Margin</span>
+            <span>Available virtual funds</span>
           </div>
           <div className="text-lg font-black font-tabular text-slate-900 dark:text-slate-100">
             {formatPaise(availableMargin)}
@@ -161,7 +162,7 @@ export default function PortfolioSummarySnapshot({
             {formatPaise(portfolio?.invested_value_paise)}
           </div>
           <div className="text-[10px] text-slate-500">
-            Current: {formatPaise(portfolio ? currentValuationPaise : undefined)}
+            Current: {formatPaise(portfolio && valuationAvailable ? currentValuationPaise : undefined)}
           </div>
         </div>
 
@@ -180,7 +181,7 @@ export default function PortfolioSummarySnapshot({
               isProfit ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
             }`}
           >
-            {formatPaise(portfolio ? unrealizedPnlPaise : undefined)}
+            {formatPaise(portfolio && valuationAvailable ? unrealizedPnlPaise : undefined)}
           </div>
           <div className="text-[10px] font-bold font-tabular">
             <span
@@ -188,7 +189,7 @@ export default function PortfolioSummarySnapshot({
                 isProfit ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
               }
             >
-              {portfolio ? formatPercent(returnPercent) : "—"}
+              {portfolio && valuationAvailable && returnPercent !== undefined ? formatPercent(returnPercent) : "—"}
             </span>{" "}
             <span className="text-slate-400 font-normal">on open holdings</span>
           </div>
@@ -216,7 +217,7 @@ export default function PortfolioSummarySnapshot({
                 isTotalProfit ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
               }`}
             >
-              {formatPaise(portfolio ? totalNetPnlPaise : undefined)}
+              {formatPaise(portfolio && valuationAvailable ? totalNetPnlPaise : undefined)}
             </span>
           </div>
         </div>

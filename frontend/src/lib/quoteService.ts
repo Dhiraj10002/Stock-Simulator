@@ -1,154 +1,92 @@
-import { Quote } from "@/types";
+import type { Quote } from "@/types";
 import { API_URL } from "@/lib/api";
 import { useMarketStore } from "@/stores/market-store";
 
-interface CacheEntry {
-  quote: Quote;
-  expiresAt: number;
-}
+// Display-only cache. It is never used by order preview or execution validation.
+const CACHE_TTL_MS = 10_000;
+const quoteCache = new Map<string, { quote: Quote; expiresAt: number }>();
+const pendingQuotes = new Map<string, Promise<Quote | null>>();
+const cleanSymbol = (symbol: string) => symbol?.trim().toUpperCase();
 
-const CACHE_TTL_MS = 10_000; // 10 seconds cache TTL
-const quoteCache = new Map<string, CacheEntry>();
-
-/**
- * Returns a cached quote if still valid.
- */
 export function getCachedQuote(symbol: string): Quote | undefined {
-  const sym = symbol?.trim().toUpperCase();
-  if (!sym) return undefined;
-
-  // Check in-memory quoteCache
+  const sym = cleanSymbol(symbol);
+  if (!sym) return;
   const entry = quoteCache.get(sym);
-  if (entry && Date.now() < entry.expiresAt) {
-    return entry.quote;
-  }
-
-  // Check market store
-  const storeQuotes = useMarketStore.getState().quotes;
-  if (storeQuotes[sym] && Date.now() - Date.parse(storeQuotes[sym].updated_at) < CACHE_TTL_MS) {
-    return storeQuotes[sym];
-  }
-
-  return undefined;
+  const cached = entry && Date.now() < entry.expiresAt ? entry.quote : undefined;
+  const stored = useMarketStore.getState().quotes[sym];
+  // A newer WebSocket tick wins over a REST cache entry.
+  if (stored && Date.now() - Date.parse(stored.updated_at) < CACHE_TTL_MS && (!cached || Date.parse(stored.updated_at) >= Date.parse(cached.updated_at))) return stored;
+  return cached;
 }
 
-/**
- * Synchronous quote getter that tries marketStore -> cache.
- * Returns undefined if no authentic quote is available (never fabricates mockData).
- */
 export function getQuoteSync(symbol: string): Quote | undefined {
-  const sym = symbol?.trim().toUpperCase();
-  if (!sym) {
-    return undefined;
-  }
-
-  const storeQuote = useMarketStore.getState().quotes[sym];
-  if (storeQuote && storeQuote.price_paise > 0) {
-    return storeQuote;
-  }
-
-  const cached = getCachedQuote(sym);
-  if (cached && cached.price_paise > 0) {
-    return cached;
-  }
-
-  return undefined;
+  const sym = cleanSymbol(symbol);
+  const stored = useMarketStore.getState().quotes[sym];
+  return stored?.price_paise > 0 ? stored : getCachedQuote(sym);
 }
 
-/**
- * Fetches the real-time quote for a single symbol from the backend API.
- * Updates market store and caches the result on success.
- * Returns null on failure without silent mock fallback.
- */
+function publish(quotes: Record<string, Quote>) {
+  if (!Object.keys(quotes).length) return;
+  for (const [symbol, quote] of Object.entries(quotes)) quoteCache.set(symbol, { quote, expiresAt: Date.now() + CACHE_TTL_MS });
+  useMarketStore.getState().mergeQuotes(quotes);
+}
+
 export async function fetchQuote(symbol: string): Promise<Quote | null> {
-  const sym = symbol?.trim().toUpperCase();
-  if (!sym) {
-    return null;
-  }
-
+  const sym = cleanSymbol(symbol);
+  if (!sym) return null;
   const cached = getCachedQuote(sym);
-  if (cached) {
-    return cached;
-  }
-
-  try {
-    const res = await fetch(`${API_URL}/market/quotes/${encodeURIComponent(sym)}?purpose=display`);
-    if (res.status === 404) {
-      return null;
-    }
-    if (!res.ok) {
-      throw new Error(`Failed to fetch quote for ${sym}: ${res.status}`);
-    }
-
-    const body = await res.json();
-    if (body?.success && body?.data) {
-      const q: Quote = body.data;
-      quoteCache.set(sym, {
-        quote: q,
-        expiresAt: Date.now() + CACHE_TTL_MS,
-      });
-
-      // Update global market store
-      useMarketStore.getState().updateQuote(q);
-      return q;
-    }
-  } catch (err) {
-    console.warn(`[quoteService] Failed to fetch live quote for ${sym}:`, err);
-  }
-
-  return null;
+  if (cached) return cached;
+  const pending = pendingQuotes.get(sym);
+  if (pending) return pending;
+  const request = (async () => {
+    try {
+      const response = await fetch(`${API_URL}/market/quotes/${encodeURIComponent(sym)}?purpose=display`, { signal: AbortSignal.timeout(8000) });
+      if (!response.ok) return null;
+      const body = await response.json();
+      const quote: Quote | undefined = body.success ? body.data : undefined;
+      if (!quote || !Number.isSafeInteger(quote.price_paise) || quote.price_paise <= 0) return null;
+      publish({ [sym]: quote });
+      return getQuoteSync(sym) || quote;
+    } catch { return null; }
+  })();
+  pendingQuotes.set(sym, request);
+  try { return await request; } finally { if (pendingQuotes.get(sym) === request) pendingQuotes.delete(sym); }
 }
 
-/**
- * Fetches quotes for an array of symbols in parallel batches.
- * Updates market store and local cache for successfully resolved quotes.
- */
-export async function fetchBatchQuotes(
-  symbols: string[]
-): Promise<Record<string, Quote>> {
-  const uniqueSymbols = Array.from(
-    new Set(symbols.map((s) => s?.trim().toUpperCase()).filter(Boolean))
-  );
-
-  const results: Record<string, Quote> = {};
-  const toFetch: string[] = [];
-
-  for (const sym of uniqueSymbols) {
-    const cached = getCachedQuote(sym);
-    if (cached) {
-      results[sym] = cached;
-    } else {
-      toFetch.push(sym);
+export async function fetchBatchQuotes(symbols: string[]): Promise<Record<string, Quote>> {
+  const unique = [...new Set(symbols.map(cleanSymbol).filter(Boolean))];
+  const results: Record<string, Quote> = {}, missing: string[] = [];
+  for (const symbol of unique) {
+    const cached = getCachedQuote(symbol);
+    if (cached) results[symbol] = cached;
+    else if (!pendingQuotes.has(symbol)) missing.push(symbol);
+  }
+  for (let i = 0; i < missing.length; i += 100) {
+    const chunk = missing.slice(i, i + 100);
+    const batch = (async () => {
+      const quotes: Record<string, Quote> = {};
+      try {
+        const response = await fetch(`${API_URL}/market/quotes/batch`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ symbols: chunk }), signal: AbortSignal.timeout(8000) });
+        if (!response.ok) return quotes;
+        const body = await response.json();
+        if (!body.success || !body.data) return quotes;
+        for (const symbol of chunk) {
+          const quote: Quote | undefined = body.data[symbol];
+          if (quote && Number.isSafeInteger(quote.price_paise) && quote.price_paise > 0) quotes[symbol] = quote;
+        }
+        publish(quotes); // One store update for the entire response.
+      } catch { /* Missing quotes stay unavailable and can be retried later. */ }
+      return quotes;
+    })();
+    for (const symbol of chunk) {
+      const pending = batch.then(quotes => quotes[symbol] ? getQuoteSync(symbol) || quotes[symbol] : null);
+      pendingQuotes.set(symbol, pending);
+      void pending.finally(() => { if (pendingQuotes.get(symbol) === pending) pendingQuotes.delete(symbol); });
     }
   }
-
-  if (toFetch.length === 0) {
-    return results;
-  }
-
-  // A missing entry is an unavailable quote, not a reason to fan out requests.
-  // The backend has queued subscription demand; a later refresh picks up ticks.
-  for (let i = 0; i < toFetch.length; i += 100) {
-    const chunk = toFetch.slice(i, i + 100);
-    try {
-      const res = await fetch(`${API_URL}/market/quotes/batch`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ symbols: chunk }),
-      });
-      if (!res.ok) continue;
-      const body = await res.json();
-      if (!body?.success || !body?.data) continue;
-      for (const sym of chunk) {
-        const q = body.data[sym] as Quote | undefined;
-        if (!q || q.price_paise <= 0) continue;
-        quoteCache.set(sym, { quote: q, expiresAt: Date.now() + CACHE_TTL_MS });
-        useMarketStore.getState().updateQuote(q);
-        results[sym] = q;
-      }
-    } catch (err) {
-      console.warn("[quoteService] Batch quote fetch failed:", err);
-    }
-  }
+  await Promise.all(unique.filter(symbol => !results[symbol]).map(async symbol => {
+    const pending = pendingQuotes.get(symbol);
+    if (pending) { const quote = await pending; if (quote) results[symbol] = quote; }
+  }));
   return results;
 }

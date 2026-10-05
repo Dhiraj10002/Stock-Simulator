@@ -194,7 +194,7 @@ export default function TradingViewChart({
         background: { type: ColorType.Solid, color: themeColors.bg },
         textColor: themeColors.text,
         fontSize: 11,
-        fontFamily: "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif",
+        fontFamily: getComputedStyle(document.documentElement).getPropertyValue("--font-sans").trim() || "system-ui, sans-serif",
       },
       grid: {
         vertLines: { color: themeColors.grid },

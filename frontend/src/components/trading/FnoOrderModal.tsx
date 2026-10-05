@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Zap, X, CheckCircle2, AlertCircle } from "lucide-react";
 import { formatPaise } from "@/lib/format";
@@ -10,7 +10,7 @@ import { useAccountWallet } from "@/hooks/useAccountWallet";
 import { validLot } from "@/lib/strategyExecution";
 import { dayMovement } from "@/lib/marketDisplay";
 import { quoteLabel } from "@/lib/marketData";
-import { displayQuote } from "@/lib/fnoExplore";
+import { displayQuote, expiryLabel } from "@/lib/fnoExplore";
 import { useSymbolQuote, useTargetedSubscription } from "@/stores/market-store";
 import { useToast } from "@/components/ui/ToastProvider";
 import { formatKiteSymbol } from "@/lib/instrumentDisplay";
@@ -48,6 +48,27 @@ export default function FnoOrderModal({
     type: "success" | "error";
     message: string;
   } | null>(null);
+
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const closeRef = useRef(onClose);
+  useEffect(() => { closeRef.current = onClose; }, [onClose]);
+  useEffect(() => {
+    if (!isOpen) return;
+    const previous = document.activeElement as HTMLElement | null;
+    const oldOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const elements = () => [...(dialogRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), summary, a[href]') || [])].filter(el => el.getClientRects().length > 0);
+    elements()[0]?.focus();
+    const keydown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { event.preventDefault(); closeRef.current(); }
+      if (event.key !== "Tab") return;
+      const list = elements(), first = list[0], last = list.at(-1);
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    };
+    document.addEventListener("keydown", keydown);
+    return () => { document.body.style.overflow = oldOverflow; document.removeEventListener("keydown", keydown); previous?.focus(); };
+  }, [isOpen]);
 
   const token = useAuthToken();
   const wallet = useAccountWallet();
@@ -282,15 +303,16 @@ export default function FnoOrderModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/70 sm:items-center sm:p-4">
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label="Paper order ticket"
-        className="max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto bg-[#ffffff] dark:bg-[#0f172a] border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl flex flex-col transition-colors"
+        className="max-h-[92dvh] sm:max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-hidden bg-[#ffffff] dark:bg-[#0f172a] border border-slate-200 dark:border-slate-800 rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col transition-colors"
       >
         {/* Modal Header */}
-        <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-start justify-between gap-3 bg-slate-50/70 dark:bg-slate-950/60">
+        <div className="sticky top-0 z-10 p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-start justify-between gap-3 bg-slate-50 dark:bg-slate-950">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 flex-wrap">
               <span
@@ -320,7 +342,6 @@ export default function FnoOrderModal({
 
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
               {instrument.name}{" "}
-              {instrument.expiry ? `• Expiry: ${instrument.expiry}` : ""}
             </p>
           </div>
 
@@ -354,22 +375,28 @@ export default function FnoOrderModal({
             <button
               aria-label="Close paper order ticket"
               onClick={onClose}
-              className="p-1 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 mt-2 transition-colors cursor-pointer"
+              className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white mt-2 transition-colors cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
           </div>
+          <dl className="grid w-full grid-cols-3 gap-3 text-[11px] text-slate-600 dark:text-slate-400">
+            <div><dt>Expiry</dt><dd className="mt-1 font-semibold text-slate-900 dark:text-white">{instrument.expiry ? expiryLabel(instrument.expiry) : "Unavailable"}</dd></div>
+            <div><dt>Lot size</dt><dd className="mt-1 font-semibold text-slate-900 dark:text-white">{lotSize || "Unavailable"}</dd></div>
+            <div><dt>Total quantity</dt><dd className="mt-1 font-semibold text-slate-900 dark:text-white">{validQuantity ? totalQuantity : "Unavailable"}</dd></div>
+          </dl>
         </div>
 
         {/* Modal Form Body */}
-        <div className="p-5 space-y-4">
+        <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5 space-y-4">
           {/* 1. Side Switcher: BUY vs SELL */}
           <div className="grid grid-cols-2 gap-2 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl">
             <button
               onClick={() => setSide("BUY")}
-              className={`py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              aria-pressed={side === "BUY"}
+              className={`min-h-11 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 side === "BUY"
-                  ? "bg-cyan-600 dark:bg-cyan-500 text-white dark:text-slate-950 shadow-xs font-black"
+                  ? "bg-cyan-800 dark:bg-cyan-300 text-white dark:text-slate-950 shadow-xs font-black"
                   : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
               }`}
             >
@@ -377,9 +404,10 @@ export default function FnoOrderModal({
             </button>
             <button
               onClick={() => setSide("SELL")}
-              className={`py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              aria-pressed={side === "SELL"}
+              className={`min-h-11 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 side === "SELL"
-                  ? "bg-rose-600 dark:bg-rose-500 text-white font-black shadow-xs"
+                  ? "bg-rose-700 dark:bg-rose-400 text-white dark:text-slate-950 font-black shadow-xs"
                   : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
               }`}
             >
@@ -401,14 +429,14 @@ export default function FnoOrderModal({
                       : "text-slate-500 hover:text-slate-800 dark:hover:text-white"
                   }`}
                 >
-                  NRML
+                  Carry forward
                 </button>
                 <button
                   disabled
                   title="Derivative intraday accounting is not supported yet. Use NRML for F&O paper orders."
                   className="py-1.5 rounded-md text-xs font-bold text-slate-400 cursor-not-allowed"
                 >
-                  MIS (Intraday)
+                  Intraday (MIS)
                 </button>
               </div>
             </div>
@@ -455,6 +483,7 @@ export default function FnoOrderModal({
 
             <div className="flex items-center gap-2">
               <input
+                aria-label="Number of lots"
                 type="number"
                 min="1"
                 max="100"
@@ -506,52 +535,10 @@ export default function FnoOrderModal({
             </div>
           )}
 
-          {/* 5. Margin & Capital Breakdown Box */}
-          <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/60 text-xs space-y-1.5">
-            <div className="flex justify-between items-center text-slate-500 dark:text-slate-400">
-              <span>Required additional funds:</span>
-              <span className="font-black text-slate-900 dark:text-slate-100 font-tabular text-sm">
-                {displayMarginPaise !== undefined ? formatPaise(displayMarginPaise) : "Unavailable"}
-              </span>
-            </div>
-            <div className="flex justify-between items-center text-slate-500 dark:text-slate-400 text-[11px]">
-              <span>Available virtual funds:</span>
-              <span className="font-bold text-emerald-600 dark:text-emerald-400 font-tabular">
-                {formatPaise(availableBalancePaise)}
-              </span>
-            </div>
-            <div className="flex justify-between items-center text-slate-400 text-[10px] pt-1 border-t border-slate-200/60 dark:border-slate-700/40">
-              <span>Paper fees:</span>
-              <span className="font-mono">Not charged by simulator</span>
-            </div>
-          </div>
-
-          {/* Simulator Leverage & Margin Policy Disclosure */}
-          <div className="p-3 rounded-xl bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200/80 dark:border-indigo-800/60 text-[11px] space-y-1">
-            <div className="flex items-center justify-between font-bold text-indigo-900 dark:text-indigo-300">
-              <span className="flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse" />
-                {instrument.segment === "FUTURES"
-                  ? "Futures Margin Policy (~20% / 5x)"
-                  : side === "BUY"
-                    ? "Long Option Policy (100% Cash Premium)"
-                    : "Short Option Policy (~30% Fixed Margin)"}
-              </span>
-              <span className="text-[9px] uppercase font-mono px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300">
-                Paper Trading Model
-              </span>
-            </div>
-            <p className="text-slate-600 dark:text-slate-300 text-[11px] leading-relaxed">
-              {instrument.segment === "FUTURES"
-                ? "Futures require ~20% contract value margin (5x leverage). Positions are marked-to-market daily and cash-settled against final quote on expiry."
-                : side === "BUY"
-                  ? "Long options require 100% upfront cash premium and block ₹0 margin. Maximum possible loss is capped strictly at the premium paid."
-                  : "Short options block ~30% fixed margin against contract value to absorb non-linear risk. Real broker SPAN + Exposure margins fluctuate dynamically."}
-            </p>
-            <div className="mt-2 pt-2 border-t border-indigo-200/60 dark:border-indigo-800/40 text-[10px] text-indigo-700 dark:text-indigo-400 font-medium">
-              Simulated Margin Model: Margin requirements are calculated based on simulator parameters and do not represent broker SPAN + Exposure margin.
-            </div>
-          </div>
+          <details className="rounded-xl border border-slate-200 p-3 text-xs dark:border-slate-700">
+            <summary className="cursor-pointer font-semibold text-slate-800 dark:text-slate-200">How simulator margin works</summary>
+            <p className="mt-2 leading-5 text-slate-600 dark:text-slate-400">{instrument.segment === "FUTURES" ? "Futures use the simulator’s fixed margin percentage of contract value." : side === "BUY" ? "Long options debit the premium from virtual cash." : "Written options use the simulator’s fixed margin percentage of contract value."} These estimates simplify broker margin requirements. Funds and price are checked again by the server.</p>
+          </details>
 
           <p className="text-xs text-slate-500" role="status">
             {preview.isError
@@ -583,7 +570,7 @@ export default function FnoOrderModal({
           )}
           {/* Feedback message */}
           {!validQuantity && (
-            <p role="alert" className="text-sm text-amber-300">
+            <p role="alert" className="text-sm text-amber-800 dark:text-amber-300">
               A canonical lot size and whole-number lots are required.
             </p>
           )}
@@ -610,6 +597,32 @@ export default function FnoOrderModal({
             </div>
           )}
 
+        </div>
+        <div className="shrink-0 space-y-2 border-t border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950">
+          {/* 5. Margin & Capital Breakdown Box */}
+          <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/60 text-xs space-y-1.5">
+            <div className="flex justify-between items-center text-slate-500 dark:text-slate-400">
+              <span>Required additional funds:</span>
+              <span className="font-black text-slate-900 dark:text-slate-100 font-tabular text-sm">
+                {displayMarginPaise !== undefined ? formatPaise(displayMarginPaise) : "Unavailable"}
+              </span>
+            </div>
+            <div className="flex justify-between items-center text-slate-500 dark:text-slate-400 text-[11px]">
+              <span>Available virtual funds:</span>
+              <span className="font-bold text-emerald-700 dark:text-emerald-400 font-tabular">
+                {formatPaise(availableBalancePaise)}
+              </span>
+            </div>
+            <div className="flex justify-between items-center text-slate-400 text-[10px] pt-1 border-t border-slate-200/60 dark:border-slate-700/40">
+              <span>Paper fees:</span>
+              <span className="font-mono">Not charged by simulator</span>
+            </div>
+          </div>
+
+          <p className="text-xs leading-5 text-amber-900 dark:text-amber-200">
+            {instrument.segment === "FUTURES" || side === "SELL" ? "Leveraged paper position: losses can exceed the initial margin." : "Long option: the premium paid can be lost in full."}
+          </p>
+          <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">Review: {side} {validQuantity ? totalQuantity : "—"} units · {lots} {lots === 1 ? "lot" : "lots"} · virtual money only</p>
           {/* 6. Execution Button */}
           {(() => {
             const isButtonDisabled =
@@ -637,8 +650,8 @@ export default function FnoOrderModal({
                   isButtonDisabled
                     ? "bg-slate-100 dark:bg-slate-800/80 text-slate-400 dark:text-slate-500 border border-slate-200 dark:border-slate-700/80 cursor-not-allowed shadow-none"
                     : side === "BUY"
-                      ? "bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-600 hover:from-emerald-400 hover:via-teal-400 hover:to-cyan-500 text-white shadow-teal-500/25 hover:shadow-teal-500/35 hover:scale-[1.01] active:scale-[0.99] border border-teal-400/30"
-                      : "bg-gradient-to-r from-rose-500 via-pink-600 to-orange-500 hover:from-rose-400 hover:via-pink-500 hover:to-orange-400 text-white shadow-rose-500/25 hover:shadow-rose-500/35 hover:scale-[1.01] active:scale-[0.99] border border-rose-400/30"
+                      ? "bg-cyan-800 hover:bg-cyan-900 text-white shadow-sm"
+                      : "bg-rose-700 hover:bg-rose-800 text-white shadow-sm"
                 }`}
               >
                 {executing ? (

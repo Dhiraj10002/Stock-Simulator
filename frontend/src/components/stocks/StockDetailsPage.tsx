@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -13,7 +13,10 @@ import {
   RefreshCw,
 } from "lucide-react";
 import Navbar from "@/components/layout/Navbar";
-import TradingViewChart from "@/components/trading/TradingViewChart";
+import dynamic from "next/dynamic";
+import ResponsiveOrderPanel from "@/components/shared/ResponsiveOrderPanel";
+import { tradingPanel, tradingMuted, tradingInput } from "@/components/shared/tradingStyles";
+const TradingViewChart = dynamic(() => import("@/components/trading/TradingViewChart"), { ssr: false, loading: () => <div className="flex h-[400px] items-center justify-center text-sm text-slate-500" role="status">Loading chart…</div> });
 import MarketDepthPanel from "./MarketDepthPanel";
 import {
   FnoMovement,
@@ -39,11 +42,9 @@ import type {
   WatchlistDbItem,
 } from "@/types";
 
-const panel =
-  "rounded-2xl border border-slate-200 bg-[#ffffff] p-4 shadow-sm sm:p-5 dark:border-slate-800 dark:bg-[#0f172a]";
-const muted = "text-slate-600 dark:text-slate-400";
-const input =
-  "mt-1 min-h-11 w-full min-w-0 rounded-xl border border-slate-300 bg-[#ffffff] px-3 text-sm outline-none focus:border-cyan-600 focus:ring-2 focus:ring-cyan-600/20 dark:border-slate-700 dark:bg-[#020617]";
+const panel = tradingPanel;
+const muted = tradingMuted;
+const input = tradingInput;
 const bounded = <T,>(path: string, signal: AbortSignal) =>
   publicFetch<T>(path, AbortSignal.any([signal, AbortSignal.timeout(8000)]));
 type Fundamentals = {
@@ -142,6 +143,8 @@ function StockDesk({ symbol, token }: { symbol: string; token: string }) {
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [confirmation, setConfirmation] = useState(false);
+  const [mobileTicket, setMobileTicket] = useState(false);
+  const closeMobileTicket = useCallback(() => setMobileTicket(false), []);
   const postStarted = useRef(false);
   const { addToast } = useToast();
   const instrument = useQuery({
@@ -371,18 +374,20 @@ function StockDesk({ symbol, token }: { symbol: string; token: string }) {
     !fundamentals.isError
       ? fundamentals.data
       : undefined;
+  const focusOrder = () => {
+    if (window.matchMedia("(max-width: 1023px)").matches) { setMobileTicket(true); return; }
+    document.getElementById("stock-order")?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth", block: "center" });
+  };
   const beginSide = (value: "BUY" | "SELL") => {
     if (submitted) return;
     setSide(value);
     setConfirmation(false);
-    document
-      .getElementById("stock-order")
-      ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    focusOrder();
   };
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
       <Navbar availableBalancePaise={wallet.data?.available_balance_paise} />
-      <main className="mx-auto w-full max-w-7xl min-w-0 space-y-5 p-4 sm:p-6 lg:p-8">
+      <main className="mx-auto w-full max-w-7xl min-w-0 space-y-5 p-4 pb-24 sm:p-6 sm:pb-24 lg:p-8">
         <nav
           aria-label="Stock breadcrumb"
           className={`flex flex-wrap items-center gap-2 text-xs ${muted}`}
@@ -418,7 +423,7 @@ function StockDesk({ symbol, token }: { symbol: string; token: string }) {
                   {canonical ? "NSE · Equity" : "Instrument unavailable"}
                 </span>
                 <span className="rounded bg-cyan-50 px-2 py-1 text-cyan-800 dark:bg-cyan-950 dark:text-cyan-300">
-                  Delivery / Intraday
+                  Delivery (CNC) / Intraday (MIS)
                 </span>
               </p>
             </div>
@@ -661,16 +666,7 @@ function StockDesk({ symbol, token }: { symbol: string; token: string }) {
             </section>
           </section>
           <aside className="min-w-0 space-y-5 lg:col-span-4">
-            <MarketDepthPanel
-              quote={quote}
-              now={now}
-              sessionLive={sessionLive}
-            />
-            <section
-              id="stock-order"
-              aria-label="Paper order ticket"
-              className={panel}
-            >
+            <ResponsiveOrderPanel open={mobileTicket} onClose={closeMobileTicket}>
               <h2 className="text-base font-bold">Place paper order</h2>
               <p className={`mt-1 text-xs ${muted}`}>
                 Delivery and intraday simulation
@@ -706,8 +702,8 @@ function StockDesk({ symbol, token }: { symbol: string; token: string }) {
                       }}
                       className={input}
                     >
-                      <option value="DELIVERY">Delivery</option>
-                      <option value="INTRADAY">Intraday</option>
+                      <option value="DELIVERY">Delivery (CNC)</option>
+                      <option value="INTRADAY">Intraday (MIS)</option>
                     </select>
                   </label>
                   <label className={`text-xs ${muted}`}>
@@ -840,10 +836,18 @@ function StockDesk({ symbol, token }: { symbol: string; token: string }) {
                 Intraday margin is a simulator estimate. The server checks
                 market status, price and funds before execution.
               </p>
-            </section>
+            </ResponsiveOrderPanel>
+            <MarketDepthPanel
+              quote={quote}
+              now={now}
+              sessionLive={sessionLive}
+            />
           </aside>
         </div>
       </main>
+      <div className="fixed inset-x-0 bottom-16 md:bottom-0 z-40 border-t border-slate-200 bg-white px-4 py-3 lg:hidden dark:border-slate-800 dark:bg-slate-950">
+        <button onClick={focusOrder} aria-haspopup="dialog" aria-expanded={mobileTicket} className="min-h-11 w-full rounded-xl bg-cyan-800 px-4 text-sm font-bold text-white">{submitted ? "Review paper order" : "Open paper order ticket"}</button>
+      </div>
     </div>
   );
 }
