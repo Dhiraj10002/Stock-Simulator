@@ -22,8 +22,8 @@ import { formatPaise } from "@/lib/format";
 import { FnoMovement, FnoProvenance } from "./FnoQuoteDetails";
 import type { Instrument, Quote } from "@/types";
 
-import { tradingPanel } from "@/components/shared/tradingStyles";
-const panel = tradingPanel;
+const panel =
+  "rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900/60 shadow-xs";
 
 export default function TopIndexFutures({
   contracts,

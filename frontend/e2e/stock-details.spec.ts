@@ -245,32 +245,21 @@ test("stock detail restores the light desk and transports real snapshot fields a
   expect(control.errors).toEqual([]);
 });
 
-test("mobile stock ticket preserves inputs, traps focus and stays locked after an uncertain order", async ({ page }) => {
+test("original mobile stock ticket keeps its inputs locked after an uncertain order", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const control = await setup(page, { uncertain: true });
-  const open = page.getByRole("button", { name: "Open paper order ticket", exact: true });
-  await expect(open).toBeVisible();
-  await open.click();
-  const ticket = page.getByRole("dialog", { name: "Paper order ticket" });
-  await expect(ticket).toBeVisible();
+  const ticket = page.getByRole("region", { name: "Paper order ticket" });
   await ticket.getByLabel("Quantity", { exact: true }).fill("3");
   await ticket.getByLabel("Product", { exact: true }).selectOption("INTRADAY");
-  await page.keyboard.press("Escape");
-  await expect(ticket).not.toBeVisible();
-  await expect(open).toBeFocused();
-  await open.click();
-  await expect(ticket.getByLabel("Quantity", { exact: true })).toHaveValue("3");
-  await expect(ticket.getByLabel("Product", { exact: true })).toHaveValue("INTRADAY");
-  await expect(ticket.getByRole("button", { name: "Close order ticket", exact: true })).toBeFocused();
-  if (process.env.STOCK_UI_SCREENSHOTS) await page.screenshot({ path: join(process.env.STOCK_UI_SCREENSHOTS, "stock-order-mobile.png") });
-  await page.keyboard.press("Shift+Tab");
-  expect(await ticket.evaluate(e => e.contains(document.activeElement))).toBe(true);
   await ticket.getByRole("checkbox", { name: /Confirm BUY/ }).check();
+  if (process.env.STOCK_UI_SCREENSHOTS) {
+    await ticket.scrollIntoViewIfNeeded();
+    await page.screenshot({ path: join(process.env.STOCK_UI_SCREENSHOTS, "stock-order-mobile.png") });
+  }
   await ticket.getByRole("button", { name: "Place paper order", exact: true }).click();
   await expect(ticket.getByText("Order result is uncertain. Review Orders before placing another order.", { exact: true })).toBeVisible();
-  await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "Review paper order", exact: true }).click();
   await expect(ticket.getByLabel("Quantity", { exact: true })).toBeDisabled();
+  await expect(ticket.getByRole("button", { name: "Review order result", exact: true })).toBeDisabled();
   expect(control.posts).toHaveLength(1);
   expect(control.errors).toEqual([]);
 });

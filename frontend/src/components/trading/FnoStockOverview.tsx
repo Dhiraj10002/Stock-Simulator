@@ -21,8 +21,8 @@ import {
 import { FnoMovement } from "./FnoQuoteDetails";
 import type { Candle, Instrument, Quote } from "@/types";
 
-import { tradingPanel, discoveryCard } from "@/components/shared/tradingStyles";
-const panel = tradingPanel;
+const panel =
+  "rounded-2xl border border-slate-200 bg-white shadow-xs dark:border-slate-800 dark:bg-slate-900/60";
 const muted = "text-slate-600 dark:text-slate-400";
 const bounded = <T,>(path: string, signal: AbortSignal) =>
   publicFetch<T>(path, AbortSignal.any([signal, AbortSignal.timeout(8000)]));
@@ -232,7 +232,7 @@ export default function FnoStockOverview({
             <article
               key={instrument.symbol}
               aria-label={`${underlying} stock card`}
-              className={discoveryCard}
+              className={`${panel} flex min-h-[160px] min-w-0 flex-col justify-between p-4 transition-all hover:border-cyan-500/50`}
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">

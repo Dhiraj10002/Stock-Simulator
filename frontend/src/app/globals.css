@@ -127,9 +127,10 @@
    MotionSites AI Design System: Ultra-Luxe Dark Mode
    ========================================================================== */
 
-/* The cinematic showcase owns glass effects. Trading and public pages use their declared surfaces, without nested backdrop blurs. */
-.dark .showcase-3d .min-h-screen:not([data-landing]),
-html:not(.dark) .showcase-3d .min-h-screen:not([data-landing]) {
+/* Allow layout.tsx fixed atmospheric ambient glow to show through full-screen page wrappers */
+/* Exclude [data-landing] so the cinematic landing page retains its dark background */
+.dark .min-h-screen:not([data-landing]),
+html:not(.dark) .min-h-screen:not([data-landing]) {
   background-color: transparent !important;
 }
 
@@ -138,12 +139,12 @@ html:not(.dark) .showcase-3d .min-h-screen:not([data-landing]) {
    ========================================================================== */
 
 /* Universal Light Mode Glass Card Surface */
-html:not(.dark) .showcase-3d .bg-white,
-html:not(.dark) .showcase-3d .bg-white\/95,
-html:not(.dark) .showcase-3d .bg-white\/90,
-html:not(.dark) .showcase-3d .bg-white\/80,
-html:not(.dark) .showcase-3d .bg-white\/70,
-html:not(.dark) .showcase-3d .bg-white\/60 {
+html:not(.dark) .bg-white,
+html:not(.dark) .bg-white\/95,
+html:not(.dark) .bg-white\/90,
+html:not(.dark) .bg-white\/80,
+html:not(.dark) .bg-white\/70,
+html:not(.dark) .bg-white\/60 {
   background-color: rgba(255, 255, 255, 0.78) !important;
   backdrop-filter: blur(20px) !important;
   -webkit-backdrop-filter: blur(20px) !important;
@@ -152,44 +153,44 @@ html:not(.dark) .showcase-3d .bg-white\/60 {
 }
 
 /* Nested Containers in Light Mode (Inputs, Filter rows, Sub-tables) */
-html:not(.dark) .showcase-3d .bg-slate-50,
-html:not(.dark) .showcase-3d .bg-slate-50\/90,
-html:not(.dark) .showcase-3d .bg-slate-50\/80,
-html:not(.dark) .showcase-3d .bg-slate-50\/70,
-html:not(.dark) .showcase-3d .bg-slate-50\/60,
-html:not(.dark) .showcase-3d .bg-slate-100,
-html:not(.dark) .showcase-3d .bg-slate-100\/90,
-html:not(.dark) .showcase-3d .bg-slate-100\/80,
-html:not(.dark) .showcase-3d .bg-slate-100\/70 {
+html:not(.dark) .bg-slate-50,
+html:not(.dark) .bg-slate-50\/90,
+html:not(.dark) .bg-slate-50\/80,
+html:not(.dark) .bg-slate-50\/70,
+html:not(.dark) .bg-slate-50\/60,
+html:not(.dark) .bg-slate-100,
+html:not(.dark) .bg-slate-100\/90,
+html:not(.dark) .bg-slate-100\/80,
+html:not(.dark) .bg-slate-100\/70 {
   background-color: rgba(248, 250, 252, 0.65) !important;
   backdrop-filter: blur(14px) !important;
   -webkit-backdrop-filter: blur(14px) !important;
 }
 
 /* Delicate Frosted Borders in Light Mode */
-html:not(.dark) .showcase-3d .border-slate-200,
-html:not(.dark) .showcase-3d .border-slate-200\/90,
-html:not(.dark) .showcase-3d .border-slate-200\/80,
-html:not(.dark) .showcase-3d .border-slate-200\/70 {
+html:not(.dark) .border-slate-200,
+html:not(.dark) .border-slate-200\/90,
+html:not(.dark) .border-slate-200\/80,
+html:not(.dark) .border-slate-200\/70 {
   border-color: rgba(226, 232, 240, 0.75) !important;
 }
 
 /* Light Mode Card Hover: Specular Lift + Ambient Cyan Halo */
-html:not(.dark) .showcase-3d .hover\:border-cyan-500\/50:hover,
-html:not(.dark) .showcase-3d .hover\:border-cyan-500\/40:hover,
-html:not(.dark) .showcase-3d .hover\:border-cyan-500:hover,
-html:not(.dark) .showcase-3d .hover\:shadow-md:hover {
+html:not(.dark) .hover\:border-cyan-500\/50:hover,
+html:not(.dark) .hover\:border-cyan-500\/40:hover,
+html:not(.dark) .hover\:border-cyan-500:hover,
+html:not(.dark) .hover\:shadow-md:hover {
   border-color: rgba(6, 182, 212, 0.55) !important;
   box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 1), 0 16px 36px -8px rgba(6, 182, 212, 0.2) !important;
 }
 
 /* Light Mode Table Row Hover */
-html:not(.dark) .showcase-3d table tbody tr:hover {
+html:not(.dark) table tbody tr:hover {
   background-color: rgba(241, 245, 249, 0.75) !important;
 }
 
 /* Light Mode Floating Navbar Glass (exclude landing page header) */
-html:not(.dark) .showcase-3d header:not([data-landing]) {
+html:not(.dark) header:not([data-landing]) {
   background-color: rgba(255, 255, 255, 0.8) !important;
   backdrop-filter: blur(20px) !important;
   -webkit-backdrop-filter: blur(20px) !important;
@@ -197,13 +198,13 @@ html:not(.dark) .showcase-3d header:not([data-landing]) {
 }
 
 /* Universal Glassmorphic Card Surface */
-.dark .showcase-3d .bg-slate-900,
-.dark .showcase-3d .bg-slate-900\/90,
-.dark .showcase-3d .bg-slate-900\/80,
-.dark .showcase-3d .bg-slate-900\/70,
-.dark .showcase-3d .bg-slate-900\/60,
-.dark .showcase-3d .bg-slate-900\/50,
-.dark .showcase-3d .bg-slate-900\/40 {
+.dark .bg-slate-900,
+.dark .bg-slate-900\/90,
+.dark .bg-slate-900\/80,
+.dark .bg-slate-900\/70,
+.dark .bg-slate-900\/60,
+.dark .bg-slate-900\/50,
+.dark .bg-slate-900\/40 {
   background-color: rgba(11, 15, 26, 0.72) !important;
   backdrop-filter: blur(20px) !important;
   -webkit-backdrop-filter: blur(20px) !important;
@@ -211,38 +212,38 @@ html:not(.dark) .showcase-3d header:not([data-landing]) {
 }
 
 /* Deeper Nested Surfaces (Inputs, Sub-tables, Containers) */
-.dark .showcase-3d .bg-slate-950,
-.dark .showcase-3d .bg-slate-950\/90,
-.dark .showcase-3d .bg-slate-950\/80,
-.dark .showcase-3d .bg-slate-950\/70,
-.dark .showcase-3d .bg-slate-950\/60,
-.dark .showcase-3d .bg-slate-950\/50 {
+.dark .bg-slate-950,
+.dark .bg-slate-950\/90,
+.dark .bg-slate-950\/80,
+.dark .bg-slate-950\/70,
+.dark .bg-slate-950\/60,
+.dark .bg-slate-950\/50 {
   background-color: rgba(6, 8, 15, 0.82) !important;
   backdrop-filter: blur(12px) !important;
   -webkit-backdrop-filter: blur(12px) !important;
 }
 
 /* Frosted Micro-Borders */
-.dark .showcase-3d .border-slate-800,
-.dark .showcase-3d .border-slate-800\/90,
-.dark .showcase-3d .border-slate-800\/80,
-.dark .showcase-3d .border-slate-800\/70,
-.dark .showcase-3d .border-slate-800\/60,
-.dark .showcase-3d .border-slate-800\/50 {
+.dark .border-slate-800,
+.dark .border-slate-800\/90,
+.dark .border-slate-800\/80,
+.dark .border-slate-800\/70,
+.dark .border-slate-800\/60,
+.dark .border-slate-800\/50 {
   border-color: rgba(255, 255, 255, 0.075) !important;
 }
 
-.dark .showcase-3d .border-slate-700,
-.dark .showcase-3d .border-slate-700\/80,
-.dark .showcase-3d .border-slate-700\/60 {
+.dark .border-slate-700,
+.dark .border-slate-700\/80,
+.dark .border-slate-700\/60 {
   border-color: rgba(255, 255, 255, 0.12) !important;
 }
 
 /* MotionSites Card Hover: Luminescence Border + Ambient Drop-Glow */
-.dark .showcase-3d .hover\:border-cyan-500\/50:hover,
-.dark .showcase-3d .hover\:border-cyan-500\/40:hover,
-.dark .showcase-3d .hover\:border-cyan-500:hover,
-.dark .showcase-3d .hover\:border-slate-700:hover {
+.dark .hover\:border-cyan-500\/50:hover,
+.dark .hover\:border-cyan-500\/40:hover,
+.dark .hover\:border-cyan-500:hover,
+.dark .hover\:border-slate-700:hover {
   border-color: rgba(6, 182, 212, 0.45) !important;
   box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.16), 0 0 30px -4px rgba(6, 182, 212, 0.22) !important;
 }
@@ -391,8 +392,20 @@ html:not(.dark) .showcase-3d header:not([data-landing]) {
   transition: color 0.15s ease;
 }
 
-
-/* Keep essential UI usable without motion; no continuous animation on the public homepage. */
+/* Keep the original landing effects without rendering React on pointer updates. */
+.landing-nav-link[aria-current="location"] {
+  color: white;
+  background: rgb(255 255 255 / 0.12);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.15), 0 1px 3px rgb(0 0 0 / 0.2);
+}
+.landing-nav-line { display: none; }
+.landing-nav-link[aria-current="location"] .landing-nav-line { display: block; }
+.landing-experience[data-motion-ready="true"] .landing-stars { visibility: hidden; }
+.landing-experience [data-in-view="false"] *,
+.landing-experience[data-page-hidden="true"] * { animation-play-state: paused !important; }
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  .landing-letter:hover { animation: rubberBand 1s ease-in-out; }
+}
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;

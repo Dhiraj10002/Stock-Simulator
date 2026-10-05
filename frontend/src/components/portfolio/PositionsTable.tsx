@@ -422,7 +422,7 @@ export default function PositionsTable({
                       className="px-3 py-1 rounded-lg border border-rose-200 dark:border-rose-800/50 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/30 dark:hover:bg-rose-900/50 text-rose-700 dark:text-rose-300 hover:text-rose-900 dark:hover:text-white text-[11px] font-bold transition-all flex items-center gap-1 mx-auto disabled:opacity-50 active:scale-95 cursor-pointer shadow-xs"
                     >
                       <ArrowRightLeft className="w-3 h-3" />
-                      {squaringOff === pos.uuid ? "Closing…" : "Exit position"}
+                      {squaringOff === pos.uuid ? "Closing…" : "Exit"}
                     </button>
                   </td>
                 </tr>

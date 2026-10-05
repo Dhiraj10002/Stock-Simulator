@@ -1,6 +1,6 @@
-"use client";
-
-import React, { useState, useEffect, useRef } from "react";
+import React from "react";
+import LandingExperience from "./LandingExperience";
+import LandingAuthLink from "./LandingAuthLink";
 import Link from "next/link";
 import {
   ArrowRight,
@@ -20,132 +20,6 @@ import {
 } from "lucide-react";
 
 /* -------------------------------------------------------------
-   1. HARDWARE-ACCELERATED SPATIAL 3D CANVAS (COLORFUL PARTICLES)
-   ------------------------------------------------------------- */
-const PARTICLE_PALETTE = [
-  { prefix: "rgba(6, 182, 212, ", hex: "#06b6d4" },   // Electric Cyan
-  { prefix: "rgba(249, 115, 22, ", hex: "#f97316" },  // Vibrant Orange
-  { prefix: "rgba(16, 185, 129, ", hex: "#10b981" },  // Emerald Green
-  { prefix: "rgba(251, 191, 36, ", hex: "#fbbf24" },  // Radiant Amber
-  { prefix: "rgba(168, 85, 247, ", hex: "#a855f7" },  // Cosmic Purple
-  { prefix: "rgba(244, 114, 182, ", hex: "#f472b6" }, // Neon Rose / Pink
-];
-
-function SpatialCanvas({ mousePos }: { mousePos: { x: number; y: number } }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const mouseRef = useRef(mousePos);
-
-  useEffect(() => {
-    mouseRef.current = mousePos;
-  }, [mousePos]);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    let animId: number;
-    let width = (canvas.width = window.innerWidth);
-    let height = (canvas.height = window.innerHeight);
-
-    const onResize = () => {
-      if (!canvas) return;
-      width = canvas.width = window.innerWidth;
-      height = canvas.height = window.innerHeight;
-    };
-    window.addEventListener("resize", onResize);
-
-    const count = 400;
-    const particles = Array.from({ length: count }, () => {
-      const colorObj = PARTICLE_PALETTE[Math.floor(Math.random() * PARTICLE_PALETTE.length)];
-      return {
-        x: (Math.random() - 0.5) * 2200,
-        y: (Math.random() - 0.5) * 2200,
-        z: Math.random() * 1000 + 1,
-        size: Math.random() * 2.2 + 0.8,
-        colorPrefix: colorObj.prefix,
-        colorHex: colorObj.hex,
-      };
-    });
-
-    let currentOffsetX = 0;
-    let currentOffsetY = 0;
-
-    let lastStarTime = 0;
-    const render = (time: number) => {
-      if (document.hidden) {
-        animId = requestAnimationFrame(render);
-        return;
-      }
-      if (time - lastStarTime < 33) {
-        animId = requestAnimationFrame(render);
-        return;
-      }
-      lastStarTime = time;
-
-      ctx.clearRect(0, 0, width, height);
-
-      const fov = 400;
-      // Damped gentle parallax - moving cursor does NOT accelerate forward speed!
-      const targetOffsetX = mouseRef.current.x * 15;
-      const targetOffsetY = mouseRef.current.y * 15;
-      currentOffsetX += (targetOffsetX - currentOffsetX) * 0.04;
-      currentOffsetY += (targetOffsetY - currentOffsetY) * 0.04;
-
-      const cx = width / 2 + currentOffsetX;
-      const cy = height / 2 + currentOffsetY;
-
-      // Constant calm drift speed: stays completely normal whether cursor moves or is still
-      const speed = 0.85;
-
-      for (let i = 0; i < count; i++) {
-        const p = particles[i];
-        p.z -= speed;
-        if (p.z <= 0) {
-          p.z = 1000;
-          p.x = (Math.random() - 0.5) * 2200;
-          p.y = (Math.random() - 0.5) * 2200;
-        }
-
-        const k = fov / p.z;
-        const x = p.x * k + cx;
-        const y = p.y * k + cy;
-
-        if (x >= 0 && x <= width && y >= 0 && y <= height) {
-          const alpha = Math.min(1, Math.max(0.1, (1 - p.z / 1000) * 1.3));
-          const rad = Math.max(0.65, p.size * k * 0.8);
-
-          ctx.beginPath();
-          ctx.arc(x, y, rad, 0, Math.PI * 2);
-          ctx.fillStyle = `${p.colorPrefix}${alpha})`;
-          ctx.fill();
-        }
-      }
-
-      animId = requestAnimationFrame(render);
-    };
-
-    animId = requestAnimationFrame(render);
-
-    return () => {
-      window.removeEventListener("resize", onResize);
-      cancelAnimationFrame(animId);
-    };
-  }, []);
-
-  return (
-    <canvas
-      ref={canvasRef}
-      className="fixed inset-0 pointer-events-none z-0"
-      style={{ opacity: 0.9 }}
-    />
-  );
-}
-
-
-
-/* -------------------------------------------------------------
    1C. INTERACTIVE RUBBERBAND LETTER HOVER (PORTFOLIO FIDELITY)
    ------------------------------------------------------------- */
 function AnimatedLetter({
@@ -157,17 +31,7 @@ function AnimatedLetter({
 }) {
   return (
     <span
-      className={`inline-block transition-transform duration-150 cursor-default select-none ${className}`}
-      onMouseEnter={(e) => {
-        const el = e.currentTarget;
-        el.classList.remove("rubberBand");
-        // Trigger DOM reflow to allow immediate re-triggering of rubberBand animation
-        void el.offsetWidth;
-        el.classList.add("rubberBand");
-      }}
-      onAnimationEnd={(e) => {
-        e.currentTarget.classList.remove("rubberBand");
-      }}
+      className={`landing-letter inline-block transition-transform duration-150 cursor-default select-none ${className}`}
     >
       {char}
     </span>
@@ -210,39 +74,12 @@ function TiltCard({
   className?: string;
   glowColor?: string;
 }) {
-  const cardRef = useRef<HTMLDivElement>(null);
-  const [rotate, setRotate] = useState({ x: 0, y: 0 });
-  const [glare, setGlare] = useState({ x: 50, y: 50, opacity: 0 });
-
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!cardRef.current) return;
-    const rect = cardRef.current.getBoundingClientRect();
-    const x = (e.clientX - rect.left) / rect.width;
-    const y = (e.clientY - rect.top) / rect.height;
-    setRotate({
-      x: (y - 0.5) * -12,
-      y: (x - 0.5) * 12,
-    });
-    setGlare({
-      x: x * 100,
-      y: y * 100,
-      opacity: 0.28,
-    });
-  };
-
-  const handleMouseLeave = () => {
-    setRotate({ x: 0, y: 0 });
-    setGlare((g) => ({ ...g, opacity: 0 }));
-  };
-
   return (
     <div
-      ref={cardRef}
-      onMouseMove={handleMouseMove}
-      onMouseLeave={handleMouseLeave}
+      data-tilt-card
       className={`relative rounded-3xl transition-transform duration-200 ease-out group ${className}`}
       style={{
-        transform: `perspective(1100px) rotateX(${rotate.x}deg) rotateY(${rotate.y}deg) translateZ(6px)`,
+        transform: "perspective(1100px) rotateX(var(--tilt-x, 0deg)) rotateY(var(--tilt-y, 0deg)) translateZ(6px)",
         transformStyle: "preserve-3d",
       }}
     >
@@ -250,8 +87,8 @@ function TiltCard({
       <div
         className="absolute inset-0 rounded-3xl pointer-events-none z-20 transition-opacity duration-300"
         style={{
-          background: `radial-gradient(420px circle at ${glare.x}% ${glare.y}%, ${glowColor}, transparent 60%)`,
-          opacity: glare.opacity,
+          background: `radial-gradient(420px circle at var(--glare-x, 50%) var(--glare-y, 50%), ${glowColor}, transparent 60%)`,
+          opacity: "var(--glare-opacity, 0)",
         }}
       />
       {children}
@@ -262,36 +99,13 @@ function TiltCard({
 /* -------------------------------------------------------------
    3. 3D TILTING PLATFORM SHOWCASE DECK
    ------------------------------------------------------------- */
-function PlatformShowcase({ mousePos }: { mousePos: { x: number; y: number } }) {
-  const deckRef = useRef<HTMLDivElement>(null);
-  const [transform, setTransform] = useState({ rotX: 0, ty: 0 });
-
-  useEffect(() => {
-    const handleScroll = () => {
-      if (!deckRef.current) return;
-      const rect = deckRef.current.getBoundingClientRect();
-      const vh = window.innerHeight;
-      const p = Math.max(0, Math.min(1, 1 - (rect.top - vh * 0.1) / (vh * 0.7)));
-      // Settles perfectly flat/level when user reaches the section
-      const rotX = (1 - p) * 4;
-      const ty = (1 - p) * 10;
-      setTransform({
-        rotX,
-        ty,
-      });
-    };
-
-    window.addEventListener("scroll", handleScroll, { passive: true });
-    handleScroll();
-    return () => window.removeEventListener("scroll", handleScroll);
-  }, []);
-
+function PlatformShowcase() {
   return (
     <div
-      ref={deckRef}
+      data-platform-deck
       className="relative max-w-5xl w-full mx-auto transition-transform duration-300 ease-out"
       style={{
-        transform: `perspective(1600px) translateY(${transform.ty}px) rotateX(${transform.rotX + mousePos.y * -3}deg) rotateY(${mousePos.x * 3.5}deg)`,
+        transform: "perspective(1600px) translateY(var(--deck-y, 0px)) rotateX(calc(var(--deck-x, 0deg) + var(--pointer-y, 0) * -3deg)) rotateY(calc(var(--pointer-x, 0) * 3.5deg))",
         opacity: 1,
         transformStyle: "preserve-3d",
       }}
@@ -539,7 +353,7 @@ const FEATURES_DATA = [
     icon: Zap,
     badge: "LOW LATENCY",
     title: "Real-Time WebSocket Engine",
-    description: "Sub-50ms tick streaming mirrored from exchange broadcasts for lifelike, low-latency price action.",
+    description: "Market quotes stream to subscribed instruments for responsive paper trading.",
     borderColor: "border-emerald-500/35 hover:border-emerald-400/80 hover:shadow-[0_0_35px_rgba(16,185,129,0.2)]",
     iconBg: "bg-emerald-500/15 border-emerald-500/30 text-emerald-400",
     badgeStyle: "bg-emerald-500/10 text-emerald-300 border-emerald-500/30",
@@ -591,64 +405,23 @@ const FEATURES_DATA = [
 /* -------------------------------------------------------------
    MAIN COMPONENT: 3D SPATIAL LANDING PAGE
    ------------------------------------------------------------- */
-interface LandingPageProps {
-  onOpenAuth?: (mode: "login" | "register") => void;
-}
-
-export default function LandingPage({ onOpenAuth }: LandingPageProps = {}) {
-  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
-  const [activeSection, setActiveSection] = useState("hero");
-
-  // Track global mouse position for 3D gyro tilt
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      const x = (e.clientX / window.innerWidth - 0.5) * 2;
-      const y = (e.clientY / window.innerHeight - 0.5) * 2;
-      setMousePos({ x, y });
-    };
-
-    window.addEventListener("mousemove", handleMouseMove, { passive: true });
-    return () => window.removeEventListener("mousemove", handleMouseMove);
-  }, []);
-
-  // Track scroll spy to highlight current active section in navbar with light green
-  useEffect(() => {
-    const handleScroll = () => {
-      const scrollPosition = window.scrollY + 180;
-      for (let i = NAV_ITEMS.length - 1; i >= 0; i--) {
-        const el = document.getElementById(NAV_ITEMS[i].id);
-        if (el && el.offsetTop <= scrollPosition) {
-          setActiveSection(NAV_ITEMS[i].id);
-          break;
-        }
-      }
-    };
-
-    window.addEventListener("scroll", handleScroll, { passive: true });
-    handleScroll();
-    return () => window.removeEventListener("scroll", handleScroll);
-  }, []);
-
+export default function LandingPage() {
   return (
-    <div className="dark relative min-h-screen text-slate-100 font-sans overflow-x-hidden selection:bg-blue-600/30 selection:text-white" data-landing style={{ backgroundColor: '#04060b' }}>
-      {/* 3D Global Perspective Particle Canvas (Colorful dots, constant calm speed) */}
-      <SpatialCanvas mousePos={mousePos} />
-
-
+    <LandingExperience>
       {/* Floating Aurora Plasma Spheres (Multi-color ambient glow) */}
       <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
         <div
           className="absolute -top-40 -left-40 w-[700px] h-[700px] rounded-full blur-[140px] opacity-30 animate-pulse"
           style={{
             background: "radial-gradient(circle, rgba(6, 182, 212, 0.35), transparent 70%)",
-            transform: `translate(${mousePos.x * 35}px, ${mousePos.y * 35}px)`,
+            transform: "translate(calc(var(--pointer-x, 0) * 35px), calc(var(--pointer-y, 0) * 35px))",
           }}
         />
         <div
           className="absolute top-1/3 -right-40 w-[650px] h-[650px] rounded-full blur-[160px] opacity-25"
           style={{
             background: "radial-gradient(circle, rgba(249, 115, 22, 0.22), transparent 70%)",
-            transform: `translate(${mousePos.x * -25}px, ${mousePos.y * -25}px)`,
+            transform: "translate(calc(var(--pointer-x, 0) * -25px), calc(var(--pointer-y, 0) * -25px))",
           }}
         />
         <div
@@ -674,7 +447,7 @@ export default function LandingPage({ onOpenAuth }: LandingPageProps = {}) {
 
         <div className="w-full h-full px-5 sm:px-6 lg:px-8 flex items-center justify-between relative">
           {/* ── Brand ── */}
-          <Link href="/" className="flex items-center gap-2.5 shrink-0 group">
+          <Link prefetch={false} href="/" className="flex items-center gap-2.5 shrink-0 group">
             <div className="relative w-8 h-8 rounded-lg overflow-hidden">
               {/* Gradient border via pseudo background */}
               <div className="absolute inset-0 bg-gradient-to-br from-cyan-400 via-blue-500 to-violet-500 rounded-lg" />
@@ -689,37 +462,24 @@ export default function LandingPage({ onOpenAuth }: LandingPageProps = {}) {
 
           {/* ── Center Navigation ── */}
           <div className="hidden lg:flex items-center gap-1">
-            {NAV_ITEMS.map((item) => {
-              const isActive = activeSection === item.id;
-              return (
-                <a
-                  key={item.id}
-                  href={`#${item.id}`}
-                  onClick={() => setActiveSection(item.id)}
-                  className={`relative px-3.5 py-[6px] rounded-lg text-[12px] font-medium tracking-wide transition-all duration-250 ${isActive
-                    ? "text-white bg-white/[0.12] shadow-[inset_0_1px_0_rgba(255,255,255,0.15),0_1px_3px_rgba(0,0,0,0.2)]"
-                    : "text-white/50 hover:text-white/80 hover:bg-white/[0.05]"
-                    }`}
-                >
-                  {isActive && (
-                    <div className="absolute -bottom-[1px] left-3 right-3 h-[2px] rounded-full bg-gradient-to-r from-cyan-400 to-blue-400 shadow-[0_0_8px_rgba(6,182,212,0.5)]" />
-                  )}
-                  {item.label}
-                </a>
-              );
-            })}
+            {NAV_ITEMS.map((item) => (
+              <a key={item.id} href={`#${item.id}`} data-landing-nav={item.id}
+                aria-current={item.id === "hero" ? "location" : undefined}
+                className="landing-nav-link relative px-3.5 py-[6px] rounded-lg text-[12px] font-medium tracking-wide transition-all duration-250 text-white/50 hover:text-white/80 hover:bg-white/[0.05]">
+                <div className="landing-nav-line absolute -bottom-[1px] left-3 right-3 h-[2px] rounded-full bg-gradient-to-r from-cyan-400 to-blue-400 shadow-[0_0_8px_rgba(6,182,212,0.5)]" />
+                {item.label}
+              </a>
+            ))}
           </div>
 
           {/* ── Right Actions ── */}
           <div className="flex items-center gap-2 shrink-0">
-            <button
-              onClick={() => (onOpenAuth ? onOpenAuth("login") : (window.location.href = "/stocks"))}
+            <LandingAuthLink mode="login"
               className="px-4 py-[6px] rounded-lg text-[12px] font-medium text-white/60 hover:text-white hover:bg-white/[0.07] transition-all cursor-pointer"
             >
               Log In
-            </button>
-            <button
-              onClick={() => (onOpenAuth ? onOpenAuth("register") : (window.location.href = "/stocks"))}
+            </LandingAuthLink>
+            <LandingAuthLink mode="register"
               className="relative px-5 py-[7px] rounded-lg text-[12px] font-semibold text-white overflow-hidden transition-all hover:scale-[1.03] active:scale-[0.98] cursor-pointer shadow-[0_0_20px_rgba(6,182,212,0.2)]"
               style={{
                 background: 'linear-gradient(135deg, #06b6d4 0%, #3b82f6 50%, #8b5cf6 100%)',
@@ -728,11 +488,12 @@ export default function LandingPage({ onOpenAuth }: LandingPageProps = {}) {
               {/* Inner glass sheen */}
               <div className="absolute inset-0 bg-gradient-to-b from-white/20 to-transparent opacity-60 pointer-events-none" />
               <span className="relative">Sign Up</span>
-            </button>
+            </LandingAuthLink>
           </div>
         </div>
       </header>
 
+      <p className="sr-only">Illustrative preview: all homepage prices, balances, orders and trader stories are sample data, not live quotes or measured results.</p>
       {/* ================= TICKER MARQUEE ================= */}
       <div
         className="fixed top-[58px] left-0 right-0 z-40 w-full border-b border-white/[0.06] overflow-hidden"
@@ -742,6 +503,7 @@ export default function LandingPage({ onOpenAuth }: LandingPageProps = {}) {
           WebkitBackdropFilter: 'blur(16px)',
         }}
       >
+        <div className="absolute right-0 top-0 z-10 h-full flex items-center bg-[#04070e] px-2 text-[9px] font-mono text-cyan-300">SAMPLE DATA</div>
         <div className="flex animate-ticker-scroll py-2">
           {[...TICKERS, ...TICKERS, ...TICKERS].map((t, idx) => (
             <div key={idx} className="flex items-center gap-2 px-6 whitespace-nowrap text-[11px] font-mono shrink-0">
@@ -764,7 +526,7 @@ export default function LandingPage({ onOpenAuth }: LandingPageProps = {}) {
         <div
           className="relative max-w-4xl mx-auto space-y-4"
           style={{
-            transform: `perspective(1200px) rotateX(${mousePos.y * -6}deg) rotateY(${mousePos.x * 6}deg)`,
+            transform: "perspective(1200px) rotateX(calc(var(--pointer-y, 0) * -6deg)) rotateY(calc(var(--pointer-x, 0) * 6deg))",
             transition: "transform 0.15s ease-out",
           }}
         >
@@ -788,8 +550,7 @@ export default function LandingPage({ onOpenAuth }: LandingPageProps = {}) {
 
         {/* Interactive Action Hub */}
         <div className="flex flex-wrap items-center justify-center gap-3.5 pt-7">
-          <button
-            onClick={() => (onOpenAuth ? onOpenAuth("login") : (window.location.href = "/stocks"))}
+          <LandingAuthLink mode="login"
             className="group relative inline-flex items-center gap-2.5 px-8 py-3.5 rounded-xl text-white font-bold text-sm tracking-wide overflow-hidden transition-all hover:scale-[1.04] active:scale-[0.98] cursor-pointer shadow-[0_4px_24px_rgba(6,182,212,0.25),0_8px_32px_rgba(139,92,246,0.15)]"
             style={{
               background: 'linear-gradient(135deg, #06b6d4 0%, #3b82f6 50%, #8b5cf6 100%)',
@@ -799,9 +560,9 @@ export default function LandingPage({ onOpenAuth }: LandingPageProps = {}) {
             <div className="absolute inset-0 bg-gradient-to-b from-white/25 to-transparent pointer-events-none" />
             <span className="relative">Open Dashboard</span>
             <ArrowRight className="relative w-4 h-4 transition-transform duration-200 group-hover:translate-x-1" />
-          </button>
+          </LandingAuthLink>
 
-          <Link
+          <Link prefetch={false}
             href="/stocks"
             className="inline-flex items-center gap-2 px-6 py-3.5 rounded-xl text-cyan-300 hover:text-white font-bold text-sm tracking-wide transition-all border border-cyan-500/40 bg-cyan-950/40 hover:bg-cyan-900/60 hover:border-cyan-400 hover:scale-105"
           >
@@ -828,7 +589,7 @@ export default function LandingPage({ onOpenAuth }: LandingPageProps = {}) {
           <div
             className="hidden sm:flex absolute -top-5 -right-4 z-30 px-3.5 py-2 rounded-2xl bg-slate-900/90 border border-orange-500/40 shadow-xl shadow-orange-500/10 backdrop-blur-xl items-center gap-2.5 transition-transform duration-200"
             style={{
-              transform: `translate3d(${mousePos.x * 18}px, ${mousePos.y * 18}px, 35px)`,
+              transform: "translate3d(calc(var(--pointer-x, 0) * 18px), calc(var(--pointer-y, 0) * 18px), 35px)",
             }}
           >
             <div className="w-7 h-7 rounded-xl bg-orange-500/20 border border-orange-500/40 flex items-center justify-center text-orange-400 font-bold text-xs">
@@ -844,14 +605,14 @@ export default function LandingPage({ onOpenAuth }: LandingPageProps = {}) {
           <div
             className="hidden sm:flex absolute -bottom-5 -left-4 z-30 px-3.5 py-2 rounded-2xl bg-slate-900/90 border border-emerald-500/40 shadow-xl shadow-emerald-500/10 backdrop-blur-xl items-center gap-2.5 transition-transform duration-200"
             style={{
-              transform: `translate3d(${mousePos.x * -16}px, ${mousePos.y * -16}px, 30px)`,
+              transform: "translate3d(calc(var(--pointer-x, 0) * -16px), calc(var(--pointer-y, 0) * -16px), 30px)",
             }}
           >
             <div className="w-7 h-7 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 font-bold text-xs">
               ✓
             </div>
             <div className="text-left">
-              <div className="text-[9px] font-mono text-slate-400 uppercase">Live Order Match</div>
+              <div className="text-[9px] font-mono text-slate-400 uppercase">Sample Order Match</div>
               <div className="text-xs font-black font-mono text-emerald-400">TCS · 50 @ 3,912 FILLED</div>
             </div>
           </div>
@@ -860,7 +621,7 @@ export default function LandingPage({ onOpenAuth }: LandingPageProps = {}) {
           <div
             className="rounded-3xl bg-gradient-to-b from-[#0a1122]/90 to-[#060a14]/95 backdrop-blur-3xl border border-cyan-500/35 hover:border-cyan-400/60 p-5 sm:p-7 shadow-2xl transition-all duration-300 ease-out text-left"
             style={{
-              transform: `rotateX(${12 - mousePos.y * 12}deg) rotateY(${mousePos.x * 14}deg) translateZ(20px)`,
+              transform: "rotateX(calc(12deg + var(--pointer-y, 0) * -12deg)) rotateY(calc(var(--pointer-x, 0) * 14deg)) translateZ(20px)",
               boxShadow: "0 0 50px rgba(6, 182, 212, 0.15), 0 30px 70px rgba(0, 0, 0, 0.8)",
             }}
           >
@@ -876,7 +637,7 @@ export default function LandingPage({ onOpenAuth }: LandingPageProps = {}) {
               </div>
               <div className="flex items-center gap-2 font-mono text-[11px]">
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                <span className="text-emerald-400 font-bold">LIVE FEED</span>
+                <span className="text-emerald-400 font-bold">SAMPLE FEED</span>
               </div>
             </div>
 
@@ -974,7 +735,7 @@ export default function LandingPage({ onOpenAuth }: LandingPageProps = {}) {
           </div>
 
           {/* Interactive 3D Platform Showcase Deck */}
-          <PlatformShowcase mousePos={mousePos} />
+          <PlatformShowcase />
         </div>
       </section>
 
@@ -1194,7 +955,7 @@ export default function LandingPage({ onOpenAuth }: LandingPageProps = {}) {
                     </div>
                     <div>
                       <div className="text-3xl sm:text-4xl lg:text-5xl font-black font-mono tracking-tight text-transparent bg-clip-text bg-gradient-to-br from-cyan-300 via-sky-200 to-teal-300 drop-shadow-[0_2px_18px_rgba(6,182,212,0.35)]">
-                        24ms
+                        —
                       </div>
                       <div className="text-xs sm:text-sm font-bold text-white uppercase tracking-wider font-mono mt-1">
                         Feed Refresh Window
@@ -1206,7 +967,7 @@ export default function LandingPage({ onOpenAuth }: LandingPageProps = {}) {
                         ))}
                       </div>
                       <div className="text-[11px] text-slate-400 leading-relaxed">
-                        Sub-50ms tick streaming mirrored live from exchange broadcasts.
+                        Targeted streaming quotes keep the trading screens up to date.
                       </div>
                     </div>
                   </div>
@@ -1264,7 +1025,7 @@ export default function LandingPage({ onOpenAuth }: LandingPageProps = {}) {
           <div className="text-center space-y-2.5 relative">
             <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full text-[10px] font-mono uppercase tracking-widest text-slate-300 bg-white/[0.04] border border-white/10 backdrop-blur-md shadow-sm">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
-              <span>ARCHITECTURAL SUITE // NSE &amp; BSE LIVE</span>
+              <span>ARCHITECTURAL SUITE // NSE &amp; NFO PAPER</span>
             </div>
             <h2 className="text-3xl sm:text-4xl lg:text-5xl font-black uppercase tracking-tight leading-tight">
               <AnimatedPhrase
@@ -1358,7 +1119,7 @@ export default function LandingPage({ onOpenAuth }: LandingPageProps = {}) {
                         <div className="flex justify-between items-center text-[10px] pb-1 border-b border-white/[0.06]">
                           <span className="flex items-center gap-1.5 text-emerald-300 font-bold">
                             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
-                            24ms NSE Direct Bridge
+                            NSE/NFO quote streaming
                           </span>
                           <span className="text-emerald-400 font-bold">14,820 ticks/sec</span>
                         </div>
@@ -1451,7 +1212,7 @@ export default function LandingPage({ onOpenAuth }: LandingPageProps = {}) {
           <div className="text-center space-y-2 relative">
             <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-[11px] font-mono uppercase tracking-widest text-cyan-300 bg-cyan-500/10 border border-cyan-500/25 backdrop-blur-md shadow-sm">
               <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_8px_rgba(6,182,212,0.8)]" />
-              <span>VERIFIED SOCIAL PROOF // INDIAN MARKET TRADERS</span>
+              <span>ILLUSTRATIVE STORIES // PAPER TRADING</span>
             </div>
             <h2 className="text-3xl sm:text-4xl lg:text-5xl font-black uppercase tracking-tight leading-tight">
               <AnimatedPhrase
@@ -1537,7 +1298,7 @@ export default function LandingPage({ onOpenAuth }: LandingPageProps = {}) {
 
                   <div className="p-2.5 sm:p-3 rounded-xl bg-white/[0.03] border border-white/[0.06] flex items-center justify-between text-xs sm:text-[12.5px] font-mono text-slate-300 mb-4">
                     <span className="text-orange-300 font-bold">BankNifty Breakouts</span>
-                    <span className="text-emerald-400 font-bold">Avg Latency 24ms</span>
+                    <span className="text-emerald-400 font-bold">Illustrative paper trade</span>
                   </div>
                 </div>
 
@@ -1551,7 +1312,7 @@ export default function LandingPage({ onOpenAuth }: LandingPageProps = {}) {
                       <div className="text-[10px] sm:text-[11px] font-mono text-slate-400">Full-Time Intraday Scalper</div>
                     </div>
                     <span className="text-[9px] font-mono font-bold text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 rounded">
-                      ✓ VERIFIED
+                      SAMPLE
                     </span>
                   </div>
                 </div>
@@ -1595,7 +1356,7 @@ export default function LandingPage({ onOpenAuth }: LandingPageProps = {}) {
                       <div className="text-[10px] sm:text-[11px] font-mono text-slate-400">College Finance Student</div>
                     </div>
                     <span className="text-[9px] font-mono font-bold text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 rounded">
-                      ✓ VERIFIED
+                      SAMPLE
                     </span>
                   </div>
                 </div>
@@ -1639,7 +1400,7 @@ export default function LandingPage({ onOpenAuth }: LandingPageProps = {}) {
                       <div className="text-[10px] sm:text-[11px] font-mono text-slate-400">Systematic Algo Trader</div>
                     </div>
                     <span className="text-[9px] font-mono font-bold text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 rounded">
-                      ✓ VERIFIED
+                      SAMPLE
                     </span>
                   </div>
                 </div>
@@ -1651,18 +1412,18 @@ export default function LandingPage({ onOpenAuth }: LandingPageProps = {}) {
           <div className="rounded-2xl bg-white/[0.02] border border-white/[0.06] backdrop-blur-xl p-3 sm:p-4 flex flex-wrap items-center justify-between gap-4 text-xs sm:text-sm font-mono text-slate-400">
             <div className="flex items-center gap-2 text-slate-300">
               <Star className="w-4 h-4 text-amber-400 fill-amber-400" />
-              <span className="font-bold text-white">4.9 / 5.0</span>
-              <span className="text-slate-400 text-xs">(12,400+ Indian Paper Traders)</span>
+              <span className="font-bold text-white">Paper trading</span>
+              <span className="text-slate-400 text-xs">(Illustrative trader stories)</span>
             </div>
             <div className="hidden md:flex items-center gap-6 text-xs">
               <span className="flex items-center gap-1.5 text-slate-300">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400" /> Real-Time NSE Order Matching
+                <CheckCircle2 className="w-4 h-4 text-emerald-400" /> Simulated Order Matching
               </span>
               <span className="flex items-center gap-1.5 text-slate-300">
-                <CheckCircle2 className="w-4 h-4 text-cyan-400" /> Zero Simulated Slippage
+                <CheckCircle2 className="w-4 h-4 text-cyan-400" /> Virtual-Money Practice
               </span>
               <span className="flex items-center gap-1.5 text-slate-300">
-                <CheckCircle2 className="w-4 h-4 text-purple-400" /> SEBI-Aligned Contract Specs
+                <CheckCircle2 className="w-4 h-4 text-purple-400" /> Exchange Contract Specs
               </span>
             </div>
           </div>
@@ -1724,7 +1485,7 @@ export default function LandingPage({ onOpenAuth }: LandingPageProps = {}) {
                     </div>
                     <div className="flex items-center gap-3 text-[11px]">
                       <span className="text-slate-400">SEED: <span className="text-emerald-400 font-bold">₹10,00,000</span></span>
-                      <span className="text-slate-400">LATENCY: <span className="text-cyan-400 font-bold">24ms</span></span>
+                      <span className="text-slate-400">SAMPLE: <span className="text-cyan-400 font-bold">—</span></span>
                       <span className="flex items-center gap-1 text-emerald-400">
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" /> READY
                       </span>
@@ -1734,7 +1495,7 @@ export default function LandingPage({ onOpenAuth }: LandingPageProps = {}) {
 
                 {/* Action Buttons */}
                 <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3.5">
-                  <Link
+                  <Link prefetch={false}
                     href="/stocks"
                     className="group inline-flex items-center justify-center gap-3 px-9 py-4 rounded-full bg-[linear-gradient(135deg,#ff7a29_0%,#f43f5e_50%,#7c3aed_100%)] hover:bg-[linear-gradient(135deg,#ff8f4a_0%,#fb7185_50%,#8b5cf6_100%)] text-white font-bold text-sm sm:text-base tracking-wide shadow-[inset_0_1px_1px_rgba(255,255,255,0.4),0_10px_35px_-4px_rgba(255,122,41,0.5),0_8px_25px_-4px_rgba(124,58,237,0.4)] hover:shadow-[inset_0_1px_1px_rgba(255,255,255,0.5),0_16px_45px_-4px_rgba(255,122,41,0.65),0_12px_32px_-4px_rgba(124,58,237,0.55)] border border-white/25 hover:scale-105 transition-all duration-200 w-full sm:w-auto"
                   >
@@ -1756,7 +1517,7 @@ export default function LandingPage({ onOpenAuth }: LandingPageProps = {}) {
                     <CheckCircle2 className="w-4 h-4 text-emerald-400" /> ₹10,00,000 Seed Capital
                   </span>
                   <span className="flex items-center gap-1.5 text-slate-300">
-                    <CheckCircle2 className="w-4 h-4 text-cyan-400" /> Real NSE/BSE Tick Stream
+                    <CheckCircle2 className="w-4 h-4 text-cyan-400" /> Real NSE/NFO Tick Stream
                   </span>
                   <span className="flex items-center gap-1.5 text-slate-300">
                     <CheckCircle2 className="w-4 h-4 text-purple-400" /> 100% Risk-Free Practice
@@ -1792,19 +1553,19 @@ export default function LandingPage({ onOpenAuth }: LandingPageProps = {}) {
                 </div>
               </div>
               <p className="text-xs sm:text-[13px] text-slate-400 leading-relaxed max-w-md font-normal">
-                India&apos;s premier institutional-fidelity paper trading platform. Master NSE/BSE cash equities, BankNifty options chains, and futures risk-free with ₹10,00,000 in virtual seed capital.
+                India&apos;s premier institutional-fidelity paper trading platform. Practise NSE cash equities and NFO options and futures risk-free with ₹10,00,000 in virtual seed capital.
               </p>
 
               {/* Developer & Social Badges */}
               <div className="flex flex-wrap items-center gap-2.5 pt-1">
-                <Link
+                <Link prefetch={false}
                   href="/stocks"
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.08] hover:border-cyan-500/40 text-slate-400 hover:text-cyan-300 text-xs font-mono transition-all duration-200"
                 >
                   <Code2 className="w-3.5 h-3.5" />
                   <span>Explore Stocks</span>
                 </Link>
-                <Link
+                <Link prefetch={false}
                   href="/portfolio"
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.08] hover:border-cyan-500/40 text-slate-400 hover:text-cyan-300 text-xs font-mono transition-all duration-200"
                 >
@@ -1831,29 +1592,29 @@ export default function LandingPage({ onOpenAuth }: LandingPageProps = {}) {
                 </h4>
                 <ul className="space-y-2 text-xs text-slate-400">
                   <li>
-                    <Link href="/stocks" className="hover:text-cyan-300 transition-colors flex items-center gap-1.5 font-bold text-slate-200">
+                    <Link prefetch={false} href="/stocks" className="hover:text-cyan-300 transition-colors flex items-center gap-1.5 font-bold text-slate-200">
                       <TrendingUp className="w-3.5 h-3.5 text-cyan-400" />
                       <span>Stock Explorer</span>
                     </Link>
                   </li>
                   <li>
-                    <Link href="/stocks" className="hover:text-cyan-300 transition-colors flex items-center gap-1.5">
+                    <Link prefetch={false} href="/stocks" className="hover:text-cyan-300 transition-colors flex items-center gap-1.5">
                       <span>Equities Overview</span>
                     </Link>
                   </li>
                   <li>
-                    <Link href="/options" className="hover:text-cyan-300 transition-colors flex items-center gap-1.5">
+                    <Link prefetch={false} href="/options" className="hover:text-cyan-300 transition-colors flex items-center gap-1.5">
                       <span>Options Chain (L2)</span>
                       <span className="text-[9px] px-1.5 py-0.2 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">LIVE</span>
                     </Link>
                   </li>
                   <li>
-                    <Link href="/options" className="hover:text-cyan-300 transition-colors flex items-center gap-1.5">
+                    <Link prefetch={false} href="/options" className="hover:text-cyan-300 transition-colors flex items-center gap-1.5">
                       <span>Iron Condor Lab</span>
                     </Link>
                   </li>
                   <li>
-                    <Link href="/mentor" className="hover:text-cyan-300 transition-colors flex items-center gap-1.5">
+                    <Link prefetch={false} href="/mentor" className="hover:text-cyan-300 transition-colors flex items-center gap-1.5">
                       <span>AI Trade Debriefs</span>
                     </Link>
                   </li>
@@ -1870,7 +1631,7 @@ export default function LandingPage({ onOpenAuth }: LandingPageProps = {}) {
                   <li><a href="#how" className="hover:text-orange-300 transition-colors">How It Works</a></li>
                   <li><a href="#features" className="hover:text-orange-300 transition-colors">Platform Features</a></li>
                   <li><a href="#testimonials" className="hover:text-orange-300 transition-colors">Trader Reviews</a></li>
-                  <li><Link href="/options" className="hover:text-orange-300 transition-colors">Risk Calculator</Link></li>
+                  <li><Link prefetch={false} href="/options" className="hover:text-orange-300 transition-colors">Risk Calculator</Link></li>
                 </ul>
               </div>
 
@@ -1881,10 +1642,10 @@ export default function LandingPage({ onOpenAuth }: LandingPageProps = {}) {
                   COMPLIANCE
                 </h4>
                 <ul className="space-y-2 text-xs text-slate-400">
-                  <li><a href="#" className="hover:text-purple-300 transition-colors">SEBI Mandate Notice</a></li>
-                  <li><a href="#" className="hover:text-purple-300 transition-colors">Terms of Service</a></li>
-                  <li><a href="#" className="hover:text-purple-300 transition-colors">Privacy Policy</a></li>
-                  <li><a href="#" className="hover:text-purple-300 transition-colors">Risk Disclosure</a></li>
+                  <li><Link prefetch={false} href="/about" className="hover:text-purple-300 transition-colors">About Paper Trading</Link></li>
+                  <li><Link prefetch={false} href="/terms" className="hover:text-purple-300 transition-colors">Terms of Service</Link></li>
+                  <li><Link prefetch={false} href="/privacy" className="hover:text-purple-300 transition-colors">Privacy Policy</Link></li>
+                  <li><Link prefetch={false} href="/terms" className="hover:text-purple-300 transition-colors">Risk Disclosure</Link></li>
                 </ul>
               </div>
             </div>
@@ -1899,7 +1660,7 @@ export default function LandingPage({ onOpenAuth }: LandingPageProps = {}) {
               <div className="space-y-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-bold text-white text-xs uppercase tracking-wider font-mono">
-                    REGULATORY NOTICE &amp; SEBI PAPER TRADING COMPLIANCE
+                    EDUCATIONAL PAPER TRADING NOTICE
                   </span>
                   <span className="text-[9px] font-mono font-bold text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 px-1.5 py-0.5 rounded">
                     100% SIMULATED
@@ -1927,7 +1688,7 @@ export default function LandingPage({ onOpenAuth }: LandingPageProps = {}) {
               <span>•</span>
               <span className="flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
-                BSE EQUITIES
+                NFO DERIVATIVES
               </span>
               <span>•</span>
               <span className="flex items-center gap-1.5">
@@ -1945,6 +1706,6 @@ export default function LandingPage({ onOpenAuth }: LandingPageProps = {}) {
           </div>
         </footer>
       </section>
-    </div>
+    </LandingExperience>
   );
 }

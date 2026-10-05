@@ -4,11 +4,11 @@ A production-style Indian market paper trading simulator and real-time execution
 
 ## V1 interface and performance
 
-The public homepage at `/` explains paper trading before sign-in. Login and signup continue to `/dashboard`; Stocks and Futures & Options share the discovery card baseline, with desktop order panels and mobile order sheets. Quote and valuation states distinguish live, last available and unavailable data.
+The original dark, gradient and spatial 3D homepage remains at `/`, with its cards, showcase sections, glass surfaces, particle field and login modal. Static sections now render immediately from the server. Login/signup continue to `/dashboard`; trading cards and order tickets retain their original layout and styling.
 
-The trading layout owns the market connection and lazily loaded search / order dialogs. Public navigation starts no private account requests. Stable subscription updates, concurrent quote deduplication and batched store merges reduce avoidable work while backend execution checks remain authoritative.
+Pointer and scroll effects update CSS without rerendering the page. Particle work is deferred, reduced on mobile, paused in hidden tabs, and static with reduced motion. Search, charts and order dialogs load when needed. Public navigation starts no private account requests or market socket; market subscription updates and quote batching preserve backend execution validation.
 
-See [UI changes, lab measurements, screenshots and release acceptance checks](docs/ui-performance-polish.md). Run `npm run measure:home` in `frontend` after a production build to repeat the homepage navigation benchmark. Local results are lab observations; field INP and open-market acceptance remain to be verified.
+See [Original UI, lab measurements, screenshots and release acceptance checks](docs/ui-performance-polish.md). Run `npm run measure:home` in `frontend` after a production build to repeat the homepage navigation benchmark. Local results are lab observations; field INP and open-market acceptance remain to be verified.
 
 ---
 

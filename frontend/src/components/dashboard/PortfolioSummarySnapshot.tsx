@@ -79,13 +79,13 @@ export default function PortfolioSummarySnapshot({
     <div
       className={`rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 p-5 shadow-xs space-y-5 ${className}`}
     >
-      {/* Top Banner: Virtual cash balance & Valuation Status */}
+      {/* Top Banner: Gross position value & Valuation Status */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100 dark:border-slate-800/80">
         <div>
           <div className="flex items-center gap-2">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
               <PieChart className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
-              Virtual cash balance
+              Gross Position Value
             </span>
             <span
               className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-md border ${statusBadge.bg}`}
@@ -96,10 +96,10 @@ export default function PortfolioSummarySnapshot({
           </div>
 
           <div className="text-3xl font-black font-tabular tracking-tight text-slate-900 dark:text-white mt-1">
-            {formatPaise(cashBalance)}
+            {formatPaise(totalPortfolioValuePaise)}
           </div>
           <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-            Position value: {formatPaise(totalPortfolioValuePaise)} • excludes cash
+            Cash balance: {formatPaise(cashBalance)} • Position value excludes cash
           </div>
         </div>
 
