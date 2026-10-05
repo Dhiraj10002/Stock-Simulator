@@ -36,12 +36,12 @@ test("Phase 24 Search: F&O Futures canonical symbol formatting", () => {
 });
 
 test("Phase 24 Search: F&O Options canonical symbol formatting", () => {
-  const tcsCall = formatKiteSymbol("TCS27OCT262300CE");
+  const tcsCall = formatKiteSymbol("TCS27OCT262300CE", "2026-10-27", "2300", "CE");
   assert.equal(tcsCall.displayName, "TCS OCT 2300 CE");
   assert.equal(tcsCall.exchangeTag, "NFO");
   assert.equal(tcsCall.isDerivative, true);
 
-  const keiPut = formatKiteSymbol("KEI27OCT264500PE");
+  const keiPut = formatKiteSymbol("KEI27OCT264500PE", "2026-10-27", "4500", "PE");
   assert.equal(keiPut.displayName, "KEI OCT 4500 PE");
   assert.equal(keiPut.exchangeTag, "NFO");
   assert.equal(keiPut.isDerivative, true);

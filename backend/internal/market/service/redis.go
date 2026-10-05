@@ -37,6 +37,8 @@ var (
 
 	// ErrInstrumentNotFound indicates that the requested symbol does not exist in the canonical instrument master.
 	ErrInstrumentNotFound = errors.New("instrument not found in canonical instrument master")
+
+	ErrHistoryUnavailable = errors.New("Angel One historical candles unavailable")
 )
 
 type Service struct {
@@ -719,6 +721,18 @@ func (s *Service) HistoricalQuotes(symbol string, limit int, intervals ...string
 			continue
 		}
 		result = append(result, candle)
+	}
+	if len(result) == 0 && s.FeedMode() == dto.FeedModeLive {
+		state, err := s.client.HGet(ctx, "market:history:status:"+symbol+":"+interval, "state").Result()
+		if err != nil && !errors.Is(err, redis.Nil) {
+			return nil, fmt.Errorf("%w: %v", cache.ErrUnavailable, err)
+		}
+		switch state {
+		case "REJECTED", "ERROR":
+			return nil, fmt.Errorf("%w: broker request failed; check market-worker authentication and connectivity", ErrHistoryUnavailable)
+		case "EMPTY":
+			return nil, fmt.Errorf("%w: broker returned no valid bars for this instrument and interval", ErrHistoryUnavailable)
+		}
 	}
 	return result, nil
 }

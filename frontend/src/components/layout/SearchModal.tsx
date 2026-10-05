@@ -24,73 +24,8 @@ import FnoOrderModal from "@/components/trading/FnoOrderModal";
 
 type SearchSegmentFilter = "ALL" | "EQUITY" | "FUTURES" | "OPTIONS";
 
-/**
- * Format any raw symbol into clean Zerodha Kite-style display with spaces:
- * Examples:
- * - KEI27OCT26FUT -> "KEI OCT FUT", "NFO"
- * - TCS29SEP26FUT -> "TCS SEP FUT", "NFO"
- * - TCS27OCT262300CE -> "TCS OCT 2300 CE", "NFO"
- * - TCS27OCT262420PE -> "TCS OCT 2420 PE", "NFO"
- * - TCS 4150 CE -> "TCS SEP 4150 CE", "NFO"
- * - TCS -> "TCS", "NSE"
- */
-export function formatKiteSymbol(
-  symbol: string,
-  expiry?: string,
-  rawStrike?: string,
-  rawOptType?: string
-): { displayName: string; exchangeTag: string; isDerivative: boolean } {
-  let s = (symbol || "").trim().toUpperCase();
-  s = s.replace(/-EQ$/, "");
-
-  // 1. Futures: e.g. KEI27OCT26FUT, TCS29SEP26FUT, KEI26SEPFUT, NIFTY26SEPFUT
-  const futMatch = s.match(/^([A-Z&]+?)(\d{1,2})?([A-Z]{3})(\d{2})?FUT$/);
-  if (futMatch) {
-    const under = futMatch[1];
-    const month = futMatch[3];
-    return { displayName: `${under} ${month} FUT`, exchangeTag: "NFO", isDerivative: true };
-  }
-
-  // 2. Options: e.g. TCS29SEP261940CE, TCS27OCT262300CE, NIFTY06OCT2625550CE, KEI27OCT264500PE
-  const optMatch = s.match(/^([A-Z&]+?)(\d{1,2})?([A-Z]{3})(\d{2})?(\d+(?:\.\d+)?)(CE|PE)$/);
-  if (optMatch) {
-    const under = optMatch[1];
-    const month = optMatch[3];
-    const strikeVal = optMatch[5];
-    const type = optMatch[6];
-    return { displayName: `${under} ${month} ${strikeVal} ${type}`, exchangeTag: "NFO", isDerivative: true };
-  }
-
-  // 3. Spaced option e.g. "TCS 4150 CE"
-  if (s.includes(" CE") || s.includes(" PE")) {
-    const parts = s.split(/\s+/);
-    if (parts.length >= 3) {
-      const monthMatch = (expiry || "").match(/[A-Z]{3}/i);
-      const month = monthMatch ? monthMatch[0].toUpperCase() : "SEP";
-      return { displayName: `${parts[0]} ${month} ${parts[1]} ${parts[2]}`, exchangeTag: "NFO", isDerivative: true };
-    }
-  }
-
-  // 4. Fallback check using raw fields if provided
-  if (rawOptType && (rawOptType === "CE" || rawOptType === "PE")) {
-    const monthMatch = (expiry || "").match(/[A-Z]{3}/i);
-    const month = monthMatch ? monthMatch[0].toUpperCase() : "SEP";
-    let strikeVal = rawStrike || "";
-    if (strikeVal.includes(".")) {
-      const num = parseFloat(strikeVal);
-      strikeVal = (num > 100000 ? num / 100 : num).toString();
-    }
-    return {
-      displayName: `${s} ${month} ${strikeVal} ${rawOptType}`.trim(),
-      exchangeTag: "NFO",
-      isDerivative: true,
-    };
-  }
-
-  // Standard equity
-  const isBse = s.includes("BSE");
-  return { displayName: s, exchangeTag: isBse ? "BSE" : "NSE", isDerivative: false };
-}
+import { formatKiteSymbol } from "@/lib/instrumentDisplay";
+export { formatKiteSymbol } from "@/lib/instrumentDisplay";
 
 export default function SearchModal() {
   const router = useRouter();
@@ -322,8 +257,8 @@ export default function SearchModal() {
         symbol: item.symbol,
         display_symbol: displaySym,
         displayName: displaySym,
-        exchange: kite.exchangeTag,
-        exchangeTag: kite.exchangeTag,
+        exchange: item.exchange_segment || kite.exchangeTag,
+        exchangeTag: item.exchange_segment || kite.exchangeTag,
         token: item.token || "",
         instrument_type: item.instrument_type || seg,
         underlying: item.name || item.symbol,
@@ -585,7 +520,7 @@ export default function SearchModal() {
               <span>Hover any item for Kite quick actions: <b>[B]</b> Buy, <b>[S]</b> Sell, <b>[+]</b> Watchlist</span>
               <span className="font-mono text-[10px] bg-slate-200/80 dark:bg-slate-800 px-2 py-0.5 rounded flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                <span>NSE & F&O Live</span>
+                <span>Canonical market search</span>
               </span>
             </div>
           </div>

@@ -10,6 +10,20 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+func TestOptionSearchDisplayUsesCanonicalStrike(t *testing.T) {
+	for _, tc := range []struct{ symbol, strike, want string }{
+		{"TCS26DEC1920PE", "1920", "TCS DEC 1920 PE"},
+		{"TCS29DEC261920PE", "1920", "TCS DEC 1920 PE"},
+		{"NIFTY26OCT25500CE", "25500", "NIFTY OCT 25500 CE"},
+		{"TCS26DEC1920PE", "", "TCS26DEC1920PE"},
+	} {
+		got, _, _ := formatKiteDisplayName(tc.symbol, "31DEC2026", tc.strike, "")
+		if got != tc.want {
+			t.Fatalf("%s: got %q, want %q", tc.symbol, got, tc.want)
+		}
+	}
+}
+
 func TestStockHandler_SearchValidation(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	h := New()

@@ -541,7 +541,7 @@ class BenchmarkFallbackSourceTest(unittest.TestCase):
         mock_writer = MagicMock()
         worker.GLOBAL_WRITER = mock_writer
 
-        with unittest.mock.patch.object(worker, "has_angel_credentials", return_value=True):
+        with unittest.mock.patch.object(worker, "smart_api_session", return_value=(mock_smart_api, {})):
             quote = worker.fetch_quote_for_symbol("RELIANCE")
             self.assertIsNotNone(quote)
             self.assertEqual(quote.get("source"), "angelone_live")
@@ -820,7 +820,7 @@ class RealBrokerDataRegressionTest(unittest.TestCase):
             {"exchange": "NFO", "symbolToken": "12345", "ltp": 4.6, "close": 4.6,
              "tradeVolume": 22, "exchFeedTime": "30-Sep-2026 15:30:00"}]}}
         info = {"token": "12345", "exch_seg": "NFO", "symbol": "TCS23NOV262640CE"}
-        with patch.dict(os.environ, MARKET_FEED_MODE="live"), patch.object(worker, "GLOBAL_SMART_API", api), patch.object(worker, "GLOBAL_TOKEN_MAP", {info["symbol"]: info}), patch.object(worker, "GLOBAL_WRITER", None), patch.object(worker, "broker_call", side_effect=lambda call: call()):
+        with patch.dict(os.environ, MARKET_FEED_MODE="live"), patch.object(worker, "smart_api_session", return_value=(api, {})), patch.object(worker, "GLOBAL_SMART_API", api), patch.object(worker, "GLOBAL_TOKEN_MAP", {info["symbol"]: info}), patch.object(worker, "GLOBAL_WRITER", None), patch.object(worker, "broker_call", side_effect=lambda call: call()):
             q = worker.fetch_quote_for_symbol(info["symbol"])
         self.assertEqual(q["change_paise"], 0)
         self.assertTrue(q["day_change_available"])

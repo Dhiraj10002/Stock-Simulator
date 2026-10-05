@@ -9,7 +9,6 @@ import { publicFetch } from "@/lib/api";
 import { displayQuote } from "@/lib/fnoExplore";
 import { formatPaise } from "@/lib/format";
 import {
-  FnoMovement,
   FnoProvenance,
 } from "@/components/trading/FnoQuoteDetails";
 import type { Quote } from "@/types";
@@ -104,4 +103,3 @@ export default function IndicesTickerStrip() {
     </section>
   );
 }
-

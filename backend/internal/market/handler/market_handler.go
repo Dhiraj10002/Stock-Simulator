@@ -118,6 +118,10 @@ func (h *Handler) History(c *gin.Context) {
 	}
 	candles, err := h.service.HistoricalQuotes(c.Param("symbol"), limit, c.Query("interval"))
 	if err != nil {
+		if errors.Is(err, service.ErrHistoryUnavailable) {
+			response.Error(c, http.StatusServiceUnavailable, err.Error(), "HISTORY_UNAVAILABLE")
+			return
+		}
 		if errors.Is(err, service.ErrInstrumentNotFound) {
 			response.Error(c, http.StatusNotFound, "Instrument not found in canonical master", "INSTRUMENT_NOT_FOUND")
 			return

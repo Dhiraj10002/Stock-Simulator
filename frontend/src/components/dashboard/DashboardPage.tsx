@@ -419,11 +419,12 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
       : "BANKNIFTY";
 
   const historyInterval = selectedTimeframe === "1Y" ? "ONE_DAY" : selectedTimeframe === "1D" ? "ONE_MINUTE" : "ONE_HOUR";
-  const { data: indexCandles, isError: historyError } = useQuery<Candle[]>({
+  const { data: indexCandles, isError: historyError, isPending: historyPending, isFetching: historyFetching, error: historyFailure, refetch: refetchHistory } = useQuery<Candle[]>({
     queryKey: ["index-candles", indexKey, selectedTimeframe],
-    queryFn: () => apiFetch<Candle[]>(`/market/quotes/${indexKey}/history?limit=500&interval=${historyInterval}`),
+    queryFn: ({signal}) => apiFetch<Candle[]>(`/market/quotes/${indexKey}/history?limit=500&interval=${historyInterval}`, {signal: AbortSignal.any([signal, AbortSignal.timeout(15000)])}),
     staleTime: 5_000,
     refetchInterval: (query) => query.state.data?.length ? 60_000 : 5_000,
+    retry: false,
   });
 
   // Market Overview Chart Coordinates & Values Generator
@@ -807,7 +808,7 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
         {/* ========================================================================= */}
         {/* KITE-STYLE MIDDLE SECTION: Market Movers + IPOs / News / Calendar Desk     */}
         {/* ========================================================================= */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-12 items-start gap-6">
           {/* LEFT: Dynamic Market Movers Card (Gainers, Losers, Most Active, Trending) (7 Cols) */}
           <div className="lg:col-span-7">
             <MarketMoversCard limit={8} />
@@ -824,7 +825,7 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
           <div className="lg:col-span-8 rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 shadow-xs p-5 space-y-4">
             {/* Header: Title + Index Switcher + Timeframe */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200 dark:border-slate-800">
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3 min-w-0">
                 <div className="flex items-center gap-2">
                   <Activity className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
                   <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100">
@@ -898,15 +899,16 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
               </div>
             </div>
 
-            {historyError && <p role="alert" className="text-xs text-amber-600">History could not be refreshed. Retained bars may be incomplete.</p>}
+            {historyError && <p role="alert" className="text-xs text-amber-700 dark:text-amber-300">History could not be refreshed: {historyFailure?.message}. Retained bars may be incomplete.</p>}
             {indexCandles?.length ? <p className="text-xs text-slate-500">Last plotted bar: {new Date(indexCandles[indexCandles.length - 1].timestamp * 1000).toLocaleString("en-IN", {timeZone: "Asia/Kolkata"})} IST. Retained history may be delayed.</p> : null}
             {/* SVG Interactive Trend Chart */}
             <div className="relative w-full h-[200px] select-none pt-2">
               {chartData.coords.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center text-slate-400 bg-slate-900/10 dark:bg-slate-950/20 rounded-xl border border-dashed border-slate-200 dark:border-slate-800">
                   <TrendingUp className="w-7 h-7 text-slate-400 dark:text-slate-600 mb-1.5 opacity-60" />
-                  <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">Index Chart Unavailable</p>
-                  <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">Historical candle data for {selectedIndex} is not available</p>
+                  <p role="status" className="text-xs font-semibold text-slate-600 dark:text-slate-300">{historyError ? "Index Chart Unavailable" : historyPending ? "Loading index history…" : "Waiting for Angel One history"}</p>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 text-center px-4 mt-1">{historyError ? "Check the market worker and retry. A live quote does not include historical candles." : `Requesting authentic ${selectedIndex} candles. The chart updates when the broker backfill arrives.`}</p>
+                  <button disabled={historyFetching} onClick={() => void refetchHistory()} className="mt-3 rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-xs font-semibold text-cyan-700 dark:text-cyan-300 disabled:opacity-50">{historyFetching ? "Requesting…" : "Retry history"}</button>
                 </div>
               ) : (
                 <svg
