@@ -13,7 +13,7 @@ export default function LoginPage() {
         isOpen={true}
         mode="login"
         onClose={() => router.push("/")}
-        onSuccess={() => router.push("/")}
+        onSuccess={() => router.push("/dashboard")}
       />
     </div>
   );

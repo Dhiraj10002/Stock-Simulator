@@ -1,5 +1,6 @@
 "use client";
 import { exitRetryKey, completeExitRetry } from "@/lib/exitRetry";
+import { useAuthToken } from "@/hooks/useAuthToken";
 import { useAccountWallet } from "@/hooks/useAccountWallet";
 
 import React, { useState, useMemo } from "react";
@@ -93,16 +94,7 @@ export default function PortfolioPage() {
   const [diagnosticTitle, setDiagnosticTitle] = useState<string>("Operation Diagnostic");
 
 
-  const [token] = useState<string>(() => {
-    if (typeof window !== "undefined") {
-      return (
-        localStorage.getItem("auth_token") ||
-        localStorage.getItem("stock-simulator-access-token") ||
-        ""
-      );
-    }
-    return "";
-  });
+  const token = useAuthToken();
 
   const apiUrl = API_URL;
 
@@ -601,13 +593,13 @@ export default function PortfolioPage() {
           {[
             {
               id: "HOLDINGS",
-              label: "Holdings (Demat CNC)",
+              label: "Holdings · Delivery (CNC)",
               icon: Briefcase,
               count: activeHoldings.length,
             },
             {
               id: "POSITIONS",
-              label: "Positions (MIS & F&O)",
+              label: "Positions · Intraday / F&O",
               icon: Layers,
               count: activePositions.length,
             },
@@ -623,7 +615,7 @@ export default function PortfolioPage() {
             },
             {
               id: "LEDGER",
-              label: "Cash Movements Ledger",
+              label: "Virtual cash activity",
               icon: Receipt,
             },
           ].map((tab) => {

@@ -35,6 +35,7 @@ import { useRiskOverview } from "@/hooks/useRiskOverview";
 import { API_URL } from "@/lib/api";
 import ResetSimulationModal from "@/components/modals/ResetSimulationModal";
 import { useToast } from "@/components/ui/ToastProvider";
+import styles from "./Navbar.module.css";
 
 interface NavbarProps {
   cashBalancePaise?: number;
@@ -47,10 +48,10 @@ interface NavbarProps {
 }
 
 const NAV_LINKS = [
-  { href: "/", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/stocks", label: "Stocks", icon: TrendingUp },
   { href: "/news", label: "News", icon: Newspaper },
-  { href: "/options", label: "F&O Hub", icon: Layers },
+  { href: "/options", label: "Futures & Options", icon: Layers },
   { href: "/portfolio", label: "Portfolio", icon: PieChart },
   { href: "/orders", label: "Orders", icon: ClipboardList },
   { href: "/watchlist", label: "Watchlist", icon: Bookmark },
@@ -88,6 +89,7 @@ export default function Navbar({
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
   const [userName, setUserName] = useState("Dhiraj");
   const profileMenuRef = useRef<HTMLDivElement>(null);
+  const profileButtonRef = useRef<HTMLButtonElement>(null);
   const { overview, isBreached } = useRiskOverview();
   const { addToast } = useToast();
 
@@ -110,11 +112,19 @@ export default function Navbar({
         setShowProfileMenu(false);
       }
     };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setShowProfileMenu(false);
+        profileButtonRef.current?.focus();
+      }
+    };
     if (showProfileMenu) {
       document.addEventListener("mousedown", handleClickOutside);
+      document.addEventListener("keydown", handleKeyDown);
     }
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleKeyDown);
     };
   }, [showProfileMenu]);
 
@@ -169,7 +179,7 @@ export default function Navbar({
       <div className="px-4 lg:px-6 py-2 flex flex-wrap items-center justify-between gap-2 sm:gap-4 border-b border-slate-200/80 dark:border-white/[0.06]">
         {/* Left: Brand + Market Status + Indices Ticker */}
         <div className="flex items-center gap-4 lg:gap-6">
-          <Link href="/" className="flex items-center gap-2.5 group">
+          <Link href="/dashboard" className="flex items-center gap-2.5 group">
             <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-cyan-500 to-indigo-600 flex items-center justify-center font-black text-sm text-slate-950 shadow-md group-hover:scale-105 transition-transform">
               SS
             </div>
@@ -258,7 +268,7 @@ export default function Navbar({
         </div>
 
         {/* Account Info & User Profile */}
-        <div className="flex items-center gap-3 sm:gap-4 text-xs">
+        <div className="ml-auto flex items-center gap-3 sm:gap-4 text-xs">
           {/* Available Cash */}
           <div className="hidden sm:flex flex-col text-right">
             <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium flex items-center justify-end gap-1">
@@ -271,7 +281,7 @@ export default function Navbar({
           </div>
 
           {/* Unrealized P&L */}
-          <div className="hidden md:flex flex-col text-right border-l border-slate-200 dark:border-white/[0.08] pl-3">
+          <div role="group" aria-label="Portfolio unrealized P&L" className="hidden md:flex flex-col text-right border-l border-slate-200 dark:border-white/[0.08] pl-3">
             <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">
               Unrealized P&L{unrealizedPnlStale ? " · Last available" : ""}
             </span>
@@ -300,8 +310,12 @@ export default function Navbar({
           {/* Profile Dropdown */}
           <div className="relative" ref={profileMenuRef}>
             <button
+              ref={profileButtonRef}
+              type="button"
               onClick={() => setShowProfileMenu(!showProfileMenu)}
               title="Trader Profile & Account Settings"
+              aria-expanded={showProfileMenu}
+              aria-controls="trader-account-panel"
               className={`w-8 h-8 rounded-full border flex items-center justify-center transition-all cursor-pointer shadow-xs ${
                 showProfileMenu
                   ? "bg-cyan-500/15 border-cyan-500 text-cyan-600 dark:text-cyan-400 ring-2 ring-cyan-500/20"
@@ -312,21 +326,26 @@ export default function Navbar({
             </button>
 
             {showProfileMenu && (
-              <div className="absolute right-0 mt-2.5 w-72 sm:w-80 bg-white dark:bg-[#0b101d] border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl shadow-slate-900/20 dark:shadow-black/90 p-3.5 z-50 animate-in fade-in zoom-in-95 duration-150 text-slate-800 dark:text-slate-200">
+              <div
+                id="trader-account-panel"
+                role="region"
+                aria-label="Trader account"
+                className={`${styles.profilePanel} absolute right-0 mt-3 w-80 max-w-[calc(100vw-2rem)] rounded-2xl p-4 z-50 text-slate-800 dark:text-slate-200`}
+              >
                 {/* User Identity Header */}
-                <div className="flex items-center gap-3 pb-3 border-b border-slate-200 dark:border-slate-800">
+                <div className="flex items-center gap-3 pb-4 border-b border-slate-200 dark:border-slate-800">
                   <div className="relative shrink-0">
-                    <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-600 via-blue-600 to-indigo-600 text-white font-black text-sm flex items-center justify-center shadow-md shadow-cyan-600/20 ring-2 ring-white dark:ring-slate-800">
+                    <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-cyan-600 via-blue-600 to-indigo-600 text-white font-black text-base flex items-center justify-center shadow-md shadow-cyan-600/20 ring-2 ring-white dark:ring-slate-800">
                       {userName.charAt(0).toUpperCase()}
                     </div>
                     <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-500 border-2 border-white dark:border-[#0b101d]" />
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5">
-                      <span className="font-bold text-xs sm:text-sm text-slate-900 dark:text-slate-100 truncate">
+                      <span className="font-bold text-sm text-slate-900 dark:text-slate-100 truncate">
                         {userName}
                       </span>
-                      <span className="px-1.5 py-0.2 rounded-full text-[9px] font-mono font-bold bg-cyan-100 text-cyan-800 dark:bg-cyan-500/15 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-500/30">
+                      <span className="px-1.5 py-0.5 rounded-md text-[9px] font-mono font-bold bg-cyan-100 text-cyan-800 dark:bg-cyan-500/15 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-500/30">
                         PRO
                       </span>
                     </div>
@@ -339,20 +358,20 @@ export default function Navbar({
                 </div>
 
                 {/* Quick Margin Glance */}
-                <div className="my-2.5 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 flex items-center justify-between shadow-xs">
+                <div className="my-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2">
                   <div>
-                    <div className="text-[10px] text-slate-500 dark:text-slate-400 font-medium flex items-center gap-1">
+                    <div className="text-[11px] text-slate-500 dark:text-slate-400 font-medium flex items-center gap-1.5">
                       <WalletIcon className="w-3 h-3 text-cyan-600 dark:text-cyan-400" />
                       Available Margin
                     </div>
-                    <div className="text-sm font-black font-tabular text-slate-900 dark:text-slate-100 mt-0.5">
+                    <div className="text-lg font-bold tracking-tight font-tabular text-slate-900 dark:text-slate-100 mt-1">
                       {formatPaise(availableBalancePaise)}
                     </div>
                   </div>
                   <Link
                     href="/portfolio"
                     onClick={() => setShowProfileMenu(false)}
-                    className="px-2.5 py-1 rounded-lg bg-cyan-50 hover:bg-cyan-100 dark:bg-cyan-500/10 dark:hover:bg-cyan-500/20 text-cyan-700 dark:text-cyan-300 text-[11px] font-semibold transition-colors cursor-pointer border border-cyan-200/80 dark:border-cyan-500/30"
+                    className="shrink-0 px-2.5 py-2 rounded-lg bg-cyan-50 hover:bg-cyan-100 dark:bg-cyan-500/10 dark:hover:bg-cyan-500/20 text-cyan-700 dark:text-cyan-300 text-[11px] font-semibold transition-colors cursor-pointer border border-cyan-200/80 dark:border-cyan-500/30"
                   >
                     Holdings →
                   </Link>
@@ -361,13 +380,14 @@ export default function Navbar({
                 {/* Actions Menu */}
                 <div className="space-y-1">
                   {/* Theme Switcher in Dropdown */}
-                  <div className="px-2 py-1.5 flex items-center justify-between text-xs">
+                  <div className="px-2 py-2 flex items-center justify-between gap-2 text-xs">
                     <span className="text-slate-600 dark:text-slate-400 font-medium">Theme</span>
                     <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-900 p-0.5 rounded-lg border border-slate-200 dark:border-slate-800">
                       <button
                         type="button"
+                        aria-pressed={theme === "light"}
                         onClick={() => setTheme("light")}
-                        className={`flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${
+                        className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[11px] font-semibold transition-colors cursor-pointer ${
                           theme === "light"
                             ? "bg-white text-slate-900 shadow-xs border border-slate-200"
                             : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200"
@@ -378,8 +398,9 @@ export default function Navbar({
                       </button>
                       <button
                         type="button"
+                        aria-pressed={theme === "dark"}
                         onClick={() => setTheme("dark")}
-                        className={`flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${
+                        className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[11px] font-semibold transition-colors cursor-pointer ${
                           theme === "dark"
                             ? "bg-cyan-500/20 text-cyan-300 shadow-xs border border-cyan-500/30"
                             : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200"
@@ -394,7 +415,7 @@ export default function Navbar({
                   <Link
                     href="/analytics"
                     onClick={() => setShowProfileMenu(false)}
-                    className="flex items-center justify-between px-2 py-2 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-900/90 rounded-xl transition-colors"
+                    className="flex items-center justify-between gap-2 px-2.5 py-3 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-900/90 rounded-xl transition-colors"
                   >
                     <span className="flex items-center gap-2">
                       <BarChart2 className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
@@ -414,24 +435,24 @@ export default function Navbar({
                       }
                     }}
                     disabled={resetting}
-                    className="w-full flex items-center justify-between px-2 py-2 text-xs font-medium text-amber-700 dark:text-amber-300 hover:bg-amber-50/80 dark:hover:bg-amber-950/40 rounded-xl transition-colors cursor-pointer disabled:opacity-50"
+                    className="w-full flex items-center justify-between gap-2 px-2.5 py-3 text-xs font-medium text-amber-700 dark:text-amber-300 hover:bg-amber-50/80 dark:hover:bg-amber-950/40 rounded-xl transition-colors cursor-pointer disabled:opacity-50"
                   >
                     <span className="flex items-center gap-2">
                       <RotateCcw className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400" />
                       <span>Reset Simulation</span>
                     </span>
-                    <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 font-semibold">
+                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 font-semibold">
                       ₹10L
                     </span>
                   </button>
                 </div>
 
                 {/* Prominent Universal Logout Button for all sections */}
-                <div className="pt-2 mt-2 border-t border-slate-200 dark:border-slate-800">
+                <div className="pt-3 mt-3 border-t border-slate-200 dark:border-slate-800">
                   <button
                     type="button"
                     onClick={handleLogout}
-                    className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 text-rose-600 dark:text-rose-400 font-semibold text-xs border border-rose-200 dark:border-rose-800/50 transition-all hover:scale-[1.01] active:scale-[0.98] cursor-pointer shadow-xs"
+                    className="w-full min-h-11 flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 text-rose-600 dark:text-rose-400 font-semibold text-xs border border-rose-200 dark:border-rose-800/50 transition-colors cursor-pointer"
                   >
                     <LogOut className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
                     <span>Sign Out</span>

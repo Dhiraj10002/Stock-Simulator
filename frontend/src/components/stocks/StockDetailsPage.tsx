@@ -13,7 +13,8 @@ import {
   RefreshCw,
 } from "lucide-react";
 import Navbar from "@/components/layout/Navbar";
-import TradingViewChart from "@/components/trading/TradingViewChart";
+import dynamic from "next/dynamic";
+const TradingViewChart = dynamic(() => import("@/components/trading/TradingViewChart"), { ssr: false });
 import MarketDepthPanel from "./MarketDepthPanel";
 import {
   FnoMovement,

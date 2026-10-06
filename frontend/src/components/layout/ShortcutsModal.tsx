@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect } from "react";
+import React from "react";
 import { useUIStore } from "@/stores/ui-store";
 import {
   Keyboard,
@@ -69,35 +69,6 @@ export default function ShortcutsModal() {
   const isOpen = useUIStore((s) => s.isShortcutsGuideOpen);
   const setIsOpen = useUIStore((s) => s.setShortcutsGuideOpen);
 
-  // Global keydown listener for '?' or 'Shift + /' and 'Escape'
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement | null;
-      if (
-        target &&
-        (target.tagName === "INPUT" ||
-          target.tagName === "TEXTAREA" ||
-          target.tagName === "SELECT" ||
-          target.isContentEditable)
-      ) {
-        return;
-      }
-
-      if (e.key === "?" || (e.shiftKey && e.key === "/")) {
-        e.preventDefault();
-        setIsOpen(!isOpen);
-        return;
-      }
-
-      if (e.key === "Escape" && isOpen) {
-        e.preventDefault();
-        setIsOpen(false);
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, setIsOpen]);
 
   if (!isOpen) return null;
 

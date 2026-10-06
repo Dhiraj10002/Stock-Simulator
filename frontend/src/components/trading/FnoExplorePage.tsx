@@ -41,7 +41,8 @@ import {
   FnoMovement,
   FnoProvenance,
 } from "@/components/trading/FnoQuoteDetails";
-import FnoOrderModal from "@/components/trading/FnoOrderModal";
+import dynamic from "next/dynamic";
+const FnoOrderModal = dynamic(() => import("@/components/trading/FnoOrderModal"), { ssr: false });
 import type { Instrument, Portfolio, Quote } from "@/types";
 
 const panel =
@@ -736,16 +737,16 @@ export default function FnoExplorePage({
           </div>
         </section>
 
-        {/* Real-Time Greek Analytics Card (Screenshot 2) */}
+        {/* Understand derivative risk Card (Screenshot 2) */}
         <div className="p-4 rounded-2xl bg-cyan-500/5 dark:bg-cyan-500/10 border border-cyan-500/20 text-xs space-y-2">
           <div className="flex items-center gap-1.5 font-bold text-cyan-800 dark:text-cyan-300">
             <Sparkles className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
-            <span>Real-Time Greek Analytics</span>
+            <span>Understand derivative risk</span>
           </div>
           <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
-            Delta, Theta, Gamma, and Vega calculations update dynamically using
-            Black-Scholes formulas alongside live Put-Call Ratios and Max Pain
-            strike analysis.
+            Futures and written options use margin; losses can exceed the initial
+            margin. Long options can lose the premium paid. Simulator margin
+            is an estimate, checked again before execution.
           </p>
         </div>
       </aside>

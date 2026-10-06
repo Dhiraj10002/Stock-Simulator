@@ -1,6 +1,14 @@
 # Stock Simulator 📈
 
-A production-style Indian market paper trading simulator and real-time execution engine. Designed for realistic simulation of the National Stock Exchange (NSE) and Bombay Stock Exchange (BSE), the platform models live market data, strict session timings, integer-paise financial precision, intraday leverage, derivative contract settlement, and automated risk management.
+A production-style Indian market paper trading simulator and real-time execution engine. Designed for simulation of NSE equities and NFO derivatives, the platform models live market data, strict session timings, integer-paise financial precision, intraday leverage, derivative contract settlement, and automated risk management.
+
+## V1 interface and performance
+
+The original dark, gradient and spatial 3D homepage remains at `/`, with its cards, showcase sections, glass surfaces, particle field and login modal. Static sections now render immediately from the server. Login/signup continue to `/dashboard`; trading cards and order tickets retain their original layout and styling.
+
+Pointer and scroll effects update CSS without rerendering the page. Particle work is deferred, reduced on mobile, paused in hidden tabs, and static with reduced motion. Search, charts and order dialogs load when needed. Public navigation starts no private account requests or market socket; market subscription updates and quote batching preserve backend execution validation.
+
+See [Original UI, lab measurements, screenshots and release acceptance checks](docs/ui-performance-polish.md). Run `npm run measure:home` in `frontend` after a production build to repeat the homepage navigation benchmark. Local results are lab observations; field INP and open-market acceptance remain to be verified.
 
 ---
 
@@ -11,7 +19,7 @@ The platform follows a clean distributed microservices architecture separating c
 ```mermaid
 graph TB
     subgraph Client Layer
-        UI[Next.js 15 App Router<br/>Real-Time UI & WebSocket Ticker]
+        UI[Next.js 16 App Router<br/>Real-Time UI & WebSocket Ticker]
     end
 
     subgraph API & Ledger Authority
@@ -39,7 +47,7 @@ graph TB
 ```
 
 ### Component Responsibilities
-- **Frontend (`frontend/`)**: Next.js 15 (TypeScript, React, Tailwind CSS) providing responsive trading dashboards, live watchlist tickers, order ticket modals, and interactive P&L charts. Pure presentation layer with zero business or financial logic authority.
+- **Frontend (`frontend/`)**: Next.js 16 (TypeScript, React, Tailwind CSS) providing responsive trading dashboards, live watchlist tickers, order ticket modals, and interactive P&L charts. Pure presentation layer with zero business or financial logic authority.
 - **Backend (`backend/`)**: High-performance Go service acting as the central ledger authority, pre-trade validator, limit order matching engine, and automated risk manager.
 - **Market Worker (`python-services/market-worker/`)**: Python service connecting to Angel One's SmartAPI WebSocket feed, streaming live market quotes, and updating instrument masters into Redis and PostgreSQL.
 - **News Worker (`python-services/news-worker/`)**: Scrapes and ingests live market sentiment and headlines into Redis.
@@ -53,9 +61,9 @@ graph TB
 ### 1. Zero Floating-Point Precision (Integer Paise)
 All financial figures—including cash balances, margins, stock prices, trade turnovers, and realized/unrealized P&L—are tracked exclusively in **integer paise** ($1\text{ INR} = 100\text{ paise}$) using 64-bit integers (`int64`). Floating-point arithmetic is strictly prohibited across the database and Go ledger to eliminate rounding drift.
 
-### 2. Strict Indian Market Session Validation (09:15 – 15:30 IST)
+### 2. Segment-specific Indian Market Session Validation
 The backend enforces Indian Standard Time (IST, UTC+5:30) trading hours:
-- **Trading Hours**: Orders are strictly accepted only between **09:15:00 IST** and **15:30:00 IST**, Monday through Friday.
+- **Trading Hours**: NSE cash orders run from **09:15 to 15:30 IST**. NFO derivatives run from **09:15 to 15:40 IST** from August 3, 2026 (15:30 before that date), Monday through Friday. The backend calendar is authoritative.
 - **Weekend & Holiday Rejection**: Orders placed on Saturdays, Sundays, or recognized exchange trading holidays are immediately rejected with descriptive rejection notices.
 
 ### 3. Product Types & Margin Rules
@@ -66,8 +74,8 @@ The backend enforces Indian Standard Time (IST, UTC+5:30) trading hours:
   - **15:30 IST**: Market close hard stop; any unfillable positions record audit risk events (`status = 'FAILED'`).
 - **Derivatives (`NRML`)**: Futures and Options contracts with exchange lot sizing.
   - **Option Buys**: $100\%$ premium blocked upfront.
-  - **Futures / Option Sells**: Span and exposure margin blocked.
-  - **Expiry Settlement (15:30 IST)**: Expired contracts are settled via European-style cash settlement against the underlying cash index close (e.g. NIFTY / BANKNIFTY). In-the-money options receive cash intrinsic value; out-of-the-money contracts expire worthless with margin released.
+  - **Futures / Option Sells**: Configurable simulator margin, defaulting to 20% / 30% of notional respectively. This is not broker SPAN + exposure margin.
+  - **Expiry Settlement (NFO session close, currently 15:40 IST)**: Expired contracts are settled via European-style cash settlement against the underlying cash index close (e.g. NIFTY / BANKNIFTY). In-the-money options receive cash intrinsic value; out-of-the-money contracts expire worthless with margin released.
 
 ### 4. Position Crossing & Net Reversals
 The execution engine supports seamless position reversals across zero. For example, submitting a SELL order of 150 shares when holding +100 shares long will atomically close the 100 long shares (realizing P&L), transition across flat (quantity 0), open a -50 short position, and adjust required margin in a single ACID transaction.
@@ -101,7 +109,7 @@ Stock-Simulator/
 │   │   └── simulation/           # Atomic portfolio reset service
 │   ├── Dockerfile                # Multi-stage production container build
 │   └── go.mod
-├── frontend/                     # Next.js 15 Web Application
+├── frontend/                     # Next.js 16 Web Application
 │   ├── src/app/                  # App Router pages & dashboards
 │   ├── src/components/           # Trading widgets, modals & charts
 │   └── package.json
@@ -300,13 +308,13 @@ python3 -m unittest discover -v -p 'test_*.py'
 ```
 
 ### Key Test Suites
-- `calendar_test.go`: 09:15–15:30 IST session boundary, weekend, and holiday rejection.
+- `calendar_test.go`: NSE 09:15–15:30 and NFO 09:15–15:40 IST session boundaries, weekend, and holiday rejection.
 - `concurrency_integration_test.go`: Multi-threaded simultaneous orders validating deadlock-free locking.
 - `concurrency_failure_stress_test.go`: 15 attack vectors including concurrent order creation vs wallet reset, Redis disconnection recovery, and upstream provider outage handling.
 - `security_hardening_test.go`: Transactional refresh token rotation with JTI tracking, token reuse detection, strict CORS allowlist, Redis token bucket rate limiting, and zero sensitive field leakage.
 - `position_crossing_integration_test.go`: Long-to-short and short-to-long net position reversals across zero.
 - `mis_squareoff_test.go`: 15:20 order cancellations and 15:20–15:30 retry loop auto-squareoff.
-- `fno_expiry_integration_test.go`: 15:30 IST derivatives expiry cash settlement and intrinsic value calculations.
+- `fno_expiry_integration_test.go`: NFO close-time derivatives expiry cash settlement and intrinsic value calculations.
 - `app_test.go`: Graceful `SIGINT`/`SIGTERM` server shutdown with background worker context propagation.
 - `app_test.go`: Graceful `SIGINT`/`SIGTERM` server shutdown with background worker context propagation.
 

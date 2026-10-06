@@ -565,6 +565,7 @@ test("mobile order ticket stays within viewport and pauses when exchange status 
     .click();
   const dialog = page.getByRole("dialog", { name: "Paper order ticket" });
   await expect(dialog).toBeVisible();
+  if (process.env.STOCK_UI_SCREENSHOTS) await page.screenshot({ path: join(process.env.STOCK_UI_SCREENSHOTS, "fno-order-mobile.png") });
   const box = await dialog.boundingBox();
   expect(box!.width).toBeLessThanOrEqual(360);
   expect(box!.height).toBeLessThanOrEqual(800);

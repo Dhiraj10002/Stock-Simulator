@@ -40,3 +40,46 @@ test("single symbol display retains a sourced last-session quote", async (t) => 
   assert.deepEqual(await fetchQuote(fixture.symbol), fixture);
   assert.equal(useMarketStore.getState().quotes[fixture.symbol].is_quote_stale, true);
 });
+
+test("overlapping batch and single requests share pending symbols and publish once per response", async (t) => {
+  const symbols = ["DEDUPE_A", "DEDUPE_B"];
+  let release!: () => void;
+  const wait = new Promise<void>(resolve => { release = resolve; });
+  let calls = 0, notifications = 0;
+  t.mock.method(globalThis, "fetch", async (_url: unknown, options: RequestInit) => {
+    calls++;
+    assert.deepEqual(JSON.parse(String(options.body)).symbols, symbols);
+    await wait;
+    return Response.json({ success: true, data: Object.fromEntries(symbols.map(symbol => [symbol, { symbol, price_paise: 12300, updated_at: new Date().toISOString(), source: "angelone_live" }])) });
+  });
+  const unsubscribe = useMarketStore.subscribe(() => { notifications++; });
+  try {
+    const first = fetchBatchQuotes(symbols);
+    const second = fetchBatchQuotes([" dedupe_b ", "DEDUPE_A"]);
+    const single = fetchQuote("dedupe_a");
+    assert.equal(calls, 1);
+    release();
+    const [a, b, c] = await Promise.all([first, second, single]);
+    assert.deepEqual(a, b);
+    assert.equal(c?.price_paise, 12300);
+    assert.equal(notifications, 1);
+  } finally { unsubscribe(); }
+});
+
+test("a late REST response cannot replace a newer stream tick", async (t) => {
+  const symbol = "REST_STREAM_RACE";
+  let release!: () => void;
+  const wait = new Promise<void>(resolve => { release = resolve; });
+  const oldTime = new Date(Date.now() - 2000).toISOString();
+  t.mock.method(globalThis, "fetch", async () => {
+    await wait;
+    return Response.json({ success: true, data: { [symbol]: { symbol, price_paise: 10000, updated_at: oldTime, source: "angelone_live" } } });
+  });
+  const request = fetchBatchQuotes([symbol]);
+  useMarketStore.getState().updateQuote({ symbol, price_paise: 11000, updated_at: new Date().toISOString(), source: "angelone_live" });
+  release();
+  const result = await request;
+  assert.equal(result[symbol].price_paise, 11000);
+  assert.equal(useMarketStore.getState().quotes[symbol].price_paise, 11000);
+  assert.equal(getCachedQuote(symbol)?.price_paise, 11000);
+});

@@ -60,7 +60,7 @@ async function stocksMocks(page: Page, mode: "refresh" | "unavailable" | "degrad
 test("Stocks portfolio renews expired authentication and subsequent polling uses the renewed token", async ({ page }) => {
   const mock = await stocksMocks(page, "refresh");
   await page.goto("/stocks");
-  const navbar = page.locator("header");
+  const navbar = page.getByRole("group", { name: "Portfolio unrealized P&L", exact: true });
   await expect(navbar.getByText("₹123.45", { exact: true })).toBeVisible();
   await expect.poll(mock.rotations).toBe(1);
   const count = mock.portfolioTokens.length;
@@ -80,8 +80,8 @@ test("Stocks missing portfolio and unknown day movement stay unavailable while g
   const mock = await stocksMocks(page, "unavailable");
   await page.goto("/stocks");
   await expect(page.getByText("Portfolio Unavailable", { exact: true })).toBeVisible();
-  await expect(page.locator("header").getByText("Unavailable", { exact: true })).toBeVisible();
-  await expect(page.locator("header").getByText("₹0.00", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("group", { name: "Portfolio unrealized P&L", exact: true }).getByText("Unavailable", { exact: true })).toBeVisible();
+  await expect(page.getByRole("group", { name: "Portfolio unrealized P&L", exact: true }).getByText("₹0.00", { exact: true })).toHaveCount(0);
   const reliance = page.locator('a[href="/stocks/RELIANCE"]').filter({ hasText: "Reliance Industries Ltd" }).first();
   await expect(reliance.getByText("₹100.00", { exact: true })).toBeVisible();
   await expect(reliance.getByText("Day movement unavailable", { exact: true })).toBeVisible();
@@ -89,13 +89,13 @@ test("Stocks missing portfolio and unknown day movement stay unavailable while g
   await expect(page.getByText("+0.00 (0.00%)", { exact: true })).toHaveCount(0);
   mock.failPortfolio(false);
   await page.getByRole("button", { name: "Retry", exact: true }).first().click();
-  await expect(page.locator("header").getByText("₹123.45", { exact: true })).toBeVisible();
+  await expect(page.getByRole("group", { name: "Portfolio unrealized P&L", exact: true }).getByText("₹123.45", { exact: true })).toBeVisible();
 });
 
 test("Stocks degraded valuation cannot present a partial P&L as an authoritative balance", async ({ page }) => {
   await stocksMocks(page, "degraded");
   await page.goto("/stocks");
   await expect(page.getByText("Valuation unavailable", { exact: true })).toBeVisible();
-  await expect(page.locator("header").getByText("Unavailable", { exact: true })).toBeVisible();
-  await expect(page.locator("header").getByText("₹123.45", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("group", { name: "Portfolio unrealized P&L", exact: true }).getByText("Unavailable", { exact: true })).toBeVisible();
+  await expect(page.getByRole("group", { name: "Portfolio unrealized P&L", exact: true }).getByText("₹123.45", { exact: true })).toHaveCount(0);
 });

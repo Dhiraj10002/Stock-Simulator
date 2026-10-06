@@ -188,9 +188,9 @@ export default function PositionsTable({
           {(
             [
               { id: "ALL", label: "ALL", icon: Layers },
-              { id: "DELIVERY", label: "CNC Delivery", icon: Briefcase },
-              { id: "INTRADAY", label: "MIS Intraday", icon: Zap },
-              { id: "FNO", label: "F&O Derivatives", icon: Flame },
+              { id: "DELIVERY", label: "Delivery (CNC)", icon: Briefcase },
+              { id: "INTRADAY", label: "Intraday (MIS)", icon: Zap },
+              { id: "FNO", label: "Futures & Options", icon: Flame },
             ] as const
           ).map((tab) => {
             const isActive = activeSegment === tab.id;
@@ -416,6 +416,7 @@ export default function PositionsTable({
                   {/* One-Click Square-Off Action */}
                   <td className="py-3 px-3 text-center font-sans">
                     <button
+                      aria-label={`Exit ${pos.symbol} position`}
                       onClick={() => handleSquareOffSingle(pos)}
                       disabled={squaringOff === pos.uuid}
                       className="px-3 py-1 rounded-lg border border-rose-200 dark:border-rose-800/50 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/30 dark:hover:bg-rose-900/50 text-rose-700 dark:text-rose-300 hover:text-rose-900 dark:hover:text-white text-[11px] font-bold transition-all flex items-center gap-1 mx-auto disabled:opacity-50 active:scale-95 cursor-pointer shadow-xs"

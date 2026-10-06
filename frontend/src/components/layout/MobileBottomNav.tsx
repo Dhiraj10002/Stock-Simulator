@@ -19,7 +19,7 @@ interface NavItem {
 }
 
 const MOBILE_NAV_ITEMS: NavItem[] = [
-  { href: "/", label: "Home", icon: LayoutDashboard },
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/watchlist", label: "Watchlist", icon: Bookmark },
   { href: "/stocks", label: "Stocks", icon: TrendingUp, isCenter: true },
   { href: "/orders", label: "Orders", icon: ClipboardList },
@@ -28,6 +28,9 @@ const MOBILE_NAV_ITEMS: NavItem[] = [
 
 export default function MobileBottomNav() {
   const pathname = usePathname();
+  const items = pathname === "/" || pathname === "/3d"
+    ? [{ ...MOBILE_NAV_ITEMS[0], href: "/", label: "Home" }, ...MOBILE_NAV_ITEMS.slice(1)]
+    : MOBILE_NAV_ITEMS;
 
   return (
     <nav
@@ -35,7 +38,7 @@ export default function MobileBottomNav() {
       className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-slate-950/95 border-t border-slate-200 dark:border-slate-800/90 backdrop-blur-xl pb-[env(safe-area-inset-bottom,0px)] select-none shadow-2xl transition-colors duration-150"
     >
       <div className="flex items-center justify-around px-2 py-1.5 h-14">
-        {MOBILE_NAV_ITEMS.map((item) => {
+        {items.map((item) => {
           const Icon = item.icon;
           const isActive =
             item.href === "/"
@@ -44,7 +47,7 @@ export default function MobileBottomNav() {
 
           if (item.isCenter) {
             return (
-              <Link
+              <Link prefetch={false}
                 key={item.href}
                 href={item.href}
                 className="relative -top-3 flex flex-col items-center group"
@@ -70,7 +73,7 @@ export default function MobileBottomNav() {
           }
 
           return (
-            <Link
+            <Link prefetch={false}
               key={item.href}
               href={item.href}
               className={`flex-1 flex flex-col items-center justify-center py-1 rounded-lg transition-colors active:scale-95 ${

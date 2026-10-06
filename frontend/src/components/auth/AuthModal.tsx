@@ -66,7 +66,9 @@ export default function AuthModal({
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    let animId: number;
+    const reduced = matchMedia("(prefers-reduced-motion: reduce)");
+    const mobile = matchMedia("(max-width: 767px)");
+    let animId = 0;
     let width = (canvas.width = window.innerWidth);
     let height = (canvas.height = window.innerHeight);
 
@@ -74,6 +76,7 @@ export default function AuthModal({
       if (!canvas) return;
       width = canvas.width = window.innerWidth;
       height = canvas.height = window.innerHeight;
+      restart();
     };
     window.addEventListener("resize", onResize);
 
@@ -92,11 +95,8 @@ export default function AuthModal({
 
     let lastTime = 0;
     const render = (time: number) => {
-      if (document.hidden) {
-        animId = requestAnimationFrame(render);
-        return;
-      }
-      if (time - lastTime < 16) {
+      if (document.hidden) return;
+      if (time - lastTime < 33 && !reduced.matches) {
         animId = requestAnimationFrame(render);
         return;
       }
@@ -107,9 +107,10 @@ export default function AuthModal({
       const fov = 400;
       const cx = width / 2;
       const cy = height / 2;
-      const speed = 1.45;
+      const speed = reduced.matches ? 0 : 2.9;
+      const visibleCount = reduced.matches || mobile.matches ? 120 : count;
 
-      for (let i = 0; i < count; i++) {
+      for (let i = 0; i < visibleCount; i++) {
         const p = particles[i];
         p.z -= speed;
         if (p.z <= 0) {
@@ -133,13 +134,21 @@ export default function AuthModal({
         }
       }
 
-      animId = requestAnimationFrame(render);
+      if (!reduced.matches) animId = requestAnimationFrame(render);
     };
 
-    animId = requestAnimationFrame(render);
+    const restart = () => {
+      cancelAnimationFrame(animId); lastTime = 0;
+      if (!document.hidden) animId = requestAnimationFrame(render);
+    };
+    document.addEventListener("visibilitychange", restart);
+    reduced.addEventListener("change", restart);
+    restart();
 
     return () => {
       window.removeEventListener("resize", onResize);
+      document.removeEventListener("visibilitychange", restart);
+      reduced.removeEventListener("change", restart);
       cancelAnimationFrame(animId);
     };
   }, [isOpen]);

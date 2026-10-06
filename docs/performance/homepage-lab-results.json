@@ -1,0 +1,79 @@
+{
+  "baseline_commit": "be21004b6e027e832292aed2f0c524efb72d7f60",
+  "date": "2026-10-05",
+  "design": "Original dark spatial 3D UI in both builds",
+  "before": {
+    "conditions": "Local production build, mobile 390x844, CPU 4x, 1.6 Mbps download, 150 ms latency, cold browser contexts, 3 runs. Lab LCP/CLS, not field INP.",
+    "browser": "153.0.8010.0",
+    "node": "v24.19.0",
+    "runs": [
+      {
+        "lcp": 3032,
+        "cls": 0,
+        "jsBytes": 349516,
+        "jsRequests": 23,
+        "fcp": 1256,
+        "h1": "MASTERTHEMARKET.ZERO FINANCIAL RISK.",
+        "overflow": false,
+        "privateRequests": 1
+      },
+      {
+        "lcp": 3080,
+        "cls": 0,
+        "jsBytes": 349516,
+        "jsRequests": 23,
+        "fcp": 1248,
+        "h1": "MASTERTHEMARKET.ZERO FINANCIAL RISK.",
+        "overflow": false,
+        "privateRequests": 1
+      },
+      {
+        "lcp": 3024,
+        "cls": 0,
+        "jsBytes": 349516,
+        "jsRequests": 23,
+        "fcp": 1244,
+        "h1": "MASTERTHEMARKET.ZERO FINANCIAL RISK.",
+        "overflow": false,
+        "privateRequests": 1
+      }
+    ]
+  },
+  "after": {
+    "conditions": "Local production build, mobile 390x844, CPU 4x, 1.6 Mbps download, 150 ms latency, cold browser contexts, 3 runs. Lab LCP/CLS, not field INP.",
+    "browser": "153.0.8010.0",
+    "node": "v24.19.0",
+    "runs": [
+      {
+        "lcp": 1724,
+        "cls": 0,
+        "jsBytes": 171174,
+        "jsRequests": 12,
+        "fcp": 1724,
+        "h1": "MASTERTHEMARKET.ZERO FINANCIAL RISK.",
+        "overflow": false,
+        "privateRequests": 0
+      },
+      {
+        "lcp": 1664,
+        "cls": 0,
+        "jsBytes": 171174,
+        "jsRequests": 12,
+        "fcp": 1664,
+        "h1": "MASTERTHEMARKET.ZERO FINANCIAL RISK.",
+        "overflow": false,
+        "privateRequests": 0
+      },
+      {
+        "lcp": 1692,
+        "cls": 0,
+        "jsBytes": 171174,
+        "jsRequests": 12,
+        "fcp": 1692,
+        "h1": "MASTERTHEMARKET.ZERO FINANCIAL RISK.",
+        "overflow": false,
+        "privateRequests": 0
+      }
+    ]
+  }
+}

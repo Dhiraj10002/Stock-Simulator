@@ -13,7 +13,7 @@ export default function SignUpPage() {
         isOpen={true}
         mode="register"
         onClose={() => router.push("/")}
-        onSuccess={() => router.push("/")}
+        onSuccess={() => router.push("/dashboard")}
       />
     </div>
   );

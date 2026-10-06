@@ -4,9 +4,7 @@ import "./globals.css";
 import { ToastProvider } from "@/components/ui/ToastProvider";
 import { QueryProvider } from "@/providers/query-provider";
 import { ThemeProvider } from "@/providers/theme-provider";
-import SearchModal from "@/components/layout/SearchModal";
 import MobileBottomNav from "@/components/layout/MobileBottomNav";
-import ShortcutsModal from "@/components/layout/ShortcutsModal";
 
 const geistSans = Geist({
   variable: "--font-sans",
@@ -21,7 +19,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Stock Simulator — Institutional Paper Trading Platform",
   description:
-    "Real-time Indian market paper trading simulator with NSE/BSE execution, integer paise accounting, and automated risk management.",
+    "Real-time Indian market paper trading simulator with NSE/NFO execution, integer paise accounting, and automated risk management.",
 };
 
 export default function RootLayout({
@@ -65,8 +63,6 @@ export default function RootLayout({
             <QueryProvider>
               <ToastProvider>
                 {children}
-                <SearchModal />
-                <ShortcutsModal />
                 <MobileBottomNav />
               </ToastProvider>
             </QueryProvider>

@@ -1,72 +1,11 @@
-"use client";
+import type { Metadata } from "next";
+import HomePage from "@/components/landing/HomePage";
 
-import React, { useState, useEffect } from "react";
-import LandingPage from "@/components/landing/LandingPage";
-import DashboardPage from "@/components/dashboard/DashboardPage";
-import AuthModal from "@/components/auth/AuthModal";
-import { MarketProvider } from "@/providers/market-provider";
+export const metadata: Metadata = {
+  title: "Stock Simulator — Practice with virtual money",
+  description: "Practice Indian stock trading with virtual money. Explore NSE stocks and NFO futures and options, place paper orders, and track your portfolio.",
+};
 
-export default function HomePage() {
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
-  const [authModalOpen, setAuthModalOpen] = useState(false);
-  const [authMode, setAuthMode] = useState<"login" | "register">("login");
-
-  useEffect(() => {
-    queueMicrotask(() => {
-      const token =
-        localStorage.getItem("auth_token") ||
-        localStorage.getItem("stock-simulator-access-token");
-      setIsAuthenticated(!!token);
-    });
-  }, []);
-
-  const handleOpenAuth = (mode: "login" | "register" = "login") => {
-    setAuthMode(mode);
-    setAuthModalOpen(true);
-  };
-
-  const handleSignOut = () => {
-    localStorage.removeItem("auth_token");
-    localStorage.removeItem("stock-simulator-access-token");
-    localStorage.removeItem("stock-simulator-refresh-token");
-    localStorage.removeItem("user_name");
-    localStorage.removeItem("user_email");
-    setIsAuthenticated(false);
-  };
-
-  const handleAuthSuccess = () => {
-    setAuthModalOpen(false);
-    setIsAuthenticated(true);
-  };
-
-  // Initial loading state — prevent flash
-  if (isAuthenticated === null) {
-    return (
-      <div className="min-h-screen bg-[#ffffff] flex items-center justify-center">
-        <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-[#00d09c] to-[#00b386] animate-pulse" />
-      </div>
-    );
-  }
-
-  // Authenticated → Groww-style User Explore Dashboard
-  if (isAuthenticated) {
-    return (
-      <MarketProvider>
-        <DashboardPage onSignOut={handleSignOut} />
-      </MarketProvider>
-    );
-  }
-
-  // Unauthenticated → 3D Spatial Landing Page with Auth Modal
-  return (
-    <>
-      <LandingPage onOpenAuth={handleOpenAuth} />
-      <AuthModal
-        isOpen={authModalOpen}
-        mode={authMode}
-        onClose={() => setAuthModalOpen(false)}
-        onSuccess={handleAuthSuccess}
-      />
-    </>
-  );
+export default function Page() {
+  return <HomePage />;
 }

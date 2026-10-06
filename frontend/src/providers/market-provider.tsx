@@ -1,267 +1,140 @@
 "use client";
 
-import React, { useEffect, useRef, useCallback } from "react";
-import { usePathname } from "next/navigation";
-import {
-  useMarketStore,
-  DEFAULT_BENCHMARK_SYMBOLS,
-  MAX_CLIENT_SUBSCRIPTIONS,
-} from "@/stores/market-store";
+import { useCallback, useEffect, useRef } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useMarketStore } from "@/stores/market-store";
 import { useTradingStore } from "@/stores/trading-store";
+import { useAuthToken } from "@/hooks/useAuthToken";
 import { getApiUrl, getWsUrl } from "@/lib/config";
 import { apiFetch } from "@/lib/api";
 import { fetchInstruments } from "@/lib/instruments";
+import { subscriptionTargets } from "@/lib/marketSubscriptions";
 import type { Quote } from "@/types";
 
-const PUBLIC_ROUTES = new Set(["/login", "/signup", "/3d"]);
-
+// Mounted only by the trading layout. Route changes within the app keep one socket.
 export function MarketProvider({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
-  const isPublic = pathname ? PUBLIC_ROUTES.has(pathname) : false;
-
-  const updateQuote = useMarketStore((s) => s.updateQuote);
-  const setConnectionState = useMarketStore((s) => s.setConnectionState);
-  const setFeedProvider = useMarketStore((s) => s.setFeedProvider);
-  const setFeedStatus = useMarketStore((s) => s.setFeedStatus);
-  const setMarketStatus = useMarketStore((s) => s.setMarketStatus);
-  const setInstruments = useMarketStore((s) => s.setInstruments);
-
-  // Phase 5 Targeted Subscriptions
-  const watchlistSymbols = useMarketStore((s) => s.watchlistSymbols);
-  const activeViewSymbols = useMarketStore((s) => s.activeViewSymbols);
-  const setWatchlistSymbols = useMarketStore((s) => s.setWatchlistSymbols);
-  const setSubscribedSymbols = useMarketStore((s) => s.setSubscribedSymbols);
-  const selectedTradingSymbol = useTradingStore((s) => s.selectedSymbol);
-
+  const token = useAuthToken();
+  const watchlistSymbols = useMarketStore(s => s.watchlistSymbols);
+  const activeViewSymbols = useMarketStore(s => s.activeViewSymbols);
+  const selectedSymbol = useTradingStore(s => s.selectedSymbol);
+  const setWatchlistSymbols = useMarketStore(s => s.setWatchlistSymbols);
   const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const subscribedSymbolsRef = useRef<Set<string>>(new Set());
+  const subscribed = useRef(new Set<string>());
 
-  // 1. Fetch canonical instruments for client-side search and metadata lookup
   useEffect(() => {
-    if (isPublic) return;
-    fetchInstruments()
-      .then((list) => {
-        setInstruments(list);
-      })
-      .catch((err) => {
-        console.error("Failed to fetch canonical instruments:", err);
-      });
-  }, [isPublic, setInstruments]);
+    let mounted = true;
+    void fetchInstruments().then(list => { if (mounted) useMarketStore.getState().setInstruments(list); });
+    return () => { mounted = false; };
+  }, []);
 
-  // 2. Fetch user's DB-backed watchlist to populate initial targeted subscriptions
+  const watchlist = useQuery<{ symbol: string }[]>({
+    queryKey: ["watchlist", token],
+    queryFn: ({ signal }) => apiFetch("/watchlist", { signal }),
+    enabled: !!token,
+    staleTime: 10_000,
+    retry: false,
+  });
   useEffect(() => {
-    if (isPublic) return;
-    apiFetch<{ symbol: string }[]>("/watchlist")
-      .then((items) => {
-        if (Array.isArray(items) && items.length > 0) {
-          setWatchlistSymbols(items.map((i) => i.symbol));
-        }
-      })
-      .catch(() => {
-        // Unauthenticated or watchlist empty
-      });
-  }, [isPublic, setWatchlistSymbols]);
+    setWatchlistSymbols(token ? (watchlist.data || []).map(item => item.symbol) : []);
+  }, [token, watchlist.data, setWatchlistSymbols]);
 
-  // 3. Fetch authoritative market calendar & feed status periodically
   useEffect(() => {
-    if (isPublic) return;
-    const apiUrl = getApiUrl();
-    const fetchStatus = () => {
-      fetch(`${apiUrl}/market/status`)
-        .then((res) => res.json())
-        .then((body) => {
-          if (body.success && body.data) {
-            if (body.data.status) {
-              setMarketStatus(body.data.status);
-            }
-            if (body.data.feed_provider || body.data.feed_state) {
-              setFeedStatus({
-                feedProvider: body.data.feed_provider,
-                feedState: body.data.feed_state,
-                isSynthetic: Boolean(body.data.is_synthetic),
-                lastTick: body.data.last_tick,
-              });
-            }
-          }
-        })
-        .catch(() => {
-          // Fall back gracefully
-        });
-    };
-
-    fetchStatus();
-    const interval = setInterval(fetchStatus, 30000);
-    return () => clearInterval(interval);
-  }, [isPublic, setMarketStatus, setFeedStatus]);
-
-  // 4. Targeted subscription synchronizer: syncs active symbols over WebSocket
-  const syncSubscriptions = useCallback(() => {
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
-
-    // Union of: benchmarks + active DB watchlist + current view + trading selection
-    const candidateSymbols = [
-      ...DEFAULT_BENCHMARK_SYMBOLS,
-      ...watchlistSymbols,
-      ...activeViewSymbols,
-      ...(selectedTradingSymbol ? [selectedTradingSymbol] : []),
-    ];
-
-    const targetList = Array.from(
-      new Set(
-        candidateSymbols
-          .map((s) => s.toUpperCase().trim())
-          .filter(Boolean)
-      )
-    ).slice(0, MAX_CLIENT_SUBSCRIPTIONS);
-
-    const targetSet = new Set(targetList);
-    const currentSet = subscribedSymbolsRef.current;
-
-    const toSubscribe = targetList.filter((s) => !currentSet.has(s));
-    const toUnsubscribe = Array.from(currentSet).filter((s) => !targetSet.has(s));
-
-    if (toSubscribe.length > 0) {
-      wsRef.current.send(
-        JSON.stringify({
-          action: "subscribe",
-          symbols: toSubscribe,
-        })
-      );
-      for (const sym of toSubscribe) {
-        currentSet.add(sym);
-      }
-    }
-
-    if (toUnsubscribe.length > 0) {
-      wsRef.current.send(
-        JSON.stringify({
-          action: "unsubscribe",
-          symbols: toUnsubscribe,
-        })
-      );
-      for (const sym of toUnsubscribe) {
-        currentSet.delete(sym);
-      }
-    }
-
-    setSubscribedSymbols(Array.from(currentSet));
-  }, [watchlistSymbols, activeViewSymbols, selectedTradingSymbol, setSubscribedSymbols]);
-
-  // Synchronize targeted subscriptions whenever targets change
-  useEffect(() => {
-    if (isPublic) return;
-    syncSubscriptions();
-  }, [isPublic, syncSubscriptions]);
-
-  // 5. Manage WebSocket connection (only for authenticated / trading app routes)
-  useEffect(() => {
-    if (isPublic) {
-      if (wsRef.current) {
-        try {
-          wsRef.current.close();
-        } catch {
-          // ignore
-        }
-        wsRef.current = null;
-      }
-      setConnectionState("disconnected");
-      setFeedProvider("Offline");
-      return;
-    }
-
-    const wsUrl = getWsUrl();
-    let isSubscribed = true;
-
-    function connect() {
-      if (!isSubscribed) return;
-
+    const controller = new AbortController();
+    let inFlight = false;
+    const refresh = async () => {
+      if (inFlight || document.hidden) return;
+      inFlight = true;
       try {
-        setConnectionState("connecting");
-        const ws = new WebSocket(wsUrl);
-        wsRef.current = ws;
-
-        let pingTimer: NodeJS.Timeout | null = null;
-
-        ws.onopen = () => {
-          if (!isSubscribed) return;
-          setConnectionState("connected");
-          subscribedSymbolsRef.current.clear();
-          syncSubscriptions();
-
-          // Application-level heartbeat ping every 30 seconds to prevent proxy timeouts
-          pingTimer = setInterval(() => {
-            if (ws.readyState === WebSocket.OPEN) {
-              try {
-                ws.send(JSON.stringify({ action: "ping" }));
-              } catch {
-                // Ignore send error; onclose will handle reconnect
-              }
-            }
-          }, 30000);
-        };
-
-        ws.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data);
-            if (data.type === "pong") {
-              return;
-            }
-            if (data.type === "feed_status") {
-              const fs = data.feed_status || data;
-              setFeedStatus({
-                feedProvider: fs.feed_provider,
-                feedState: fs.feed_state,
-                isSynthetic: Boolean(fs.is_synthetic),
-                lastTick: fs.last_tick,
-                updatedAt: fs.updated_at,
-              });
-              return;
-            }
-            if (data.type === "quote" && data.quote) {
-              const q = data.quote;
-              updateQuote(q as Quote);
-            }
-          } catch {
-            // Ignore parse errors
-          }
-        };
-
-        ws.onerror = () => {
-          setConnectionState("disconnected");
-        };
-
-        ws.onclose = () => {
-          if (pingTimer) clearInterval(pingTimer);
-          setConnectionState("disconnected");
-          subscribedSymbolsRef.current.clear();
-          if (isSubscribed) {
-            reconnectTimeoutRef.current = setTimeout(connect, 2000);
-          }
-        };
+        const res = await fetch(`${getApiUrl()}/market/status`, { signal: AbortSignal.any([controller.signal, AbortSignal.timeout(8000)]) });
+        if (!res.ok) throw new Error("Market status unavailable");
+        const body = await res.json();
+        if (controller.signal.aborted) return;
+        if (body.success && body.data) {
+          const data = body.data, store = useMarketStore.getState();
+          if (data.status) store.setMarketStatus(data.status);
+          store.setFeedStatus({ feedProvider: data.feed_provider, feedState: data.feed_state, isSynthetic: Boolean(data.is_synthetic), lastTick: data.last_tick });
+        }
       } catch {
-        setConnectionState("disconnected");
-        setFeedProvider("Offline");
-        if (isSubscribed) {
-          reconnectTimeoutRef.current = setTimeout(connect, 3000);
-        }
-      }
-    }
-
-    connect();
-
-    return () => {
-      isSubscribed = false;
-      if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
-      if (wsRef.current) {
-        try {
-          wsRef.current.close();
-        } catch {
-          // ignore
-        }
-      }
+        if (!controller.signal.aborted) useMarketStore.getState().setFeedStatus({ feedState: "UNAVAILABLE" });
+      } finally { inFlight = false; }
     };
-  }, [isPublic, updateQuote, setConnectionState, setFeedStatus, setFeedProvider, syncSubscriptions]);
+    void refresh();
+    const interval = setInterval(refresh, 30000);
+    const onVisibility = () => { if (!document.hidden) void refresh(); };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => { controller.abort(); clearInterval(interval); document.removeEventListener("visibilitychange", onVisibility); };
+  }, []);
 
+  // Stable callback reads the latest targets. Updating targets never tears down the socket.
+  const syncSubscriptions = useCallback(() => {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    const state = useMarketStore.getState();
+    const targets = subscriptionTargets(state.watchlistSymbols, state.activeViewSymbols, useTradingStore.getState().selectedSymbol);
+    const targetSet = new Set(targets), current = subscribed.current;
+    const added = targets.filter(symbol => !current.has(symbol));
+    const removed = [...current].filter(symbol => !targetSet.has(symbol));
+    if (removed.length) ws.send(JSON.stringify({ action: "unsubscribe", symbols: removed }));
+    if (added.length) ws.send(JSON.stringify({ action: "subscribe", symbols: added }));
+    if (added.length || removed.length) {
+      subscribed.current = targetSet;
+      state.setSubscribedSymbols(targets);
+    }
+  }, []);
+
+  useEffect(() => { syncSubscriptions(); }, [watchlistSymbols, activeViewSymbols, selectedSymbol, syncSubscriptions]);
+
+  useEffect(() => {
+    let active = true;
+    let reconnect: ReturnType<typeof setTimeout> | undefined;
+    let heartbeat: ReturnType<typeof setInterval> | undefined;
+    const connect = () => {
+      if (!active) return;
+      useMarketStore.getState().setConnectionState("connecting");
+      const ws = new WebSocket(getWsUrl());
+      wsRef.current = ws;
+      const current = () => active && wsRef.current === ws;
+      ws.onopen = () => {
+        if (!current()) return;
+        useMarketStore.getState().setConnectionState("connected");
+        subscribed.current.clear();
+        syncSubscriptions();
+        heartbeat = setInterval(() => { if (current() && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ action: "ping" })); }, 30000);
+      };
+      ws.onmessage = event => {
+        if (!current()) return;
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === "feed_status") {
+            const status = data.feed_status || data;
+            useMarketStore.getState().setFeedStatus({ feedProvider: status.feed_provider, feedState: status.feed_state, isSynthetic: Boolean(status.is_synthetic), lastTick: status.last_tick, updatedAt: status.updated_at });
+          } else if (data.type === "quote" && data.quote) {
+            useMarketStore.getState().updateQuote(data.quote as Quote);
+          }
+        } catch { /* Ignore malformed provider messages. */ }
+      };
+      ws.onerror = () => { if (current()) useMarketStore.getState().setConnectionState("disconnected"); };
+      ws.onclose = () => {
+        if (heartbeat) clearInterval(heartbeat);
+        if (!current()) return;
+        useMarketStore.getState().setConnectionState("disconnected");
+        subscribed.current.clear();
+        useMarketStore.getState().setSubscribedSymbols([]);
+        reconnect = setTimeout(connect, 2000);
+      };
+    };
+    connect();
+    return () => {
+      active = false;
+      if (reconnect) clearTimeout(reconnect);
+      if (heartbeat) clearInterval(heartbeat);
+      const ws = wsRef.current;
+      wsRef.current = null;
+      if (ws) { ws.onclose = null; ws.close(); }
+      subscribed.current.clear();
+      useMarketStore.getState().setSubscribedSymbols([]);
+      useMarketStore.getState().setConnectionState("disconnected");
+    };
+  }, [syncSubscriptions]);
   return <>{children}</>;
 }

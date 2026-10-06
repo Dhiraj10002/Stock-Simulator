@@ -20,7 +20,9 @@ import { useMarketStore, useMultiSymbolQuotes, useTargetedSubscription } from "@
 import { apiFetch } from "@/lib/api";
 import { fetchBatchQuotes } from "@/lib/quoteService";
 import type { StockSearchResult } from "@/types";
-import FnoOrderModal from "@/components/trading/FnoOrderModal";
+import dynamic from "next/dynamic";
+import { useAuthToken } from "@/hooks/useAuthToken";
+const FnoOrderModal = dynamic(() => import("@/components/trading/FnoOrderModal"), { ssr: false });
 import { useToast } from "@/components/ui/ToastProvider";
 
 type SearchSegmentFilter = "ALL" | "EQUITY" | "FUTURES" | "OPTIONS";
@@ -30,6 +32,7 @@ export { formatKiteSymbol } from "@/lib/instrumentDisplay";
 
 export default function SearchModal() {
   const router = useRouter();
+  const token = useAuthToken();
   const { isSearchPaletteOpen, setSearchPaletteOpen } = useUIStore();
   const setSelectedSymbol = useTradingStore((s) => s.setSelectedSymbol);
   const { addToast } = useToast();
@@ -48,7 +51,8 @@ export default function SearchModal() {
 
   // Watchlist query to show checkmark icon like Kite
   const { data: watchlistItems, refetch: refetchWatchlist } = useQuery<{ symbol: string }[]>({
-    queryKey: ["watchlist"],
+    queryKey: ["watchlist", token],
+    enabled: isSearchPaletteOpen && !!token,
     queryFn: async () => {
       try {
         return (await apiFetch<{ symbol: string }[]>("/watchlist")) || [];
@@ -65,6 +69,10 @@ export default function SearchModal() {
 
   const handleToggleWatchlist = async (e: React.MouseEvent, sym: string) => {
     e.stopPropagation();
+    if (!token) {
+      addToast("Sign in to save stocks", "Your watchlist belongs to your practice account.", "info");
+      return;
+    }
     const clean = sym.toUpperCase();
     const inWl = watchlistSet.has(clean);
     try {
@@ -192,17 +200,6 @@ export default function SearchModal() {
   // Keyboard shortcut: Ctrl+K or Cmd+K
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
-        e.preventDefault();
-        if (isSearchPaletteOpen) {
-          handleClose();
-        } else {
-          setQuery("");
-          setDebouncedQuery("");
-          setSegmentFilter("ALL");
-          setSearchPaletteOpen(true);
-        }
-      }
       if (e.key === "Escape" && isSearchPaletteOpen) {
         handleClose();
       }
@@ -540,7 +537,7 @@ export default function SearchModal() {
       )}
 
       {/* F&O Direct Buy/Sell Order Placement Modal */}
-      <FnoOrderModal
+      {isFnoModalOpen && <FnoOrderModal
         isOpen={isFnoModalOpen}
         onClose={() => {
           setIsFnoModalOpen(false);
@@ -548,7 +545,7 @@ export default function SearchModal() {
         }}
         instrument={fnoModalInstrument}
         initialSide={fnoOrderSide}
-      />
+      />}
     </>
   );
 }

@@ -1,6 +1,24 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { normalizeInstrument } from "./instruments";
+import { normalizeInstrument, fetchInstruments, fetchInstrumentBySymbol } from "./instruments";
+
+test("display instrument metadata expires and an empty refreshed master replaces the old list", async (t) => {
+  let now = 1_000_000, calls = 0;
+  t.mock.method(Date, "now", () => now);
+  t.mock.method(globalThis, "fetch", async (url: unknown) => {
+    calls++;
+    if (String(url).endsWith("/instruments/CACHE_TEST")) return Response.json({ success: true, data: { symbol: "CACHE_TEST", active: false, token: "new" } });
+    return Response.json({ success: true, data: calls === 1 ? [{ symbol: "CACHE_TEST", active: true, token: "old" }] : [] });
+  });
+  assert.equal((await fetchInstruments())[0].token, "old");
+  assert.equal((await fetchInstrumentBySymbol("CACHE_TEST"))?.active, true);
+  assert.equal(calls, 1);
+  now += 60_001;
+  assert.equal((await fetchInstrumentBySymbol("CACHE_TEST"))?.token, "new");
+  assert.deepEqual(await fetchInstruments(), []);
+  assert.deepEqual(await fetchInstruments(), []);
+  assert.equal(calls, 3);
+});
 
 test("instruments: normalizeInstrument creates canonical Instrument with all 13 authoritative fields", () => {
   const raw = {

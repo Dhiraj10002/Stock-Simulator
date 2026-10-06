@@ -104,7 +104,7 @@ test("dashboard calendar fits content and index history recovers from provider r
     }
     await route.fulfill({ headers, json: { success: true, data } });
   });
-  await page.goto("/");
+  await page.goto("/dashboard");
   await expect(
     page.getByRole("heading", { name: /Welcome back/ }),
   ).toBeVisible();
