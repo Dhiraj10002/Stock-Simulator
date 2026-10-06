@@ -44,7 +44,8 @@ Generate `JWT_SECRET` with `openssl rand -hex 32`. Use the repository-root `.env
 | `CORS_ALLOWED_ORIGINS` | Exact frontend origin; comma-separated explicit origins when needed |
 | `MARKET_FEED_MODE` | `live`; keep synthetic execution flags false |
 | `CADDY_INTERNAL_IP` | Default `172.30.250.2` on the dedicated gateway bridge |
-| `GATEWAY_SUBNET` | Default `172.30.250.0/29`; change together with Caddy IP if overlapping another network |
+| `GATEWAY_SUBNET` | Default `172.30.250.0/29`; change together with Caddy IP and dynamic range if overlapping another network |
+| `GATEWAY_DYNAMIC_RANGE` | Default `172.30.250.4/30`; excludes Caddy's fixed IP so backend/one-off starts cannot claim it |
 | `PRODUCTION_ENV_FILE` | Optional alternate env-file path; bootstrap passes it to interpolation and containers |
 
 Compose fixes the backend internal port to 8080, derives `TRUSTED_PROXIES` from the Caddy IP, and fixes all three application services to the private Redis URL. Without production Compose, `TRUSTED_PROXIES` defaults to empty: forwarding headers are ignored. Only literal IPs/bounded CIDRs are accepted; wildcard and `/0` allowlists are rejected.

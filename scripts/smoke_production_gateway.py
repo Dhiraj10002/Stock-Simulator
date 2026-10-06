@@ -92,7 +92,8 @@ def main():
         env_file.write_text("\n".join([
             "API_DOMAIN=localhost", "ACME_EMAIL=ci@example.com",
             f"CORS_ALLOWED_ORIGINS={ORIGIN}", "CADDY_INTERNAL_IP=172.30.251.2",
-            "GATEWAY_SUBNET=172.30.251.0/29", "MARKET_FEED_MODE=live",
+            "GATEWAY_SUBNET=172.30.251.0/29", "GATEWAY_DYNAMIC_RANGE=172.30.251.4/30",
+            "MARKET_FEED_MODE=live",
             "DATABASE_URL=postgres://smoke:smoke@postgres:5432/smoke?sslmode=disable",
             f"JWT_SECRET={secrets.token_hex(32)}", "AUTH_RATE_LIMIT_MAX_REQUESTS=3",
             "RATE_LIMIT_WINDOW=10m", "ALLOW_SEEDED_QUOTES=false", "SIMULATION_MODE=false",

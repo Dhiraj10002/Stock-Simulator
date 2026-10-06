@@ -63,6 +63,7 @@ services:
         required: true
     environment:
       - APP_ENV=production
+      - GIN_MODE=release
       - PORT=8080
       - TRUSTED_PROXIES=${CADDY_INTERNAL_IP:-172.30.250.2}
       - REDIS_URL=redis://redis:6379/0
@@ -169,9 +170,12 @@ networks:
   stock_sim_net:
     driver: bridge
   # A separate bridge lets Go trust only Caddy, rather than all workers.
-  # Change both values together if this subnet overlaps another Docker network.
+  # Change the subnet, dynamic range and Caddy IP together if they overlap another network.
   gateway_net:
     driver: bridge
     ipam:
       config:
         - subnet: ${GATEWAY_SUBNET:-172.30.250.0/29}
+          # Reserve .2 for Caddy even when Go starts first. Dynamic allocation
+          # must not consume the gateway address before Caddy joins the bridge.
+          ip_range: ${GATEWAY_DYNAMIC_RANGE:-172.30.250.4/30}
