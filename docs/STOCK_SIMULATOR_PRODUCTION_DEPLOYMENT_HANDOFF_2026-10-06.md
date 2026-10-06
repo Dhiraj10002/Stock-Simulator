@@ -1,3 +1,5 @@
+> Deployment-hardening update: the current Compose now includes Caddy on a dedicated gateway bridge, no backend host port, explicit Go proxy trust, one production env file and an ordered bootstrap. [docs/deployment.md](deployment.md) is the current operational runbook. This handoff records the broader release/acceptance plan; readiness alone is not production certification.
+
 # Stock Simulator — Production Deployment Plan & Handoff
 ## Final Deployment Runbook
 
@@ -29,13 +31,13 @@ Oracle documents an Always Free Ampere A1 option equivalent to up to 2 OCPUs and
 
 The artifact is directionally correct, but it is **not yet an exact runbook for the current repository**.
 
-The current production Compose publishes backend port 8080 directly and does not define Caddy as a Compose service. The repository already contains `deploy/oracle/Caddyfile`, so the clean production design is:
+The reviewed baseline published backend port 8080 directly and omitted Caddy. Deployment hardening now includes Caddy and removes that host mapping. The repository already contains `deploy/oracle/Caddyfile`, so the clean production design is:
 
 `Internet → Caddy :80/:443 → backend :8080`
 
-with backend 8080 bound to loopback only, or kept entirely on the private Docker network.
+with backend 8080 kept entirely on the private Docker network.
 
-The repository also has documentation drift around Redis: `docker-compose.prod.yml` uses a private Redis container, while `docs/deployment.md` still describes Upstash. For the current plan, use **private VM Redis** and update the documentation accordingly.
+Production Compose and `docs/deployment.md` now agree on **private VM Redis**. Managed Redis remains a separate measured migration.
 
 ---
 
@@ -370,195 +372,51 @@ no public port
 
 Keep this architecture unless intentionally changed.
 
-Do not deploy Upstash just because the older `docs/deployment.md` mentions it.
+A move to Upstash requires its own latency/usage measurements and explicit Compose dependency changes.
 
 ---
 
-## 14. Required Compose hardening
+## 14. Implemented Compose hardening
 
-Current `docker-compose.prod.yml` contains:
+Caddy is the only public gateway on 80/443. Go exposes 8080 only to Docker networks; it has no host port mapping. The optional frontend profile binds 3000 to loopback. Caddy and Go share `gateway_net`; workers/Redis use the separate application bridge.
 
-```yaml
-ports:
-  - "8080:8080"
-```
+## 15. Caddy and client identity
 
-Change it to:
-
-```yaml
-ports:
-  - "127.0.0.1:8080:8080"
-```
-
-The intended traffic path becomes:
-
-```
-Internet
-   ↓
-Caddy :443
-   ↓
-127.0.0.1:8080
-   ↓
-Go backend
-```
-
-Do not leave backend port 8080 public.
-
----
-
-## 15. Caddy
-
-The repository already contains:
-
-```
-deploy/oracle/Caddyfile
-```
-
-The existing file uses:
-
-```
-reverse_proxy backend:8080
-```
-
-That is correct if Caddy is another container on `stock_sim_net`. Caddy documents that `localhost` inside Docker refers to the Caddy container itself, not the host. citeturn659459search8
-
-### Recommended: Caddy inside Compose
-
-Add:
-
-```yaml
-caddy:
-  image: caddy:2-alpine
-  restart: unless-stopped
-  ports:
-    - "80:80"
-    - "443:443"
-  volumes:
-    - ./deploy/oracle/Caddyfile:/etc/caddy/Caddyfile:ro
-    - caddy_data:/data
-    - caddy_config:/config
-  networks:
-    - stock_sim_net
-  depends_on:
-    backend:
-      condition: service_healthy
-```
-
-And:
-
-```yaml
-volumes:
-  redis_prod_data:
-  caddy_data:
-  caddy_config:
-```
-
-This preserves certificate/config state across container replacement.
-
-Caddy automatically provisions TLS certificates when the public hostname and ports are correctly configured. citeturn787721search5
-
----
+Caddy persists certificate/config data, uses `API_DOMAIN`/`ACME_EMAIL`, and forwards to `backend:8080`. Its fixed gateway IP is the only address trusted by Go's `TRUSTED_PROXIES`. Go ignores untrusted forwarding headers and does not fall back to browser-supplied `X-Real-IP`.
 
 ## 16. Caddy routing
 
-Use:
+The tracked `deploy/oracle/Caddyfile` handles HTTPS/WSS, no-store API/health/readiness responses, HTTP compression and the OpenAPI alias. Use the tracked file rather than copying an earlier sample. Caddy replaces incoming forwarded headers at the public boundary; a CDN in front requires a separate trust-chain review.
 
-```caddyfile
-api.stock-simulator.example.com {
-    handle /api/* {
-        reverse_proxy backend:8080
-    }
+## 17. Ordered first startup
 
-    handle /ws/* {
-        reverse_proxy backend:8080
-    }
-
-    handle /health {
-        rewrite * /api/v1/health
-        reverse_proxy backend:8080
-    }
-
-    handle /ready {
-        rewrite * /api/v1/ready
-        reverse_proxy backend:8080
-    }
-
-    handle /openapi.yaml {
-        reverse_proxy backend:8080
-    }
-}
-```
-
-Caddy's `reverse_proxy` supports WebSocket upgrades. citeturn659459search5
-
----
-
-## 17. Backend startup
-
-Start only Redis + backend first:
+After configuring root `.env` and DNS:
 
 ```bash
-docker compose -f docker-compose.prod.yml up -d redis backend
+python3 scripts/bootstrap_production.py --sync-master
 ```
 
-Verify:
+The command validates configuration, waits for Redis/backend/Caddy health, activates the official master, starts workers, then waits for complete readiness. It fails on missing activation or unsuccessful initialization.
+
+## 18. Subsequent release
+
+For an existing activated master:
 
 ```bash
+python3 scripts/bootstrap_production.py
 docker compose -f docker-compose.prod.yml ps
 ```
 
-Then activate/sync the instrument master using the repository's supported command:
+Use `--sync-master` for intentional official master refreshes. Production containers use the same root env file as Compose interpolation; `backend/.env` remains native-development configuration.
+
+## 19. Internal liveness and public readiness
 
 ```bash
-docker compose -f docker-compose.prod.yml run \
-  --rm \
-  --no-deps \
-  --entrypoint /sync-instruments \
-  backend
+docker compose -f docker-compose.prod.yml exec -T backend /healthcheck
+curl -fsS --max-time 15 https://api.your-domain.com/ready
 ```
 
-Verify:
-- one valid active production snapshot
-- non-zero tradable instruments
-- current F&O contracts
-- expected segment/token fields
-
-Only then start market/news workers and Caddy.
-
----
-
-## 18. Start workers/proxy
-
-```bash
-docker compose -f docker-compose.prod.yml up -d market-worker news-worker caddy
-```
-
-Then:
-
-```bash
-docker compose -f docker-compose.prod.yml ps
-```
-
-Expected:
-
-```
-redis          healthy
-backend        healthy
-market-worker  healthy
-news-worker    running
-caddy          running
-```
-
----
-
-## 19. Local VM health checks
-
-```bash
-curl -fsS http://127.0.0.1:8080/api/v1/health
-curl -fsS http://127.0.0.1:8080/api/v1/ready
-```
-
-The current repository readiness model checks DB, Redis, market feed state, worker heartbeat, instrument master and calendar/session state.
+There is no host listener on backend 8080. Readiness checks DB, Redis, feed state, worker heartbeat/master agreement, instrument master and session state.
 
 ---
 
@@ -1055,31 +913,7 @@ Safe operational fields include:
 
 ### P0 — public backend port
 
-Current:
-```yaml
-ports:
-  - "8080:8080"
-```
-
-Required:
-```yaml
-ports:
-  - "127.0.0.1:8080:8080"
-```
-
-### P0 — Caddy is not currently in production Compose
-
-Repository has the Caddyfile, but `docker-compose.prod.yml` needs either:
-- a Caddy service on `stock_sim_net`, or
-- an explicitly managed host-installed Caddy.
-
-Recommended: Compose-managed Caddy.
-
-### P1 — deployment docs are inconsistent on Redis
-
-`docs/deployment.md` says Upstash, while current production Compose uses private Redis.
-
-Choose one architecture. This handoff chooses **private VM Redis**.
+Implemented: backend has no published host port; Caddy is part of Compose on the dedicated gateway bridge. `docs/deployment.md` matches the private Redis topology. The real Docker CI gateway smoke checks port isolation, HTTPS/WSS and header spoofing.
 
 ### P1 — frontend missing-variable fallback
 
@@ -1089,7 +923,7 @@ For production, a missing API/WS URL should be surfaced as a deployment/configur
 
 ### P1 — proxy trust/rate-limit behavior
 
-Define and test the Caddy → Go client-IP trust boundary.
+Implemented with explicit proxy configuration and client-IP/rate-limit regression tests. Public staging verification remains required.
 
 ### P1 — deployment automation
 

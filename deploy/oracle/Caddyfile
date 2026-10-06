@@ -1,41 +1,46 @@
-# ==============================================================================
-# Caddy Reverse Proxy Configuration for Oracle VM
-# Domain: api.<your-oracle-domain>.com
-# Features: Automated Let's Encrypt TLS, WebSocket Upgrades, and Health Routing
-# ==============================================================================
+# Public edge for docker-compose.prod.yml. Keep DNS direct to the VM.
+# Caddy replaces incoming X-Forwarded-* values by default. Go trusts only
+# CADDY_INTERNAL_IP; do not add broad trusted_proxies here for arbitrary clients.
+{
+    email {$ACME_EMAIL}
+}
 
-api.<your-oracle-domain>.com {
-    # Automatic HTTPS certificate provisioning and HTTP->HTTPS redirection
+{$API_DOMAIN} {
+    encode zstd gzip
 
-    # Forward REST API calls to Go backend
     handle /api/* {
+        # Trading/account responses must not be cached by browsers or proxies.
+        header Cache-Control "no-store"
         reverse_proxy backend:8080
     }
 
-    # Forward WebSocket market streaming connections
     handle /ws/* {
         reverse_proxy backend:8080
     }
 
-    # Health check endpoint for Oracle Cloud Load Balancer / uptime monitoring
     handle /health {
+        header Cache-Control "no-store"
         rewrite * /api/v1/health
         reverse_proxy backend:8080
     }
 
-    # Readiness check endpoint for deployment validation
     handle /ready {
+        header Cache-Control "no-store"
         rewrite * /api/v1/ready
         reverse_proxy backend:8080
     }
 
-    # OpenAPI Specification for API exploration
     handle /openapi.yaml {
+        rewrite * /api/v1/openapi.yaml
         reverse_proxy backend:8080
+    }
+
+    handle {
+        respond "Not found" 404
     }
 
     log {
         output stdout
-        format console
+        format json
     }
 }

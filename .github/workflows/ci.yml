@@ -6,6 +6,15 @@ on:
   pull_request:
     branches: [main]
 jobs:
+  production-gateway:
+    name: Production Gateway HTTPS and WSS Smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify production Compose and Caddy against real Go backend
+        run: python3 scripts/smoke_production_gateway.py
+
   backend:
     name: Go Backend & Integration Tests
     runs-on: ubuntu-latest
