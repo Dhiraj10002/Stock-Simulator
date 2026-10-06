@@ -198,6 +198,7 @@ Under `MARKET_FEED_MODE=live`, when Angel One is unavailable or disconnected, th
 | `REDIS_URL` | Redis connection string | `redis://localhost:6379/0` |
 | `JWT_SECRET` | Generated signing secret, at least 32 bytes; placeholders rejected | — |
 | `CORS_ALLOWED_ORIGINS` | Comma-separated allowed origins | `http://localhost:3000` (dev) |
+| `TRUSTED_PROXIES` | Explicit IP/CIDR proxy allowlist; production Compose derives the Caddy IP | Empty (trust nobody) |
 | `APP_ENV` | `development` or `production` | `development` |
 | `MARKET_FEED_MODE` | `live`, `synthetic`, or `disabled` | `live` |
 | `MARKET_WORKER_URL` | Market worker HTTP endpoint | Auto-detected |
@@ -362,6 +363,8 @@ The recommended production deployment topology separates presentation and comput
 | :--- | :--- | :--- | :--- |
 | `NEXT_PUBLIC_API_URL` | **Vercel** | Backend REST API endpoint (auto-normalizes `/api/v1`) | `https://api.<your-oracle-domain>.com/api/v1` |
 | `NEXT_PUBLIC_WS_URL` | **Vercel** | Backend WebSocket endpoint (derived automatically if unset) | `wss://api.<your-oracle-domain>.com/ws/market` |
+| `API_DOMAIN` | **Oracle** | DNS hostname used by Caddy for automatic HTTPS | `api.your-domain.com` |
+| `ACME_EMAIL` | **Oracle** | Certificate registration contact | Your email address |
 | `APP_ENV` | **Oracle** | Enforces strict production rules, rejects wildcard CORS | `production` |
 | `CORS_ALLOWED_ORIGINS` | **Oracle** | Authorized frontend origins for HTTP CORS & WebSockets | `https://<your-vercel-app>.vercel.app` |
 | `DATABASE_URL` | **Oracle** | PostgreSQL connection string | `postgres://user:pass@host:5432/stock_simulator?sslmode=require` |
@@ -379,16 +382,17 @@ cd Stock-Simulator
 cp .env.prod.example .env
 nano .env
 
-# 3. Start backend services with internal networking and distroless healthchecks
-docker compose -f docker-compose.prod.yml up -d --build
+# 3. Start gateway/backend, activate master, then workers and readiness
+python3 scripts/bootstrap_production.py --sync-master
 
+# Later releases with an activated master: python3 scripts/bootstrap_production.py
 # 4. Verify service health
 docker compose -f docker-compose.prod.yml ps
 ```
 
-TLS reverse proxy templates with automatic Let's Encrypt certificates are provided in:
-- `deploy/oracle/Caddyfile`
-- `deploy/oracle/nginx.conf`
+Production Compose includes Caddy on a dedicated gateway bridge; Go/Redis/workers have no public host ports. Configure `API_DOMAIN` and `ACME_EMAIL` in the root `.env`. Certificate volumes persist across replacements. `nginx.conf` remains an alternative template outside this supported Compose topology.
+
+Follow [the production deployment guide](docs/deployment.md) for environment setup, trusted proxy handling, startup, CI gateway smoke checks and release acceptance.
 
 ---
 

@@ -62,7 +62,7 @@ func Setup(ctx context.Context, cfg *config.Config, opts ...SetupOption) *gin.En
 	validation.Register()
 
 	r := gin.New()
-	_ = r.SetTrustedProxies(nil)
+	configureProxyTrust(r, cfg)
 	r.Use(
 		middleware.Recovery(),
 		middleware.RequestID(),

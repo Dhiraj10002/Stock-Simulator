@@ -9,6 +9,33 @@
 # ==============================================================================
 
 services:
+  # The only public service. DNS for API_DOMAIN must point to this VM.
+  caddy:
+    image: caddy:2-alpine
+    environment:
+      API_DOMAIN: ${API_DOMAIN:?API_DOMAIN is required (e.g. api.example.com)}
+      ACME_EMAIL: ${ACME_EMAIL:?ACME_EMAIL is required for certificate registration}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/oracle/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+    networks:
+      gateway_net:
+        ipv4_address: ${CADDY_INTERNAL_IP:-172.30.250.2}
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:2019/config/"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
   # Internal Redis 7 (In-Memory PubSub & Quotes Cache)
   # Port 6379 is NOT exposed to public internet for security.
   redis:
@@ -32,23 +59,24 @@ services:
       context: .
       dockerfile: backend/Dockerfile
     env_file:
-      - path: .env
-        required: false
-      - path: backend/.env
-        required: false
+      - path: ${PRODUCTION_ENV_FILE:-.env}
+        required: true
     environment:
       - APP_ENV=production
+      - PORT=8080
+      - TRUSTED_PROXIES=${CADDY_INTERNAL_IP:-172.30.250.2}
       - REDIS_URL=redis://redis:6379/0
       - MARKET_WORKER_URL=http://market-worker:8085
       - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:?CORS_ALLOWED_ORIGINS is required in production (e.g. https://<your-vercel-app>.vercel.app)}
       - DATABASE_URL=${DATABASE_URL:?DATABASE_URL is required in production}
       - JWT_SECRET=${JWT_SECRET:?JWT_SECRET is required in production}
       - MARKET_FEED_MODE=${MARKET_FEED_MODE:-live}
-    ports:
-      - "8080:8080"
+    expose:
+      - "8080"
     restart: unless-stopped
     networks:
       - stock_sim_net
+      - gateway_net
     depends_on:
       redis:
         condition: service_healthy
@@ -65,10 +93,8 @@ services:
     build:
       context: ./python-services/market-worker
     env_file:
-      - path: .env
-        required: false
-      - path: backend/.env
-        required: false
+      - path: ${PRODUCTION_ENV_FILE:-.env}
+        required: true
     environment:
       - REDIS_URL=redis://redis:6379/0
       - QUOTE_SERVER_HOST=0.0.0.0
@@ -100,10 +126,8 @@ services:
     build:
       context: ./python-services/news-worker
     env_file:
-      - path: .env
-        required: false
-      - path: backend/.env
-        required: false
+      - path: ${PRODUCTION_ENV_FILE:-.env}
+        required: true
     environment:
       - REDIS_URL=redis://redis:6379/0
     restart: unless-stopped
@@ -122,13 +146,13 @@ services:
     build:
       context: ./frontend
       args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8080/api/v1}
-        NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-ws://localhost:8080/ws/market}
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://${API_DOMAIN}/api/v1}
+        NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-wss://${API_DOMAIN}/ws/market}
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8080/api/v1}
-      - NEXT_PUBLIC_WS_URL=${NEXT_PUBLIC_WS_URL:-ws://localhost:8080/ws/market}
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-https://${API_DOMAIN}/api/v1}
+      - NEXT_PUBLIC_WS_URL=${NEXT_PUBLIC_WS_URL:-wss://${API_DOMAIN}/ws/market}
     restart: unless-stopped
     networks:
       - stock_sim_net
@@ -138,7 +162,16 @@ services:
 
 volumes:
   redis_prod_data:
+  caddy_data:
+  caddy_config:
 
 networks:
   stock_sim_net:
     driver: bridge
+  # A separate bridge lets Go trust only Caddy, rather than all workers.
+  # Change both values together if this subnet overlaps another Docker network.
+  gateway_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: ${GATEWAY_SUBNET:-172.30.250.0/29}

@@ -33,6 +33,7 @@ type Config struct {
 	IndianAPIPlan string
 
 	CORSAllowedOrigins         string
+	TrustedProxies             []string
 	InitialVirtualBalancePaise int64
 	MISLeverage                int64
 	FuturesMarginPercent       int64
@@ -146,6 +147,11 @@ func Load() (*Config, error) {
 
 	if cfg.DatabaseURL == "" {
 		return nil, fmt.Errorf("DATABASE_URL is required")
+	}
+	var err error
+	cfg.TrustedProxies, err = parseTrustedProxies(viper.GetString("TRUSTED_PROXIES"))
+	if err != nil {
+		return nil, err
 	}
 	if err := validateJWTSecret(cfg.JWTSecret); err != nil {
 		return nil, err

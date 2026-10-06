@@ -1,0 +1,20 @@
+# Test-only local PostgreSQL; never include this override in production.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: smoke
+      POSTGRES_PASSWORD: smoke
+      POSTGRES_DB: smoke
+    networks:
+      - stock_sim_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U smoke -d smoke"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  backend:
+    depends_on:
+      postgres:
+        condition: service_healthy

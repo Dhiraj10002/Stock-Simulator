@@ -1,84 +1,138 @@
-# Deployment Architecture
+# Production deployment: Vercel + Oracle
 
-The production architecture is divided across managed cloud services and an Oracle Cloud Always Free VM:
+The V1 production stack is Next.js on Vercel, Caddy/Go/Python workers/private Redis on an Oracle VM, and Neon PostgreSQL for durable trading state. `docker-compose.prod.yml` is the source of truth. Development may use managed Redis; production Compose deliberately uses `redis://redis:6379/0`. Upstash requires a separate, measured migration of the URL and local-service dependencies.
 
-```text
-Vercel (Frontend Next.js)
-   │
-   ▼ HTTPS
-Oracle Cloud Always Free VM
-   │ (Reverse Proxy Caddy / Nginx on ports 80/443)
-   │
-   ├── docker-compose.prod.yml
-   │     ├── Go Backend (port 8080 internal)
-   │     ├── Market Worker (SmartAPI WebSocket)
-   │     └── News Worker (RSS Ingestion)
-   │
-   ├── Neon PROD PostgreSQL (DATABASE_URL with sslmode=require)
-   └── Upstash PROD Redis (REDIS_URL with rediss://)
+```mermaid
+flowchart TD
+    V["Vercel frontend"] --> B["Browser"]
+    B <-->|HTTPS / WSS| C["Caddy on Oracle"]
+    C <--> G["Go API"]
+    G <-->|Quotes / PubSub| R["Private Redis"]
+    M["Market worker"] --> R
+    G <-->|Orders / Wallet / Positions| N["Neon PostgreSQL"]
+    M -->|Activated master| N
 ```
 
-## Service Responsibilities
-1. **Frontend**: Hosted on Vercel connecting via HTTPS to the Go Backend API and WebSocket (`wss://`).
-2. **Oracle VM**: Runs application containers only (`backend`, `market-worker`, `news-worker`). No local database or Redis runs on the VM.
-3. **Neon PostgreSQL**: Managed serverless Postgres holding persistent tables (`users`, `wallets`, `orders`, `trades`, `positions`, `instruments`, etc.).
-4. **Upstash Redis**: Managed Redis cluster with TLS (`rediss://`) holding real-time quotes, OHLC history, and Pub/Sub channel `market:updates`.
+News processing remains a private worker. Redis is a cache and live event bus; PostgreSQL remains the financial authority. Redis Pub/Sub does not replay missed events, so reconnect snapshots and the existing display fallback remain necessary.
 
-## Frontend runtime and mobile checks
+## Prerequisites
 
-For self-hosted/Docker frontend deployments, the image uses Next.js standalone output and a non-root Node 22 runner. Public API/WS URLs must be supplied at build time. Vercel continues to use its normal Next.js build. See [standalone smoke checks and mobile profiling](mobile-polling-standalone.md) for commands, measured runtime-file sizes and live-host profiling after deployment.
+- Oracle Linux VM with Docker Engine, Compose **2.24 or newer**, Python 3 and outbound access to Neon, the broker and certificate authorities. Build images for the VM's actual architecture; an Ampere A1 VM requires ARM-compatible builds.
+- A DNS-only API hostname such as `api.your-domain.com` pointing to the VM. Configure AAAA only if IPv6 routing works. Caddy is the first public proxy in this setup; adding another CDN/proxy requires reviewing the trusted client-IP chain.
+- Public ingress for TCP 80/443; UDP 443 is optional for HTTP/3. Restrict SSH to operator access. Go 8080, worker 8085 and Redis 6379 have no host port mappings. The optional frontend container binds 3000 to loopback only.
+- Neon production connection URI with TLS (`sslmode=require`), a generated JWT signing secret, and the actual frontend origin. Choose nearby regions and measure warm/cold DB latency; worker refreshes can keep Neon compute active.
+- Real `ANGEL_API_KEY`, `ANGEL_CLIENT_ID`, `ANGEL_PASSWORD` and `ANGEL_TOTP_SECRET` for LIVE mode. Production credentials belong only on Oracle, never in Vercel public variables or Git.
 
-## Local & Staging Single-Command Launch
+## One production environment file
 
-The entire platform (Next.js Frontend, Go Backend, Python Market Worker using the configured feed mode, and Python News Worker) can be launched locally or on staging with a single command:
+From the repository root:
 
 ```bash
-docker compose up --build
+cp .env.prod.example .env
+chmod 600 .env
+# Edit .env: replace domain/origin/database/secret/broker placeholders.
 ```
 
-- **Institutional Frontend UI**: `http://localhost:3000`
-- **Go REST API & WebSocket**: `http://localhost:8080` (`/api/v1` and `/ws/market`)
-- **Market Worker**: LIVE requires an activated canonical master and broker credentials. Historical seeding and generated ticks run only in explicit synthetic mode.
-- **News Worker**: Continuously ingests RSS financial headlines with sectoral sentiment scoring.
+Generate `JWT_SECRET` with `openssl rand -hex 32`. Use the repository-root `.env` for both Compose interpolation and application container environment. Production does not merge `backend/.env`; that file is for native development. Shell variables override Compose interpolation, so remove stale exported values before deploying.
 
-To run with local PostgreSQL and Redis containers instead of Neon and Upstash:
+| Setting | Value/purpose |
+|---|---|
+| `API_DOMAIN` | API DNS hostname, without scheme, port or path |
+| `ACME_EMAIL` | Contact for automatic HTTPS certificates |
+| `DATABASE_URL` | Neon production TLS URI |
+| `JWT_SECRET` | Generated secret, at least 32 bytes; placeholders are rejected |
+| `CORS_ALLOWED_ORIGINS` | Exact frontend origin; comma-separated explicit origins when needed |
+| `MARKET_FEED_MODE` | `live`; keep synthetic execution flags false |
+| `CADDY_INTERNAL_IP` | Default `172.30.250.2` on the dedicated gateway bridge |
+| `GATEWAY_SUBNET` | Default `172.30.250.0/29`; change together with Caddy IP if overlapping another network |
+| `PRODUCTION_ENV_FILE` | Optional alternate env-file path; bootstrap passes it to interpolation and containers |
+
+Compose fixes the backend internal port to 8080, derives `TRUSTED_PROXIES` from the Caddy IP, and fixes all three application services to the private Redis URL. Without production Compose, `TRUSTED_PROXIES` defaults to empty: forwarding headers are ignored. Only literal IPs/bounded CIDRs are accepted; wildcard and `/0` allowlists are rejected.
+
+Do not print rendered `docker compose config` output into shared logs: it contains secrets. This preflight validates without displaying it:
+
 ```bash
-docker compose --profile local up --build
+docker compose -f docker-compose.prod.yml config --quiet
 ```
 
-For native Linux/Fedora development, `./start-dev.sh` waits for backend HTTP health before starting workers and frontend, and fails if a required process exits or a startup timeout expires. `./stop.sh` stops processes belonging to that checkout. The worker uses `MARKET_STATUS_URL` (native default `http://127.0.0.1:8080/api/v1/market/status`) for holiday/session-aware watchdog checks. See `RUNTIME_VERIFICATION_2026-10-03.md` for log findings and restart verification.
+## First launch and subsequent releases
 
----
+After DNS and `.env` are configured:
 
-## Production Deployment Steps (Oracle VM / Cloud Server)
-1. Install Docker and Docker Compose plugin on the VM.
-2. Clone repository or deploy code artifact to the VM.
-3. Configure environment variables in `backend/.env` on the VM:
-   - `DATABASE_URL`: Neon PROD connection string (`sslmode=require`).
-   - `REDIS_URL`: Upstash PROD connection string (`rediss://...`).
-   - `JWT_SECRET`: High-entropy 64-character random string.
-   - `CORS_ALLOWED_ORIGINS`: Production Vercel domain (`https://your-domain.vercel.app`).
-   - `MARKET_FEED_MODE`: `live` (requires authentic Angel One feed; fails closed with `UNAVAILABLE` if offline, with zero synthetic leakage). Set to `synthetic` only for dedicated simulation environments.
-   - `ANGEL_*` credentials: API key, Client ID, PIN/Password, and TOTP secret (required for `live` mode).
-   - `GEMINI_API_KEY`: (Optional) Server-side Gemini API key (defaults to built-in rule engine if omitted).
-4. Launch production stack:
-   ```bash
-   docker compose -f docker-compose.prod.yml up -d
-   ```
-5. Startup Order:
-   - Backend boots first, performs GORM auto-migrations on Neon, and starts HTTP server on `:8080`.
-   - Backend container health-check uses process liveness (`/api/v1/health`). Trading readiness is separately exposed at `/api/v1/ready`; it requires the worker heartbeat, activated master agreement and session-aware feed health.
-   - Frontend and workers boot after backend liveness succeeds, avoiding a readiness dependency cycle. Activate the canonical master before starting the LIVE worker. Its `/health` reports liveness and `/ready` reports worker readiness.
-6. Configure Caddy or Nginx reverse proxy with automated Let's Encrypt TLS:
-   - Proxy `/api/v1/*` and `/ws/market` to `http://127.0.0.1:8080`.
-   - Restrict Oracle OCI Security List / ingress rules: allow only 80 and 443 publicly; restrict port 22 to your own IP.
-
----
-
-## Automated Verification Suite
-To verify the entire platform end-to-end:
 ```bash
-cd backend
-go test -v -run TestE2E_FullPlatformSuite ./internal/router/...
+python3 scripts/bootstrap_production.py --sync-master
 ```
 
+The bootstrap validates configuration, then:
+
+1. Builds/starts Redis, Go backend and Caddy, waiting for container health.
+2. Verifies public HTTPS `/health`. Backend health reports process liveness, not trading readiness.
+3. Runs the official master synchronizer and verifies a non-empty activated snapshot.
+4. Builds/starts market and news workers after activation.
+5. Waits for public `/ready` to report `ready: true`.
+
+Missing master, failed sync or health/readiness timeout makes the command exit unsuccessfully. It does not stop existing containers or roll back database changes. Investigate the cause with Compose status/logs. Missing authoritative prices still block LIVE execution; do not switch to synthetic mode to make readiness green.
+
+For a later release using an already activated master:
+
+```bash
+python3 scripts/bootstrap_production.py
+```
+
+Use `--sync-master` when intentionally refreshing the official master. A healthy `/ready` does not replace open-market acceptance of delivery, intraday, futures/options, exits and wallet/P&L reconciliation. Budget extra initialization time with `--timeout 300` when needed.
+
+For an alternate env file:
+
+```bash
+python3 scripts/bootstrap_production.py --env-file /secure/path/production.env --sync-master
+```
+
+Use the same file for later manual Compose operations: set `PRODUCTION_ENV_FILE=/secure/path/production.env` and pass `--env-file /secure/path/production.env`.
+
+## Gateway and client identity
+
+Caddy runs inside Compose, persists certificate state in `caddy_data`/`caddy_config`, and forwards to Docker DNS name `backend:8080`. It belongs to `gateway_net`; only Go also joins this bridge. Workers and Redis stay on the application bridge. The backend has no published port, including loopback.
+
+Caddy replaces incoming `X-Forwarded-*` values by default. Go accepts `X-Forwarded-For` only from the configured Caddy address and ignores `X-Real-IP`. This gives anonymous users separate rate-limit buckets and prevents browsers/untrusted containers from choosing their own identity. Do not replace the exact gateway allowlist with a broad public/private network allowlist.
+
+The gateway serves `/api/*`, `/ws/*`, `/health`, `/ready` and `/openapi.yaml`; WebSocket upgrades are automatic. API/health/readiness responses use `Cache-Control: no-store`. Compression applies to eligible HTTP responses. Certificate volumes must survive normal container replacements; `down --volumes` deletes them and Redis data and is not a normal release command.
+
+## Vercel frontend
+
+Import the repository with root directory `frontend` and the normal Next.js framework build. Configure these **at build time**, then redeploy:
+
+```dotenv
+NEXT_PUBLIC_API_URL=https://api.your-domain.com/api/v1
+NEXT_PUBLIC_WS_URL=wss://api.your-domain.com/ws/market
+```
+
+Only these public endpoint URLs belong in frontend configuration. Put the deployed frontend origin in Oracle's `CORS_ALLOWED_ORIGINS`; add a specific staging origin when testing previews. Browser API/WSS traffic connects directly to Caddy.
+
+The existing homepage/UI is preserved. Standalone output optimizes the optional Docker frontend runtime; Vercel uses its normal framework deployment. See [mobile profiling and standalone verification](mobile-polling-standalone.md). After staging is live:
+
+```bash
+cd frontend
+npm run profile:mobile -- --url https://YOUR_FRONTEND_HOST --paths /,/login --runs 3
+```
+
+## Verification and release operations
+
+```bash
+docker compose -f docker-compose.prod.yml ps
+# Internal process liveness, without publishing backend 8080:
+docker compose -f docker-compose.prod.yml exec -T backend /healthcheck
+# Real public readiness, including worker/master/feed checks:
+curl --fail --max-time 15 https://api.your-domain.com/ready
+```
+
+Confirm allowed frontend REST/CORS and WSS, token refresh, stale-feed/reconnect behavior, and absence of public 8080/8085/6379. Verify NSE and NFO session boundaries separately. Record release SHA, schema state and active master version; verify database backup/restore and migration-compatible rollback before promoting staging.
+
+The CI `Production Gateway HTTPS and WSS Smoke` runs the actual Caddy/Go/Redis stack with disposable local PostgreSQL and a trusted localhost test CA. It checks HTTPS redirects, WSS ping/reconnect/origin rejection, header spoofing/rate limits, no host ports on private services, no-store headers and readiness remaining 503 without a LIVE worker. It never uses broker credentials or places orders. On a **disposable Docker host with free 80/443**, run:
+
+```bash
+python3 scripts/smoke_production_gateway.py
+```
+
+The PostgreSQL override `deploy/oracle/docker-compose.smoke.yml` is test-only. Do not include it in production. CI validates gateway behavior; public DNS/certificate issuance, Oracle networking and real broker acceptance still require staging verification.
+
+Local development remains `docker compose up --build`, or `docker compose --profile local up --build` for local PostgreSQL/Redis. Native Linux/Fedora startup uses `./start-dev.sh`; see [backend startup performance](backend-startup-performance.md).
