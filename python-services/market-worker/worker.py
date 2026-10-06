@@ -11,7 +11,7 @@ import threading
 import time
 import urllib.request
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, urlsplit
 from dataclasses import dataclass
 from zoneinfo import ZoneInfo
 from datetime import date, datetime, timezone, timedelta
@@ -114,11 +114,21 @@ class VerifiedSmartWebSocket(SmartWebSocketV2):
     def connect(self):
         headers = {"Authorization": self.auth_token, "x-api-key": self.api_key,
                    "x-client-code": self.client_code, "x-feed-token": self.feed_token}
+        proxy_kwargs = {}
+        proxy_url = os.getenv("HTTPS_PROXY") or os.getenv("HTTP_PROXY") or os.getenv("ALL_PROXY")
+        if proxy_url:
+            parsed = urlsplit(proxy_url)
+            if parsed.hostname:
+                proxy_kwargs["http_proxy_host"] = parsed.hostname
+            if parsed.port:
+                proxy_kwargs["http_proxy_port"] = parsed.port
+            if parsed.scheme.startswith("socks"):
+                proxy_kwargs["proxy_type"] = parsed.scheme
         self.wsapp = WebSocketApp(self.ROOT_URI, header=headers, on_open=self.on_open,
             on_error=self.on_error, on_close=lambda ws, code, message: self.on_close(ws),
             on_data=self._on_data, on_ping=self._on_ping, on_pong=self._on_pong)
         self.wsapp.run_forever(sslopt={"cert_reqs": ssl.CERT_REQUIRED, "check_hostname": True},
-                              ping_interval=self.HEART_BEAT_INTERVAL)
+                              ping_interval=self.HEART_BEAT_INTERVAL, **proxy_kwargs)
 
 
 INSTRUMENT_MASTER_URL = "https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json"
