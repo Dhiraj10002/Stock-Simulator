@@ -1,7 +1,7 @@
 "use client";
 import { useAccountWallet } from "@/hooks/useAccountWallet";
 
-import React, { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMarketStore, useMultiSymbolQuotes } from "@/stores/market-store";
@@ -815,7 +815,7 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
         />
 
         {/* ========================================================================= */}
-        {/* KITE-STYLE MIDDLE SECTION: Market Movers + IPOs / News / Calendar Desk     */}
+        {/* Market Movers + News / Calendar Desk */}
         {/* ========================================================================= */}
         <div className="grid grid-cols-1 lg:grid-cols-12 items-start gap-6">
           {/* LEFT: Dynamic Market Movers Card (Gainers, Losers, Most Active, Trending) (7 Cols) */}

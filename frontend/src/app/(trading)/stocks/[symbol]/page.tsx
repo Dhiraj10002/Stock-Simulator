@@ -1,6 +1,6 @@
 "use client";
 
-import React, { Suspense } from "react";
+import { Suspense } from "react";
 import { useParams } from "next/navigation";
 import StockDetailsPage from "@/components/stocks/StockDetailsPage";
 

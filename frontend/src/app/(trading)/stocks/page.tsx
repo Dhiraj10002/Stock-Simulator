@@ -1,6 +1,6 @@
 "use client";
 
-import React, { Suspense } from "react";
+import { Suspense } from "react";
 import StocksExplorePage from "@/components/stocks/StocksExplorePage";
 
 export default function StocksOverviewRoute() {

@@ -12,6 +12,7 @@ test("dashboard calendar fits content and index history recovers from provider r
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   let historyReady = false;
+  let calendarRequests = 0;
   const requests: URL[] = [];
   await page.addInitScript(() => {
     localStorage.setItem("auth_token", "test.dashboard.test");
@@ -56,7 +57,8 @@ test("dashboard calendar fits content and index history recovers from provider r
         valuation_status: "REALTIME",
         total_pnl_paise: 0,
       };
-    else if (path === "/market/calendar")
+    else if (path === "/market/calendar") {
+      calendarRequests++;
       data = {
         year: 2026,
         available: true,
@@ -76,6 +78,7 @@ test("dashboard calendar fits content and index history recovers from provider r
           },
         ],
       };
+    }
     else if (path.endsWith("/history")) {
       requests.push(url);
       if (!historyReady) {
@@ -109,8 +112,11 @@ test("dashboard calendar fits content and index history recovers from provider r
     page.getByRole("heading", { name: /Welcome back/ }),
   ).toBeVisible();
   const desk = page.getByRole("region", { name: "Market desk" });
+  expect(calendarRequests).toBe(0);
+  await expect(desk.getByRole("button", { name: "IPOs", exact: true })).toHaveCount(0);
   await desk.getByRole("button", { name: "Holiday Calendar" }).click();
   await expect(desk.getByText("Christmas", { exact: true })).toBeVisible();
+  expect(calendarRequests).toBe(1);
   await expect(desk.getByText("Republic Day", { exact: true })).toHaveCount(0);
   await expect(desk).toHaveCSS("align-self", "flex-start");
   await desk.getByRole("button", { name: "Show full year" }).click();

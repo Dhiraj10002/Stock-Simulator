@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import HomePage from "@/components/landing/HomePage";
+import LandingPage from "@/components/landing/LandingPage";
 
 export const metadata: Metadata = {
   title: "Stock Simulator — Practice with virtual money",
@@ -7,5 +7,5 @@ export const metadata: Metadata = {
 };
 
 export default function Page() {
-  return <HomePage />;
+  return <LandingPage />;
 }

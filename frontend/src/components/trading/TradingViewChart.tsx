@@ -1,7 +1,7 @@
 "use client";
 import { quoteLabel } from "@/lib/marketData";
 
-import React, { useEffect, useRef, useState, useMemo, useCallback } from "react";
+import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import {
   createChart,
   ColorType,

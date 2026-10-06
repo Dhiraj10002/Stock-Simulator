@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import { useState, useMemo } from "react";
 import Link from "next/link";
 import { ArrowDownRight, ArrowUpRight, Clock, Search } from "lucide-react";
 import { formatPaise } from "@/lib/format";

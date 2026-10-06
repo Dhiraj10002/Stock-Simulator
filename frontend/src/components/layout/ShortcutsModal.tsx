@@ -1,6 +1,5 @@
 "use client";
 
-import React from "react";
 import { useUIStore } from "@/stores/ui-store";
 import {
   Keyboard,

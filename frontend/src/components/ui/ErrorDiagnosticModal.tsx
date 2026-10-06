@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import { useState } from "react";
 import { AlertCircle, Copy, Check, X, ShieldAlert } from "lucide-react";
 import type { ApiDiagnostic } from "@/lib/api";
 

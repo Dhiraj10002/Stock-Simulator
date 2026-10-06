@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { ToastProvider } from "@/components/ui/ToastProvider";
-import { QueryProvider } from "@/providers/query-provider";
 import { ThemeProvider } from "@/providers/theme-provider";
 import MobileBottomNav from "@/components/layout/MobileBottomNav";
 
@@ -60,12 +59,10 @@ export default function RootLayout({
 
         <div className="relative z-10 flex-1 flex flex-col">
           <ThemeProvider>
-            <QueryProvider>
-              <ToastProvider>
-                {children}
-                <MobileBottomNav />
-              </ToastProvider>
-            </QueryProvider>
+            <ToastProvider>
+              {children}
+              <MobileBottomNav />
+            </ToastProvider>
           </ThemeProvider>
         </div>
       </body>
