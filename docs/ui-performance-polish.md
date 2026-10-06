@@ -52,6 +52,8 @@ Lint, TypeScript, production build and 86 unit tests pass. All 35 browser cases 
 
 CI exposed integration-test database pools that remained open between router fixtures and exhausted PostgreSQL connections. The fixtures now close their pools and register router-worker cancellation with test cleanup, including early failures. Production database behavior is unchanged.
 
+Put-option lifecycle tests now use an explicitly seeded, non-expired canonical contract, matching the futures/call-option fixtures. Their entry, exit, wallet and P&L assertions remain intact.
+
 Field INP, production-host mobile measurements, open-market delivery/intraday/futures/options entry and exit with wallet/P&L, and the three-beginner usability check remain release acceptance tasks. Targets remain LCP ≤ 2.5 s, INP ≤ 200 ms and CLS ≤ 0.1. Backend/worker throughput is outside this homepage navigation benchmark.
 
 ## Review images

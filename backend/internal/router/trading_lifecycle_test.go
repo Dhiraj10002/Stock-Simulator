@@ -133,6 +133,7 @@ func setupTradingLifecycleEnv(t *testing.T) *lifecycleTestEnv {
 	for _, inst := range []model.Instrument{
 		{Symbol: "NIFTY24SEP2099FUT", Token: "TEST_NIFTY_FUT", Name: "NIFTY Future", Underlying: "NIFTY", UnderlyingSymbol: "NIFTY", ExchangeSegment: "NFO", InstrumentType: "FUTIDX", Expiry: "2099-09-24", LotSize: 25, TickSize: "0.05", Active: true, IsTradable: true},
 		{Symbol: "NIFTY24SEP209925000CE", Token: "TEST_NIFTY_CE", Name: "NIFTY Call", Underlying: "NIFTY", UnderlyingSymbol: "NIFTY", ExchangeSegment: "NFO", InstrumentType: "OPTIDX", Expiry: "2099-09-24", Strike: "25000", OptionType: "CE", LotSize: 25, TickSize: "0.05", Active: true, IsTradable: true},
+		{Symbol: "NIFTY24SEP209925000PE", Token: "TEST_NIFTY_PE", Name: "NIFTY Put", Underlying: "NIFTY", UnderlyingSymbol: "NIFTY", ExchangeSegment: "NFO", InstrumentType: "OPTIDX", Expiry: "2099-09-24", Strike: "25000", OptionType: "PE", LotSize: 25, TickSize: "0.05", Active: true, IsTradable: true},
 	} {
 		if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&inst).Error; err != nil {
 			t.Fatal(err)
@@ -1154,7 +1155,7 @@ func TestTradingLifecycle_FNO_Option_PE_BuyLimit_SellSquareOff(t *testing.T) {
 	}
 
 	// 4. INSTRUMENT & 5. QUOTE (NIFTY 25000 PE at ₹150.00 = 15,000 paise premium)
-	peSymbol := "NIFTY 25000 PE"
+	peSymbol := "NIFTY24SEP209925000PE"
 	env.setQuote(peSymbol, 15000)
 
 	// 6. ORDER (F&O PE BUY LIMIT: 25 units [1 lot] at 15,000 paise)
@@ -1260,7 +1261,7 @@ func TestTradingLifecycle_FNO_Option_PE_ShortWriting_BuyToCover(t *testing.T) {
 	}
 
 	// 4. INSTRUMENT & 5. QUOTE (NIFTY 25000 PE at ₹150.00 = 15,000 paise premium)
-	peSymbol := "NIFTY 25000 PE"
+	peSymbol := "NIFTY24SEP209925000PE"
 	env.setQuote(peSymbol, 15000)
 
 	// 6. ORDER & 7. EXECUTION (F&O PE SELL MARKET 25 units [1 lot])
