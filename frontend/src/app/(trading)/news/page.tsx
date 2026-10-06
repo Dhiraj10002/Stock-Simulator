@@ -1,6 +1,6 @@
 "use client";
 
-import React, { Suspense } from "react";
+import { Suspense } from "react";
 import NewsDeskPage from "@/components/news/NewsDeskPage";
 
 export default function NewsRoutePage() {

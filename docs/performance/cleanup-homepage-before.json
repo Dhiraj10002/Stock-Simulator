@@ -1,0 +1,37 @@
+{
+  "conditions": "Local production build, mobile 390x844, CPU 4x, 1.6 Mbps download, 150 ms latency, cold browser contexts, 3 runs. Lab LCP/CLS, not field INP.",
+  "browser": "153.0.8010.12",
+  "node": "v24.19.0",
+  "runs": [
+    {
+      "lcp": 3316,
+      "cls": 0,
+      "jsBytes": 171174,
+      "jsRequests": 12,
+      "fcp": 3316,
+      "h1": "MASTERTHEMARKET.ZERO FINANCIAL RISK.",
+      "overflow": false,
+      "privateRequests": 0
+    },
+    {
+      "lcp": 2584,
+      "cls": 0,
+      "jsBytes": 171174,
+      "jsRequests": 12,
+      "fcp": 2584,
+      "h1": "MASTERTHEMARKET.ZERO FINANCIAL RISK.",
+      "overflow": false,
+      "privateRequests": 0
+    },
+    {
+      "lcp": 2224,
+      "cls": 0,
+      "jsBytes": 171174,
+      "jsRequests": 12,
+      "fcp": 2224,
+      "h1": "MASTERTHEMARKET.ZERO FINANCIAL RISK.",
+      "overflow": false,
+      "privateRequests": 0
+    }
+  ]
+}

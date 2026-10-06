@@ -1,5 +1,13 @@
 import { test, expect } from "@playwright/test";
 
+test("retired trading URLs redirect to the current stock catalogue", async ({ request }) => {
+  for (const path of ["/trade", "/terminal"]) {
+    const response = await request.get(path, { maxRedirects: 0 });
+    expect(response.status()).toBe(307);
+    expect(new URL(response.headers().location, response.url()).pathname).toBe("/stocks");
+  }
+});
+
 test("original cinematic homepage renders without JavaScript and its footer links work", async ({ browser }) => {
   const context = await browser.newContext({ javaScriptEnabled: false, viewport: { width: 390, height: 844 } });
   const page = await context.newPage();

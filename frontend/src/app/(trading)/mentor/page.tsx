@@ -1,7 +1,7 @@
 "use client";
 import { useAccountWallet } from "@/hooks/useAccountWallet";
 
-import React, { useState, Suspense } from "react";
+import { useState, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";

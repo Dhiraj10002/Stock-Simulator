@@ -17,13 +17,6 @@ func upgradeDailySnapshotIndex(db *gorm.DB) error {
 	return nil
 }
 
-func upgradeRequiredSchema(db *gorm.DB) error {
-	if err := upgradeDailySnapshotIndex(db); err != nil {
-		return err
-	}
-	return db.AutoMigrate(&model.Order{}, &model.RefreshSession{}, &model.SettlementReference{}, &model.AccountDailySnapshot{}, &model.Instrument{}, &model.InstrumentSnapshot{})
-}
-
 func ensurePerformanceIndexes(db *gorm.DB) error {
 	if db == nil {
 		return fmt.Errorf("database unavailable")

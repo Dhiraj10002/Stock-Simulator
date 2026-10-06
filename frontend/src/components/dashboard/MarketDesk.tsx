@@ -16,21 +16,24 @@ type Calendar = {
 };
 
 export default function MarketDesk() {
-  const [tab, setTab] = useState<"news" | "ipos" | "holidays">("news");
+  const [tab, setTab] = useState<"news" | "holidays">("news");
   const [showPastHolidays, setShowPastHolidays] = useState(false);
   const news = useQuery({
     queryKey: ["dashboard-news"],
     queryFn: () => publicFetch<Article[]>("/news?limit=5"),
+    enabled: tab === "news",
     refetchInterval: 30000,
   });
   const status = useQuery({
     queryKey: ["news-ingestion-status"],
     queryFn: () => publicFetch<{ status: string }>("/news/status"),
+    enabled: tab === "news",
     refetchInterval: 30000,
   });
   const calendar = useQuery({
     queryKey: ["exchange-calendar"],
     queryFn: () => publicFetch<Calendar>("/market/calendar"),
+    enabled: tab === "holidays",
     staleTime: 3600000,
   });
   const today = new Intl.DateTimeFormat("en-CA", {
@@ -49,7 +52,7 @@ export default function MarketDesk() {
       className="lg:col-span-5 self-start min-w-0 rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 overflow-hidden"
     >
       <div className="flex gap-3 border-b border-slate-200 dark:border-slate-800 p-3">
-        {(["news", "ipos", "holidays"] as const).map((t) => (
+        {(["news", "holidays"] as const).map((t) => (
           <button
             key={t}
             aria-pressed={tab === t}
@@ -58,19 +61,11 @@ export default function MarketDesk() {
           >
             {t === "news"
               ? "Market News"
-              : t === "ipos"
-                ? "IPOs"
-                : "Holiday Calendar"}
+              : "Holiday Calendar"}
           </button>
         ))}
       </div>
       <div className="p-4 space-y-3 max-h-[380px] overflow-y-auto text-xs">
-        {tab === "ipos" && (
-          <p className="text-slate-500">
-            IPO data unavailable. A verified primary-market feed has not been
-            connected.
-          </p>
-        )}
         {tab === "news" && (
           <>
             <p className="text-slate-500">

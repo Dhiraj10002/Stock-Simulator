@@ -1,7 +1,7 @@
 "use client";
 import { useAccountWallet } from "@/hooks/useAccountWallet";
 
-import React, { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import Navbar from "@/components/layout/Navbar";

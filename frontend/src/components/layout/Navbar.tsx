@@ -1,7 +1,7 @@
 "use client";
 import { useAccountWallet } from "@/hooks/useAccountWallet";
 
-import React, { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {

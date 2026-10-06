@@ -1,6 +1,5 @@
 "use client";
 
-import React from "react";
 import { useMarketStore, useMultiSymbolQuotes } from "@/stores/market-store";
 import { quoteLabel } from "@/lib/marketData";
 import { dayMovement } from "@/lib/marketDisplay";

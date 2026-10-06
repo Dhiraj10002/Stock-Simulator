@@ -3,7 +3,7 @@ import { exitRetryKey, completeExitRetry } from "@/lib/exitRetry";
 import { useAuthToken } from "@/hooks/useAuthToken";
 import { useAccountWallet } from "@/hooks/useAccountWallet";
 
-import React, { useState, useMemo } from "react";
+import { useState, useMemo } from "react";
 import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Navbar from "@/components/layout/Navbar";

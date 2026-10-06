@@ -10,6 +10,8 @@ Pointer and scroll effects update CSS without rerendering the page. Particle wor
 
 See [Original UI, lab measurements, screenshots and release acceptance checks](docs/ui-performance-polish.md). Run `npm run measure:home` in `frontend` after a production build to repeat the homepage navigation benchmark. Local results are lab observations; field INP and open-market acceptance remain to be verified.
 
+See [Code cleanup and performance priorities](docs/code-cleanup-performance.md) for the unused-module audit, retained trading flows, homepage comparison, and the next optimizations to measure.
+
 ---
 
 ## 🏛️ System Architecture
