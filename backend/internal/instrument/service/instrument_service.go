@@ -871,11 +871,8 @@ func (s *Service) ActivateSnapshot(ctx context.Context, version string) (*model.
 		if oldCount > 20 && int64(len(members))*100 < oldCount*80 {
 			return fmt.Errorf("master shrank more than 20 percent; operator review required")
 		}
-		if err := tx.Model(&model.Instrument{}).Where("active = ? OR is_tradable = ?", true, true).Updates(map[string]any{"active": false, "is_tradable": false}).Error; err != nil {
-			return err
-		}
 		var priorRows []model.Instrument
-		if err := tx.Find(&priorRows).Error; err != nil {
+		if err := tx.Select("symbol", "exchange_segment", "expiry", "strike", "instrument_type").Find(&priorRows).Error; err != nil {
 			return err
 		}
 		priorMap := map[string]model.Instrument{}
@@ -900,10 +897,14 @@ func (s *Service) ActivateSnapshot(ctx context.Context, version string) (*model.
 				}
 			}
 			prior, found := priorMap[inst.Symbol+"|"+inst.ExchangeSegment]
-			if found && prior.Expiry != "" && (prior.Expiry != inst.Expiry || prior.Strike != inst.Strike || prior.InstrumentType != inst.InstrumentType) {
-				return fmt.Errorf("historical derivative identity changed: %s", inst.Symbol)
+			if found && prior.Expiry != "" && !sameDerivativeIdentity(prior, *inst) {
+				return fmt.Errorf("historical derivative identity changed: %s (expiry %q -> %q, strike %q -> %q, type %q -> %q)", inst.Symbol, prior.Expiry, inst.Expiry, prior.Strike, inst.Strike, prior.InstrumentType, inst.InstrumentType)
 			}
 
+		}
+		// Validate historical identities before touching the active master.
+		if err := tx.Model(&model.Instrument{}).Where("active = ? OR is_tradable = ?", true, true).Updates(map[string]any{"active": false, "is_tradable": false}).Error; err != nil {
+			return err
 		}
 		if err := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "symbol"}, {Name: "exchange_segment"}}, DoUpdates: clause.AssignmentColumns([]string{"token", "display_symbol", "exchange", "name", "underlying", "underlying_symbol", "expiry", "strike", "option_type", "lot_size", "instrument_type", "tick_size", "active", "is_tradable", "snapshot_version", "updated_at"})}).CreateInBatches(&members, 500).Error; err != nil {
 			return err
