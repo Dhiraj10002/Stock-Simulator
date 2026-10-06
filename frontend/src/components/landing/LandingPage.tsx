@@ -562,14 +562,6 @@ export default function LandingPage() {
             <ArrowRight className="relative w-4 h-4 transition-transform duration-200 group-hover:translate-x-1" />
           </LandingAuthLink>
 
-          <Link prefetch={false}
-            href="/stocks"
-            className="inline-flex items-center gap-2 px-6 py-3.5 rounded-xl text-cyan-300 hover:text-white font-bold text-sm tracking-wide transition-all border border-cyan-500/40 bg-cyan-950/40 hover:bg-cyan-900/60 hover:border-cyan-400 hover:scale-105"
-          >
-            <TrendingUp className="w-4 h-4 text-cyan-400" />
-            <span>Explore Stocks</span>
-          </Link>
-
           <a
             href="#platform"
             className="inline-flex items-center gap-1.5 px-6 py-3.5 rounded-xl text-white/70 hover:text-white font-medium text-sm tracking-wide transition-all border border-white/[0.1] hover:border-white/[0.2] hover:bg-white/[0.05]"

@@ -15,6 +15,7 @@ This builds on main at `be21004b6e027e832292aed2f0c524efb72d7f60`, including PR 
 - One market socket survives trading navigation. Subscription deltas unsubscribe before subscribing at the cap; reconnects replay current targets. Selected and visible instruments take priority over a large watchlist.
 - Concurrent display quote requests share pending symbols and publish one store update per response. Older REST responses cannot overwrite newer stream ticks. Display quote caching lasts 10 seconds; instrument display metadata refreshes after 60 seconds and accepts an empty refreshed master.
 - Backend session, executable-price, funds and execution validation remain authoritative. Quote availability, authentication recovery and duplicate-order submission locks remain intact.
+- The homepage hero keeps the dashboard and platform actions; its extra Explore Stocks button is removed. The trader account dropdown uses solid light/dark surfaces independent of the global glass styling, with clearer spacing, larger balance text and comfortable action buttons. It stays inside the viewport when the navbar wraps; Escape closes it and returns focus to the profile button.
 
 Copy corrections keep illustrative prices/trader stories labeled as samples, remove unmeasured `24ms` / `Sub-50ms` claims, use the NSE equity / NFO derivative scope, and connect footer links to working pages. These do not change the visual design.
 
@@ -62,3 +63,5 @@ Trading screenshots contain sample fixtures, not live-session evidence.
 - [Original stock desk, light](screenshots/stock-light.png) and [dark](screenshots/stock-dark.png)
 - [Original mobile stock ticket](screenshots/stock-order-mobile.png)
 - [Original mobile F&O ticket](screenshots/fno-order-mobile.png)
+- [Updated homepage actions](screenshots/homepage-hero-actions.png)
+- [Opaque account dropdown, light](screenshots/profile-light-mobile.png) and [dark](screenshots/profile-dark-mobile.png)

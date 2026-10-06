@@ -1,0 +1,32 @@
+.profilePanel {
+  /* Keep account controls solid; global glass utilities are for page cards. */
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 20px 60px -12px rgb(15 23 42 / 24%), 0 4px 16px rgb(15 23 42 / 8%);
+  isolation: isolate;
+  max-height: calc(100dvh - 7rem);
+  overflow-y: auto;
+  animation: profile-enter 150ms ease-out;
+  transform-origin: top right;
+}
+
+:global(.dark) .profilePanel {
+  background-color: #0b101d;
+  border-color: #253047;
+  box-shadow: 0 20px 60px -12px rgb(0 0 0 / 65%), 0 4px 16px rgb(0 0 0 / 30%);
+}
+
+@keyframes profile-enter {
+  from {
+    transform: translateY(-4px) scale(0.98);
+  }
+  to {
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .profilePanel {
+    animation: none;
+  }
+}
