@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/database"
@@ -20,9 +21,12 @@ import (
 
 // ConnectionPoolInfo reports database connection pool metrics.
 type ConnectionPoolInfo struct {
-	Open  int `json:"open"`
-	InUse int `json:"in_use"`
-	Idle  int `json:"idle"`
+	Open           int     `json:"open"`
+	InUse          int     `json:"in_use"`
+	Idle           int     `json:"idle"`
+	MaxOpen        int     `json:"max_open"`
+	WaitCount      int64   `json:"wait_count"`
+	WaitDurationMs float64 `json:"wait_duration_ms"`
 }
 
 // DatabaseServiceStatus represents the readiness of the primary database.
@@ -56,6 +60,8 @@ type WorkerServiceStatus struct {
 	Status              string   `json:"status"`
 	HeartbeatAgeSeconds *float64 `json:"heartbeat_age_seconds"`
 	MasterVersion       string   `json:"master_version"`
+	InitializationStage string   `json:"initialization_stage,omitempty"`
+	MasterLoadMs        float64  `json:"master_load_ms,omitempty"`
 	Error               string   `json:"error,omitempty"`
 }
 
@@ -325,9 +331,12 @@ func (h *HealthHandler) checkDatabase(ctx context.Context) (string, float64, Con
 
 	stats := sqlDB.Stats()
 	pool := ConnectionPoolInfo{
-		Open:  stats.OpenConnections,
-		InUse: stats.InUse,
-		Idle:  stats.Idle,
+		Open:           stats.OpenConnections,
+		InUse:          stats.InUse,
+		Idle:           stats.Idle,
+		MaxOpen:        stats.MaxOpenConnections,
+		WaitCount:      stats.WaitCount,
+		WaitDurationMs: roundLatency(stats.WaitDuration),
 	}
 
 	if err != nil {
@@ -469,6 +478,11 @@ func (h *HealthHandler) checkWorker(ctx context.Context, now time.Time) WorkerSe
 		return result
 	}
 	result.MasterVersion = values["worker_master_version"]
+	result.InitializationStage = values["worker_initialization_stage"]
+	result.MasterLoadMs, _ = strconv.ParseFloat(values["worker_master_load_ms"], 64)
+	if math.IsNaN(result.MasterLoadMs) || math.IsInf(result.MasterLoadMs, 0) || result.MasterLoadMs < 0 {
+		result.MasterLoadMs = 0
+	}
 	stamp, err := parseTickTime(values["worker_heartbeat"])
 	if err != nil {
 		result.Error = "worker heartbeat missing or invalid"
@@ -491,7 +505,7 @@ func (h *HealthHandler) checkInstrumentMaster(ctx context.Context) (string, stri
 			return "DOWN", "none", 0, "database master unavailable"
 		}
 		var snapshots []model.InstrumentSnapshot
-		if err := db.WithContext(ctx).Where("status = ?", model.SnapshotStatusActive).Find(&snapshots).Error; err != nil {
+		if err := db.WithContext(ctx).Select("version").Where("status = ?", model.SnapshotStatusActive).Limit(2).Find(&snapshots).Error; err != nil {
 			return "DOWN", "none", 0, err.Error()
 		}
 		if len(snapshots) != 1 {

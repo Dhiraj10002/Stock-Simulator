@@ -11,12 +11,9 @@ import (
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/database"
 	fnoHandler "github.com/Dhiraj10002/Stock-Simulator/backend/internal/fno/handler"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/handler"
-	"strings"
-	"sync"
 
 	instrumentHandler "github.com/Dhiraj10002/Stock-Simulator/backend/internal/instrument/handler"
 	instrumentService "github.com/Dhiraj10002/Stock-Simulator/backend/internal/instrument/service"
-	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/alias"
 	marketDTO "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/dto"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/fundamentals"
 	marketHandler "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/handler"
@@ -92,66 +89,7 @@ func Setup(ctx context.Context, cfg *config.Config, opts ...SetupOption) *gin.En
 	}
 	if database.GetDB() != nil {
 		market.Service().SetDB(database.GetDB())
-		var instrumentFinderCache sync.Map
-
-		// Preload active tradable instruments on boot in a single query
-		var activeSymbols []string
-		if err := database.GetDB().Model(&model.Instrument{}).Where("active = ? AND is_tradable = ?", true, true).Pluck("symbol", &activeSymbols).Error; err == nil {
-			for _, s := range activeSymbols {
-				sClean := strings.ToUpper(strings.TrimSpace(s))
-				instrumentFinderCache.Store(sClean, true)
-				if strings.HasSuffix(sClean, "-EQ") {
-					instrumentFinderCache.Store(strings.TrimSuffix(sClean, "-EQ"), true)
-				} else {
-					instrumentFinderCache.Store(sClean+"-EQ", true)
-				}
-			}
-		}
-
-		market.Service().SetInstrumentFinder(func(symbol string) (bool, error) {
-			clean := strings.ToUpper(strings.TrimSpace(symbol))
-			if clean == "" {
-				return false, nil
-			}
-			if cached, ok := instrumentFinderCache.Load(clean); ok {
-				return cached.(bool), nil
-			}
-
-			canonical := alias.ResolveCanonicalSymbol(clean)
-			if canonical != "" && canonical != clean {
-				if cached, ok := instrumentFinderCache.Load(canonical); ok {
-					instrumentFinderCache.Store(clean, cached)
-					return cached.(bool), nil
-				}
-			}
-
-			// 1. Fast in-memory check against default canonical instruments
-			for _, inst := range instrumentService.DefaultCanonicalInstruments {
-				if inst.Symbol == clean || inst.Symbol == clean+"-EQ" || inst.Name == clean ||
-					(canonical != "" && (inst.Symbol == canonical || inst.Symbol == canonical+"-EQ" || inst.Name == canonical)) {
-					instrumentFinderCache.Store(clean, true)
-					return true, nil
-				}
-			}
-
-			// 2. Database query using functional index on UPPER(symbol) and UPPER(name)
-			cleanWithoutEQ := strings.TrimSuffix(clean, "-EQ")
-			var found bool
-			err := database.GetDB().Raw(
-				"SELECT EXISTS (SELECT 1 FROM instruments WHERE UPPER(symbol) IN (?, ?) OR UPPER(name) = ?)",
-				clean, cleanWithoutEQ, cleanWithoutEQ,
-			).Scan(&found).Error
-			if err != nil {
-				return false, err
-			}
-			// Cache both positive and negative results to avoid repeated DB hits
-			instrumentFinderCache.Store(clean, found)
-			if found {
-				instrumentFinderCache.Store(cleanWithoutEQ, true)
-				instrumentFinderCache.Store(cleanWithoutEQ+"-EQ", true)
-			}
-			return found, nil
-		})
+		market.Service().SetInstrumentFinder(newInstrumentFinder(database.GetDB(), cfg.RedisOperationTimeout))
 	}
 	portfolio := portfolioHandler.New(market.Service())
 	orders := sOpts.ordersHandler

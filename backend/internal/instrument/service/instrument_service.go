@@ -955,7 +955,7 @@ func (s *Service) GetActiveSnapshot(ctx context.Context) (*model.InstrumentSnaps
 	}
 
 	var snap model.InstrumentSnapshot
-	err := s.db.WithContext(ctx).Where("status = ?", model.SnapshotStatusActive).Order("activated_at DESC, id DESC").First(&snap).Error
+	err := s.db.WithContext(ctx).Omit("payload").Where("status = ?", model.SnapshotStatusActive).Order("activated_at DESC, id DESC").First(&snap).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			var count int64
@@ -992,7 +992,7 @@ func (s *Service) ListSnapshots(ctx context.Context, limit int) ([]model.Instrum
 		}, nil
 	}
 	var snaps []model.InstrumentSnapshot
-	err := s.db.WithContext(ctx).Order("id DESC").Limit(limit).Find(&snaps).Error
+	err := s.db.WithContext(ctx).Omit("payload").Order("id DESC").Limit(limit).Find(&snaps).Error
 	return snaps, err
 }
 

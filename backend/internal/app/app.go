@@ -5,17 +5,15 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/config"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/database"
-	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/router"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/pkg/logger"
-	"gorm.io/gorm"
+	"go.uber.org/zap"
 )
 
 type App struct{}
@@ -32,6 +30,7 @@ func (a *App) Run() error {
 }
 
 func (a *App) RunWithContext(ctx context.Context) error {
+	startedAt := time.Now()
 	// Worker context for background lifecycle workers
 	workerCtx, cancelWorkers := context.WithCancel(context.Background())
 	defer cancelWorkers()
@@ -51,66 +50,26 @@ func (a *App) RunWithContext(ctx context.Context) error {
 	logger.Info("Configuration Loaded")
 
 	// Connect Database
+	connectStarted := time.Now()
 	if err := database.Connect(cfg); err != nil {
 		return err
 	}
 
-	logger.Info("Database Connected")
+	logger.Info("Database Connected", zap.Int64("duration_ms", time.Since(connectStarted).Milliseconds()))
 
-	// Provider tokens are recyclable. Historical identity is symbol + segment.
-	if err := model.UpgradeInstrumentSchema(database.GetDB()); err != nil {
-		return fmt.Errorf("upgrade legacy instrument identities: %w", err)
+	migrationStarted := time.Now()
+	report, err := migrateSchema(database.GetDB().WithContext(ctx), forceMigrations())
+	if err != nil {
+		return fmt.Errorf("prepare database schema: %w", err)
 	}
-	// Run Migrations if tables do not exist or if explicitly requested
-	shouldMigrate := os.Getenv("RUN_MIGRATION") == "true" || !database.GetDB().Migrator().HasTable(&model.User{})
-	if shouldMigrate {
-		if err := database.GetDB().AutoMigrate(
-			&model.User{},
-			&model.RefreshSession{},
-			&model.Wallet{},
-			&model.WalletTransaction{},
-			&model.Position{},
-			&model.Order{},
-			&model.Trade{},
-			&model.SimulationReset{},
-			&model.Instrument{},
-			&model.InstrumentSnapshot{},
-			&model.RiskEvent{},
-			&model.WatchlistItem{},
-			&model.AccountDailySnapshot{},
-		); err != nil {
-			return err
-		}
-		logger.Info("Database Migration Completed")
-	} else {
-		logger.Info("Existing database detected; checking required schema upgrades")
-		if !database.GetDB().Migrator().HasColumn(&model.Trade{}, "Tag") {
-			_ = database.GetDB().AutoMigrate(&model.Trade{})
-			logger.Info("Auto-migrated Trade model (Tag & Notes columns)")
-		}
-		if !database.GetDB().Migrator().HasColumn(&model.RefreshSession{}, "JTI") {
-			_ = database.GetDB().AutoMigrate(&model.RefreshSession{})
-			logger.Info("Auto-migrated RefreshSession model (JTI column)")
-		}
-		if !database.GetDB().Migrator().HasColumn(&model.Instrument{}, "Active") || !database.GetDB().Migrator().HasColumn(&model.Instrument{}, "Exchange") || !database.GetDB().Migrator().HasColumn(&model.Instrument{}, "IsTradable") {
-			_ = database.GetDB().AutoMigrate(&model.Instrument{})
-			logger.Info("Auto-migrated Instrument model (Exchange, Active & IsTradable columns)")
-		}
-		if !database.GetDB().Migrator().HasTable(&model.InstrumentSnapshot{}) {
-			_ = database.GetDB().AutoMigrate(&model.InstrumentSnapshot{})
-			logger.Info("Auto-migrated InstrumentSnapshot table")
-		}
-	}
-
-	// Required additive upgrade: fail startup rather than run without durable exits.
-	if err := upgradeRequiredSchema(database.GetDB()); err != nil {
-		return fmt.Errorf("upgrade required trading and portfolio schema: %w", err)
-	}
-	logger.Info("Required trading and portfolio schema upgrades verified")
-	ensurePerformanceIndexes(database.GetDB())
+	logger.Info("Database schema verified", zap.Int64("schema_version", report.Version),
+		zap.Int("migrations_applied", report.Applied), zap.Bool("forced", report.Forced),
+		zap.Int64("duration_ms", time.Since(migrationStarted).Milliseconds()))
 
 	// Setup Router with worker context
+	routerStarted := time.Now()
 	r := router.Setup(workerCtx, cfg)
+	logger.Info("Router initialized", zap.Int64("duration_ms", time.Since(routerStarted).Milliseconds()))
 
 	srv := &http.Server{
 		Addr:    ":" + cfg.Port,
@@ -119,7 +78,7 @@ func (a *App) RunWithContext(ctx context.Context) error {
 
 	serverErrors := make(chan error, 1)
 	go func() {
-		logger.Info("Starting HTTP Server on :" + cfg.Port)
+		logger.Info("Starting HTTP Server on :"+cfg.Port, zap.Int64("startup_duration_ms", time.Since(startedAt).Milliseconds()))
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			serverErrors <- err
 		}
@@ -148,44 +107,4 @@ func (a *App) RunWithContext(ctx context.Context) error {
 
 	logger.Info("HTTP server gracefully stopped")
 	return nil
-}
-
-func upgradeRequiredSchema(db *gorm.DB) error {
-	if db.Migrator().HasTable(&model.AccountDailySnapshot{}) && !db.Migrator().HasColumn(&model.AccountDailySnapshot{}, "Epoch") && db.Migrator().HasIndex(&model.AccountDailySnapshot{}, "idx_daily_snapshots_user_date") {
-		if err := model.DropIndexInTableSchema(db, model.AccountDailySnapshot{}.TableName(), "idx_daily_snapshots_user_date"); err != nil {
-			return err
-		}
-	}
-	return db.AutoMigrate(&model.Order{}, &model.RefreshSession{}, &model.SettlementReference{}, &model.AccountDailySnapshot{}, &model.Instrument{}, &model.InstrumentSnapshot{})
-}
-
-func ensurePerformanceIndexes(db *gorm.DB) {
-	if db == nil {
-		return
-	}
-	indexes := []string{
-		"CREATE INDEX IF NOT EXISTS idx_orders_symbol_status_created ON orders (symbol, status, created_at ASC)",
-		"CREATE INDEX IF NOT EXISTS idx_orders_user_created ON orders (user_uuid, created_at DESC)",
-		"CREATE INDEX IF NOT EXISTS idx_orders_user_status_created ON orders (user_uuid, status, created_at DESC)",
-		"CREATE INDEX IF NOT EXISTS idx_orders_open_status ON orders (status, created_at ASC)",
-		"CREATE INDEX IF NOT EXISTS idx_positions_user_symbol ON positions (user_uuid, symbol)",
-		"CREATE INDEX IF NOT EXISTS idx_positions_user_qty ON positions (user_uuid, quantity)",
-		"CREATE INDEX IF NOT EXISTS idx_positions_user_qty_symbol ON positions (user_uuid, quantity, symbol ASC)",
-		"CREATE INDEX IF NOT EXISTS idx_positions_fno_settlement ON positions (product, quantity, settlement_state)",
-		"CREATE INDEX IF NOT EXISTS idx_trades_user_executed ON trades (user_uuid, executed_at DESC)",
-		"CREATE INDEX IF NOT EXISTS idx_trades_user_executed_pnl ON trades (user_uuid, executed_at DESC, realized_pnl_paise)",
-		"CREATE INDEX IF NOT EXISTS idx_watchlist_user_symbol_sort ON watchlist_items (user_uuid, symbol ASC)",
-		"CREATE INDEX IF NOT EXISTS idx_wallets_user_id ON wallets (user_uuid, id ASC)",
-		"CREATE INDEX IF NOT EXISTS idx_instruments_fno_catalog ON instruments (active, is_tradable, instrument_type, symbol ASC)",
-		"CREATE INDEX IF NOT EXISTS idx_instruments_segment_expiry ON instruments (is_tradable, exchange_segment, expiry)",
-		"CREATE INDEX IF NOT EXISTS idx_instruments_upper_symbol ON instruments (UPPER(symbol))",
-		"CREATE INDEX IF NOT EXISTS idx_instruments_upper_name ON instruments (UPPER(name))",
-		"CREATE INDEX IF NOT EXISTS idx_instruments_tradable_active_id ON instruments (is_tradable DESC, active DESC, id ASC)",
-		"CREATE INDEX IF NOT EXISTS idx_wallet_tx_uuid_created ON wallet_transactions (wallet_uuid, created_at DESC, type)",
-		"CREATE INDEX IF NOT EXISTS idx_wallet_tx_uuid_type_created ON wallet_transactions (wallet_uuid, type, created_at DESC, id DESC)",
-		"CREATE INDEX IF NOT EXISTS idx_account_daily_snapshots_lookup ON account_daily_snapshots (user_uuid, session_date, epoch)",
-	}
-	for _, idx := range indexes {
-		_ = db.Exec(idx).Error
-	}
 }
