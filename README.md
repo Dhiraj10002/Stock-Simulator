@@ -229,6 +229,8 @@ cp backend/.env.example backend/.env
 
 Ensure `backend/.env` contains your PostgreSQL database URL and Redis credentials. By default, development connects seamlessly to **Neon DEV PostgreSQL** and **Upstash DEV Redis**.
 
+For startup timings, migration operation and the read-only database profiler, see [Backend startup performance](docs/backend-startup-performance.md).
+
 ---
 
 ### 2. Running Locally (Development Mode)

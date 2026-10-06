@@ -1,0 +1,30 @@
+goos: linux
+goarch: amd64
+pkg: github.com/Dhiraj10002/Stock-Simulator/backend/internal/app
+cpu: AMD EPYC 9V74 80-Core Processor                
+BenchmarkWarmSchemaStartup/legacy-8   	       3	  38718192 ns/op	       188.0 sql_calls/op
+BenchmarkWarmSchemaStartup/legacy-8   	       3	  34811571 ns/op	       188.0 sql_calls/op
+BenchmarkWarmSchemaStartup/legacy-8   	       3	  34253783 ns/op	       188.0 sql_calls/op
+BenchmarkWarmSchemaStartup/versioned-8         	       3	   3809119 ns/op	         3.000 sql_calls/op
+BenchmarkWarmSchemaStartup/versioned-8         	       3	   3338506 ns/op	         3.000 sql_calls/op
+BenchmarkWarmSchemaStartup/versioned-8         	       3	   3485099 ns/op	         3.000 sql_calls/op
+BenchmarkMasterMetadataProjection/legacy_full_snapshot-8         	       3	  44624059 ns/op	43360584 B/op	     128 allocs/op
+BenchmarkMasterMetadataProjection/legacy_full_snapshot-8         	       3	  40143352 ns/op	54545570 B/op	     132 allocs/op
+BenchmarkMasterMetadataProjection/legacy_full_snapshot-8         	       3	  37410103 ns/op	54545581 B/op	     132 allocs/op
+BenchmarkMasterMetadataProjection/metadata_only-8                	       3	    309988 ns/op	   13733 B/op	     158 allocs/op
+BenchmarkMasterMetadataProjection/metadata_only-8                	       3	    184567 ns/op	   13928 B/op	     162 allocs/op
+BenchmarkMasterMetadataProjection/metadata_only-8                	       3	    120503 ns/op	   13733 B/op	     158 allocs/op
+PASS
+ok  	github.com/Dhiraj10002/Stock-Simulator/backend/internal/app	1.371s
+goos: linux
+goarch: amd64
+pkg: github.com/Dhiraj10002/Stock-Simulator/backend/internal/router
+cpu: AMD EPYC 9V74 80-Core Processor                
+BenchmarkInstrumentFinderBootstrap/legacy_preload-8         	       3	  35647220 ns/op	         1.000 sql_calls/op	17743768 B/op	  390055 allocs/op
+BenchmarkInstrumentFinderBootstrap/legacy_preload-8         	       3	  33831916 ns/op	         1.000 sql_calls/op	17760765 B/op	  390160 allocs/op
+BenchmarkInstrumentFinderBootstrap/legacy_preload-8         	       3	  37147224 ns/op	         1.000 sql_calls/op	17741837 B/op	  390041 allocs/op
+BenchmarkInstrumentFinderBootstrap/on_demand-8              	       3	     18060 ns/op	         0 sql_calls/op	    7698 B/op	      43 allocs/op
+BenchmarkInstrumentFinderBootstrap/on_demand-8              	       3	     14836 ns/op	         0 sql_calls/op	    7698 B/op	      43 allocs/op
+BenchmarkInstrumentFinderBootstrap/on_demand-8              	       3	     17533 ns/op	         0 sql_calls/op	    7698 B/op	      43 allocs/op
+PASS
+ok  	github.com/Dhiraj10002/Stock-Simulator/backend/internal/router	1.087s

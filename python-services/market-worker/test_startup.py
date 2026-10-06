@@ -93,8 +93,11 @@ class StartupLivenessTest(unittest.TestCase):
                     connection.close()
                 if phase == "master":
                     auth.assert_not_called()
+                    self.assertEqual(feed["worker_master_version"], "")
                 else:
                     auth.assert_called_once()
+                    self.assertEqual(feed["worker_master_version"], "fixture-master")
+                    self.assertEqual(feed["worker_initialization_stage"], "CONNECTING")
             finally:
                 release.set()
                 thread.join(3)
@@ -128,6 +131,24 @@ class StartupLivenessTest(unittest.TestCase):
                 self.assertFalse(worker.worker_readiness()[0], state)
             client.hgetall.return_value["feed_state"] = "LIVE"
             self.assertTrue(worker.worker_readiness()[0])
+
+    def test_progress_update_publishes_version_immediately(self):
+        store = worker.InstrumentStore("", ["NIFTY"])
+        store.master_version = "fixture-master"
+        store.master_load_ms = 1234.5
+        client = MagicMock()
+        worker.publish_worker_progress(client, store, "CONNECTING")
+        published = client.hset.call_args.kwargs["mapping"]
+        self.assertEqual(published["worker_master_version"], "fixture-master")
+        self.assertEqual(published["worker_initialization_stage"], "CONNECTING")
+        self.assertEqual(published["worker_master_load_ms"], "1234.5")
+
+    def test_progress_reporting_failure_does_not_abort_bootstrap(self):
+        store = worker.InstrumentStore("", ["NIFTY"])
+        client = MagicMock()
+        client.set.side_effect = RuntimeError("redis temporarily unavailable")
+        worker.publish_worker_progress(client, store, "CONNECTING")
+        self.assertEqual(store.initialization_stage, "CONNECTING")
 
 
 if __name__ == "__main__":

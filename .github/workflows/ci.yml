@@ -68,6 +68,19 @@ jobs:
       - name: Race Check Order Accounting and Exit Retries
         run: go test -race -count=1 ./internal/order/service
 
+      - name: Compare Backend Startup and Metadata Benchmarks
+        run: |
+          go test -run '^$' -bench 'BenchmarkWarmSchemaStartup|BenchmarkMasterMetadataProjection|BenchmarkInstrumentFinderBootstrap' -benchtime=3x -count=1 ./internal/app ./internal/router > "$RUNNER_TEMP/backend-benchmarks.txt"
+          cat "$RUNNER_TEMP/backend-benchmarks.txt"
+          DATABASE_URL="$TEST_DATABASE_URL" go run ./cmd/profile-db -samples 5 -plans > "$RUNNER_TEMP/database-profile.json"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: backend-performance-measurements
+          path: |
+            ${{ runner.temp }}/backend-benchmarks.txt
+            ${{ runner.temp }}/database-profile.json
+
   python-workers:
     name: Python Workers
     runs-on: ubuntu-latest

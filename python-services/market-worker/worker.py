@@ -1034,6 +1034,8 @@ class InstrumentStore:
         self.database_url = database_url
         self.symbols = symbols
         self.master_version = ""
+        self.initialization_stage = "LOADING_MASTER"
+        self.master_load_ms = 0.0
         self._master_signature = None
         self._rows: list[dict[str, Any]] = []
         self._subscriptions: dict[tuple[str, int], Subscription] = {}
@@ -1054,6 +1056,7 @@ class InstrumentStore:
             return self._subscriptions.get((token, exchange_type))
 
     def refresh(self) -> bool:
+        started_at = time.monotonic()
         rows: list[dict[str, Any]] = []
 
         if get_feed_mode() == "live":
@@ -1103,6 +1106,8 @@ class InstrumentStore:
                 self._master_signature = signature
                 changed = self._subscriptions != {(item.token,item.exchange_type):item for item in subscriptions}
                 self._subscriptions = {(item.token,item.exchange_type):item for item in subscriptions}
+                self.master_load_ms = round((time.monotonic() - started_at) * 1000, 1)
+            print(f"market worker: canonical master loaded version={version} instruments={len(rows)} subscriptions={len(subscriptions)} duration_ms={self.master_load_ms}", flush=True)
             return changed
 
         # 1. Check local cache first to avoid slow 35MB download
@@ -1703,7 +1708,17 @@ def worker_readiness() -> tuple[bool, str]:
 def write_worker_heartbeat(client: Any, store: InstrumentStore) -> None:
     stamp = datetime.now(timezone.utc).isoformat()
     client.set("market:worker:heartbeat", stamp, ex=90)
-    client.hset("market:feed_state", mapping={"worker_heartbeat": stamp, "worker_master_version": store.master_version})
+    client.hset("market:feed_state", mapping={"worker_heartbeat": stamp, "worker_master_version": store.master_version,
+        "worker_initialization_stage": store.initialization_stage, "worker_master_load_ms": str(store.master_load_ms)})
+
+
+def publish_worker_progress(client: Any, store: InstrumentStore, stage: str) -> None:
+    store.initialization_stage = stage
+    try:
+        write_worker_heartbeat(client, store)
+    except Exception as error:
+        # Progress reporting must not stop master reconciliation or broker login.
+        print(f"market worker: progress update failed ({type(error).__name__})", flush=True)
 
 
 def is_transient_db_error(error: Exception) -> bool:
@@ -1725,6 +1740,7 @@ def is_transient_db_error(error: Exception) -> bool:
 def refresh_once(store: InstrumentStore, control: FeedControl, client: Any) -> None:
     try:
         if store.refresh():
+            publish_worker_progress(client, store, "CONNECTING")
             control.reconnect("activated master or tradable contracts changed")
     except Exception as error:
         if store.master_version and is_transient_db_error(error):
@@ -1735,6 +1751,7 @@ def refresh_once(store: InstrumentStore, control: FeedControl, client: Any) -> N
             with store._lock:
                 GLOBAL_TOKEN_MAP = {}
                 store.master_version = ""
+                store.initialization_stage = "UNAVAILABLE"
                 store._master_signature = None
                 store._rows = []
                 store._subscriptions = {}
@@ -1844,6 +1861,7 @@ def run_feed(store: InstrumentStore, writer: QuoteWriter, control: FeedControl) 
             return
         if writer and getattr(writer, "client", None):
             publish_feed_state(writer.client, feed_provider="angel_one", feed_state="LIVE", is_synthetic=False, subscribed_tokens_count=len(store.subscriptions()))
+            publish_worker_progress(writer.client, store, "RUNNING")
         grouped: dict[int, list[str]] = {}
         for item in store.subscriptions():
             grouped.setdefault(item.exchange_type, []).append(item.token)
@@ -2022,17 +2040,23 @@ def main() -> None:
 
     # Heartbeats remain available throughout the initial canonical load/login.
     print("market worker: loading canonical instruments; trading readiness remains unavailable until initialization completes", flush=True)
+    store.initialization_stage = "LOADING_MASTER"
     load_canonical_aliases(client)
     try:
         store.refresh()
+        publish_worker_progress(client, store, "CONNECTING" if mode == "live" else "RUNNING")
     except Exception as error:
+        publish_worker_progress(client, store, "UNAVAILABLE")
         print(f"market worker: initial instrument refresh failed: {error}", flush=True)
         # Retry canonical activation through reconciliation; keep liveness up.
 
     # Initialize symbol lookup and the shared Angel One session after the master.
     init_global_token_map()
     if mode == "live" and store.master_version:
+        login_started = time.monotonic()
+        print("market worker: startup stage=CONNECTING (broker login)", flush=True)
         init_smart_api()
+        print(f"market worker: broker login attempt finished duration_ms={round((time.monotonic() - login_started) * 1000, 1)}", flush=True)
 
     # Seed historical candles only in explicit synthetic simulation mode; never inject fake candles in LIVE mode
     if mode == "synthetic":
@@ -2040,6 +2064,7 @@ def main() -> None:
 
     # Synthetic Feed Mode (explicit only)
     if mode == "synthetic":
+        publish_worker_progress(client, store, "RUNNING")
         print("market worker: running in explicit SYNTHETIC feed mode", flush=True)
         publish_feed_state(client, feed_provider="synthetic", feed_state="LIVE", is_synthetic=True)
         tick_interval = float(os.getenv("SYNTHETIC_TICK_INTERVAL_SECONDS", "1.0"))
@@ -2049,6 +2074,7 @@ def main() -> None:
 
     # Unavailable or Disabled Mode (explicit)
     if mode in ("unavailable", "disabled"):
+        publish_worker_progress(client, store, "UNAVAILABLE")
         print(f"market worker: running in explicit {mode.upper()} feed mode", flush=True)
         publish_feed_state(client, feed_provider="none", feed_state="UNAVAILABLE", is_synthetic=False)
         while True:
@@ -2061,6 +2087,7 @@ def main() -> None:
     control = FeedControl()
     threading.Thread(target=refresh_daily, args=(store, control, client), daemon=True).start()
     if not has_angel_credentials():
+        publish_worker_progress(client, store, "UNAVAILABLE")
         print("market worker: Angel One credentials missing in LIVE mode; setting state to UNAVAILABLE (no hidden synthetic fallback)", flush=True)
         publish_feed_state(client, feed_provider="angel_one", feed_state="UNAVAILABLE", is_synthetic=False)
         while True:
