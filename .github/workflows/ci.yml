@@ -154,9 +154,38 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
+        env:
+          POLLING_PROFILE_OUTPUT: artifacts/mobile
+          MOBILE_PROFILE_OUTPUT: artifacts/mobile
+      - name: Profile public mobile routes
+        run: npm run profile:mobile -- --paths /,/login --runs 1 --output artifacts/mobile
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mobile-browser-measurements
+          path: frontend/artifacts/mobile/
+          retention-days: 7
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
           name: browser-failure-traces
           path: frontend/test-results/
           retention-days: 7
+
+  frontend-runtime:
+    name: Standalone Frontend Docker Smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build production runtime image
+        run: docker build --tag stock-simulator-frontend:ci frontend
+      - name: Smoke non-root runtime, static assets and redirects
+        run: |
+          docker run --detach --name frontend-smoke -p 3200:3000 stock-simulator-frontend:ci
+          trap 'docker logs frontend-smoke; docker rm --force frontend-smoke' EXIT
+          test "$(docker exec frontend-smoke id -u)" = "1001"
+          node frontend/scripts/smoke-standalone.mjs --url http://127.0.0.1:3200
+          docker image inspect stock-simulator-frontend:ci --format 'Runtime image bytes: {{.Size}}'

@@ -1,0 +1,20 @@
+{
+  "conditions": "Local Linux x64 production build, Next 16.2.11. Sum of uncompressed file bytes, not Docker image size. Old copied node_modules/.next/public subtotal vs isolated standalone/static/public payload.",
+  "before": {
+    "node_modules": 685980599,
+    ".next": 19371840,
+    "public": 0,
+    "total": 705352439
+  },
+  "standalonePayloadBytes": 57865462,
+  "reductionPercent": 91.8,
+  "smoke": {
+    "routes": 3,
+    "assets": 21,
+    "scripts": 16,
+    "styles": 3,
+    "redirects": 2,
+    "unknownRoute": 404,
+    "passed": true
+  }
+}

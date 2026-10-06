@@ -1,4 +1,5 @@
 "use client";
+import { useSessionDisplayPolling } from "@/hooks/useDisplayPolling";
 import { useAccountWallet } from "@/hooks/useAccountWallet";
 
 import { useState, useMemo, useEffect } from "react";
@@ -219,6 +220,7 @@ export default function StocksExplorePage() {
     });
   }, [quotes]);
 
+  const aggregateInterval = useSessionDisplayPolling(5000);
   const { data: marketMovers } = useQuery<{
     gainers: { symbol: string; name?: string; price_paise: number; change_paise: number; change_percent: number; volume: number }[];
     losers: { symbol: string; name?: string; price_paise: number; change_paise: number; change_percent: number; volume: number }[];
@@ -239,7 +241,7 @@ export default function StocksExplorePage() {
         return { gainers: [], losers: [], most_traded: [], trending: [] };
       }
     },
-    refetchInterval: 5000,
+    refetchInterval: aggregateInterval,
   });
 
   // Generate mover list based on tab

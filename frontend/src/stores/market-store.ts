@@ -3,6 +3,7 @@ import { create } from "zustand";
 import { useShallow } from "zustand/shallow";
 import { Quote, Instrument } from "@/types";
 import { resolveCanonicalSymbol } from "@/lib/alias";
+import { STREAM_FRESH_MS, type StreamObservation } from "@/lib/displayPolling";
 
 export type MarketStatus = "PRE_OPEN" | "OPEN" | "POST_MARKET" | "CLOSED" | "HOLIDAY";
 export type ConnectionState = "connected" | "connecting" | "disconnected";
@@ -20,6 +21,8 @@ interface MarketStoreState {
   instruments: Record<string, Instrument>;
   instrumentList: Instrument[];
   marketStatus: MarketStatus;
+  marketStatusReceivedAt: number | null;
+  streamObservations: Record<string, StreamObservation>;
   connectionState: ConnectionState;
   lastTickTimestamp: number | null;
   feedStatus: FeedStatus;
@@ -32,7 +35,7 @@ interface MarketStoreState {
 
   // Actions
   setQuotes: (quotes: Record<string, Quote>) => void;
-  updateQuote: (quote: Quote) => void;
+  updateStreamQuote: (quote: Quote) => void;
   mergeQuotes: (quotes: Record<string, Quote>) => void;
   setInstruments: (instruments: Instrument[]) => void;
   setMarketStatus: (status: MarketStatus) => void;
@@ -80,6 +83,8 @@ export const useMarketStore = create<MarketStoreState>((set) => ({
   instruments: {},
   instrumentList: [],
   marketStatus: "CLOSED",
+  marketStatusReceivedAt: null,
+  streamObservations: {},
   connectionState: "disconnected",
   lastTickTimestamp: null,
   feedStatus: {
@@ -105,12 +110,25 @@ export const useMarketStore = create<MarketStoreState>((set) => ({
     }
     set({ instruments: map, instrumentList });
   },
-  updateQuote: (quote) => set((state) => mergeIncomingQuotes(state, { [quote.symbol]: quote })),
+  updateStreamQuote: (quote) => set((state) => {
+    const symbol = resolveCanonicalSymbol(quote.symbol);
+    const receivedAt = Date.now(), quotedAt = Date.parse(quote.updated_at);
+    const merged = Number.isFinite(quotedAt) && quotedAt <= receivedAt + 5000
+      ? mergeIncomingQuotes(state, { [quote.symbol]: quote }) : state;
+    const streamObservations = { ...state.streamObservations };
+    if (merged !== state && Number.isFinite(quotedAt) && quotedAt <= receivedAt + 5000 && receivedAt - quotedAt < STREAM_FRESH_MS && quote.source === "angelone_live" && !quote.is_quote_stale) {
+      streamObservations[symbol] = { receivedAt, quotedAt };
+    } else {
+      delete streamObservations[symbol];
+    }
+    return { ...merged, streamObservations };
+  }),
   mergeQuotes: (quotes) => set((state) => mergeIncomingQuotes(state, quotes)),
-  setMarketStatus: (marketStatus) => set({ marketStatus }),
+  setMarketStatus: (marketStatus) => set({ marketStatus, marketStatusReceivedAt: Date.now() }),
   setConnectionState: (connectionState) =>
     set((state) => ({
       connectionState,
+      ...(connectionState !== "connected" ? { streamObservations: {} } : {}),
       feedProvider: deriveFeedProviderLegacy(state.feedStatus, connectionState),
     })),
   setLastTickTimestamp: (lastTickTimestamp) => set({ lastTickTimestamp }),
@@ -146,7 +164,10 @@ export const useMarketStore = create<MarketStoreState>((set) => ({
     set({
       activeViewSymbols: Array.from(new Set(symbols.map((s) => s.toUpperCase().trim()).filter(Boolean))),
     }),
-  setSubscribedSymbols: (subscribedSymbols) => set({ subscribedSymbols }),
+  setSubscribedSymbols: (subscribedSymbols) => set(state => ({
+    subscribedSymbols,
+    streamObservations: Object.fromEntries(Object.entries(state.streamObservations).filter(([symbol]) => subscribedSymbols.some(target => resolveCanonicalSymbol(target) === symbol))),
+  })),
 }));
 
 /**
@@ -263,5 +284,3 @@ export const useTargetedSubscription = (symbols: string | string[] | undefined) 
     };
   }, [symbolsKey, setActiveViewSymbols]);
 };
-
-

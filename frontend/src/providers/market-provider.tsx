@@ -109,7 +109,7 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
             const status = data.feed_status || data;
             useMarketStore.getState().setFeedStatus({ feedProvider: status.feed_provider, feedState: status.feed_state, isSynthetic: Boolean(status.is_synthetic), lastTick: status.last_tick, updatedAt: status.updated_at });
           } else if (data.type === "quote" && data.quote) {
-            useMarketStore.getState().updateQuote(data.quote as Quote);
+            useMarketStore.getState().updateStreamQuote(data.quote as Quote);
           }
         } catch { /* Ignore malformed provider messages. */ }
       };

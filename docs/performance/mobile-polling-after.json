@@ -1,0 +1,2953 @@
+{
+  "mode": "local production browser lab; public API fixtures",
+  "origin": "http://127.0.0.1:3100",
+  "conditions": "390x844 touch, CPU 4x, 1.6 Mbps download, 150 ms latency; cold contexts. Event Timing samples are scripted, not field INP. Redirects recorded. No writes submitted.",
+  "browser": "153.0.8010.12",
+  "node": "v24.19.0",
+  "runs": [
+    {
+      "path": "/",
+      "finalPath": "/",
+      "reducedMotion": "no-preference",
+      "repeat": 1,
+      "status": 200,
+      "navigation": {
+        "lcpMs": 2108,
+        "cls": 0,
+        "fcpMs": 2108,
+        "ttfbMs": 20.600000000093132,
+        "jsBytes": 162268,
+        "jsRequests": 11,
+        "overflow": false
+      },
+      "interactions": [
+        "Platform preview anchor"
+      ],
+      "interactionLab": {
+        "lcpMs": 2108,
+        "cls": 0,
+        "longTasks": [
+          469,
+          389,
+          174,
+          194
+        ],
+        "events": [
+          {
+            "name": "pointerdown",
+            "durationMs": 152,
+            "inputDelayMs": 20.800000000279397
+          },
+          {
+            "name": "pointerup",
+            "durationMs": 152,
+            "inputDelayMs": 21.5
+          },
+          {
+            "name": "click",
+            "durationMs": 152,
+            "inputDelayMs": 33.39999999990687
+          },
+          {
+            "name": "pointerdown",
+            "durationMs": 152,
+            "inputDelayMs": 20.800000000279397
+          }
+        ],
+        "overflow": false
+      },
+      "requests": [
+        {
+          "path": "/",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/media/797e433ab948586e-s.p.0r6juujl39pe6.woff2",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/media/caa3a2e1cccd8315-s.p.0wgildi0cnwt9.woff2",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/2qp4vg9jc6yao.css",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/02k_8gi7tq3ho.css",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/310vm2bl3xxpt.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/08nd1v21mbaqq.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/3hdj40qmts5sf.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/3ntq52ar-byrb.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/0paxexg6-m0de.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/turbopack-293l5ssblkoa1.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/3925hv6dknyc8.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/14mrh2-p_w84d.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/2r9gq3z9hyp7v.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/1gu-_r2v-jdmh.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/media/7178b3e590c64307-s.21jp631_3pja2.woff2",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/media/bbc41e54d2fcbd21-s.1rgnod-3esatf.woff2",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/03krrzau6pw0x.js",
+          "method": "GET"
+        }
+      ],
+      "failures": [],
+      "pageErrors": 0
+    },
+    {
+      "path": "/",
+      "finalPath": "/",
+      "reducedMotion": "no-preference",
+      "repeat": 2,
+      "status": 200,
+      "navigation": {
+        "lcpMs": 2096,
+        "cls": 0,
+        "fcpMs": 2096,
+        "ttfbMs": 22.700000000186265,
+        "jsBytes": 162268,
+        "jsRequests": 11,
+        "overflow": false
+      },
+      "interactions": [
+        "Platform preview anchor"
+      ],
+      "interactionLab": {
+        "lcpMs": 2096,
+        "cls": 0,
+        "longTasks": [
+          436,
+          335,
+          164,
+          190
+        ],
+        "events": [
+          {
+            "name": "pointerdown",
+            "durationMs": 72,
+            "inputDelayMs": 21.300000000279397
+          },
+          {
+            "name": "pointerup",
+            "durationMs": 72,
+            "inputDelayMs": 36.10000000009313
+          },
+          {
+            "name": "pointerdown",
+            "durationMs": 72,
+            "inputDelayMs": 21.300000000279397
+          },
+          {
+            "name": "click",
+            "durationMs": 160,
+            "inputDelayMs": 62.5
+          }
+        ],
+        "overflow": false
+      },
+      "requests": [
+        {
+          "path": "/",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/media/797e433ab948586e-s.p.0r6juujl39pe6.woff2",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/media/caa3a2e1cccd8315-s.p.0wgildi0cnwt9.woff2",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/2qp4vg9jc6yao.css",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/02k_8gi7tq3ho.css",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/310vm2bl3xxpt.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/08nd1v21mbaqq.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/3hdj40qmts5sf.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/3ntq52ar-byrb.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/0paxexg6-m0de.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/turbopack-293l5ssblkoa1.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/3925hv6dknyc8.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/14mrh2-p_w84d.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/2r9gq3z9hyp7v.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/1gu-_r2v-jdmh.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/media/7178b3e590c64307-s.21jp631_3pja2.woff2",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/media/bbc41e54d2fcbd21-s.1rgnod-3esatf.woff2",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/03krrzau6pw0x.js",
+          "method": "GET"
+        }
+      ],
+      "failures": [],
+      "pageErrors": 0
+    },
+    {
+      "path": "/",
+      "finalPath": "/",
+      "reducedMotion": "no-preference",
+      "repeat": 3,
+      "status": 200,
+      "navigation": {
+        "lcpMs": 2168,
+        "cls": 0,
+        "fcpMs": 2168,
+        "ttfbMs": 19.899999999906868,
+        "jsBytes": 162268,
+        "jsRequests": 11,
+        "overflow": false
+      },
+      "interactions": [
+        "Platform preview anchor"
+      ],
+      "interactionLab": {
+        "lcpMs": 2168,
+        "cls": 0,
+        "longTasks": [
+          568,
+          270,
+          261,
+          197,
+          107
+        ],
+        "events": [
+          {
+            "name": "pointerdown",
+            "durationMs": 144,
+            "inputDelayMs": 16.600000000093132
+          },
+          {
+            "name": "pointerup",
+            "durationMs": 144,
+            "inputDelayMs": 20.200000000186265
+          },
+          {
+            "name": "click",
+            "durationMs": 144,
+            "inputDelayMs": 33
+          },
+          {
+            "name": "pointerdown",
+            "durationMs": 144,
+            "inputDelayMs": 16.600000000093132
+          }
+        ],
+        "overflow": false
+      },
+      "requests": [
+        {
+          "path": "/",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/media/797e433ab948586e-s.p.0r6juujl39pe6.woff2",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/media/caa3a2e1cccd8315-s.p.0wgildi0cnwt9.woff2",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/2qp4vg9jc6yao.css",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/02k_8gi7tq3ho.css",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/310vm2bl3xxpt.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/08nd1v21mbaqq.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/3hdj40qmts5sf.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/3ntq52ar-byrb.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/0paxexg6-m0de.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/turbopack-293l5ssblkoa1.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/3925hv6dknyc8.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/14mrh2-p_w84d.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/2r9gq3z9hyp7v.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/1gu-_r2v-jdmh.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/media/7178b3e590c64307-s.21jp631_3pja2.woff2",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/media/bbc41e54d2fcbd21-s.1rgnod-3esatf.woff2",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/03krrzau6pw0x.js",
+          "method": "GET"
+        }
+      ],
+      "failures": [],
+      "pageErrors": 0
+    },
+    {
+      "path": "/",
+      "finalPath": "/",
+      "reducedMotion": "reduce",
+      "repeat": 1,
+      "status": 200,
+      "navigation": {
+        "lcpMs": 2032,
+        "cls": 0,
+        "fcpMs": 2032,
+        "ttfbMs": 17.300000000279397,
+        "jsBytes": 162268,
+        "jsRequests": 11,
+        "overflow": false
+      },
+      "interactions": [
+        "Platform preview anchor"
+      ],
+      "interactionLab": {
+        "lcpMs": 2032,
+        "cls": 0,
+        "longTasks": [
+          463,
+          521,
+          240,
+          131,
+          69
+        ],
+        "events": [
+          {
+            "name": "pointerdown",
+            "durationMs": 16,
+            "inputDelayMs": 7.7000000001862645
+          },
+          {
+            "name": "pointerup",
+            "durationMs": 16,
+            "inputDelayMs": 11
+          },
+          {
+            "name": "pointerdown",
+            "durationMs": 16,
+            "inputDelayMs": 7.7000000001862645
+          },
+          {
+            "name": "click",
+            "durationMs": 88,
+            "inputDelayMs": 22.5
+          }
+        ],
+        "overflow": false
+      },
+      "requests": [
+        {
+          "path": "/",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/media/797e433ab948586e-s.p.0r6juujl39pe6.woff2",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/media/caa3a2e1cccd8315-s.p.0wgildi0cnwt9.woff2",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/2qp4vg9jc6yao.css",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/02k_8gi7tq3ho.css",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/310vm2bl3xxpt.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/08nd1v21mbaqq.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/3hdj40qmts5sf.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/3ntq52ar-byrb.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/0paxexg6-m0de.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/turbopack-293l5ssblkoa1.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/3925hv6dknyc8.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/14mrh2-p_w84d.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/2r9gq3z9hyp7v.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/1gu-_r2v-jdmh.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/media/7178b3e590c64307-s.21jp631_3pja2.woff2",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/media/bbc41e54d2fcbd21-s.1rgnod-3esatf.woff2",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/03krrzau6pw0x.js",
+          "method": "GET"
+        }
+      ],
+      "failures": [],
+      "pageErrors": 0
+    },
+    {
+      "path": "/",
+      "finalPath": "/",
+      "reducedMotion": "reduce",
+      "repeat": 2,
+      "status": 200,
+      "navigation": {
+        "lcpMs": 1940,
+        "cls": 0,
+        "fcpMs": 1940,
+        "ttfbMs": 15,
+        "jsBytes": 162268,
+        "jsRequests": 11,
+        "overflow": false
+      },
+      "interactions": [
+        "Platform preview anchor"
+      ],
+      "interactionLab": {
+        "lcpMs": 1940,
+        "cls": 0,
+        "longTasks": [
+          427,
+          383,
+          219,
+          102,
+          87
+        ],
+        "events": [
+          {
+            "name": "pointerdown",
+            "durationMs": 16,
+            "inputDelayMs": 13.100000000093132
+          },
+          {
+            "name": "pointerup",
+            "durationMs": 16,
+            "inputDelayMs": 16.300000000279397
+          },
+          {
+            "name": "pointerdown",
+            "durationMs": 16,
+            "inputDelayMs": 13.100000000093132
+          },
+          {
+            "name": "click",
+            "durationMs": 104,
+            "inputDelayMs": 29.200000000186265
+          }
+        ],
+        "overflow": false
+      },
+      "requests": [
+        {
+          "path": "/",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/media/797e433ab948586e-s.p.0r6juujl39pe6.woff2",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/media/caa3a2e1cccd8315-s.p.0wgildi0cnwt9.woff2",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/2qp4vg9jc6yao.css",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/02k_8gi7tq3ho.css",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/310vm2bl3xxpt.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/08nd1v21mbaqq.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/3hdj40qmts5sf.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/3ntq52ar-byrb.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/0paxexg6-m0de.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/turbopack-293l5ssblkoa1.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/3925hv6dknyc8.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/14mrh2-p_w84d.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/2r9gq3z9hyp7v.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/1gu-_r2v-jdmh.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/media/7178b3e590c64307-s.21jp631_3pja2.woff2",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/media/bbc41e54d2fcbd21-s.1rgnod-3esatf.woff2",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/03krrzau6pw0x.js",
+          "method": "GET"
+        }
+      ],
+      "failures": [],
+      "pageErrors": 0
+    },
+    {
+      "path": "/",
+      "finalPath": "/",
+      "reducedMotion": "reduce",
+      "repeat": 3,
+      "status": 200,
+      "navigation": {
+        "lcpMs": 1960,
+        "cls": 0,
+        "fcpMs": 1960,
+        "ttfbMs": 14.599999999627471,
+        "jsBytes": 162268,
+        "jsRequests": 11,
+        "overflow": false
+      },
+      "interactions": [
+        "Platform preview anchor"
+      ],
+      "interactionLab": {
+        "lcpMs": 1960,
+        "cls": 0,
+        "longTasks": [
+          453,
+          437,
+          241,
+          129,
+          64
+        ],
+        "events": [
+          {
+            "name": "pointerdown",
+            "durationMs": 16,
+            "inputDelayMs": 8.800000000279397
+          },
+          {
+            "name": "pointerup",
+            "durationMs": 16,
+            "inputDelayMs": 12.399999999906868
+          },
+          {
+            "name": "pointerdown",
+            "durationMs": 16,
+            "inputDelayMs": 8.800000000279397
+          },
+          {
+            "name": "click",
+            "durationMs": 104,
+            "inputDelayMs": 27.700000000186265
+          }
+        ],
+        "overflow": false
+      },
+      "requests": [
+        {
+          "path": "/",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/media/797e433ab948586e-s.p.0r6juujl39pe6.woff2",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/media/caa3a2e1cccd8315-s.p.0wgildi0cnwt9.woff2",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/2qp4vg9jc6yao.css",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/02k_8gi7tq3ho.css",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/310vm2bl3xxpt.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/08nd1v21mbaqq.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/3hdj40qmts5sf.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/3ntq52ar-byrb.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/0paxexg6-m0de.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/turbopack-293l5ssblkoa1.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/3925hv6dknyc8.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/14mrh2-p_w84d.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/2r9gq3z9hyp7v.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/1gu-_r2v-jdmh.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/media/7178b3e590c64307-s.21jp631_3pja2.woff2",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/media/bbc41e54d2fcbd21-s.1rgnod-3esatf.woff2",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/03krrzau6pw0x.js",
+          "method": "GET"
+        }
+      ],
+      "failures": [],
+      "pageErrors": 0
+    },
+    {
+      "path": "/login",
+      "finalPath": "/login",
+      "reducedMotion": "no-preference",
+      "repeat": 1,
+      "status": 200,
+      "navigation": {
+        "lcpMs": 2008,
+        "cls": 0,
+        "fcpMs": 1468,
+        "ttfbMs": 15.400000000372529,
+        "jsBytes": 161206,
+        "jsRequests": 10,
+        "overflow": false
+      },
+      "interactions": [
+        "Focus and type email; no submit"
+      ],
+      "interactionLab": {
+        "lcpMs": 2008,
+        "cls": 0,
+        "longTasks": [
+          100,
+          285,
+          64,
+          112,
+          153,
+          114,
+          182
+        ],
+        "events": [
+          {
+            "name": "pointerdown",
+            "durationMs": 56,
+            "inputDelayMs": 21.899999999906868
+          },
+          {
+            "name": "pointerup",
+            "durationMs": 56,
+            "inputDelayMs": 26
+          },
+          {
+            "name": "click",
+            "durationMs": 56,
+            "inputDelayMs": 36.5
+          },
+          {
+            "name": "pointerdown",
+            "durationMs": 56,
+            "inputDelayMs": 21.899999999906868
+          },
+          {
+            "name": "keydown",
+            "durationMs": 64,
+            "inputDelayMs": 2.5
+          },
+          {
+            "name": "keypress",
+            "durationMs": 64,
+            "inputDelayMs": 3.8000000002793968
+          },
+          {
+            "name": "keyup",
+            "durationMs": 48,
+            "inputDelayMs": 1.1000000000931323
+          },
+          {
+            "name": "keydown",
+            "durationMs": 48,
+            "inputDelayMs": 0.5
+          },
+          {
+            "name": "keypress",
+            "durationMs": 48,
+            "inputDelayMs": 0.599999999627471
+          },
+          {
+            "name": "keyup",
+            "durationMs": 56,
+            "inputDelayMs": 2.8999999999068677
+          },
+          {
+            "name": "keydown",
+            "durationMs": 56,
+            "inputDelayMs": 0.5
+          },
+          {
+            "name": "keypress",
+            "durationMs": 56,
+            "inputDelayMs": 0.6000000000931323
+          },
+          {
+            "name": "keyup",
+            "durationMs": 40,
+            "inputDelayMs": 0.39999999990686774
+          },
+          {
+            "name": "keydown",
+            "durationMs": 32,
+            "inputDelayMs": 0.20000000018626451
+          },
+          {
+            "name": "keypress",
+            "durationMs": 32,
+            "inputDelayMs": 0.20000000018626451
+          },
+          {
+            "name": "keyup",
+            "durationMs": 48,
+            "inputDelayMs": 0.10000000009313226
+          },
+          {
+            "name": "keydown",
+            "durationMs": 48,
+            "inputDelayMs": 0.5
+          },
+          {
+            "name": "keypress",
+            "durationMs": 48,
+            "inputDelayMs": 0.5
+          },
+          {
+            "name": "keyup",
+            "durationMs": 48,
+            "inputDelayMs": 0.20000000018626451
+          },
+          {
+            "name": "keydown",
+            "durationMs": 48,
+            "inputDelayMs": 0.6000000000931323
+          },
+          {
+            "name": "keypress",
+            "durationMs": 48,
+            "inputDelayMs": 0.6999999997206032
+          },
+          {
+            "name": "keyup",
+            "durationMs": 40,
+            "inputDelayMs": 0.20000000018626451
+          },
+          {
+            "name": "keydown",
+            "durationMs": 40,
+            "inputDelayMs": 3.8999999999068677
+          },
+          {
+            "name": "keypress",
+            "durationMs": 40,
+            "inputDelayMs": 4
+          },
+          {
+            "name": "keyup",
+            "durationMs": 32,
+            "inputDelayMs": 0.2999999998137355
+          },
+          {
+            "name": "keydown",
+            "durationMs": 32,
+            "inputDelayMs": 1.5
+          },
+          {
+            "name": "keypress",
+            "durationMs": 32,
+            "inputDelayMs": 1.7000000001862645
+          },
+          {
+            "name": "keyup",
+            "durationMs": 48,
+            "inputDelayMs": 0.20000000018626451
+          },
+          {
+            "name": "keydown",
+            "durationMs": 48,
+            "inputDelayMs": 0.09999999962747097
+          },
+          {
+            "name": "keypress",
+            "durationMs": 48,
+            "inputDelayMs": 0.8999999999068677
+          },
+          {
+            "name": "keydown",
+            "durationMs": 48,
+            "inputDelayMs": 2.6000000000931323
+          },
+          {
+            "name": "keypress",
+            "durationMs": 48,
+            "inputDelayMs": 2.7000000001862645
+          },
+          {
+            "name": "keyup",
+            "durationMs": 40,
+            "inputDelayMs": 5.800000000279397
+          },
+          {
+            "name": "keydown",
+            "durationMs": 32,
+            "inputDelayMs": 0.7999999998137355
+          },
+          {
+            "name": "keypress",
+            "durationMs": 32,
+            "inputDelayMs": 0.7999999998137355
+          },
+          {
+            "name": "keyup",
+            "durationMs": 48,
+            "inputDelayMs": 0.7999999998137355
+          },
+          {
+            "name": "keydown",
+            "durationMs": 48,
+            "inputDelayMs": 2.2999999998137355
+          },
+          {
+            "name": "keypress",
+            "durationMs": 48,
+            "inputDelayMs": 2.6999999997206032
+          },
+          {
+            "name": "keyup",
+            "durationMs": 24,
+            "inputDelayMs": 0.5
+          },
+          {
+            "name": "keydown",
+            "durationMs": 24,
+            "inputDelayMs": 0.2999999998137355
+          },
+          {
+            "name": "keypress",
+            "durationMs": 24,
+            "inputDelayMs": 0.39999999990686774
+          },
+          {
+            "name": "keyup",
+            "durationMs": 32,
+            "inputDelayMs": 0.5
+          },
+          {
+            "name": "keydown",
+            "durationMs": 32,
+            "inputDelayMs": 0.5
+          },
+          {
+            "name": "keypress",
+            "durationMs": 32,
+            "inputDelayMs": 0.5
+          },
+          {
+            "name": "keyup",
+            "durationMs": 32,
+            "inputDelayMs": 0.2999999998137355
+          },
+          {
+            "name": "keydown",
+            "durationMs": 32,
+            "inputDelayMs": 0.5
+          },
+          {
+            "name": "keypress",
+            "durationMs": 32,
+            "inputDelayMs": 0.5
+          },
+          {
+            "name": "keyup",
+            "durationMs": 56,
+            "inputDelayMs": 0.5
+          },
+          {
+            "name": "keydown",
+            "durationMs": 48,
+            "inputDelayMs": 0.7999999998137355
+          },
+          {
+            "name": "keypress",
+            "durationMs": 48,
+            "inputDelayMs": 0.8999999999068677
+          },
+          {
+            "name": "keyup",
+            "durationMs": 32,
+            "inputDelayMs": 0.39999999990686774
+          },
+          {
+            "name": "keydown",
+            "durationMs": 32,
+            "inputDelayMs": 0.5
+          },
+          {
+            "name": "keypress",
+            "durationMs": 32,
+            "inputDelayMs": 0.5
+          },
+          {
+            "name": "keyup",
+            "durationMs": 40,
+            "inputDelayMs": 0.20000000018626451
+          },
+          {
+            "name": "keydown",
+            "durationMs": 32,
+            "inputDelayMs": 0.6000000000931323
+          },
+          {
+            "name": "keypress",
+            "durationMs": 32,
+            "inputDelayMs": 0.6999999997206032
+          },
+          {
+            "name": "keyup",
+            "durationMs": 32,
+            "inputDelayMs": 0.19999999972060323
+          },
+          {
+            "name": "keydown",
+            "durationMs": 32,
+            "inputDelayMs": 0.6000000000931323
+          },
+          {
+            "name": "keypress",
+            "durationMs": 32,
+            "inputDelayMs": 1
+          },
+          {
+            "name": "keyup",
+            "durationMs": 40,
+            "inputDelayMs": 0.20000000018626451
+          }
+        ],
+        "overflow": false
+      },
+      "requests": [
+        {
+          "path": "/login",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/media/797e433ab948586e-s.p.0r6juujl39pe6.woff2",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/media/caa3a2e1cccd8315-s.p.0wgildi0cnwt9.woff2",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/2qp4vg9jc6yao.css",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/02k_8gi7tq3ho.css",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/310vm2bl3xxpt.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/08nd1v21mbaqq.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/3hdj40qmts5sf.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/3ntq52ar-byrb.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/0paxexg6-m0de.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/turbopack-293l5ssblkoa1.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/3925hv6dknyc8.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/14mrh2-p_w84d.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/2r9gq3z9hyp7v.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/3hyrpiq4hy-yw.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/media/bbc41e54d2fcbd21-s.1rgnod-3esatf.woff2",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/media/7178b3e590c64307-s.21jp631_3pja2.woff2",
+          "method": "GET"
+        }
+      ],
+      "failures": [],
+      "pageErrors": 0
+    },
+    {
+      "path": "/login",
+      "finalPath": "/login",
+      "reducedMotion": "no-preference",
+      "repeat": 2,
+      "status": 200,
+      "navigation": {
+        "lcpMs": 2112,
+        "cls": 0,
+        "fcpMs": 1588,
+        "ttfbMs": 7,
+        "jsBytes": 161206,
+        "jsRequests": 10,
+        "overflow": false
+      },
+      "interactions": [
+        "Focus and type email; no submit"
+      ],
+      "interactionLab": {
+        "lcpMs": 2112,
+        "cls": 0,
+        "longTasks": [
+          103,
+          344,
+          58,
+          165,
+          129,
+          179,
+          138
+        ],
+        "events": [
+          {
+            "name": "pointerdown",
+            "durationMs": 80,
+            "inputDelayMs": 21.90000000037253
+          },
+          {
+            "name": "pointerup",
+            "durationMs": 80,
+            "inputDelayMs": 26.200000000186265
+          },
+          {
+            "name": "click",
+            "durationMs": 80,
+            "inputDelayMs": 39.10000000009313
+          },
+          {
+            "name": "pointerdown",
+            "durationMs": 80,
+            "inputDelayMs": 21.90000000037253
+          },
+          {
+            "name": "keydown",
+            "durationMs": 48,
+            "inputDelayMs": 1.2000000001862645
+          },
+          {
+            "name": "keypress",
+            "durationMs": 48,
+            "inputDelayMs": 2
+          },
+          {
+            "name": "keyup",
+            "durationMs": 56,
+            "inputDelayMs": 0.6000000000931323
+          },
+          {
+            "name": "keydown",
+            "durationMs": 56,
+            "inputDelayMs": 0.20000000018626451
+          },
+          {
+            "name": "keypress",
+            "durationMs": 56,
+            "inputDelayMs": 0.8000000002793968
+          },
+          {
+            "name": "keyup",
+            "durationMs": 48,
+            "inputDelayMs": 0.7000000001862645
+          },
+          {
+            "name": "keydown",
+            "durationMs": 48,
+            "inputDelayMs": 0.19999999972060323
+          },
+          {
+            "name": "keypress",
+            "durationMs": 48,
+            "inputDelayMs": 0.39999999990686774
+          },
+          {
+            "name": "keyup",
+            "durationMs": 48,
+            "inputDelayMs": 0.6999999997206032
+          },
+          {
+            "name": "keydown",
+            "durationMs": 40,
+            "inputDelayMs": 0.20000000018626451
+          },
+          {
+            "name": "keypress",
+            "durationMs": 40,
+            "inputDelayMs": 0.900000000372529
+          },
+          {
+            "name": "keyup",
+            "durationMs": 40,
+            "inputDelayMs": 1.599999999627471
+          },
+          {
+            "name": "keydown",
+            "durationMs": 40,
+            "inputDelayMs": 0.39999999990686774
+          },
+          {
+            "name": "keypress",
+            "durationMs": 40,
+            "inputDelayMs": 1.1999999997206032
+          },
+          {
+            "name": "keyup",
+            "durationMs": 56,
+            "inputDelayMs": 0.19999999972060323
+          },
+          {
+            "name": "keydown",
+            "durationMs": 48,
+            "inputDelayMs": 1
+          },
+          {
+            "name": "keypress",
+            "durationMs": 48,
+            "inputDelayMs": 1.6999999997206032
+          },
+          {
+            "name": "keydown",
+            "durationMs": 48,
+            "inputDelayMs": 1.3999999999068677
+          },
+          {
+            "name": "keypress",
+            "durationMs": 48,
+            "inputDelayMs": 1.5
+          },
+          {
+            "name": "keyup",
+            "durationMs": 40,
+            "inputDelayMs": 0.40000000037252903
+          },
+          {
+            "name": "keydown",
+            "durationMs": 40,
+            "inputDelayMs": 0.7999999998137355
+          },
+          {
+            "name": "keypress",
+            "durationMs": 40,
+            "inputDelayMs": 1
+          },
+          {
+            "name": "keyup",
+            "durationMs": 40,
+            "inputDelayMs": 0.7000000001862645
+          },
+          {
+            "name": "keydown",
+            "durationMs": 40,
+            "inputDelayMs": 1
+          },
+          {
+            "name": "keypress",
+            "durationMs": 40,
+            "inputDelayMs": 1.1000000000931323
+          },
+          {
+            "name": "keyup",
+            "durationMs": 48,
+            "inputDelayMs": 0.8999999999068677
+          },
+          {
+            "name": "keydown",
+            "durationMs": 48,
+            "inputDelayMs": 0.10000000009313226
+          },
+          {
+            "name": "keypress",
+            "durationMs": 48,
+            "inputDelayMs": 1
+          },
+          {
+            "name": "keyup",
+            "durationMs": 48,
+            "inputDelayMs": 7.5
+          },
+          {
+            "name": "keydown",
+            "durationMs": 40,
+            "inputDelayMs": 0.5
+          },
+          {
+            "name": "keypress",
+            "durationMs": 40,
+            "inputDelayMs": 0.5
+          },
+          {
+            "name": "keyup",
+            "durationMs": 56,
+            "inputDelayMs": 0.09999999962747097
+          },
+          {
+            "name": "keydown",
+            "durationMs": 56,
+            "inputDelayMs": 0.5
+          },
+          {
+            "name": "keypress",
+            "durationMs": 56,
+            "inputDelayMs": 0.6000000000931323
+          },
+          {
+            "name": "keyup",
+            "durationMs": 48,
+            "inputDelayMs": 0.19999999972060323
+          },
+          {
+            "name": "keydown",
+            "durationMs": 48,
+            "inputDelayMs": 0.10000000009313226
+          },
+          {
+            "name": "keypress",
+            "durationMs": 48,
+            "inputDelayMs": 0.20000000018626451
+          },
+          {
+            "name": "keyup",
+            "durationMs": 40,
+            "inputDelayMs": 1
+          },
+          {
+            "name": "keydown",
+            "durationMs": 32,
+            "inputDelayMs": 0.39999999990686774
+          },
+          {
+            "name": "keypress",
+            "durationMs": 32,
+            "inputDelayMs": 0.599999999627471
+          },
+          {
+            "name": "keyup",
+            "durationMs": 48,
+            "inputDelayMs": 0.40000000037252903
+          },
+          {
+            "name": "keydown",
+            "durationMs": 48,
+            "inputDelayMs": 0.39999999990686774
+          },
+          {
+            "name": "keypress",
+            "durationMs": 48,
+            "inputDelayMs": 0.6000000000931323
+          },
+          {
+            "name": "keyup",
+            "durationMs": 40,
+            "inputDelayMs": 0.3000000002793968
+          },
+          {
+            "name": "keydown",
+            "durationMs": 48,
+            "inputDelayMs": 5.100000000093132
+          },
+          {
+            "name": "keypress",
+            "durationMs": 48,
+            "inputDelayMs": 5.699999999720603
+          },
+          {
+            "name": "keyup",
+            "durationMs": 40,
+            "inputDelayMs": 2.7999999998137355
+          },
+          {
+            "name": "keydown",
+            "durationMs": 40,
+            "inputDelayMs": 0.10000000009313226
+          },
+          {
+            "name": "keypress",
+            "durationMs": 40,
+            "inputDelayMs": 0.5
+          },
+          {
+            "name": "keyup",
+            "durationMs": 40,
+            "inputDelayMs": 0.39999999990686774
+          },
+          {
+            "name": "keydown",
+            "durationMs": 40,
+            "inputDelayMs": 0.6000000000931323
+          },
+          {
+            "name": "keypress",
+            "durationMs": 40,
+            "inputDelayMs": 0.7000000001862645
+          },
+          {
+            "name": "keyup",
+            "durationMs": 40,
+            "inputDelayMs": 0.10000000009313226
+          },
+          {
+            "name": "keydown",
+            "durationMs": 40,
+            "inputDelayMs": 0.40000000037252903
+          },
+          {
+            "name": "keypress",
+            "durationMs": 40,
+            "inputDelayMs": 0.40000000037252903
+          }
+        ],
+        "overflow": false
+      },
+      "requests": [
+        {
+          "path": "/login",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/media/797e433ab948586e-s.p.0r6juujl39pe6.woff2",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/media/caa3a2e1cccd8315-s.p.0wgildi0cnwt9.woff2",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/2qp4vg9jc6yao.css",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/02k_8gi7tq3ho.css",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/310vm2bl3xxpt.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/08nd1v21mbaqq.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/3hdj40qmts5sf.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/3ntq52ar-byrb.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/0paxexg6-m0de.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/turbopack-293l5ssblkoa1.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/3925hv6dknyc8.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/14mrh2-p_w84d.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/2r9gq3z9hyp7v.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/3hyrpiq4hy-yw.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/media/bbc41e54d2fcbd21-s.1rgnod-3esatf.woff2",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/media/7178b3e590c64307-s.21jp631_3pja2.woff2",
+          "method": "GET"
+        }
+      ],
+      "failures": [],
+      "pageErrors": 0
+    },
+    {
+      "path": "/login",
+      "finalPath": "/login",
+      "reducedMotion": "no-preference",
+      "repeat": 3,
+      "status": 200,
+      "navigation": {
+        "lcpMs": 1988,
+        "cls": 0,
+        "fcpMs": 1492,
+        "ttfbMs": 11.5,
+        "jsBytes": 161206,
+        "jsRequests": 10,
+        "overflow": false
+      },
+      "interactions": [
+        "Focus and type email; no submit"
+      ],
+      "interactionLab": {
+        "lcpMs": 1988,
+        "cls": 0,
+        "longTasks": [
+          109,
+          373,
+          76,
+          160,
+          147,
+          124,
+          163,
+          53,
+          54
+        ],
+        "events": [
+          {
+            "name": "pointerdown",
+            "durationMs": 104,
+            "inputDelayMs": 27.600000000093132
+          },
+          {
+            "name": "pointerup",
+            "durationMs": 104,
+            "inputDelayMs": 30.899999999906868
+          },
+          {
+            "name": "click",
+            "durationMs": 104,
+            "inputDelayMs": 47.5
+          },
+          {
+            "name": "pointerdown",
+            "durationMs": 104,
+            "inputDelayMs": 27.600000000093132
+          },
+          {
+            "name": "keydown",
+            "durationMs": 136,
+            "inputDelayMs": 0.8999999999068677
+          },
+          {
+            "name": "keypress",
+            "durationMs": 136,
+            "inputDelayMs": 2.7999999998137355
+          },
+          {
+            "name": "keyup",
+            "durationMs": 96,
+            "inputDelayMs": 4.5
+          },
+          {
+            "name": "keydown",
+            "durationMs": 88,
+            "inputDelayMs": 0.39999999990686774
+          },
+          {
+            "name": "keypress",
+            "durationMs": 88,
+            "inputDelayMs": 0.5
+          },
+          {
+            "name": "keyup",
+            "durationMs": 120,
+            "inputDelayMs": 1.1000000000931323
+          },
+          {
+            "name": "keydown",
+            "durationMs": 120,
+            "inputDelayMs": 2.599999999627471
+          },
+          {
+            "name": "keypress",
+            "durationMs": 120,
+            "inputDelayMs": 3.5
+          },
+          {
+            "name": "keyup",
+            "durationMs": 96,
+            "inputDelayMs": 1.599999999627471
+          },
+          {
+            "name": "keydown",
+            "durationMs": 96,
+            "inputDelayMs": 2.7000000001862645
+          },
+          {
+            "name": "keypress",
+            "durationMs": 96,
+            "inputDelayMs": 3.7000000001862645
+          },
+          {
+            "name": "keyup",
+            "durationMs": 72,
+            "inputDelayMs": 1.2999999998137355
+          },
+          {
+            "name": "keydown",
+            "durationMs": 64,
+            "inputDelayMs": 0.2999999998137355
+          },
+          {
+            "name": "keypress",
+            "durationMs": 64,
+            "inputDelayMs": 0.39999999990686774
+          },
+          {
+            "name": "keyup",
+            "durationMs": 72,
+            "inputDelayMs": 0.599999999627471
+          },
+          {
+            "name": "keydown",
+            "durationMs": 72,
+            "inputDelayMs": 0.19999999972060323
+          },
+          {
+            "name": "keypress",
+            "durationMs": 72,
+            "inputDelayMs": 0.5
+          },
+          {
+            "name": "keyup",
+            "durationMs": 88,
+            "inputDelayMs": 0.6000000000931323
+          },
+          {
+            "name": "keydown",
+            "durationMs": 88,
+            "inputDelayMs": 1
+          },
+          {
+            "name": "keypress",
+            "durationMs": 88,
+            "inputDelayMs": 2.099999999627471
+          },
+          {
+            "name": "keyup",
+            "durationMs": 64,
+            "inputDelayMs": 0.2999999998137355
+          },
+          {
+            "name": "keydown",
+            "durationMs": 96,
+            "inputDelayMs": 6.2999999998137355
+          },
+          {
+            "name": "keypress",
+            "durationMs": 96,
+            "inputDelayMs": 7
+          },
+          {
+            "name": "keyup",
+            "durationMs": 96,
+            "inputDelayMs": 6.199999999720603
+          },
+          {
+            "name": "keydown",
+            "durationMs": 88,
+            "inputDelayMs": 1.8000000002793968
+          },
+          {
+            "name": "keypress",
+            "durationMs": 88,
+            "inputDelayMs": 3
+          },
+          {
+            "name": "keyup",
+            "durationMs": 112,
+            "inputDelayMs": 0.5
+          },
+          {
+            "name": "keydown",
+            "durationMs": 112,
+            "inputDelayMs": 0.8999999999068677
+          },
+          {
+            "name": "keypress",
+            "durationMs": 112,
+            "inputDelayMs": 1.8999999999068677
+          },
+          {
+            "name": "keyup",
+            "durationMs": 104,
+            "inputDelayMs": 0.7999999998137355
+          },
+          {
+            "name": "keydown",
+            "durationMs": 104,
+            "inputDelayMs": 0.8000000002793968
+          },
+          {
+            "name": "keypress",
+            "durationMs": 104,
+            "inputDelayMs": 1.3000000002793968
+          },
+          {
+            "name": "keyup",
+            "durationMs": 80,
+            "inputDelayMs": 0.7000000001862645
+          },
+          {
+            "name": "keydown",
+            "durationMs": 80,
+            "inputDelayMs": 0.7000000001862645
+          },
+          {
+            "name": "keypress",
+            "durationMs": 80,
+            "inputDelayMs": 1.1000000000931323
+          },
+          {
+            "name": "keyup",
+            "durationMs": 56,
+            "inputDelayMs": 1
+          },
+          {
+            "name": "keydown",
+            "durationMs": 72,
+            "inputDelayMs": 17.600000000093132
+          },
+          {
+            "name": "keypress",
+            "durationMs": 72,
+            "inputDelayMs": 17.800000000279397
+          },
+          {
+            "name": "keyup",
+            "durationMs": 80,
+            "inputDelayMs": 1
+          },
+          {
+            "name": "keydown",
+            "durationMs": 72,
+            "inputDelayMs": 9.799999999813735
+          },
+          {
+            "name": "keypress",
+            "durationMs": 72,
+            "inputDelayMs": 11.299999999813735
+          },
+          {
+            "name": "keyup",
+            "durationMs": 80,
+            "inputDelayMs": 1.3999999999068677
+          },
+          {
+            "name": "keydown",
+            "durationMs": 80,
+            "inputDelayMs": 0.6000000000931323
+          },
+          {
+            "name": "keypress",
+            "durationMs": 80,
+            "inputDelayMs": 0.6000000000931323
+          },
+          {
+            "name": "keyup",
+            "durationMs": 64,
+            "inputDelayMs": 0.8000000002793968
+          },
+          {
+            "name": "keydown",
+            "durationMs": 64,
+            "inputDelayMs": 1.5
+          },
+          {
+            "name": "keypress",
+            "durationMs": 64,
+            "inputDelayMs": 4.2000000001862645
+          },
+          {
+            "name": "keyup",
+            "durationMs": 40,
+            "inputDelayMs": 3.599999999627471
+          },
+          {
+            "name": "keydown",
+            "durationMs": 40,
+            "inputDelayMs": 0.39999999990686774
+          },
+          {
+            "name": "keypress",
+            "durationMs": 40,
+            "inputDelayMs": 0.39999999990686774
+          },
+          {
+            "name": "keyup",
+            "durationMs": 128,
+            "inputDelayMs": 0.39999999990686774
+          },
+          {
+            "name": "keydown",
+            "durationMs": 120,
+            "inputDelayMs": 0.3000000002793968
+          },
+          {
+            "name": "keypress",
+            "durationMs": 120,
+            "inputDelayMs": 0.3000000002793968
+          },
+          {
+            "name": "keyup",
+            "durationMs": 88,
+            "inputDelayMs": 1.6999999997206032
+          },
+          {
+            "name": "keydown",
+            "durationMs": 88,
+            "inputDelayMs": 8.800000000279397
+          },
+          {
+            "name": "keypress",
+            "durationMs": 88,
+            "inputDelayMs": 8.899999999906868
+          },
+          {
+            "name": "keyup",
+            "durationMs": 40,
+            "inputDelayMs": 1.1000000000931323
+          }
+        ],
+        "overflow": false
+      },
+      "requests": [
+        {
+          "path": "/login",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/media/797e433ab948586e-s.p.0r6juujl39pe6.woff2",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/media/caa3a2e1cccd8315-s.p.0wgildi0cnwt9.woff2",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/2qp4vg9jc6yao.css",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/02k_8gi7tq3ho.css",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/310vm2bl3xxpt.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/08nd1v21mbaqq.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/3hdj40qmts5sf.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/3ntq52ar-byrb.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/0paxexg6-m0de.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/turbopack-293l5ssblkoa1.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/3925hv6dknyc8.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/14mrh2-p_w84d.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/2r9gq3z9hyp7v.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/3hyrpiq4hy-yw.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/media/bbc41e54d2fcbd21-s.1rgnod-3esatf.woff2",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/media/7178b3e590c64307-s.21jp631_3pja2.woff2",
+          "method": "GET"
+        }
+      ],
+      "failures": [],
+      "pageErrors": 0
+    },
+    {
+      "path": "/login",
+      "finalPath": "/login",
+      "reducedMotion": "reduce",
+      "repeat": 1,
+      "status": 200,
+      "navigation": {
+        "lcpMs": 1964,
+        "cls": 0,
+        "fcpMs": 1484,
+        "ttfbMs": 6.600000000093132,
+        "jsBytes": 161206,
+        "jsRequests": 10,
+        "overflow": false
+      },
+      "interactions": [
+        "Focus and type email; no submit"
+      ],
+      "interactionLab": {
+        "lcpMs": 1964,
+        "cls": 0,
+        "longTasks": [
+          93,
+          313,
+          117,
+          134,
+          51
+        ],
+        "events": [
+          {
+            "name": "pointerdown",
+            "durationMs": 16,
+            "inputDelayMs": 10
+          },
+          {
+            "name": "pointerup",
+            "durationMs": 16,
+            "inputDelayMs": 17.699999999720603
+          },
+          {
+            "name": "pointerdown",
+            "durationMs": 16,
+            "inputDelayMs": 10
+          },
+          {
+            "name": "click",
+            "durationMs": 48,
+            "inputDelayMs": 26.699999999720603
+          },
+          {
+            "name": "keydown",
+            "durationMs": 40,
+            "inputDelayMs": 3.7000000001862645
+          },
+          {
+            "name": "keypress",
+            "durationMs": 40,
+            "inputDelayMs": 4.100000000093132
+          },
+          {
+            "name": "keydown",
+            "durationMs": 32,
+            "inputDelayMs": 0.5
+          },
+          {
+            "name": "keypress",
+            "durationMs": 32,
+            "inputDelayMs": 0.6999999997206032
+          },
+          {
+            "name": "keydown",
+            "durationMs": 56,
+            "inputDelayMs": 0.20000000018626451
+          },
+          {
+            "name": "keypress",
+            "durationMs": 56,
+            "inputDelayMs": 0.6000000000931323
+          },
+          {
+            "name": "keydown",
+            "durationMs": 32,
+            "inputDelayMs": 1.2000000001862645
+          },
+          {
+            "name": "keypress",
+            "durationMs": 32,
+            "inputDelayMs": 2
+          },
+          {
+            "name": "keydown",
+            "durationMs": 72,
+            "inputDelayMs": 0.6999999997206032
+          },
+          {
+            "name": "keypress",
+            "durationMs": 72,
+            "inputDelayMs": 1.5
+          },
+          {
+            "name": "keydown",
+            "durationMs": 32,
+            "inputDelayMs": 3.3999999999068677
+          },
+          {
+            "name": "keypress",
+            "durationMs": 32,
+            "inputDelayMs": 3.5
+          },
+          {
+            "name": "keydown",
+            "durationMs": 40,
+            "inputDelayMs": 1.2000000001862645
+          },
+          {
+            "name": "keypress",
+            "durationMs": 40,
+            "inputDelayMs": 5.7000000001862645
+          },
+          {
+            "name": "keydown",
+            "durationMs": 32,
+            "inputDelayMs": 1.2000000001862645
+          },
+          {
+            "name": "keypress",
+            "durationMs": 32,
+            "inputDelayMs": 1.3000000002793968
+          },
+          {
+            "name": "keydown",
+            "durationMs": 32,
+            "inputDelayMs": 0.6000000000931323
+          },
+          {
+            "name": "keypress",
+            "durationMs": 32,
+            "inputDelayMs": 1.6000000000931323
+          },
+          {
+            "name": "keydown",
+            "durationMs": 40,
+            "inputDelayMs": 0.7000000001862645
+          },
+          {
+            "name": "keypress",
+            "durationMs": 40,
+            "inputDelayMs": 1.3999999999068677
+          },
+          {
+            "name": "keydown",
+            "durationMs": 40,
+            "inputDelayMs": 0.6000000000931323
+          },
+          {
+            "name": "keypress",
+            "durationMs": 40,
+            "inputDelayMs": 0.7000000001862645
+          },
+          {
+            "name": "keydown",
+            "durationMs": 32,
+            "inputDelayMs": 1.099999999627471
+          },
+          {
+            "name": "keypress",
+            "durationMs": 32,
+            "inputDelayMs": 1.099999999627471
+          },
+          {
+            "name": "keydown",
+            "durationMs": 24,
+            "inputDelayMs": 0.599999999627471
+          },
+          {
+            "name": "keypress",
+            "durationMs": 24,
+            "inputDelayMs": 0.6999999997206032
+          },
+          {
+            "name": "keydown",
+            "durationMs": 24,
+            "inputDelayMs": 0.2999999998137355
+          },
+          {
+            "name": "keypress",
+            "durationMs": 24,
+            "inputDelayMs": 0.39999999990686774
+          },
+          {
+            "name": "keydown",
+            "durationMs": 32,
+            "inputDelayMs": 0.3000000002793968
+          },
+          {
+            "name": "keypress",
+            "durationMs": 32,
+            "inputDelayMs": 0.40000000037252903
+          },
+          {
+            "name": "keydown",
+            "durationMs": 40,
+            "inputDelayMs": 0.39999999990686774
+          },
+          {
+            "name": "keypress",
+            "durationMs": 40,
+            "inputDelayMs": 0.599999999627471
+          },
+          {
+            "name": "keydown",
+            "durationMs": 64,
+            "inputDelayMs": 0.6000000000931323
+          },
+          {
+            "name": "keypress",
+            "durationMs": 64,
+            "inputDelayMs": 0.7000000001862645
+          },
+          {
+            "name": "keydown",
+            "durationMs": 32,
+            "inputDelayMs": 1.1000000000931323
+          },
+          {
+            "name": "keypress",
+            "durationMs": 32,
+            "inputDelayMs": 1.5
+          },
+          {
+            "name": "keydown",
+            "durationMs": 32,
+            "inputDelayMs": 0.3000000002793968
+          },
+          {
+            "name": "keypress",
+            "durationMs": 32,
+            "inputDelayMs": 0.5
+          }
+        ],
+        "overflow": false
+      },
+      "requests": [
+        {
+          "path": "/login",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/media/797e433ab948586e-s.p.0r6juujl39pe6.woff2",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/media/caa3a2e1cccd8315-s.p.0wgildi0cnwt9.woff2",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/2qp4vg9jc6yao.css",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/02k_8gi7tq3ho.css",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/310vm2bl3xxpt.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/08nd1v21mbaqq.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/3hdj40qmts5sf.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/3ntq52ar-byrb.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/0paxexg6-m0de.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/turbopack-293l5ssblkoa1.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/3925hv6dknyc8.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/14mrh2-p_w84d.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/2r9gq3z9hyp7v.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/3hyrpiq4hy-yw.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/media/bbc41e54d2fcbd21-s.1rgnod-3esatf.woff2",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/media/7178b3e590c64307-s.21jp631_3pja2.woff2",
+          "method": "GET"
+        }
+      ],
+      "failures": [],
+      "pageErrors": 0
+    },
+    {
+      "path": "/login",
+      "finalPath": "/login",
+      "reducedMotion": "reduce",
+      "repeat": 2,
+      "status": 200,
+      "navigation": {
+        "lcpMs": 2136,
+        "cls": 0,
+        "fcpMs": 1556,
+        "ttfbMs": 25.299999999813735,
+        "jsBytes": 161206,
+        "jsRequests": 10,
+        "overflow": false
+      },
+      "interactions": [
+        "Focus and type email; no submit"
+      ],
+      "interactionLab": {
+        "lcpMs": 2136,
+        "cls": 0,
+        "longTasks": [
+          115,
+          563,
+          334,
+          248,
+          97
+        ],
+        "events": [
+          {
+            "name": "pointerdown",
+            "durationMs": 24,
+            "inputDelayMs": 15
+          },
+          {
+            "name": "pointerup",
+            "durationMs": 24,
+            "inputDelayMs": 23.299999999813735
+          },
+          {
+            "name": "pointerdown",
+            "durationMs": 24,
+            "inputDelayMs": 15
+          },
+          {
+            "name": "click",
+            "durationMs": 80,
+            "inputDelayMs": 41.799999999813735
+          },
+          {
+            "name": "keydown",
+            "durationMs": 64,
+            "inputDelayMs": 3.8999999999068677
+          },
+          {
+            "name": "keypress",
+            "durationMs": 64,
+            "inputDelayMs": 6.2999999998137355
+          },
+          {
+            "name": "keydown",
+            "durationMs": 40,
+            "inputDelayMs": 1.2000000001862645
+          },
+          {
+            "name": "keypress",
+            "durationMs": 40,
+            "inputDelayMs": 1.8999999999068677
+          },
+          {
+            "name": "keydown",
+            "durationMs": 32,
+            "inputDelayMs": 0.39999999990686774
+          },
+          {
+            "name": "keypress",
+            "durationMs": 32,
+            "inputDelayMs": 0.39999999990686774
+          },
+          {
+            "name": "keydown",
+            "durationMs": 32,
+            "inputDelayMs": 0.39999999990686774
+          },
+          {
+            "name": "keypress",
+            "durationMs": 32,
+            "inputDelayMs": 0.5
+          },
+          {
+            "name": "keydown",
+            "durationMs": 40,
+            "inputDelayMs": 0.19999999972060323
+          },
+          {
+            "name": "keypress",
+            "durationMs": 40,
+            "inputDelayMs": 0.2999999998137355
+          },
+          {
+            "name": "keydown",
+            "durationMs": 56,
+            "inputDelayMs": 0.5
+          },
+          {
+            "name": "keypress",
+            "durationMs": 56,
+            "inputDelayMs": 0.5
+          },
+          {
+            "name": "keydown",
+            "durationMs": 40,
+            "inputDelayMs": 1.1999999997206032
+          },
+          {
+            "name": "keypress",
+            "durationMs": 40,
+            "inputDelayMs": 1.1999999997206032
+          },
+          {
+            "name": "keydown",
+            "durationMs": 40,
+            "inputDelayMs": 0.8999999999068677
+          },
+          {
+            "name": "keypress",
+            "durationMs": 40,
+            "inputDelayMs": 1.1999999997206032
+          },
+          {
+            "name": "keydown",
+            "durationMs": 24,
+            "inputDelayMs": 0.39999999990686774
+          },
+          {
+            "name": "keypress",
+            "durationMs": 24,
+            "inputDelayMs": 0.39999999990686774
+          },
+          {
+            "name": "keydown",
+            "durationMs": 32,
+            "inputDelayMs": 0.39999999990686774
+          },
+          {
+            "name": "keypress",
+            "durationMs": 32,
+            "inputDelayMs": 0.8000000002793968
+          },
+          {
+            "name": "keydown",
+            "durationMs": 32,
+            "inputDelayMs": 0.10000000009313226
+          },
+          {
+            "name": "keypress",
+            "durationMs": 32,
+            "inputDelayMs": 2.1000000000931323
+          },
+          {
+            "name": "keydown",
+            "durationMs": 48,
+            "inputDelayMs": 3.6999999997206032
+          },
+          {
+            "name": "keypress",
+            "durationMs": 48,
+            "inputDelayMs": 4.899999999906868
+          },
+          {
+            "name": "keydown",
+            "durationMs": 40,
+            "inputDelayMs": 4.600000000093132
+          },
+          {
+            "name": "keypress",
+            "durationMs": 40,
+            "inputDelayMs": 5.2999999998137355
+          },
+          {
+            "name": "keydown",
+            "durationMs": 40,
+            "inputDelayMs": 0.5
+          },
+          {
+            "name": "keypress",
+            "durationMs": 40,
+            "inputDelayMs": 0.6000000000931323
+          },
+          {
+            "name": "keydown",
+            "durationMs": 32,
+            "inputDelayMs": 0.19999999972060323
+          },
+          {
+            "name": "keypress",
+            "durationMs": 32,
+            "inputDelayMs": 0.599999999627471
+          },
+          {
+            "name": "keydown",
+            "durationMs": 32,
+            "inputDelayMs": 0.599999999627471
+          },
+          {
+            "name": "keypress",
+            "durationMs": 32,
+            "inputDelayMs": 0.7999999998137355
+          },
+          {
+            "name": "keydown",
+            "durationMs": 32,
+            "inputDelayMs": 0.6000000000931323
+          },
+          {
+            "name": "keypress",
+            "durationMs": 32,
+            "inputDelayMs": 0.6000000000931323
+          },
+          {
+            "name": "keydown",
+            "durationMs": 32,
+            "inputDelayMs": 0.5
+          },
+          {
+            "name": "keypress",
+            "durationMs": 32,
+            "inputDelayMs": 5.600000000093132
+          },
+          {
+            "name": "keydown",
+            "durationMs": 32,
+            "inputDelayMs": 3
+          },
+          {
+            "name": "keypress",
+            "durationMs": 32,
+            "inputDelayMs": 3
+          }
+        ],
+        "overflow": false
+      },
+      "requests": [
+        {
+          "path": "/login",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/media/797e433ab948586e-s.p.0r6juujl39pe6.woff2",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/media/caa3a2e1cccd8315-s.p.0wgildi0cnwt9.woff2",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/2qp4vg9jc6yao.css",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/02k_8gi7tq3ho.css",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/310vm2bl3xxpt.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/08nd1v21mbaqq.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/3hdj40qmts5sf.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/3ntq52ar-byrb.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/0paxexg6-m0de.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/turbopack-293l5ssblkoa1.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/3925hv6dknyc8.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/14mrh2-p_w84d.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/2r9gq3z9hyp7v.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/3hyrpiq4hy-yw.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/media/bbc41e54d2fcbd21-s.1rgnod-3esatf.woff2",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/media/7178b3e590c64307-s.21jp631_3pja2.woff2",
+          "method": "GET"
+        }
+      ],
+      "failures": [],
+      "pageErrors": 0
+    },
+    {
+      "path": "/login",
+      "finalPath": "/login",
+      "reducedMotion": "reduce",
+      "repeat": 3,
+      "status": 200,
+      "navigation": {
+        "lcpMs": 2016,
+        "cls": 0,
+        "fcpMs": 1592,
+        "ttfbMs": 7.2999999998137355,
+        "jsBytes": 161206,
+        "jsRequests": 10,
+        "overflow": false
+      },
+      "interactions": [
+        "Focus and type email; no submit"
+      ],
+      "interactionLab": {
+        "lcpMs": 2016,
+        "cls": 0,
+        "longTasks": [
+          225,
+          289,
+          85,
+          75
+        ],
+        "events": [
+          {
+            "name": "pointerdown",
+            "durationMs": 16,
+            "inputDelayMs": 11.599999999627471
+          },
+          {
+            "name": "pointerup",
+            "durationMs": 16,
+            "inputDelayMs": 15.5
+          },
+          {
+            "name": "pointerdown",
+            "durationMs": 16,
+            "inputDelayMs": 11.599999999627471
+          },
+          {
+            "name": "click",
+            "durationMs": 56,
+            "inputDelayMs": 27.199999999720603
+          },
+          {
+            "name": "keydown",
+            "durationMs": 56,
+            "inputDelayMs": 0.8999999999068677
+          },
+          {
+            "name": "keypress",
+            "durationMs": 56,
+            "inputDelayMs": 2.3999999999068677
+          },
+          {
+            "name": "keydown",
+            "durationMs": 40,
+            "inputDelayMs": 1.7999999998137355
+          },
+          {
+            "name": "keypress",
+            "durationMs": 40,
+            "inputDelayMs": 2.5
+          },
+          {
+            "name": "keydown",
+            "durationMs": 32,
+            "inputDelayMs": 0.5
+          },
+          {
+            "name": "keypress",
+            "durationMs": 32,
+            "inputDelayMs": 0.6000000000931323
+          },
+          {
+            "name": "keydown",
+            "durationMs": 24,
+            "inputDelayMs": 0.2999999998137355
+          },
+          {
+            "name": "keypress",
+            "durationMs": 24,
+            "inputDelayMs": 0.2999999998137355
+          },
+          {
+            "name": "keydown",
+            "durationMs": 48,
+            "inputDelayMs": 0.5
+          },
+          {
+            "name": "keypress",
+            "durationMs": 48,
+            "inputDelayMs": 0.5
+          },
+          {
+            "name": "keydown",
+            "durationMs": 24,
+            "inputDelayMs": 1.1999999997206032
+          },
+          {
+            "name": "keypress",
+            "durationMs": 24,
+            "inputDelayMs": 1.2999999998137355
+          },
+          {
+            "name": "keydown",
+            "durationMs": 32,
+            "inputDelayMs": 0.40000000037252903
+          },
+          {
+            "name": "keypress",
+            "durationMs": 32,
+            "inputDelayMs": 0.8000000002793968
+          },
+          {
+            "name": "keydown",
+            "durationMs": 24,
+            "inputDelayMs": 0.3000000002793968
+          },
+          {
+            "name": "keypress",
+            "durationMs": 24,
+            "inputDelayMs": 0.39999999990686774
+          },
+          {
+            "name": "keyup",
+            "durationMs": 16,
+            "inputDelayMs": 16.399999999906868
+          },
+          {
+            "name": "keydown",
+            "durationMs": 40,
+            "inputDelayMs": 1.6000000000931323
+          },
+          {
+            "name": "keypress",
+            "durationMs": 40,
+            "inputDelayMs": 2.8999999999068677
+          },
+          {
+            "name": "keydown",
+            "durationMs": 56,
+            "inputDelayMs": 1.5
+          },
+          {
+            "name": "keypress",
+            "durationMs": 56,
+            "inputDelayMs": 1.7000000001862645
+          },
+          {
+            "name": "keydown",
+            "durationMs": 24,
+            "inputDelayMs": 0.7000000001862645
+          },
+          {
+            "name": "keypress",
+            "durationMs": 24,
+            "inputDelayMs": 0.8000000002793968
+          },
+          {
+            "name": "keydown",
+            "durationMs": 32,
+            "inputDelayMs": 0.39999999990686774
+          },
+          {
+            "name": "keypress",
+            "durationMs": 32,
+            "inputDelayMs": 0.5
+          },
+          {
+            "name": "keydown",
+            "durationMs": 32,
+            "inputDelayMs": 0.19999999972060323
+          },
+          {
+            "name": "keypress",
+            "durationMs": 32,
+            "inputDelayMs": 0.2999999998137355
+          },
+          {
+            "name": "keydown",
+            "durationMs": 32,
+            "inputDelayMs": 1.6000000000931323
+          },
+          {
+            "name": "keypress",
+            "durationMs": 32,
+            "inputDelayMs": 2.3999999999068677
+          },
+          {
+            "name": "keydown",
+            "durationMs": 24,
+            "inputDelayMs": 0.6999999997206032
+          },
+          {
+            "name": "keypress",
+            "durationMs": 24,
+            "inputDelayMs": 0.6999999997206032
+          },
+          {
+            "name": "keydown",
+            "durationMs": 24,
+            "inputDelayMs": 0.6000000000931323
+          },
+          {
+            "name": "keypress",
+            "durationMs": 24,
+            "inputDelayMs": 1.1000000000931323
+          },
+          {
+            "name": "keydown",
+            "durationMs": 32,
+            "inputDelayMs": 2.5
+          },
+          {
+            "name": "keypress",
+            "durationMs": 32,
+            "inputDelayMs": 2.6000000000931323
+          },
+          {
+            "name": "keydown",
+            "durationMs": 24,
+            "inputDelayMs": 0.10000000009313226
+          },
+          {
+            "name": "keypress",
+            "durationMs": 24,
+            "inputDelayMs": 0.20000000018626451
+          },
+          {
+            "name": "keydown",
+            "durationMs": 24,
+            "inputDelayMs": 0.39999999990686774
+          },
+          {
+            "name": "keypress",
+            "durationMs": 24,
+            "inputDelayMs": 0.5
+          }
+        ],
+        "overflow": false
+      },
+      "requests": [
+        {
+          "path": "/login",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/media/797e433ab948586e-s.p.0r6juujl39pe6.woff2",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/media/caa3a2e1cccd8315-s.p.0wgildi0cnwt9.woff2",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/2qp4vg9jc6yao.css",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/02k_8gi7tq3ho.css",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/310vm2bl3xxpt.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/08nd1v21mbaqq.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/3hdj40qmts5sf.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/3ntq52ar-byrb.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/0paxexg6-m0de.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/turbopack-293l5ssblkoa1.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/3925hv6dknyc8.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/14mrh2-p_w84d.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/2r9gq3z9hyp7v.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/chunks/3hyrpiq4hy-yw.js",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/media/bbc41e54d2fcbd21-s.1rgnod-3esatf.woff2",
+          "method": "GET"
+        },
+        {
+          "path": "/_next/static/media/7178b3e590c64307-s.21jp631_3pja2.woff2",
+          "method": "GET"
+        }
+      ],
+      "failures": [],
+      "pageErrors": 0
+    }
+  ]
+}

@@ -1,4 +1,5 @@
 "use client";
+import { useSessionDisplayPolling } from "@/hooks/useDisplayPolling";
 
 import { useState } from "react";
 import Link from "next/link";
@@ -144,6 +145,7 @@ export default function FnoStockOverview({
   const stocks = catalog.isError ? [] : catalog.data || [];
   const symbols = stocks.map((i) => i.symbol);
   const stream = useMultiSymbolQuotes(active ? symbols : []);
+  const aggregateInterval = useSessionDisplayPolling(20000);
   const quotes = useQuery({
     queryKey: ["fno-equities", "quotes", symbols],
     queryFn: async ({ signal }) => {
@@ -169,7 +171,7 @@ export default function FnoStockOverview({
       return result;
     },
     enabled: active && symbols.length > 0,
-    refetchInterval: active ? 20000 : false,
+    refetchInterval: active ? aggregateInterval : false,
     retry: false,
   });
 

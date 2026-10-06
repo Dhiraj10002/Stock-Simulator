@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { test, expect, type Page, type WebSocketRoute } from "@playwright/test";
 const token = `test.${Buffer.from(JSON.stringify({ user_id: "stock-ui-trader" })).toString("base64url")}.test`;
 async function setup(
@@ -12,6 +13,7 @@ async function setup(
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   const posts: Record<string, unknown>[] = [];
+  const requests: string[] = [];
   let socket: WebSocketRoute | undefined;
   let connections = 0;
   const messages: { action: string; symbols?: string[] }[] = [];
@@ -70,6 +72,7 @@ async function setup(
       await route.fulfill({ status: 204, headers });
       return;
     }
+    requests.push(path);
     let data: unknown = [];
     if (path === "/auth/me")
       data = {
@@ -182,12 +185,13 @@ async function setup(
   return {
     errors,
     posts,
+    requests,
     messages,
     connectionCount: () => connections,
     disconnect: () => socket?.close({ code: 1012, reason: "Fixture reconnect" }),
-    tick: (price: number) =>
+    tick: (price: number, timestamp = new Date().toISOString()) =>
       socket?.send(
-        JSON.stringify({ type: "quote", quote: quote("RELIANCE-EQ", price) }),
+        JSON.stringify({ type: "quote", quote: { ...quote("RELIANCE-EQ", price), updated_at: timestamp } }),
       ),
   };
 }
@@ -365,3 +369,105 @@ for (const uncertain of [false, true])
     ).not.toBeChecked();
     expect(control.errors).toEqual([]);
   });
+
+// Browser clock advances every timer; HTTP responses are awaited between ticks.
+// This measures request counts in a controlled window, not network latency.
+test("display polling profile: healthy stream then silent stall", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.clock.install();
+  const control = await setup(page);
+  await expect.poll(() => control.messages.some(m => m.symbols?.includes("RELIANCE-EQ"))).toBe(true);
+  await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000));
+  const count = (path: string) => control.requests.filter(p => p === path).length;
+  const quotePath = "/market/quotes/RELIANCE-EQ";
+  const initial = count(quotePath);
+  let ticks = 0;
+  const tick = async () => {
+    const price = 148000 + ticks++ * 100;
+    control.tick(price, await page.evaluate(() => new Date().toISOString()));
+    await expect(page.locator('header[aria-label="Stock identity"]').getByText(`₹${(price / 100).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`, { exact: true })).toBeVisible();
+  };
+  await tick();
+  for (let i = 0; i < 6; i++) {
+    await page.clock.runFor(5000);
+    await tick();
+  }
+  const healthyDisplayRequests = count(quotePath) - initial;
+  expect(healthyDisplayRequests).toBe(0);
+  const previewRequests = count("/orders/preview");
+  await page.clock.runFor(35000);
+  await expect.poll(() => count(quotePath)).toBeGreaterThan(initial + healthyDisplayRequests);
+  const stalledDisplayRequests = count(quotePath) - initial - healthyDisplayRequests;
+  // A resumed stream stops display timers again, while account invalidation
+  // remains immediate after a successful order POST.
+  await tick();
+  const walletBefore = count("/wallet");
+  await page.getByRole("checkbox", { name: /Confirm BUY/ }).check();
+  await page.getByRole("button", { name: "Place paper order", exact: true }).click();
+  await expect.poll(() => count("/wallet")).toBeGreaterThan(walletBefore);
+  expect(control.posts).toHaveLength(1);
+  if (process.env.POLLING_PROFILE_OUTPUT) {
+    mkdirSync(process.env.POLLING_PROFILE_OUTPUT, { recursive: true });
+    writeFileSync(join(process.env.POLLING_PROFILE_OUTPUT, "polling.json"), JSON.stringify({ conditions: "Local production, mobile 390x844; real browser with API/WS fixtures and controlled clock. 30s stream ticks each 5s, then 35s silent socket.", healthyDisplayRequests, stalledDisplayRequests, previewRequests, errors: control.errors }, null, 2) + "\n");
+  }
+  expect(previewRequests).toBeGreaterThan(1);
+  expect(control.errors).toEqual([]);
+});
+
+test("closed-session display uses a minute cadence while account queries remain authoritative", async ({ page }) => {
+  await page.clock.install();
+  const control = await setup(page, { closed: true });
+  await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000));
+  const count = () => control.requests.filter(path => path === "/market/quotes/RELIANCE-EQ").length;
+  const initial = count();
+  for (let i = 0; i < 6; i++) await page.clock.runFor(5000);
+  expect(count()).toBe(initial);
+  for (let i = 0; i < 8; i++) await page.clock.runFor(5000);
+  await expect.poll(count).toBeGreaterThan(initial);
+  await expect(page.getByRole("button", { name: "Place paper order", exact: true })).toBeDisabled();
+  expect(control.requests.filter(path => path === "/wallet").length).toBeGreaterThan(1);
+});
+
+test("socket disconnect restores display polling and reconnect cannot reuse earlier stream health", async ({ page }) => {
+  await page.clock.install();
+  const control = await setup(page);
+  await expect.poll(() => control.messages.some(m => m.symbols?.includes("RELIANCE-EQ"))).toBe(true);
+  await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000));
+  control.tick(148000, await page.evaluate(() => new Date().toISOString()));
+  await expect(page.locator('header[aria-label="Stock identity"]').getByText("₹1,480.00", { exact: true })).toBeVisible();
+  const initial = control.requests.filter(path => path === "/market/quotes/RELIANCE-EQ").length;
+  control.disconnect();
+  for (let i = 0; i < 3; i++) await page.clock.runFor(5000);
+  await expect.poll(() => control.requests.filter(path => path === "/market/quotes/RELIANCE-EQ").length).toBeGreaterThan(initial);
+  expect(control.connectionCount()).toBe(2);
+});
+
+test("mobile touch ticket and chart stay usable under CPU throttling", async ({ browser }) => {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  try {
+    const page = await context.newPage();
+    await page.addInitScript(() => {
+      (window as unknown as { mobileEvents: number[] }).mobileEvents = [];
+      new PerformanceObserver(list => {
+        for (const entry of list.getEntries()) if ((entry as PerformanceEventTiming & { interactionId?: number }).interactionId) (window as unknown as { mobileEvents: number[] }).mobileEvents.push(entry.duration);
+      }).observe({ type: "event", buffered: true, durationThreshold: 16 } as PerformanceObserverInit);
+    });
+    const cdp = await context.newCDPSession(page);
+    await cdp.send("Emulation.setCPUThrottlingRate", { rate: 4 });
+    const control = await setup(page);
+    await page.getByRole("button", { name: "1D", exact: true }).tap();
+    const quantity = page.getByRole("spinbutton", { name: "Quantity", exact: true });
+    await quantity.tap();
+    await quantity.fill("2");
+    await page.getByRole("checkbox", { name: /Confirm BUY/ }).tap();
+    await expect(page.getByRole("button", { name: "Place paper order", exact: true })).toBeEnabled();
+    expect(control.posts).toHaveLength(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+    if (process.env.MOBILE_PROFILE_OUTPUT) {
+      mkdirSync(process.env.MOBILE_PROFILE_OUTPUT, { recursive: true });
+      await page.screenshot({ path: join(process.env.MOBILE_PROFILE_OUTPUT, "stock-ticket-mobile.png"), fullPage: true });
+      writeFileSync(join(process.env.MOBILE_PROFILE_OUTPUT, "stock-interactions.json"), JSON.stringify({ conditions: "Local production mobile touch, CPU 4x, fixed REST/WS fixtures; chart timeframe, quantity edit, confirmation toggle; no order submitted. Scripted Event Timing, not field INP.", eventDurationsMs: await page.evaluate(() => (window as unknown as { mobileEvents: number[] }).mobileEvents), errors: control.errors }, null, 2) + "\n");
+    }
+    expect(control.errors).toEqual([]);
+  } finally { await context.close(); }
+});

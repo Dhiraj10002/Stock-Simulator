@@ -1,4 +1,5 @@
 "use client";
+import { useDisplayPolling } from "@/hooks/useDisplayPolling";
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -30,6 +31,7 @@ export default function IndicesTickerStrip() {
   }, []);
   const stream = useMultiSymbolQuotes(symbols);
   useTargetedSubscription(symbols);
+  const displayInterval = useDisplayPolling(symbols);
   const query = useQuery({
     queryKey: ["indices-strip"],
     queryFn: ({ signal }) =>
@@ -37,7 +39,7 @@ export default function IndicesTickerStrip() {
         `/market/quotes/batch?symbols=${encodeURIComponent(symbols.join(","))}`,
         AbortSignal.any([signal, AbortSignal.timeout(8000)]),
       ),
-    refetchInterval: 10000,
+    refetchInterval: displayInterval,
     retry: false,
   });
 

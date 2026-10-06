@@ -12,6 +12,8 @@ See [Original UI, lab measurements, screenshots and release acceptance checks](d
 
 See [Code cleanup and performance priorities](docs/code-cleanup-performance.md) for the unused-module audit, retained trading flows, homepage comparison, and the next optimizations to measure.
 
+See [Mobile profiling, display polling and standalone runtime](docs/mobile-polling-standalone.md) for stream-aware display fallback, repeatable mobile measurements and the smaller Docker runner. Run `npm run profile:mobile -- --url https://YOUR_FRONTEND_HOST` after deployment; local observations are not field INP.
+
 ---
 
 ## 🏛️ System Architecture
