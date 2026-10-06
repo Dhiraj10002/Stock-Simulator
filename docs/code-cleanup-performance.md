@@ -78,9 +78,9 @@ and deferred canvas requests after its settling period; it does not open auth.
 | Private account requests, all samples | 0 | 0 |
 | Mobile horizontal overflow | None | None |
 
-Median JavaScript downloaded fell by 5.2%. One cleanup sample ended
-before a deferred chunk completed and reports 10 requests/161,117 bytes; the
-other two report 11 requests/162,271 bytes. The three-sample LCP median increased,
+Median JavaScript downloaded fell by 5.2%. Cleanup samples reported
+10–11 JavaScript requests and 161,117–162,271 bytes within the measurement
+window; the table reports their medians. The three-sample LCP median increased,
 so this run does **not** demonstrate a load-time improvement. Baseline LCP ranged
 from 2,224–3,316 ms and cleanup from 2,336–3,776 ms. Repeated matched measurements
 and deployed field data are needed to assess load time and interaction smoothness.
