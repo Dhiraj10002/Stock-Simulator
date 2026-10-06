@@ -37,7 +37,21 @@ func sameDerivativeIdentity(prior, next model.Instrument) bool {
 			return true
 		}
 	}
-	return oldOK && newOK && oldStrike.Sign() > 0 && newStrike.Sign() > 0 && oldStrike.Cmp(newStrike) == 0
+	if !oldOK || !newOK || oldStrike.Sign() <= 0 || newStrike.Sign() <= 0 {
+		return false
+	}
+	if oldStrike.Cmp(newStrike) == 0 {
+		return true
+	}
+	// Legacy imports (e.g. mw-*) stored strikes in raw Angel paise (100x), while canonical storage is in rupees.
+	rat100 := big.NewRat(100, 1)
+	if new(big.Rat).Quo(oldStrike, rat100).Cmp(newStrike) == 0 {
+		return true
+	}
+	if new(big.Rat).Quo(newStrike, rat100).Cmp(oldStrike) == 0 {
+		return true
+	}
+	return false
 }
 
 func identityDecimal(raw string) (*big.Rat, bool) {
