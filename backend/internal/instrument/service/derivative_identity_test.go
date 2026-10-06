@@ -14,14 +14,14 @@ import (
 
 func TestDerivativeIdentityFormatting(t *testing.T) {
 	tests := []struct {
-		name		string
-		oldStrike	string
-		newStrike	string
-		oldExpiry	string
-		newExpiry	string
-		oldType		string
-		newType		string
-		want		bool
+		name      string
+		oldStrike string
+		newStrike string
+		oldExpiry string
+		newExpiry string
+		oldType   string
+		newType   string
+		want      bool
 	}{
 		{name: "legacy integer", oldStrike: "280.000000", newStrike: "280", want: true},
 		{name: "legacy decimal", oldStrike: "280.250000", newStrike: "280.25", want: true},
