@@ -1,4 +1,5 @@
 "use client";
+import { useDisplayPolling } from "@/hooks/useDisplayPolling";
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
@@ -159,6 +160,7 @@ function StockDesk({ symbol, token }: { symbol: string; token: string }) {
       : undefined;
   useTargetedSubscription(canonical || []);
   const wsQuote = useSymbolQuote(canonical || "");
+  const displayInterval = useDisplayPolling(canonical);
   const quoteQuery = useQuery({
     queryKey: ["stock-display-quote", canonical],
     queryFn: ({ signal }) =>
@@ -167,7 +169,7 @@ function StockDesk({ symbol, token }: { symbol: string; token: string }) {
         signal,
       ),
     enabled: !!canonical,
-    refetchInterval: 10000,
+    refetchInterval: displayInterval,
     retry: false,
   });
   const market = useQuery({

@@ -24,7 +24,7 @@ test("missing batch quotes do not produce per-symbol requests and can recover la
 });
 
 test("stale store quotes do not prevent a fresh batch request", () => {
-  useMarketStore.getState().updateQuote({
+  useMarketStore.getState().updateStreamQuote({
     symbol: "STALE_TEST", price_paise: 100, change_paise: 0, change_percent: 0,
     source: "angelone_live", updated_at: new Date(Date.now() - 60000).toISOString(),
   });
@@ -76,7 +76,7 @@ test("a late REST response cannot replace a newer stream tick", async (t) => {
     return Response.json({ success: true, data: { [symbol]: { symbol, price_paise: 10000, updated_at: oldTime, source: "angelone_live" } } });
   });
   const request = fetchBatchQuotes([symbol]);
-  useMarketStore.getState().updateQuote({ symbol, price_paise: 11000, updated_at: new Date().toISOString(), source: "angelone_live" });
+  useMarketStore.getState().updateStreamQuote({ symbol, price_paise: 11000, updated_at: new Date().toISOString(), source: "angelone_live" });
   release();
   const result = await request;
   assert.equal(result[symbol].price_paise, 11000);

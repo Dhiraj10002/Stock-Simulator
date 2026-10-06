@@ -24,6 +24,10 @@ Oracle Cloud Always Free VM
 3. **Neon PostgreSQL**: Managed serverless Postgres holding persistent tables (`users`, `wallets`, `orders`, `trades`, `positions`, `instruments`, etc.).
 4. **Upstash Redis**: Managed Redis cluster with TLS (`rediss://`) holding real-time quotes, OHLC history, and Pub/Sub channel `market:updates`.
 
+## Frontend runtime and mobile checks
+
+For self-hosted/Docker frontend deployments, the image uses Next.js standalone output and a non-root Node 22 runner. Public API/WS URLs must be supplied at build time. Vercel continues to use its normal Next.js build. See [standalone smoke checks and mobile profiling](mobile-polling-standalone.md) for commands, measured runtime-file sizes and live-host profiling after deployment.
+
 ## Local & Staging Single-Command Launch
 
 The entire platform (Next.js Frontend, Go Backend, Python Market Worker using the configured feed mode, and Python News Worker) can be launched locally or on staging with a single command:

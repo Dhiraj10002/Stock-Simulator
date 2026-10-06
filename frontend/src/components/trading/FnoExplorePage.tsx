@@ -1,4 +1,5 @@
 "use client";
+import { useDisplayPolling } from "@/hooks/useDisplayPolling";
 
 import { useEffect, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
@@ -271,6 +272,7 @@ export default function FnoExplorePage({
     : [];
   useTargetedSubscription(symbols);
   const stream = useMultiSymbolQuotes(symbols);
+  const displayInterval = useDisplayPolling(symbols);
   const quotes = useQuery({
     queryKey: ["fno-futures-quotes", symbols],
     queryFn: ({ signal }) =>
@@ -279,7 +281,7 @@ export default function FnoExplorePage({
         signal,
       ),
     enabled: active && symbols.length > 0,
-    refetchInterval: active ? 10000 : false,
+    refetchInterval: active ? displayInterval : false,
     retry: false,
   });
   const token = useAuthToken();

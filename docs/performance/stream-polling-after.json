@@ -1,0 +1,7 @@
+{
+  "conditions": "Local production, mobile 390x844; real browser with API/WS fixtures and controlled clock. 30s stream ticks each 5s, then 35s silent socket.",
+  "healthyDisplayRequests": 0,
+  "stalledDisplayRequests": 1,
+  "previewRequests": 7,
+  "errors": []
+}

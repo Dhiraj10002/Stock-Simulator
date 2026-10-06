@@ -1,4 +1,5 @@
 "use client";
+import { useSessionDisplayPolling } from "@/hooks/useDisplayPolling";
 
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -45,6 +46,7 @@ export default function TopIndexFutures({
   const symbols = useMemo(() => indices.map((i) => i.symbol), [indices]);
   const token = useAuthToken();
   const stream = useMultiSymbolQuotes(active ? symbols : []);
+  const aggregateInterval = useSessionDisplayPolling(20000);
   const query = useQuery({
     queryKey: ["top-index-futures-quotes", symbols],
     queryFn: async ({ signal }) => {
@@ -70,7 +72,7 @@ export default function TopIndexFutures({
       return result;
     },
     enabled: active && symbols.length > 0,
-    refetchInterval: active ? 20000 : false,
+    refetchInterval: active ? aggregateInterval : false,
     retry: false,
   });
   const quotes: Record<string, Quote | undefined> = {};

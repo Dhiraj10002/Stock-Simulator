@@ -9,7 +9,9 @@
     "lint": "eslint",
     "test": "node --import tsx --test src/lib/*.test.*",
     "test:e2e": "playwright test",
-    "measure:home": "node scripts/measure-homepage.mjs"
+    "measure:home": "node scripts/measure-homepage.mjs",
+    "profile:mobile": "node scripts/profile-mobile.mjs",
+    "test:standalone": "node scripts/smoke-standalone.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.103.1",

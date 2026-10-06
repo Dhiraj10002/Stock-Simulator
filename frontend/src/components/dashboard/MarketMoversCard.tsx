@@ -1,4 +1,5 @@
 "use client";
+import { useSessionDisplayPolling } from "@/hooks/useDisplayPolling";
 
 import React, { useState } from "react";
 import Link from "next/link";
@@ -51,10 +52,11 @@ export default function MarketMoversCard({
   const marketStatus = useMarketStore((s) => s.marketStatus);
   const [activeTab, setActiveTab] = useState<TabType>("gainers");
 
+  const aggregateInterval = useSessionDisplayPolling(5000);
   const { data: moversData, isLoading, isError } = useQuery<MarketMoversResponse>({
     queryKey: ["market-movers-card", limit],
     queryFn: () => publicFetch<MarketMoversResponse>(`/market/movers?limit=${limit}`),
-    refetchInterval: 5000,
+    refetchInterval: aggregateInterval,
     staleTime: 3000,
   });
 

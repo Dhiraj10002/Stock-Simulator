@@ -1,0 +1,15 @@
+{
+  "conditions": "Local production mobile touch, CPU 4x, fixed REST/WS fixtures; chart timeframe, quantity edit, confirmation toggle; no order submitted. Scripted Event Timing, not field INP.",
+  "eventDurationsMs": [
+    56,
+    56,
+    248,
+    16,
+    24,
+    80,
+    24,
+    24,
+    144
+  ],
+  "errors": []
+}

@@ -1,4 +1,5 @@
 "use client";
+import { useSessionDisplayPolling } from "@/hooks/useDisplayPolling";
 import { useAccountWallet } from "@/hooks/useAccountWallet";
 
 import { useState, useEffect, useMemo } from "react";
@@ -331,6 +332,7 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
 
 
 
+  const aggregateInterval = useSessionDisplayPolling(5000);
   const { data: marketBreadth } = useQuery<{
     advances: number;
     declines: number;
@@ -355,7 +357,7 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
         return { advances: 0, declines: 0, unchanged: 0, total: 0, advance_decline_ratio: 0, advance_percent: 0 };
       }
     },
-    refetchInterval: 5000,
+    refetchInterval: aggregateInterval,
   });
 
 
