@@ -1,12 +1,9 @@
 "use client";
-import { sessionFetch } from "@/lib/api";
-import { getAuthToken } from "@/lib/api";
 import { useAccountWallet } from "@/hooks/useAccountWallet";
 
 import { useState, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
 import Navbar from "@/components/layout/Navbar";
 import {
   BrainCircuit,
@@ -24,71 +21,20 @@ import TradeCopilot from "@/components/mentor/TradeCopilot";
 import PreTradeRiskLab from "@/components/mentor/PreTradeRiskLab";
 import { formatPaise } from "@/lib/format";
 import { API_URL } from "@/lib/api";
-import type { Portfolio, ApiResponse } from "@/types";
+
+import { useAuthToken } from "@/hooks/useAuthToken";
+import { useAccountPortfolio } from "@/hooks/useAccountPortfolio";
 
 function MentorContent() {
   const searchParams = useSearchParams();
   const initialQuery = searchParams.get("query") || undefined;
   const [activeTab, setActiveTab] = useState<"copilot" | "risklab">("copilot");
-  const [token] = useState<string>(() => {
-    if (typeof window !== "undefined") {
-      return (
-        getAuthToken() ||
-        ""
-      );
-    }
-    return "";
-  });
-
+  const token = useAuthToken();
   const apiUrl = API_URL;
 
   // Server state via TanStack Query with graceful fallback
   const { data: wallet } = useAccountWallet();
-
-  const { data: portfolio } = useQuery<Portfolio>({
-    queryKey: ["portfolio", token],
-    queryFn: async () => {
-      if (!token) {
-        return {
-          invested_value_paise: 0,
-          current_value_paise: 0,
-          unrealized_pnl_paise: 0,
-          positions: [],
-        };
-      }
-      try {
-        const res = await sessionFetch(`${apiUrl}/portfolio`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!res.ok) {
-          return {
-            invested_value_paise: 0,
-            current_value_paise: 0,
-            unrealized_pnl_paise: 0,
-            positions: [],
-          };
-        }
-        const json: ApiResponse<Portfolio> = await res.json();
-        return (
-          json.data || {
-            invested_value_paise: 0,
-            current_value_paise: 0,
-            unrealized_pnl_paise: 0,
-            positions: [],
-          }
-        );
-      } catch {
-        return {
-          invested_value_paise: 0,
-          current_value_paise: 0,
-          unrealized_pnl_paise: 0,
-          positions: [],
-        };
-      }
-    },
-    enabled: !!token,
-    staleTime: 15_000,
-  });
+  const { data: portfolio } = useAccountPortfolio();
 
   const availableBalance = wallet?.available_balance_paise;
   const blockedMargin = wallet?.blocked_paise ?? 0;
