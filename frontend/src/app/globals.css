@@ -138,6 +138,27 @@ html:not(.dark) .min-h-screen:not([data-landing]) {
    MotionSites AI Design System: Ultra-Luxe Light Mode Glassmorphism
    ========================================================================== */
 
+/* Universal Opaque Menus & Dropdown Surfaces (MUST NOT be translucent glass) */
+html:not(.dark) .solid-opaque-dropdown,
+.solid-opaque-dropdown {
+  background-color: #ffffff !important;
+  background: #ffffff !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  opacity: 1 !important;
+  box-shadow: 0 20px 40px -10px rgba(15, 23, 42, 0.25), 0 0 0 1px rgba(15, 23, 42, 0.08) !important;
+}
+
+.dark .solid-opaque-dropdown,
+html.dark .solid-opaque-dropdown {
+  background-color: #0b0f19 !important;
+  background: #0b0f19 !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  opacity: 1 !important;
+  box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.1) !important;
+}
+
 /* Universal Light Mode Glass Card Surface */
 html:not(.dark) .bg-white,
 html:not(.dark) .bg-white\/95,

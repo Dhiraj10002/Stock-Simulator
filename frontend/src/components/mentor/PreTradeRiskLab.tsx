@@ -29,50 +29,16 @@ import {
   Loader2,
 } from "lucide-react";
 
-interface BaseInstrument {
-  symbol: string;
-  name: string;
-  fallbackPriceRupees: number;
-  category: "NIFTY 50" | "High Growth & Trending" | "PSU & Defence";
-}
-
-const BASE_INSTRUMENTS: BaseInstrument[] = [
-  // NIFTY 50 Bluechips
-  { symbol: "RELIANCE", name: "Reliance Industries", fallbackPriceRupees: 2985.5, category: "NIFTY 50" },
-  { symbol: "TCS", name: "Tata Consultancy Services", fallbackPriceRupees: 4210.0, category: "NIFTY 50" },
-  { symbol: "INFY", name: "Infosys Ltd", fallbackPriceRupees: 1785.2, category: "NIFTY 50" },
-  { symbol: "HDFCBANK", name: "HDFC Bank Ltd", fallbackPriceRupees: 1642.5, category: "NIFTY 50" },
-  { symbol: "ICICIBANK", name: "ICICI Bank Ltd", fallbackPriceRupees: 1215.3, category: "NIFTY 50" },
-  { symbol: "SBIN", name: "State Bank of India", fallbackPriceRupees: 785.0, category: "NIFTY 50" },
-  { symbol: "ITC", name: "ITC Ltd", fallbackPriceRupees: 492.5, category: "NIFTY 50" },
-  { symbol: "BHARTIARTL", name: "Bharti Airtel Ltd", fallbackPriceRupees: 1564.0, category: "NIFTY 50" },
-  { symbol: "LT", name: "Larsen & Toubro Ltd", fallbackPriceRupees: 3620.0, category: "NIFTY 50" },
-  { symbol: "HINDUNILVR", name: "Hindustan Unilever", fallbackPriceRupees: 2840.0, category: "NIFTY 50" },
-  { symbol: "KOTAKBANK", name: "Kotak Mahindra Bank", fallbackPriceRupees: 1790.0, category: "NIFTY 50" },
-  { symbol: "AXISBANK", name: "Axis Bank Ltd", fallbackPriceRupees: 1180.0, category: "NIFTY 50" },
-  { symbol: "MARUTI", name: "Maruti Suzuki India", fallbackPriceRupees: 12450.0, category: "NIFTY 50" },
-  { symbol: "SUNPHARMA", name: "Sun Pharma Industries", fallbackPriceRupees: 1840.0, category: "NIFTY 50" },
-  { symbol: "TITAN", name: "Titan Company Ltd", fallbackPriceRupees: 3450.0, category: "NIFTY 50" },
-  { symbol: "WIPRO", name: "Wipro Ltd", fallbackPriceRupees: 528.0, category: "NIFTY 50" },
-  { symbol: "ASIANPAINT", name: "Asian Paints Ltd", fallbackPriceRupees: 3120.0, category: "NIFTY 50" },
-
-  // High Growth & Trending
-  { symbol: "ZOMATO", name: "Zomato Ltd (Eternal)", fallbackPriceRupees: 282.4, category: "High Growth & Trending" },
-  { symbol: "TATAMOTORS", name: "Tata Motors Ltd", fallbackPriceRupees: 985.2, category: "High Growth & Trending" },
-  { symbol: "TATASTEEL", name: "Tata Steel Ltd", fallbackPriceRupees: 152.8, category: "High Growth & Trending" },
-  { symbol: "TRENT", name: "Trent Ltd (Westside & Zudio)", fallbackPriceRupees: 7140.0, category: "High Growth & Trending" },
-  { symbol: "BAJFINANCE", name: "Bajaj Finance Ltd", fallbackPriceRupees: 7120.0, category: "High Growth & Trending" },
-  { symbol: "ADANIENT", name: "Adani Enterprises", fallbackPriceRupees: 2980.0, category: "High Growth & Trending" },
-  { symbol: "SUZLON", name: "Suzlon Energy Ltd", fallbackPriceRupees: 74.5, category: "High Growth & Trending" },
-
-  // PSU & Defence
-  { symbol: "BEL", name: "Bharat Electronics Ltd", fallbackPriceRupees: 292.0, category: "PSU & Defence" },
-  { symbol: "HAL", name: "Hindustan Aeronautics", fallbackPriceRupees: 4450.0, category: "PSU & Defence" },
-  { symbol: "POWERGRID", name: "Power Grid Corp", fallbackPriceRupees: 325.0, category: "PSU & Defence" },
-  { symbol: "NTPC", name: "NTPC Ltd", fallbackPriceRupees: 395.0, category: "PSU & Defence" },
-  { symbol: "COALINDIA", name: "Coal India Ltd", fallbackPriceRupees: 485.0, category: "PSU & Defence" },
-  { symbol: "ONGC", name: "Oil & Natural Gas Corp", fallbackPriceRupees: 295.0, category: "PSU & Defence" },
-];
+const POPULAR_NSE_SYMBOLS = [
+  "RELIANCE",
+  "TCS",
+  "INFY",
+  "ITC",
+  "ZOMATO",
+  "HDFCBANK",
+  "TATAMOTORS",
+  "SBIN",
+] as const;
 
 export default function PreTradeRiskLab({
   apiUrl = getApiUrl(),
@@ -148,10 +114,9 @@ export default function PreTradeRiskLab({
 
   // Real-time quotes for quick picks and active symbols
   const subscribedSymbols = useMemo(() => {
-    const s = new Set<string>();
-    BASE_INSTRUMENTS.forEach((i) => s.add(i.symbol));
+    const s = new Set<string>(POPULAR_NSE_SYMBOLS);
     dbResults.forEach((r) => s.add(r.symbol));
-    s.add(symbol);
+    if (symbol) s.add(symbol);
     return Array.from(s);
   }, [dbResults, symbol]);
 
@@ -161,27 +126,17 @@ export default function PreTradeRiskLab({
     fetchBatchQuotes(subscribedSymbols).catch(() => {});
   }, [subscribedSymbols]);
 
-  // Resolved price helper (live quote price or fallback)
+  // Resolved price helper from live quotes
   const getSymbolPrice = useCallback(
     (sym: string, defaultPrice = 0): number => {
       const q = liveQuotes[sym];
       if (q?.price_paise && q.price_paise > 0) {
         return Number((q.price_paise / 100).toFixed(2));
       }
-      const matched = BASE_INSTRUMENTS.find((i) => i.symbol === sym);
-      return matched?.fallbackPriceRupees ?? defaultPrice;
+      return defaultPrice;
     },
     [liveQuotes]
   );
-
-  // Filtered base instruments if search is active but DB returned no rows or user is typing offline
-  const filteredBaseInstruments = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return BASE_INSTRUMENTS;
-    return BASE_INSTRUMENTS.filter(
-      (inst) => inst.symbol.toLowerCase().includes(q) || inst.name.toLowerCase().includes(q)
-    );
-  }, [searchQuery]);
 
   // Simulation Results
   const [simulating, setSimulating] = useState(false);
@@ -190,7 +145,7 @@ export default function PreTradeRiskLab({
 
   // Apply a Stock Selection
   const handleSelectStock = (stockSymbol: string, stockPrice?: number) => {
-    const clean = stockSymbol.toUpperCase();
+    const clean = stockSymbol.replace(/-EQ$/, "").toUpperCase();
     setSymbol(clean);
     setIsSearchOpen(false);
     setSearchQuery("");
@@ -198,9 +153,16 @@ export default function PreTradeRiskLab({
     const price = stockPrice ?? getSymbolPrice(clean, priceRupees);
     if (price > 0) {
       setPriceRupees(price);
-      setTargetRupees(Number((price * 1.025).toFixed(1)));
-      setStopLossRupees(Number((price * 0.985).toFixed(1)));
+      if (product === "INTRADAY") {
+        setTargetRupees(Number((price * 1.02).toFixed(1)));
+        setStopLossRupees(Number((price * 0.99).toFixed(1)));
+      } else {
+        setTargetRupees(Number((price * 1.035).toFixed(1)));
+        setStopLossRupees(Number((price * 0.985).toFixed(1)));
+      }
     }
+    setResult(null);
+    setSimError(null);
   };
 
   // Apply Preset Setup
@@ -441,7 +403,7 @@ export default function PreTradeRiskLab({
               </span>
             </div>
             <div className="flex items-center gap-1.5 flex-wrap">
-              {["RELIANCE", "TCS", "INFY", "ITC", "ZOMATO", "HDFCBANK", "TATAMOTORS", "SBIN"].map((s) => {
+              {POPULAR_NSE_SYMBOLS.map((s) => {
                 const live = getSymbolPrice(s);
                 return (
                   <button
@@ -507,8 +469,7 @@ export default function PreTradeRiskLab({
                 {/* 100% Solid & Opaque Search Results Dropdown */}
                 {isSearchOpen && (
                   <div
-                    style={{ backgroundColor: "var(--surface, #ffffff)", opacity: 1 }}
-                    className="absolute z-50 left-0 right-0 top-full mt-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl ring-1 ring-slate-900/10 dark:ring-white/10 max-h-72 overflow-y-auto p-1.5 divide-y divide-slate-100 dark:divide-slate-800 backdrop-blur-none"
+                    className="solid-opaque-dropdown absolute z-50 left-0 right-0 top-full mt-1.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl max-h-72 overflow-y-auto p-1.5 divide-y divide-slate-100 dark:divide-slate-800"
                   >
                     {/* Custom Ticker Button if typed */}
                     {searchQuery.trim() && (
@@ -538,8 +499,9 @@ export default function PreTradeRiskLab({
                     {/* Live PostgreSQL Results */}
                     {dbResults.length > 0 &&
                       dbResults.slice(0, 15).map((inst) => {
+                        const cleanSym = inst.display_name || inst.symbol.replace(/-EQ$/, "");
                         const livePrice = getSymbolPrice(
-                          inst.symbol,
+                          cleanSym,
                           inst.price_paise ? inst.price_paise / 100 : 0
                         );
                         return (
@@ -547,21 +509,21 @@ export default function PreTradeRiskLab({
                             key={inst.token || inst.symbol}
                             type="button"
                             onClick={() =>
-                              handleSelectStock(inst.display_name || inst.symbol, livePrice > 0 ? livePrice : undefined)
+                              handleSelectStock(cleanSym, livePrice > 0 ? livePrice : undefined)
                             }
                             className={`w-full text-left px-3 py-2 rounded-xl flex items-center justify-between text-xs transition-colors cursor-pointer ${
-                              symbol === (inst.display_name || inst.symbol)
-                                ? "bg-slate-100 dark:bg-slate-800 font-bold"
+                              symbol === cleanSym
+                                ? "bg-cyan-50 dark:bg-cyan-950/40 text-cyan-900 dark:text-cyan-200 font-bold"
                                 : "hover:bg-slate-50 dark:hover:bg-slate-800/60"
                             }`}
                           >
                             <div>
                               <div className="flex items-center gap-1.5">
                                 <span className="font-bold text-slate-900 dark:text-slate-100">
-                                  {inst.display_name || inst.symbol}
+                                  {cleanSym}
                                 </span>
                                 <span className="text-[9px] px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-bold border border-slate-200 dark:border-slate-700">
-                                  {inst.exchange_segment || "NSE"} {inst.instrument_type || ""}
+                                  {inst.exchange_segment || "NSE"}
                                 </span>
                               </div>
                               <span className="text-[10px] text-slate-500 dark:text-slate-400 block truncate max-w-[220px]">
@@ -574,98 +536,97 @@ export default function PreTradeRiskLab({
                                   ₹{livePrice.toFixed(2)}
                                 </span>
                               ) : (
-                                <span className="text-[10px] text-slate-400 font-mono">Realtime</span>
+                                <span className="text-[10px] text-slate-400 font-mono">Live Rate</span>
                               )}
                             </div>
                           </button>
                         );
                       })}
 
-                    {/* Curated Instruments when not searching or empty query */}
-                    {(!debouncedQuery || dbResults.length === 0) &&
-                      filteredBaseInstruments.map((inst) => {
-                        const livePrice = getSymbolPrice(inst.symbol, inst.fallbackPriceRupees);
-                        return (
-                          <button
-                            key={inst.symbol}
-                            type="button"
-                            onClick={() => handleSelectStock(inst.symbol, livePrice)}
-                            className={`w-full text-left px-3 py-2 rounded-xl flex items-center justify-between text-xs transition-colors cursor-pointer ${
-                              symbol === inst.symbol
-                                ? "bg-slate-100 dark:bg-slate-800 font-bold"
-                                : "hover:bg-slate-50 dark:hover:bg-slate-800/60"
-                            }`}
-                          >
-                            <div>
-                              <span className="font-bold text-slate-900 dark:text-slate-100 block">
-                                {inst.symbol}
+                    {/* Empty Query / Default Quick Suggestions from Live Market */}
+                    {!debouncedQuery && (
+                      <div className="p-2 space-y-1">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block px-1 pb-1">
+                          Popular NSE Counters
+                        </span>
+                        {POPULAR_NSE_SYMBOLS.map((s) => {
+                          const livePrice = getSymbolPrice(s);
+                          return (
+                            <button
+                              key={s}
+                              type="button"
+                              onClick={() => handleSelectStock(s, livePrice > 0 ? livePrice : undefined)}
+                              className={`w-full text-left px-3 py-1.5 rounded-xl flex items-center justify-between text-xs transition-colors cursor-pointer ${
+                                symbol === s
+                                  ? "bg-cyan-50 dark:bg-cyan-950/40 text-cyan-900 dark:text-cyan-200 font-bold"
+                                  : "hover:bg-slate-50 dark:hover:bg-slate-800/60"
+                              }`}
+                            >
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-bold text-slate-900 dark:text-slate-100">
+                                  {s}
+                                </span>
+                                <span className="text-[9px] px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-bold border border-slate-200 dark:border-slate-700">
+                                  NSE
+                                </span>
+                              </div>
+                              <span className="font-mono font-bold text-slate-800 dark:text-slate-200 text-xs">
+                                {livePrice > 0 ? `₹${livePrice.toFixed(2)}` : "Live Rate"}
                               </span>
-                              <span className="text-[10px] text-slate-500 dark:text-slate-400 block truncate max-w-[200px]">
-                                {inst.name}
-                              </span>
-                            </div>
-                            <div className="text-right">
-                              <span className="font-mono font-bold text-slate-800 dark:text-slate-200 block">
-                                ₹{livePrice.toFixed(2)}
-                              </span>
-                              <span className="text-[9px] text-slate-400 block">
-                                {inst.category}
-                              </span>
-                            </div>
-                          </button>
-                        );
-                      })}
+                            </button>
+                          );
+                        })}
+                        <div className="pt-2 px-1 text-[10px] text-slate-400 text-center border-t border-slate-100 dark:border-slate-800">
+                          Type to search 44,500+ NSE stocks in real-time
+                        </div>
+                      </div>
+                    )}
+
+                    {debouncedQuery && !isSearching && dbResults.length === 0 && (
+                      <div className="p-4 text-center space-y-1">
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                          No matching NSE stocks for &quot;{debouncedQuery}&quot;
+                        </p>
+                        <p className="text-[10px] text-slate-400">
+                          You can still simulate using custom ticker above.
+                        </p>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
 
-              {/* Grouped Select Dropdown with Real-Time Live Prices */}
+              {/* Active Selected Counter Card (Replaces Hardcoded Select Dropdown) */}
               <div className="pt-1">
-                <select
-                  value={symbol}
-                  onChange={(e) => {
-                    const sel = e.target.value;
-                    const price = getSymbolPrice(sel);
-                    handleSelectStock(sel, price > 0 ? price : undefined);
-                  }}
-                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-slate-900 dark:text-slate-100 font-bold focus:outline-none focus:border-cyan-500 shadow-sm text-xs cursor-pointer"
-                >
-                  <optgroup label="🌟 NIFTY 50 Bluechips">
-                    {BASE_INSTRUMENTS.filter((i) => i.category === "NIFTY 50").map((inst) => {
-                      const p = getSymbolPrice(inst.symbol, inst.fallbackPriceRupees);
-                      return (
-                        <option key={inst.symbol} value={inst.symbol}>
-                          {inst.symbol} — {inst.name} (₹{p.toFixed(1)})
-                        </option>
-                      );
-                    })}
-                  </optgroup>
-                  <optgroup label="🚀 High Growth & Trending">
-                    {BASE_INSTRUMENTS.filter((i) => i.category === "High Growth & Trending").map((inst) => {
-                      const p = getSymbolPrice(inst.symbol, inst.fallbackPriceRupees);
-                      return (
-                        <option key={inst.symbol} value={inst.symbol}>
-                          {inst.symbol} — {inst.name} (₹{p.toFixed(1)})
-                        </option>
-                      );
-                    })}
-                  </optgroup>
-                  <optgroup label="🛡️ PSU & Defence">
-                    {BASE_INSTRUMENTS.filter((i) => i.category === "PSU & Defence").map((inst) => {
-                      const p = getSymbolPrice(inst.symbol, inst.fallbackPriceRupees);
-                      return (
-                        <option key={inst.symbol} value={inst.symbol}>
-                          {inst.symbol} — {inst.name} (₹{p.toFixed(1)})
-                        </option>
-                      );
-                    })}
-                  </optgroup>
-                  {!BASE_INSTRUMENTS.some((i) => i.symbol === symbol) && (
-                    <option value={symbol}>
-                      {symbol} (Active Counter — ₹{priceRupees.toFixed(1)})
-                    </option>
-                  )}
-                </select>
+                <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-cyan-500/10 dark:bg-cyan-500/20 text-cyan-600 dark:text-cyan-400 flex items-center justify-center font-black text-xs">
+                      {symbol.slice(0, 2)}
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-extrabold text-xs sm:text-sm text-slate-900 dark:text-slate-100">
+                          {symbol}
+                        </span>
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-cyan-100 dark:bg-cyan-950/60 text-cyan-800 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-800">
+                          NSE Equity
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-slate-500 dark:text-slate-400 block">
+                        Selected for Pre-Execution Audit
+                      </span>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <span className="font-mono font-bold text-xs sm:text-sm text-slate-900 dark:text-slate-100 block">
+                      ₹{priceRupees > 0 ? priceRupees.toFixed(2) : "—"}
+                    </span>
+                    <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold flex items-center justify-end gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      Live Feed
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
 
