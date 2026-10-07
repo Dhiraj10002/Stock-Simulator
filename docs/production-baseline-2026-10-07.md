@@ -120,15 +120,37 @@ To avoid 30+ minute Docker compilations on the Oracle VM's 1-core ARM instance, 
 2. **Explicit BFO Exclusion:** In `backend/internal/instrument/service/instrument_service.go`, all BFO instruments and contracts are excluded from the database master (`exchange != 'BFO' AND exchange_segment != 'BFO'`).
 3. **Tradable Scope:** Paper trading execution and order routing are exclusively supported for NSE (Equities) and NFO (Futures & Options). There is no SENSEX option chain tradable on this platform.
 
+## Evening Performance & Latency Optimizations (7 October 2026)
+
+Commit: `5c77d72` (merged to `main` and deployed to Oracle VM & Vercel)
+
+1. **Frontend Navigation & Zero Full-Page Reloads:**
+   - In `FnoStockOverview.tsx`, replaced `window.location.href = /stocks/...` with Next.js `<Link>`. Prevents dropping WebSocket connection, tearing down client SPA state, and redownloading JavaScript bundles on navigation.
+   - Cleared all ESLint location assignment warnings in `Navbar.tsx` and `explore/page.tsx` via `useRouter().push()`. Total ESLint warnings: **0**.
+2. **Options Page Layout Shift (CLS Reduction):**
+   - Added animated skeleton reservations to `TopIndexFutures.tsx` (`h-[190px]` 4-card grid) and `FnoStockOverview.tsx` (`min-h-[260px]` 5-row table). Eliminates layout jumps when master contracts load (~200ms after mount).
+3. **Go WebSocket Deserialization Optimization:**
+   - In `backend/internal/market/websocket/handler.go`, replaced double JSON unmarshaling (`map[string]interface{}` then `QuoteResponse`) with a single typed envelope struct (`struct { Type string }`). Eliminates map allocations and interface boxing for every market tick.
+4. **Python Worker Lock Contention Speedup:**
+   - In `python-services/market-worker/worker.py`, moved synchronous TCP calls (`hgetall` and `lindex`) out of `self.history_lock`. Lock hold duration dropped from milliseconds to microseconds.
+5. **Ticker Strip Re-render Isolation:**
+   - In `IndicesTickerStrip.tsx`, isolated the 1-second relative time clock into the `LiveProvenance` subcomponent. Stopped parent strip and all 5 index cards from re-rendering every 1,000ms.
+6. **TradingView Chart Legend Isolation:**
+   - In `TradingViewChart.tsx`, wrapped `ChartLegend` in `React.memo` to isolate tick-by-tick OHLC metrics from triggering full chart control tree re-renders.
+
 ## Evidence and acceptance status
 
 | Check | Status | Evidence / Location |
 | --- | --- | --- |
 | Public readiness and DB probe samples | Verified | `/api/v1/ready` reports OPERATIONAL |
-| Oracle warm DB plans and host regions | Verified | 20 samples: p50 222.39ms RTT, plan time 0.04-1.5ms. Host: Mumbai -> Neon: Ohio |
+| Oracle warm DB plans and host regions | Verified | 20 samples: p50 60.94ms RTT (Singapore Neon). Host: Mumbai -> Neon: Singapore |
 | Deployed public browser lab | Verified | Playwright lab: Homepage LCP 1.89s, Stocks LCP 2.36s, CLS 0.003 |
 | Dockerfile.prebuilt reproducibility | Recorded | Tracked in git, SHA256 hashes & rollback commands documented |
 | SENSEX tradability clarification | Confirmed | BSE Benchmark index display only; BFO contracts excluded from trading |
-| Deployed private polling and two-tab session checks | Pending | Requires open-market paper account session verification |
-| Physical phone and field Web Vitals | Pending | Owner mobile device / Speed Insights field verification |
-| Delivery/MIS/futures/options ledger reconciliation | Pending | To be verified during next open trading session (09:15-15:30 IST) |
+| Frontend Zero-Shift Skeletons & Navigation | Verified | Tested in Turbopack build (20 routes); 0 lint errors, 0 warnings; 96 unit tests pass |
+| Go WebSocket Single Envelope Parsing | Verified | `handler.go` updated, all backend Go tests pass, deployed on VM |
+| Market Worker Non-Blocking Ticks | Verified | 107 Python unit tests pass; container healthy on VM with 49 symbols |
+| Deployed private polling and two-tab session checks | Scheduled (Tomorrow) | Requires open-market paper account session verification (09:15-15:30 IST) |
+| Physical phone and field Web Vitals | Scheduled (Tomorrow) | Owner mobile device / Speed Insights field verification |
+| Delivery/MIS/futures/options ledger reconciliation | Scheduled (Tomorrow) | To be verified during next open trading session (09:15-15:30 IST) |
+
