@@ -124,6 +124,11 @@ class VerifiedSmartWebSocket(SmartWebSocketV2):
                 proxy_kwargs["http_proxy_port"] = parsed.port
             if parsed.scheme.startswith("socks"):
                 proxy_kwargs["proxy_type"] = parsed.scheme
+            else:
+                proxy_kwargs["proxy_type"] = "http"
+        no_proxy = os.getenv("NO_PROXY") or os.getenv("no_proxy")
+        if no_proxy:
+            proxy_kwargs["http_no_proxy"] = [h.strip() for h in no_proxy.split(",") if h.strip()]
         self.wsapp = WebSocketApp(self.ROOT_URI, header=headers, on_open=self.on_open,
             on_error=self.on_error, on_close=lambda ws, code, message: self.on_close(ws),
             on_data=self._on_data, on_ping=self._on_ping, on_pong=self._on_pong)

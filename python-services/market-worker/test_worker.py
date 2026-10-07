@@ -892,6 +892,31 @@ class RealBrokerDataRegressionTest(unittest.TestCase):
         self.assertEqual(app.return_value.run_forever.call_args.kwargs["sslopt"]["cert_reqs"], worker.ssl.CERT_REQUIRED)
         self.assertTrue(app.return_value.run_forever.call_args.kwargs["sslopt"]["check_hostname"])
 
+    def test_verified_websocket_proxy_kwargs_http(self):
+        from unittest.mock import patch
+        socket = object.__new__(worker.VerifiedSmartWebSocket)
+        socket.auth_token, socket.api_key, socket.client_code, socket.feed_token = "test", "test", "test", "test"
+        with patch.dict(worker.os.environ, {"HTTPS_PROXY": "http://proxy.internal:8118", "NO_PROXY": "backend,redis"}):
+            with patch.object(worker, "WebSocketApp") as app:
+                socket.connect()
+        kwargs = app.return_value.run_forever.call_args.kwargs
+        self.assertEqual(kwargs.get("http_proxy_host"), "proxy.internal")
+        self.assertEqual(kwargs.get("http_proxy_port"), 8118)
+        self.assertEqual(kwargs.get("proxy_type"), "http")
+        self.assertEqual(kwargs.get("http_no_proxy"), ["backend", "redis"])
+
+    def test_verified_websocket_proxy_kwargs_socks(self):
+        from unittest.mock import patch
+        socket = object.__new__(worker.VerifiedSmartWebSocket)
+        socket.auth_token, socket.api_key, socket.client_code, socket.feed_token = "test", "test", "test", "test"
+        with patch.dict(worker.os.environ, {"ALL_PROXY": "socks5://127.0.0.1:40000"}):
+            with patch.object(worker, "WebSocketApp") as app:
+                socket.connect()
+        kwargs = app.return_value.run_forever.call_args.kwargs
+        self.assertEqual(kwargs.get("http_proxy_host"), "127.0.0.1")
+        self.assertEqual(kwargs.get("http_proxy_port"), 40000)
+        self.assertEqual(kwargs.get("proxy_type"), "socks5")
+
 
 class BrokerHistoryIntegrationBoundaryTest(unittest.TestCase):
     def test_backfill_merges_newer_stream_bucket_and_never_fabricates_quotes(self):
