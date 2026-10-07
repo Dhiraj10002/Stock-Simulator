@@ -54,7 +54,7 @@ export async function sessionFetch(url: string, options: RequestInit = {}): Prom
   const run = () => fetch(`/api/backend${path}`, { ...options, headers, credentials: "same-origin", cache: "no-store" });
   let res = await run();
   if (res.status === 401 && scope && !path.startsWith("/auth/")) {
-    if (await tryRefreshToken(scope, revision)) res = await run();
+    if (await tryRefreshToken(scope, revision) && getAuthToken() === scope) res = await run();
   }
   if (intent && res.ok) {
     try {

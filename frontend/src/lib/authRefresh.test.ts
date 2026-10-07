@@ -36,6 +36,18 @@ test("cookie session refresh is single-flight; network failures keep session; lo
   await sessionFetch("/orders", {method:"POST",body:'{"symbol":"TCS"}'});
   await sessionFetch("/orders", {method:"POST",body:'{"symbol":"TCS"}'});
   assert.notEqual(keys.at(-1), keys[0]);
+  // An account switch while a request is in flight must never replay a trade
+  // with the new account's cookies, even when another refresh has completed.
+  let switchedCalls = 0;
+  globalThis.fetch = async (url) => {
+   switchedCalls++;
+   assert.equal(url, "/api/backend/orders");
+   doc.cookie = "stocksim_session=another-account";
+   return Response.json({ success: false }, { status: 401 });
+  };
+  const switched = await sessionFetch("/orders", { method: "POST", body: '{"symbol":"TCS"}' });
+  assert.equal(switched.status, 401);
+  assert.equal(switchedCalls, 1);
   assert.equal(values.get("auth_token"), undefined);
  } finally {
   globalThis.fetch = originalFetch;
