@@ -48,3 +48,4 @@ python-services/**/logs/
 # Binary and prebuilt artifacts
 bin/
 *.prebuilt
+!Dockerfile.prebuilt

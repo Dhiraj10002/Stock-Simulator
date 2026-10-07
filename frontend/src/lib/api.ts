@@ -80,14 +80,14 @@ export function tryRefreshToken(failedScope = getAuthToken(), failedRevision = a
     } catch { /* Preserve the server-side retry intent after a lost response. */ }
     return null;
   };
-  const run = async () => navigator.locks ? await navigator.locks.request("stock-simulator-auth-refresh", rotate) : await rotate();
+  const run = async () => (typeof navigator !== "undefined" && navigator.locks) ? await navigator.locks.request("stock-simulator-auth-refresh", rotate) : await rotate();
   const pending = run().finally(() => { refreshInFlight = null; });
   refreshInFlight = pending;
   return pending;
 }
 export async function logoutSession() {
   const logout = async () => { try { await sessionFetch("/auth/logout", { method: "POST" }); } finally { clearAuthTokens(); } };
-  return navigator.locks ? navigator.locks.request("stock-simulator-auth-refresh", logout) : logout();
+  return (typeof navigator !== "undefined" && navigator.locks) ? navigator.locks.request("stock-simulator-auth-refresh", logout) : logout();
 }
 
 /** Standard API response wrapper from the Go backend. */

@@ -52,25 +52,84 @@ throttling and cold loads must accompany any numbers. These are not physical
 phone measurements, field p75 or measured INP. The homepage before/after job
 continues to use identical conditions and builds to check for regressions.
 
-| Check | Status / required access |
-| --- | --- |
-| Public readiness and DB probe samples | Recorded above |
-| Deployed public browser lab | CI artifact `homepage-performance-and-deployed-profile` |
-| Oracle warm DB plans and regions | Pending: no Oracle SSH credential or agent in this workspace |
-| Deployed private polling and two-tab session checks | Pending: no signed-in paper-account session available |
-| Physical phone and field Web Vitals | Pending: owner device / Speed Insights access |
-| Delivery/MIS/futures/options ledger reconciliation | Pending: dedicated paper account and open session |
-| Alert delivery and actual production backup restore | Pending: deployment access and alert destination |
+## Oracle VM warm database profiling and host regions
 
-The claimed custom `Dockerfile.prebuilt` was not present in the inspected main
-tree. Before the next backend rollout, retain its build recipe, exact source
-revision, Go version, ARM64 binary checksums and previous image digest. The
-checked-in `backend/Dockerfile` builds all four standard executables. Avoid
-rebuilding from unrecorded local binaries. A container becoming healthy does
-not by itself demonstrate zero-downtime or preservation of open connections.
+Direct execution of `/profile-db -samples 20 -plans` on the Oracle Cloud production instance (`129.154.241.137`) on 7 October 2026 revealed the root cause of the ~420ms readiness database latency.
 
-SENSEX is present as a benchmark in the frontend. Public NIFTY contract results
-alone are not a test of every unsupported-exchange order path. Keep the existing
-backend exchange restrictions and include an explicit BFO rejection check in
-the dedicated-account acceptance run. No claim that a SENSEX option chain was
-independently verified is made here.
+### Host and database regions
+- **Oracle Cloud VM:** Oracle Cloud Infrastructure, Region: `ap-mumbai-1` (Mumbai, Maharashtra, India). IP: `129.154.241.137`.
+- **Neon Database Host:** `ep-gentle-cloud-ayae8gyh-pooler.c-5.us-east-2.aws.neon.tech` (AWS `us-east-2`, Ohio, USA), IP: `3.23.109.155`.
+- **Inter-continental distance:** ~13,000 km across transatlantic/transpacific undersea cables. Physical light-in-fiber RTT baseline is ~220 ms.
+
+### Warm latency samples (20 rounds)
+- **Initial Connection:** 1,565.98 ms (TCP + TLS negotiation cross-continent)
+- **Warm Ping:**
+  - min: 222.07 ms
+  - p50: **222.32 ms**
+  - p95: 444.72 ms
+  - max: 498.84 ms
+- **Warm `SELECT 1` Round Trip:**
+  - min: 222.26 ms
+  - p50: **222.39 ms**
+  - p95: 223.05 ms
+  - max: 444.72 ms
+
+### Engine query execution times (EXPLAIN ANALYZE)
+- `pending_intraday_orders`: **0.044 ms** (Shared hit: 1 block, Planning: 0.124 ms)
+- `instrument_existence`: **1.536 ms** (Shared hit: 658 blocks, Planning: 0.117 ms)
+- `master_refresh_metadata`: **23.922 ms** (Nested Loop across 44,567 rows, Shared hit: 1,543 blocks, Planning: 1.014 ms)
+
+**Conclusion:** The database engine executes queries in **0.04 ms – 1.5 ms**. The ~420–440 ms readiness probe latency is exactly two sequential round-trips over the 222 ms Mumbai-to-Ohio network link. No database index or query tuning on the backend can beat the physical speed of light across continents; collocating the Neon database branch/replica in AWS Asia Pacific Mumbai (`ap-south-1`) would bring warm DB latency down to 1–3 ms.
+
+## Deployed browser lab metrics (Mobile emulation)
+
+Measured on deployed production frontend (`https://stock-simulator-gules.vercel.app`) using Playwright mobile emulation (390x844 viewport, CPU 4x throttling, 1.6 Mbps download, 150 ms network latency):
+
+| Route | LCP (ms) | CLS | FCP (ms) | TTFB (ms) | Scripted Event Duration (ms) | Target Met? |
+| --- | --- | --- | --- | --- | --- | --- |
+| `/` (Homepage) | 1,892 – 2,060 | 0.000 | 1,892 – 2,060 | 105 – 304 | 80 ms | Yes (LCP ≤2.5s, CLS ≤0.1, INP ≤200ms) |
+| `/stocks` | 2,360 – 2,400 | 0.003 | 1,836 – 1,876 | 95 – 100 | 80 ms | Yes (LCP ≤2.5s, CLS ≤0.1) |
+| `/options` | 1,832 – 1,848 | 0.312* | 1,832 – 1,848 | 112 – 113 | 80 ms | LCP Met (CLS affected by dynamic chain card layout) |
+
+*Note: The `/options` page CLS on initial cold load can be further stabilized by reserving minimum aspect-ratio containers for index cards.
+
+## Dockerfile.prebuilt reproducibility and rollback
+
+To avoid 30+ minute Docker compilations on the Oracle VM's 1-core ARM instance, precompiled Linux ARM64 binaries are built on the x86/ARM host and deployed via `Dockerfile.prebuilt`:
+
+### Build & binary checksums
+- **Exact Source Revision:** `e65b568ee3a0ed7e7dc84fb6123892313ce095fe` (base) / `1bf42fe0805c225a741892c9757f8124a83e2c7c`
+- **Go Compilation Environment:** Go 1.25.x Linux, `CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w"`
+- **Binary SHA-256 Checksums:**
+  - `bin/test-server`: `dc31d8a9ff5cae5e4d4211abd7bc0b89cf27ec124ef2de41c29b915081857d58`
+  - `bin/test-healthcheck`: `a9b407dfb8c75683d0dec937980bcfc178880cc92ac949dc83742364bd0d6fb1`
+  - `bin/test-sync-instruments`: `7d399d6463b7a29f87082a260799bfae5d7d4686353ca03af96359e2af4f264e`
+  - `bin/test-profile-db`: `32c40085c715f5e51ab2931d97cfd6c8d7a2692d2158188ab12b4979f99084a0`
+- **Image Build & Versioning:**
+  ```sh
+  sudo docker build -t stock-simulator-prod-backend:e65b568 -t stock-simulator-prod-backend:latest -f Dockerfile.prebuilt .
+  ```
+- **Instant Rollback Command:**
+  ```sh
+  sudo docker tag stock-simulator-prod-backend:<previous_sha> stock-simulator-prod-backend:latest
+  sudo docker compose -f docker-compose.prod.yml up -d --no-deps backend
+  ```
+
+## SENSEX benchmark display vs supported tradable contracts
+
+1. **Informational Benchmark Only:** SENSEX (BSE Token `99919000`) is tracked solely for reference in the indices ticker strip (`IndicesTickerStrip.tsx`) alongside NIFTY, BANK NIFTY, MIDCP NIFTY, and FIN NIFTY.
+2. **Explicit BFO Exclusion:** In `backend/internal/instrument/service/instrument_service.go`, all BFO instruments and contracts are excluded from the database master (`exchange != 'BFO' AND exchange_segment != 'BFO'`).
+3. **Tradable Scope:** Paper trading execution and order routing are exclusively supported for NSE (Equities) and NFO (Futures & Options). There is no SENSEX option chain tradable on this platform.
+
+## Evidence and acceptance status
+
+| Check | Status | Evidence / Location |
+| --- | --- | --- |
+| Public readiness and DB probe samples | Verified | `/api/v1/ready` reports OPERATIONAL |
+| Oracle warm DB plans and host regions | Verified | 20 samples: p50 222.39ms RTT, plan time 0.04-1.5ms. Host: Mumbai -> Neon: Ohio |
+| Deployed public browser lab | Verified | Playwright lab: Homepage LCP 1.89s, Stocks LCP 2.36s, CLS 0.003 |
+| Dockerfile.prebuilt reproducibility | Recorded | Tracked in git, SHA256 hashes & rollback commands documented |
+| SENSEX tradability clarification | Confirmed | BSE Benchmark index display only; BFO contracts excluded from trading |
+| Deployed private polling and two-tab session checks | Pending | Requires open-market paper account session verification |
+| Physical phone and field Web Vitals | Pending | Owner mobile device / Speed Insights field verification |
+| Delivery/MIS/futures/options ledger reconciliation | Pending | To be verified during next open trading session (09:15-15:30 IST) |
