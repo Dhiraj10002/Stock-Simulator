@@ -58,28 +58,27 @@ Direct execution of `/profile-db -samples 20 -plans` on the Oracle Cloud product
 
 ### Host and database regions
 - **Oracle Cloud VM:** Oracle Cloud Infrastructure, Region: `ap-mumbai-1` (Mumbai, Maharashtra, India). IP: `129.154.241.137`.
-- **Neon Database Host:** `ep-gentle-cloud-ayae8gyh-pooler.c-5.us-east-2.aws.neon.tech` (AWS `us-east-2`, Ohio, USA), IP: `3.23.109.155`.
-- **Inter-continental distance:** ~13,000 km across transatlantic/transpacific undersea cables. Physical light-in-fiber RTT baseline is ~220 ms.
+- **Previous Neon Database Host (Ohio):** `ep-gentle-cloud-ayae8gyh-pooler.c-5.us-east-2.aws.neon.tech` (AWS `us-east-2`, Ohio, USA), IP: `3.23.109.155`. Baseline RTT was ~222 ms across ~13,000 km undersea cables.
+- **Current Active Neon Database Host (Singapore):** `ep-winter-pine-azcnnr7d.c-3.ap-southeast-1.aws.neon.tech` (AWS `ap-southeast-1`, Singapore). Physical RTT dropped to ~60 ms.
 
-### Warm latency samples (20 rounds)
-- **Initial Connection:** 1,565.98 ms (TCP + TLS negotiation cross-continent)
-- **Warm Ping:**
-  - min: 222.07 ms
-  - p50: **222.32 ms**
-  - p95: 444.72 ms
-  - max: 498.84 ms
-- **Warm `SELECT 1` Round Trip:**
-  - min: 222.26 ms
-  - p50: **222.39 ms**
-  - p95: 223.05 ms
-  - max: 444.72 ms
+### Before vs After Migration Performance (Measured on Oracle VM)
+
+| Metric | Previous (AWS Ohio `us-east-2`) | Current (AWS Singapore `ap-southeast-1`) | Speedup |
+| --- | --- | --- | --- |
+| **Initial Connection** | 1,565.98 ms | **439.74 ms** | **3.6x faster** |
+| **Warm Ping p50** | 222.32 ms | **60.94 ms** | **3.6x faster** |
+| **Warm `SELECT 1` RTT p50** | 222.39 ms | **60.69 ms** | **3.7x faster** |
+| **Warm `SELECT 1` RTT min** | 222.26 ms | **60.59 ms** | **3.7x faster** |
+| **API `/ready` DB Check** | 441.8 ms | **118.6 – 142.1 ms** | **3.1x faster** |
+| **Market-Worker Master Load** | 9,280 ms | **3,086 ms** | **3.0x faster** |
+| **Go Backend Startup** | 3,682 ms | **1,604 ms** | **2.3x faster** |
 
 ### Engine query execution times (EXPLAIN ANALYZE)
 - `pending_intraday_orders`: **0.044 ms** (Shared hit: 1 block, Planning: 0.124 ms)
 - `instrument_existence`: **1.536 ms** (Shared hit: 658 blocks, Planning: 0.117 ms)
 - `master_refresh_metadata`: **23.922 ms** (Nested Loop across 44,567 rows, Shared hit: 1,543 blocks, Planning: 1.014 ms)
 
-**Conclusion:** The database engine executes queries in **0.04 ms – 1.5 ms**. The ~420–440 ms readiness probe latency is exactly two sequential round-trips over the 222 ms Mumbai-to-Ohio network link. No database index or query tuning on the backend can beat the physical speed of light across continents; collocating the Neon database branch/replica in AWS Asia Pacific Mumbai (`ap-south-1`) would bring warm DB latency down to 1–3 ms.
+**Conclusion:** The database engine executes queries in **0.04 ms – 1.5 ms**. Migrating from Ohio to Singapore dropped the cross-continental physical RTT from **222 ms to 60 ms**, giving an immediate **~3.7x latency reduction** across all database interactions without requiring any application-level architectural changes. Full dataset (182,672 instruments, 12 users, 12 wallets, 24 orders, 17 positions) was verified restored with zero data loss.
 
 ## Deployed browser lab metrics (Mobile emulation)
 
