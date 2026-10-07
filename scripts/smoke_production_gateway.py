@@ -7,6 +7,7 @@ no workers and no orders. Requires free ports 80/443. Cleans its own project.
 
 import base64
 import hashlib
+import hmac
 import json
 import os
 from pathlib import Path
@@ -89,13 +90,14 @@ def websocket(context, origin, expected=101):
 def main():
     with tempfile.TemporaryDirectory(prefix="gateway-smoke-") as temp:
         env_file = Path(temp) / ".env"
+        jwt_secret = secrets.token_hex(32)
         env_file.write_text("\n".join([
             "API_DOMAIN=localhost", "ACME_EMAIL=ci@example.com",
             f"CORS_ALLOWED_ORIGINS={ORIGIN}", "CADDY_INTERNAL_IP=172.30.251.2",
             "GATEWAY_SUBNET=172.30.251.0/29", "GATEWAY_DYNAMIC_RANGE=172.30.251.4/30",
             "MARKET_FEED_MODE=live",
             "DATABASE_URL=postgres://smoke:smoke@postgres:5432/smoke?sslmode=disable",
-            f"JWT_SECRET={secrets.token_hex(32)}", "AUTH_RATE_LIMIT_MAX_REQUESTS=3",
+            f"JWT_SECRET={jwt_secret}", "AUTH_RATE_LIMIT_MAX_REQUESTS=3",
             "RATE_LIMIT_WINDOW=10m", "ALLOW_SEEDED_QUOTES=false", "SIMULATION_MODE=false",
             "ALLOW_SEEDED_EXECUTABLE_QUOTES=false", "",
         ]))
@@ -169,6 +171,26 @@ def main():
                     break
                 check(time.monotonic() < deadline, "Redaction probe access log did not arrive")
                 time.sleep(0.2)
+
+            # Read the first authenticated SSE frame through real HTTPS/Caddy.
+            # All credentials below are ephemeral fixtures in this disposable stack.
+            def jwt_part(value):
+                return base64.urlsafe_b64encode(json.dumps(value, separators=(",", ":")).encode()).rstrip(b"=")
+            head = jwt_part({"alg": "HS256", "typ": "JWT"})
+            payload = jwt_part({"user_id": "00000000-0000-0000-0000-000000000001", "token_type": "access", "exp": int(time.time()) + 60, "iat": int(time.time())})
+            signature = base64.urlsafe_b64encode(hmac.new(jwt_secret.encode(), head + b"." + payload, hashlib.sha256).digest()).rstrip(b"=")
+            access = (head + b"." + payload + b"." + signature).decode()
+            status, _, _ = request("/api/v1/account/events")
+            check(status == 401, "Private event stream accepted anonymous access")
+            started = time.monotonic()
+            with opener.open(Request("https://localhost/api/v1/account/events", headers={"Authorization": "Bearer " + access, "Accept-Encoding": "gzip"}), timeout=5) as stream:
+                check(stream.headers.get("Content-Type", "").startswith("text/event-stream"), "Account event MIME failed")
+                check(not stream.headers.get("Content-Encoding"), "Small account frames must bypass compression")
+                line = stream.readline()
+                check(time.monotonic() - started < 5, "Account first frame was buffered")
+                check(line.startswith(b"data: "), "Missing private account frame")
+                check(json.loads(line[6:]) == {"kind": "ready", "revision": "0"}, "Unexpected private account payload")
+
             websocket(context, ORIGIN)
             websocket(context, ORIGIN)  # A fresh connection must upgrade again.
             websocket(context, "https://attacker.test", expected=403)

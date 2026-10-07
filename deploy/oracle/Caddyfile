@@ -6,7 +6,11 @@
 }
 
 {$API_DOMAIN} {
-    encode zstd gzip
+    @compressible {
+        not path /api/v1/account/events
+    }
+    # Private event frames are small and must flush immediately on every version.
+    encode @compressible zstd gzip
 
     handle /api/* {
         # Trading/account responses must not be cached by browsers or proxies.

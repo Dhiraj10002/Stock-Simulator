@@ -45,7 +45,9 @@ Oracle gateway rather than unbounded serverless connections.
 
 CI runs the existing full suite plus private stream parsing, scope isolation,
 authenticated gateway streaming, two-tab refresh/logout and polling tests.
-The backend race check includes the Redis fanout package. Existing accounting
+The backend race check includes the Redis fanout package. The real Caddy/Go
+HTTPS smoke also checks that authenticated account events deliver their first
+frame immediately and bypass compression; anonymous streams are rejected. Existing accounting
 regressions cover delivery/MIS/futures/options reconciliation and durable order
 intent replay without a second fill.
 
