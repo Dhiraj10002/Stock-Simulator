@@ -10,16 +10,17 @@ import { publicFetch } from "@/lib/api";
 import { displayQuote } from "@/lib/fnoExplore";
 import { formatPaise } from "@/lib/format";
 import {
+  FnoMovement,
   FnoProvenance,
 } from "@/components/trading/FnoQuoteDetails";
 import type { Quote } from "@/types";
 
 export const MAJOR_INDICES_STRIP = [
-  { name: "NIFTY 50", symbolKey: "NIFTY", fallback: { price: 22421.95, change: -198.5, changePercent: -0.88 } },
-  { name: "SENSEX", symbolKey: "SENSEX", fallback: { price: 71909.7, change: -570.59, changePercent: -0.79 } },
-  { name: "BANK NIFTY", symbolKey: "BANKNIFTY", fallback: { price: 54450.75, change: -182.3, changePercent: -0.33 } },
-  { name: "MIDCP NIFTY", symbolKey: "MIDCPNIFTY", fallback: { price: 13562.75, change: -168.45, changePercent: -1.23 } },
-  { name: "FIN NIFTY", symbolKey: "FINNIFTY", fallback: { price: 24556.1, change: -93.4, changePercent: -0.38 } },
+  { name: "NIFTY 50", symbolKey: "NIFTY" },
+  { name: "SENSEX", symbolKey: "SENSEX" },
+  { name: "BANK NIFTY", symbolKey: "BANKNIFTY" },
+  { name: "MIDCP NIFTY", symbolKey: "MIDCPNIFTY" },
+  { name: "FIN NIFTY", symbolKey: "FINNIFTY" },
 ];
 const symbols = MAJOR_INDICES_STRIP.map((i) => i.symbolKey);
 
@@ -59,14 +60,7 @@ export default function IndicesTickerStrip() {
 
           const priceStr = quote && quote.price_paise > 0
             ? formatPaise(quote.price_paise)
-            : formatPaise(Math.round(index.fallback.price * 100));
-          const change = quote?.change_paise !== undefined
-            ? quote.change_paise / 100
-            : index.fallback.change;
-          const changePercent = quote?.change_percent !== undefined
-            ? quote.change_percent
-            : index.fallback.changePercent;
-          const isGain = change >= 0;
+            : "—";
 
           return (
             <div
@@ -87,17 +81,7 @@ export default function IndicesTickerStrip() {
                   compact
                 />
               </div>
-              <span
-                className={`font-semibold font-tabular text-[11px] ${
-                  isGain
-                    ? "text-emerald-600 dark:text-emerald-400"
-                    : "text-rose-600 dark:text-rose-400"
-                }`}
-              >
-                {isGain ? "+" : ""}
-                {change.toFixed(2)} ({isGain ? "+" : ""}
-                {changePercent.toFixed(2)}%)
-              </span>
+              <FnoMovement quote={quote} />
             </div>
           );
         })}

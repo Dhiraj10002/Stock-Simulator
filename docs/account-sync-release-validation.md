@@ -125,11 +125,28 @@ For a dedicated account, save a local Playwright storage state with restrictive
 file permissions, never commit it, and run:
 
 ```sh
-node frontend/scripts/profile-mobile.mjs --url https://stock-simulator-gules.vercel.app --paths /,/stocks,/stocks/RELIANCE --storage-state /private/path/session.json --account-window 60 --runs 3
+node frontend/scripts/profile-mobile.mjs --url https://stock-simulator-gules.vercel.app --paths /stocks,/options,/stocks/RELIANCE --storage-state /private/path/session.json --require-account --account-window 60 --motion no-preference --runs 3
 ```
 
 This is a read-only lab run. Also test loading, scroll, search, chart and order
 ticket on a physical phone. Record the model, browser, network and session time.
+
+`--require-account` verifies `/api/backend/auth/me` after the page has had a chance
+to refresh its session. A missing or expired login fails this command rather
+than accepting zero account requests as an improvement. Public runs explicitly
+report `accountObservation.status = not_measured` and a null count. Authenticated
+runs report per-path counts and requests/minute. Request completion times include
+the configured browser network throttling; they are not database query times.
+SSE response status/MIME and WebSocket frame counts are recorded without bodies.
+A successful SSE HTTP response alone does not prove heartbeat delivery, and
+WebSocket frame counts alone do not prove fresh market ticks or receive-to-paint
+latency. Those need open-market acceptance. Reports strip URL queries and UUIDs.
+
+The F&O page and its Explore child now also use `useAccountPortfolio`, so their
+former five- and ten-second timers cannot override healthy-stream polling.
+Active positions retain five-second valuation updates. The index strip keeps
+genuine last-available prices and uses unavailable states for missing prices or
+day movement; it no longer substitutes static benchmark values.
 
 ## Monitoring and restore
 

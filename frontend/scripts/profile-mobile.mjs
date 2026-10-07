@@ -4,6 +4,7 @@ import { spawn } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { accountObservation, reportPath, summarizeTimings } from "./profile-report.mjs";
 
 const defaultFrontend = fileURLToPath(new URL("../", import.meta.url));
 const args = process.argv.slice(2);
@@ -18,6 +19,8 @@ const output = resolve(option("--output", join(frontend, "artifacts/mobile")));
 const paths = option("--paths", "/,/login").split(",");
 const repeats = Number(option("--runs", "3"));
 const storageState = option("--storage-state");
+const requireAccount = args.includes("--require-account");
+if (requireAccount && (!storageState || !accountWindow)) throw new Error("--require-account needs --storage-state and --account-window");
 const modes = option("--motion", "no-preference,reduce").split(",");
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 if (!Number.isInteger(repeats) || repeats < 1 || repeats > 10) throw new Error("--runs must be 1–10");
@@ -44,12 +47,33 @@ async function main() {
     for (const path of paths) for (const reducedMotion of modes) for (let repeat = 0; repeat < repeats; repeat++) {
       const context = await browser.newContext({ viewport: desktop ? { width: 1440, height: 900 } : { width: 390, height: 844 }, deviceScaleFactor: 1, isMobile: !desktop, hasTouch: !desktop, reducedMotion, ...(storageState ? { storageState } : {}) });
       try {
-        const page = await context.newPage(), requests = [], failures = [], preflights = [];
+        const page = await context.newPage(), requests = [], failures = [], preflights = [], apiTimings = [], accountStreams = [];
+        const requestData = new WeakMap();
+        const sockets = { connections: 0, receivedFrames: 0, closed: 0 };
         let pageErrors = 0;
         page.on("pageerror", () => pageErrors++);
-        page.on("request", req => requests.push({ path: new URL(req.url()).pathname, method: req.method() }));
-        page.on("requestfailed", req => failures.push({ path: new URL(req.url()).pathname, kind: "network" }));
-        page.on("response", response => { if (response.status() >= 400) failures.push({ path: new URL(response.url()).pathname, status: response.status() }); });
+        page.on("request", req => {
+          const entry = { path: reportPath(req.url()), method: req.method(), status: null };
+          requests.push(entry);
+          requestData.set(req, { entry, start: performance.now() });
+        });
+        page.on("requestfailed", req => failures.push({ path: reportPath(req.url()), kind: "network" }));
+        page.on("response", response => {
+          const path = reportPath(response.url());
+          const record = requestData.get(response.request());
+          if (record) record.entry.status = response.status();
+          if (path === "/api/backend/account/events") accountStreams.push({ status: response.status(), contentType: response.headers()["content-type"] || "", firstResponseMs: record ? performance.now() - record.start : null });
+          if (response.status() >= 400) failures.push({ path, status: response.status() });
+        });
+        page.on("requestfinished", req => {
+          const record = requestData.get(req);
+          if (record && /^\/api\/(v1|backend)\//.test(record.entry.path) && record.entry.path !== "/api/backend/account/events") apiTimings.push({ ...record.entry, durationMs: performance.now() - record.start });
+        });
+        page.on("websocket", socket => {
+          sockets.connections++;
+          socket.on("framereceived", () => sockets.receivedFrames++);
+          socket.on("close", () => sockets.closed++);
+        });
         // Only local public-page comparisons use fixed fixtures. Remote measurements
         // reach the actual deployed services; no account writes or order submissions.
         if (!remote && !storageState) await page.route("**/api/v1/**", route => route.fulfill({ json: { success: true, data: [] } }));
@@ -66,12 +90,19 @@ async function main() {
         await cdp.send("Network.enable");
         await cdp.send("Performance.enable");
         cdp.on("Network.requestWillBeSent", event => {
-          if (event.request.method === "OPTIONS") preflights.push({ path: new URL(event.request.url).pathname });
+          if (event.request.method === "OPTIONS") preflights.push({ path: reportPath(event.request.url) });
         });
         await cdp.send("Network.emulateNetworkConditions", { offline: false, latency: 150, downloadThroughput: 200000, uploadThroughput: 93750 });
         await cdp.send("Emulation.setCPUThrottlingRate", { rate: desktop ? 1 : 4 });
         const response = await page.goto(origin + path, { waitUntil: "load", timeout: 60000 });
         await page.waitForTimeout(3500);
+        let authenticated = false;
+        if (storageState) {
+          const session = await context.request.get(origin + "/api/backend/auth/me", { maxRedirects: 0, timeout: 15000 });
+          authenticated = session.status() === 200 && (await session.json().catch(() => null))?.success === true;
+          await session.dispose();
+        }
+        if (requireAccount && !authenticated) throw new Error("Account profile blocked: sign in and export a fresh private storage state; no polling result was accepted");
         const navigation = await page.evaluate(() => {
           const js = performance.getEntriesByType("resource").filter(entry => /\.js(?:\?|$)/.test(entry.name));
           return { lcpMs: window.__mobileLab.lcpMs, cls: window.__mobileLab.cls, fcpMs: performance.getEntriesByType("paint").find(entry => entry.name === "first-contentful-paint")?.startTime ?? null, ttfbMs: performance.getEntriesByType("navigation")[0]?.responseStart ?? null, jsBytes: js.reduce((sum, entry) => sum + entry.encodedBodySize, 0), jsRequests: js.length, overflow: document.documentElement.scrollWidth > innerWidth };
@@ -96,11 +127,11 @@ async function main() {
         const afterMetrics = await cdp.send("Performance.getMetrics");
         const metrics = new Map(afterMetrics.metrics.map(item => [item.name, item.value]));
         const prior = new Map(beforeMetrics.metrics.map(item => [item.name, item.value]));
-        const accountRequests = requests.slice(accountStart).filter(item => new RegExp("^/api/backend/(wallet|portfolio|orders|trades)(?:/|$)").test(item.path));
-        const accountObservation = { seconds: (Date.now() - observationStarted) / 1000, requests: accountRequests, count: accountRequests.length };
+        const account = accountObservation(requests.slice(accountStart), accountWindow ? (Date.now() - observationStarted) / 1000 : 0, authenticated);
         const cpu = { scriptSeconds: (metrics.get("ScriptDuration") || 0) - (prior.get("ScriptDuration") || 0), taskSeconds: (metrics.get("TaskDuration") || 0) - (prior.get("TaskDuration") || 0), heapBytes: metrics.get("JSHeapUsedSize") };
         const interactionLab = await page.evaluate(() => ({ ...window.__mobileLab, overflow: document.documentElement.scrollWidth > innerWidth }));
-        const run = { path, finalPath: new URL(page.url()).pathname, reducedMotion, repeat: repeat + 1, status: response?.status(), navigation, interactions, interactionLab, accountObservation, cpu, preflights, requests, failures, pageErrors };
+        const apiSummary = Object.fromEntries([...new Set(apiTimings.map(item => item.path))].sort().map(path => [path, summarizeTimings(apiTimings.filter(item => item.path === path && item.status >= 200 && item.status < 300).map(item => item.durationMs))]));
+        const run = { path, finalPath: new URL(page.url()).pathname, reducedMotion, repeat: repeat + 1, status: response?.status(), navigation, interactions, interactionLab, accountObservation: account, accountStreams, apiTimings, apiSummary, sockets, cpu, preflights, requests, failures, pageErrors };
         runs.push(run);
         if (repeat === 0) await page.screenshot({ path: join(output, `${path.replace(/[^a-z0-9]/gi, "_") || "home"}-${reducedMotion}.png`) });
         console.log(JSON.stringify({ path, reducedMotion, repeat: repeat + 1, ...navigation, pageErrors, failures: failures.length }));

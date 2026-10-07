@@ -159,7 +159,9 @@ jobs:
         run: npx tsc --noEmit
 
       - name: Run Unit Tests
-        run: npm test
+        run: |
+          npm test
+          node --test scripts/profile-report.test.mjs
 
       - name: Production Build
         run: npm run build
@@ -251,8 +253,8 @@ jobs:
       - name: Measure current deployed public routes without account writes
         continue-on-error: true
         run: |
-          node scripts/profile-mobile.mjs --url https://stock-simulator-gules.vercel.app --paths /,/login --runs 1 --output artifacts/deployed/mobile
-          node scripts/profile-mobile.mjs --url https://stock-simulator-gules.vercel.app --device desktop --paths /,/login --runs 1 --output artifacts/deployed/desktop
+          node scripts/profile-mobile.mjs --url https://stock-simulator-gules.vercel.app --paths /,/login,/stocks,/options --motion no-preference --runs 2 --output artifacts/deployed/mobile
+          node scripts/profile-mobile.mjs --url https://stock-simulator-gules.vercel.app --device desktop --paths /,/login,/stocks,/options --motion no-preference --runs 2 --output artifacts/deployed/desktop
       - name: Record production dependency audit
         run: |
           npm audit --omit=dev --json > artifacts/comparison/dependency-audit.json || test -s artifacts/comparison/dependency-audit.json

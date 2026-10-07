@@ -12,9 +12,10 @@ import {
   TrendingUp,
   Wallet,
 } from "lucide-react";
-import { publicFetch, apiFetch } from "@/lib/api";
+import { publicFetch } from "@/lib/api";
 import { useAuthToken } from "@/hooks/useAuthToken";
 import { useAccountWallet } from "@/hooks/useAccountWallet";
+import { useAccountPortfolio } from "@/hooks/useAccountPortfolio";
 import { isDerivativePosition } from "@/lib/fnoExplore";
 import { formatPaise } from "@/lib/format";
 import { feedLabel } from "@/lib/marketDisplay";
@@ -44,7 +45,7 @@ import {
 } from "@/components/trading/FnoQuoteDetails";
 import dynamic from "next/dynamic";
 const FnoOrderModal = dynamic(() => import("@/components/trading/FnoOrderModal"), { ssr: false });
-import type { Instrument, Portfolio, Quote } from "@/types";
+import type { Instrument, Quote } from "@/types";
 
 const panel =
   "rounded-2xl border border-slate-200 bg-[#ffffff] shadow-sm dark:border-slate-800 dark:bg-[#0f172a]";
@@ -286,13 +287,7 @@ export default function FnoExplorePage({
   });
   const token = useAuthToken();
   const wallet = useAccountWallet();
-  const portfolio = useQuery({
-    queryKey: ["portfolio", token],
-    queryFn: () => apiFetch<Portfolio>("/portfolio"),
-    enabled: !!token && active,
-    refetchInterval: active ? 10000 : false,
-    retry: false,
-  });
+  const portfolio = useAccountPortfolio(active);
   const account = token && !portfolio.isError ? portfolio.data : undefined;
   const positions = account?.positions
     .filter(isDerivativePosition)

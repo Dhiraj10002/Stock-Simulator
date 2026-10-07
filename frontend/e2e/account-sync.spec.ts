@@ -41,17 +41,22 @@ async function mocks(page: Page, positions = false) {
     if (path === "/wallet") { counts.wallet++; data = { cash_balance_paise: 100000000, available_balance_paise: 100000000, blocked_paise: 0 }; }
     if (path === "/portfolio") { counts.portfolio++; data = { positions: positions ? [{ symbol: "RELIANCE", quantity: 1 }] : [], unrealized_pnl_paise: 0, valuation_status: "REALTIME" }; }
     if (path === "/market/status") data = { status: "OPEN", is_open: true, feed_state: "LIVE", feed_provider: "angel_one", last_tick: new Date().toISOString() };
-    if (path === "/market/quotes/batch") data = Object.fromEntries((request.postDataJSON().symbols || []).map((symbol: string) => [symbol, { symbol, price_paise: 10000, source: "angelone_live", updated_at: new Date().toISOString() }]));
+    if (path === "/market/quotes/batch") {
+      const symbols = request.method() === "POST"
+        ? request.postDataJSON()?.symbols || []
+        : (new URL(request.url()).searchParams.get("symbols") || "").split(",").filter(Boolean);
+      data = Object.fromEntries(symbols.map((symbol: string) => [symbol, { symbol, price_paise: 10000, source: "angelone_live", updated_at: new Date().toISOString() }]));
+    }
     if (path === "/market/movers") data = { gainers: [], losers: [], most_traded: [], trending: [] };
     await route.fulfill({ json: { success: true, data }, headers: { "access-control-allow-origin": "http://127.0.0.1:3100" } });
   });
   return counts;
 }
-test("healthy private events reduce account polling and server changes reconcile immediately", async ({ page, context }) => {
+for (const path of ["/stocks", "/options"]) test(`healthy private events reduce account polling and server changes reconcile immediately on ${path}`, async ({ page, context }) => {
   await context.addCookies([{ name: "stocksim_session", value: scope, url: "http://127.0.0.1:3100" }]);
   await privateStream(page);
   const counts = await mocks(page);
-  await page.goto("/stocks");
+  await page.goto(path);
   await expect.poll(() => page.evaluate(() => (window as typeof window & { accountConnections: number }).accountConnections)).toBe(1);
   await expect.poll(() => counts.wallet).toBeGreaterThan(0);
   await page.waitForTimeout(1500); // Settle the first authenticated handshake.
@@ -64,7 +69,7 @@ test("healthy private events reduce account polling and server changes reconcile
   await expect.poll(() => counts.portfolio).toBeGreaterThan(initial.portfolio);
   if (process.env.POLLING_PROFILE_OUTPUT) {
     mkdirSync(process.env.POLLING_PROFILE_OUTPUT, { recursive: true });
-    writeFileSync(process.env.POLLING_PROFILE_OUTPUT + "/account-polling.json", JSON.stringify({ observation_seconds: 11, private_stream_healthy: true, measured_wallet_requests: counts.wallet - initial.wallet - 1, measured_empty_portfolio_requests: counts.portfolio - initial.portfolio - 1, fixture: "Browser protocol; not production user traffic" }, null, 2));
+    writeFileSync(process.env.POLLING_PROFILE_OUTPUT + `/account-polling-${path.slice(1)}.json`, JSON.stringify({ path, observation_seconds: 11, private_stream_healthy: true, measured_wallet_requests: counts.wallet - initial.wallet - 1, measured_empty_portfolio_requests: counts.portfolio - initial.portfolio - 1, fixture: "Browser protocol; not production user traffic" }, null, 2));
   }
 });
 test("active positions retain five-second valuation polling and another tab's acceptance refetches wallet", async ({ page, context }) => {

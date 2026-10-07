@@ -5,12 +5,12 @@ import { accountPollingInterval } from "@/lib/accountSync";
 import { useAccountPolling } from "./useAccountPolling";
 import type { Portfolio } from "@/types";
 
-export function useAccountPortfolio() {
+export function useAccountPortfolio(enabled = true) {
   const { scope, healthy } = useAccountPolling();
   const query = useQuery<Portfolio>({
     queryKey: ["portfolio", scope],
     queryFn: ({ signal }) => apiFetch<Portfolio>("/portfolio", { signal }),
-    enabled: !!scope,
+    enabled: !!scope && enabled,
     refetchInterval: query => accountPollingInterval(scope, healthy, !query.state.data || query.state.data.positions.some(position => position.quantity !== 0)),
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,

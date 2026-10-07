@@ -2,30 +2,22 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, PieChart } from "lucide-react";
 import Navbar from "@/components/layout/Navbar";
 import IndicesTickerStrip from "@/components/layout/IndicesTickerStrip";
 import FnoExplorePage from "@/components/trading/FnoExplorePage";
 import PaperOrderRecovery from "@/components/trading/PaperOrderRecovery";
 import { useAccountWallet } from "@/hooks/useAccountWallet";
+import { useAccountPortfolio } from "@/hooks/useAccountPortfolio";
 import { useAuthToken } from "@/hooks/useAuthToken";
 import { formatPaise } from "@/lib/format";
-import { apiFetch } from "@/lib/api";
 import { isDerivativePosition } from "@/lib/fnoExplore";
-import type { Portfolio } from "@/types";
 
 export default function OptionsPage() {
   const [tab, setTab] = useState<"futures" | "positions">("futures");
   const token = useAuthToken();
   const wallet = useAccountWallet();
-  const portfolioQuery = useQuery<Portfolio>({
-    queryKey: ["portfolio", token],
-    queryFn: () => apiFetch<Portfolio>("/portfolio"),
-    enabled: !!token,
-    refetchInterval: token ? 5000 : false,
-    retry: false,
-  });
+  const portfolioQuery = useAccountPortfolio();
   const portfolio =
     token && !portfolioQuery.isError ? portfolioQuery.data : undefined;
   const positions = portfolio?.positions

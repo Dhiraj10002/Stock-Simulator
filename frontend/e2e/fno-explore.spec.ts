@@ -647,6 +647,11 @@ test("unavailable quotes and catalog recover without fake prices", async ({
   page,
 }) => {
   const control = await setup(page, { unavailable: true, catalogError: true });
+  const indices = page.getByRole("region", { name: "Market index strip" });
+  await expect(indices.getByText("Quote unavailable", { exact: true })).toHaveCount(5);
+  await expect(indices.getByText("Day change unavailable", { exact: true })).toHaveCount(5);
+  await expect(indices).not.toContainText("22,421.95");
+  await expect(indices).not.toContainText("71,909.70");
   await expect(
     page.getByText(
       "Futures catalog unavailable. Check backend and instrument master health.",
