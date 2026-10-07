@@ -33,7 +33,7 @@ interface BaseInstrument {
   symbol: string;
   name: string;
   fallbackPriceRupees: number;
-  category: "NIFTY 50" | "High Growth & Trending" | "PSU & Defence" | "Indices & F&O";
+  category: "NIFTY 50" | "High Growth & Trending" | "PSU & Defence";
 }
 
 const BASE_INSTRUMENTS: BaseInstrument[] = [
@@ -54,6 +54,7 @@ const BASE_INSTRUMENTS: BaseInstrument[] = [
   { symbol: "SUNPHARMA", name: "Sun Pharma Industries", fallbackPriceRupees: 1840.0, category: "NIFTY 50" },
   { symbol: "TITAN", name: "Titan Company Ltd", fallbackPriceRupees: 3450.0, category: "NIFTY 50" },
   { symbol: "WIPRO", name: "Wipro Ltd", fallbackPriceRupees: 528.0, category: "NIFTY 50" },
+  { symbol: "ASIANPAINT", name: "Asian Paints Ltd", fallbackPriceRupees: 3120.0, category: "NIFTY 50" },
 
   // High Growth & Trending
   { symbol: "ZOMATO", name: "Zomato Ltd (Eternal)", fallbackPriceRupees: 282.4, category: "High Growth & Trending" },
@@ -71,10 +72,6 @@ const BASE_INSTRUMENTS: BaseInstrument[] = [
   { symbol: "NTPC", name: "NTPC Ltd", fallbackPriceRupees: 395.0, category: "PSU & Defence" },
   { symbol: "COALINDIA", name: "Coal India Ltd", fallbackPriceRupees: 485.0, category: "PSU & Defence" },
   { symbol: "ONGC", name: "Oil & Natural Gas Corp", fallbackPriceRupees: 295.0, category: "PSU & Defence" },
-
-  // Indices & Derivatives
-  { symbol: "NIFTY", name: "Nifty 50 Index", fallbackPriceRupees: 25378.0, category: "Indices & F&O" },
-  { symbol: "BANKNIFTY", name: "Bank Nifty Index", fallbackPriceRupees: 52450.0, category: "Indices & F&O" },
 ];
 
 export default function PreTradeRiskLab({
@@ -126,14 +123,21 @@ export default function PreTradeRiskLab({
   }, [searchQuery]);
 
   const { data: dbResults = [], isFetching: isSearching } = useQuery<StockSearchResult[]>({
-    queryKey: ["mentor-stocks-search", debouncedQuery],
+    queryKey: ["mentor-stocks-search-nse", debouncedQuery],
     queryFn: async () => {
       if (!debouncedQuery) return [];
       try {
         const res = await apiFetch<StockSearchResult[]>(
-          `/stocks?q=${encodeURIComponent(debouncedQuery)}`
+          `/stocks?q=${encodeURIComponent(debouncedQuery)}&segment=NSE`
         );
-        return res || [];
+        return (res || []).filter(
+          (s) =>
+            (s.exchange_segment === "NSE" || !s.exchange_segment) &&
+            s.instrument_type !== "FUTIDX" &&
+            s.instrument_type !== "OPTIDX" &&
+            s.instrument_type !== "FUTSTK" &&
+            s.instrument_type !== "OPTSTK"
+        );
       } catch {
         return [];
       }
@@ -200,7 +204,7 @@ export default function PreTradeRiskLab({
   };
 
   // Apply Preset Setup
-  const handleApplyPreset = (preset: "conservative" | "aggressive" | "fno") => {
+  const handleApplyPreset = (preset: "conservative" | "aggressive" | "momentum") => {
     if (preset === "conservative") {
       const sym = "RELIANCE";
       const price = getSymbolPrice(sym, 2985.5);
@@ -222,15 +226,15 @@ export default function PreTradeRiskLab({
       setTargetRupees(Number((price * 1.02).toFixed(1)));
       setStopLossRupees(Number((price * 0.988).toFixed(1)));
     } else {
-      const sym = "NIFTY";
-      const price = getSymbolPrice(sym, 25378.0);
+      const sym = "INFY";
+      const price = getSymbolPrice(sym, 1785.2);
       setSymbol(sym);
       setSide("BUY");
-      setProduct("FNO");
-      setQuantity(50);
+      setProduct("INTRADAY");
+      setQuantity(100);
       setPriceRupees(price);
-      setTargetRupees(Number((price * 1.01).toFixed(1)));
-      setStopLossRupees(Number((price * 0.995).toFixed(1)));
+      setTargetRupees(Number((price * 1.025).toFixed(1)));
+      setStopLossRupees(Number((price * 0.988).toFixed(1)));
     }
     setResult(null);
     setSimError(null);
@@ -368,11 +372,11 @@ export default function PreTradeRiskLab({
                 Pre-Trade Risk & Margin Simulation Lab
               </h3>
               <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 dark:bg-indigo-950/60 text-indigo-800 dark:text-indigo-300 border border-indigo-300 dark:border-indigo-800">
-                44,500+ NSE/NFO Instruments
+                NSE Equities (Real-Time Quotes)
               </span>
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Simulate hypothetical order tickets, margin commitments, and risk-reward symmetry for any stock or index before executing.
+              Simulate hypothetical order tickets, margin commitments, and risk-reward symmetry for any NSE stock before executing.
             </p>
           </div>
         </div>
@@ -398,10 +402,10 @@ export default function PreTradeRiskLab({
           </button>
           <button
             type="button"
-            onClick={() => handleApplyPreset("fno")}
+            onClick={() => handleApplyPreset("momentum")}
             className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-orange-50 via-amber-50 to-orange-50 dark:from-orange-950/40 dark:via-amber-950/30 dark:to-orange-950/40 hover:from-orange-100 hover:to-amber-100 text-orange-950 dark:text-orange-200 text-xs font-bold border border-orange-300/90 dark:border-orange-700/60 shadow-sm shadow-orange-500/10 transition-all shrink-0 hover:scale-[1.02] active:scale-95 cursor-pointer"
           >
-            F&O Index Setup
+            Intraday Momentum (1:2)
           </button>
         </div>
       </div>
@@ -437,7 +441,7 @@ export default function PreTradeRiskLab({
               </span>
             </div>
             <div className="flex items-center gap-1.5 flex-wrap">
-              {["RELIANCE", "TCS", "ITC", "ZOMATO", "HDFCBANK", "TATAMOTORS", "NIFTY"].map((s) => {
+              {["RELIANCE", "TCS", "INFY", "ITC", "ZOMATO", "HDFCBANK", "TATAMOTORS", "SBIN"].map((s) => {
                 const live = getSymbolPrice(s);
                 return (
                   <button
@@ -479,7 +483,7 @@ export default function PreTradeRiskLab({
                 <Search className="w-3.5 h-3.5 absolute left-3.5 top-3 text-slate-400" />
                 <input
                   type="text"
-                  placeholder="Search 44,500+ NSE & NFO stocks, indices, futures..."
+                  placeholder="Search any NSE stock (e.g., RELIANCE, TCS, INFY, TATAMOTORS)..."
                   value={searchQuery}
                   onFocus={() => setIsSearchOpen(true)}
                   onChange={(e) => {
@@ -648,16 +652,6 @@ export default function PreTradeRiskLab({
                   </optgroup>
                   <optgroup label="🛡️ PSU & Defence">
                     {BASE_INSTRUMENTS.filter((i) => i.category === "PSU & Defence").map((inst) => {
-                      const p = getSymbolPrice(inst.symbol, inst.fallbackPriceRupees);
-                      return (
-                        <option key={inst.symbol} value={inst.symbol}>
-                          {inst.symbol} — {inst.name} (₹{p.toFixed(1)})
-                        </option>
-                      );
-                    })}
-                  </optgroup>
-                  <optgroup label="📊 Major Indices & F&O">
-                    {BASE_INSTRUMENTS.filter((i) => i.category === "Indices & F&O").map((inst) => {
                       const p = getSymbolPrice(inst.symbol, inst.fallbackPriceRupees);
                       return (
                         <option key={inst.symbol} value={inst.symbol}>
