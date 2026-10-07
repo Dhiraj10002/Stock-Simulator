@@ -41,6 +41,11 @@
 
     log {
         output stdout
-        format json
+        format filter {
+            wrap json
+            fields {
+                request>headers>X-Frontend-Proxy-Secret delete
+            }
+        }
     }
 }

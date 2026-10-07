@@ -386,6 +386,7 @@ test("display polling profile: healthy stream then silent stall", async ({ page 
   const tick = async () => {
     const price = 148000 + ticks++ * 100;
     control.tick(price, await page.evaluate(() => new Date().toISOString()));
+    await page.clock.runFor(100);
     await expect(page.locator('header[aria-label="Stock identity"]').getByText(`₹${(price / 100).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`, { exact: true })).toBeVisible();
   };
   await tick();
@@ -435,6 +436,7 @@ test("socket disconnect restores display polling and reconnect cannot reuse earl
   await expect.poll(() => control.messages.some(m => m.symbols?.includes("RELIANCE-EQ"))).toBe(true);
   await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000));
   control.tick(148000, await page.evaluate(() => new Date().toISOString()));
+  await page.clock.runFor(100);
   await expect(page.locator('header[aria-label="Stock identity"]').getByText("₹1,480.00", { exact: true })).toBeVisible();
   const initial = control.requests.filter(path => path === "/market/quotes/RELIANCE-EQ").length;
   control.disconnect();

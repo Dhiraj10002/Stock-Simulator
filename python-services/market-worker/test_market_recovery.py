@@ -51,8 +51,9 @@ class MarketRecoveryTest(unittest.TestCase):
         fresh = worker.Subscription('FRESH', '101', 'NSE', 1)
         store.demanded_subscriptions.return_value = base + [fresh, cold]
         writer.client.hget.side_effect = lambda key, field: datetime.now(timezone.utc).isoformat() if key.endswith(':FRESH') else None
-        attempts = {sub.symbol: worker.time.monotonic() - 30 for sub in base}
-        with patch.object(worker, 'fetch_full_snapshots', return_value={}) as fetch:
+        # Cold priority must not depend on the origin of the monotonic clock.
+        attempts = {sub.symbol: -29.0 for sub in base}
+        with patch.object(worker.time, 'monotonic', return_value=1.0), patch.object(worker, 'fetch_full_snapshots', return_value={}) as fetch:
             worker.recover_quote_snapshots(store, writer, attempts, epoch)
         batch = fetch.call_args.args[1]
         self.assertEqual(batch[0], cold)

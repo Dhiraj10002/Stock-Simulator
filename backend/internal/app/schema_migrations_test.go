@@ -269,7 +269,7 @@ func TestConcurrentSchemaAdoptionAppliesOnce(t *testing.T) {
 		}
 		applied += result.report.Applied
 	}
-	if applied != 1 {
+	if applied != len(schemaMigrations) {
 		t.Fatalf("migration ran %d times", applied)
 	}
 }

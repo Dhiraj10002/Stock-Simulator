@@ -215,3 +215,8 @@ func TestStructuredFieldConstructors(t *testing.T) {
 	dbLat := logger.DBLatency(5 * time.Millisecond)
 	assert.Equal(t, "db_latency", dbLat.Key)
 }
+
+func TestFrontendGatewaySecretFieldIsRedacted(t *testing.T) {
+	field := logger.SanitizeField(zap.String("X-Frontend-Proxy-Secret", "gateway-test-value"))
+	assert.Equal(t, "[REDACTED]", field.String)
+}

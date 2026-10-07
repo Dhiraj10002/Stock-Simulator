@@ -14,6 +14,10 @@ jobs:
       - uses: actions/checkout@v4
       - name: Verify production Compose and Caddy against real Go backend
         run: python3 scripts/smoke_production_gateway.py
+      - name: Verify optional broker proxy image and configuration
+        run: |
+          docker build -t stocksim-broker-proxy-test deploy/oracle/broker-proxy
+          docker run --rm --entrypoint privoxy -v "$PWD/deploy/oracle/broker-proxy/config:/etc/privoxy/config:ro" stocksim-broker-proxy-test --no-daemon --config-test /etc/privoxy/config
 
   backend:
     name: Go Backend & Integration Tests

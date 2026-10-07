@@ -1808,7 +1808,7 @@ def recover_quote_snapshots(store, writer, attempts, epoch):
             attempts.pop(symbol, None)
     pending = []
     # New/cold contracts first; repeated base-universe polling cannot starve them.
-    for item in sorted(active, key=lambda item: attempts.get(item.symbol, -1)):
+    for item in sorted(active, key=lambda item: (item.symbol in attempts, attempts.get(item.symbol, 0))):
         if item.symbol in attempts and time.monotonic() - attempts[item.symbol] < 10:
             continue
         stamp = broker_quote_time(writer.client.hget(f'market:quote:{item.symbol}', 'updated_at'))

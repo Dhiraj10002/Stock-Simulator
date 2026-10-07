@@ -61,7 +61,7 @@ func IsSensitiveKey(key string) bool {
 	if _, ok := sensitiveKeys[norm]; ok {
 		return true
 	}
-	if strings.HasSuffix(norm, "_secret") || strings.HasSuffix(norm, "_password") ||
+	if strings.HasSuffix(norm, "_secret") || strings.HasSuffix(norm, "-secret") || strings.HasSuffix(norm, "_password") ||
 		strings.HasSuffix(norm, "_token") || strings.HasSuffix(norm, "_apikey") ||
 		strings.HasSuffix(norm, "_privatekey") {
 		return true

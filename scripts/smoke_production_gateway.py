@@ -157,6 +157,18 @@ def main():
             check(status == 200 and headers.get("Access-Control-Allow-Origin") == ORIGIN, "Allowed frontend CORS failed")
             status, _, _ = request("/api/v1/health", {"Origin": "https://attacker.test"})
             check(status == 403, "Unauthorized frontend origin was accepted")
+            probe_secret = "gateway-smoke-secret-do-not-log"
+            probe_path = "/api/v1/health?gateway_log_probe=redaction"
+            status, _, _ = request(probe_path, {"X-Frontend-Proxy-Secret": probe_secret})
+            check(status == 200, "Gateway secret redaction probe failed")
+            deadline = time.monotonic() + 10
+            while True:
+                edge_logs = compose("logs", "--no-color", "caddy", capture=True).stdout
+                check(probe_secret not in edge_logs, "Frontend gateway secret leaked into edge logs")
+                if "gateway_log_probe=redaction" in edge_logs:
+                    break
+                check(time.monotonic() < deadline, "Redaction probe access log did not arrive")
+                time.sleep(0.2)
             websocket(context, ORIGIN)
             websocket(context, ORIGIN)  # A fresh connection must upgrade again.
             websocket(context, "https://attacker.test", expected=403)

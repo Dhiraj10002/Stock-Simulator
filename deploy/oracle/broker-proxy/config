@@ -2,6 +2,6 @@
 listen-address  0.0.0.0:8118
 socket-timeout 10
 logdir /tmp
-logfile /dev/stdout
+# No logfile: the foreground process uses Docker-managed console logging.
 # Add an approved upstream when broker egress requires it. Keep credentials out of Git.
 # Example: forward-socks5t / approved-proxy-host:1080 .

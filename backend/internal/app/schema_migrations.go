@@ -212,6 +212,15 @@ func (e *schemaValidationError) Error() string {
 
 // Additive migration: existing financial rows and exit retry keys remain intact.
 func addOrderIntents(tx *gorm.DB) error {
+	var present bool
+	if err := tx.Raw(`SELECT COUNT(*) = 2 AND to_regclass('idx_order_intent_key') IS NOT NULL
+ FROM pg_attribute WHERE attrelid = to_regclass('orders')
+ AND attname IN ('intent_key', 'intent_hash') AND NOT attisdropped`).Scan(&present).Error; err != nil {
+		return err
+	}
+	if present {
+		return nil
+	}
 	return tx.Exec(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS intent_key varchar(128);
  ALTER TABLE orders ADD COLUMN IF NOT EXISTS intent_hash varchar(64);
  CREATE UNIQUE INDEX IF NOT EXISTS idx_order_intent_key ON orders(user_uuid, intent_key);`).Error

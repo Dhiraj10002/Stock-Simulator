@@ -448,6 +448,7 @@ func TestProdInfra_BackendRestart_StateRecovery(t *testing.T) {
 	})
 	orderReq := httptest.NewRequest(http.MethodPost, "/api/v1/orders", bytes.NewReader(orderBody))
 	orderReq.Header.Set("Content-Type", "application/json")
+	orderReq.Header.Set("Idempotency-Key", uuid.NewString())
 	orderReq.Header.Set("Authorization", "Bearer "+token)
 
 	orderResp := httptest.NewRecorder()
