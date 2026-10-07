@@ -66,6 +66,21 @@ submitted by the deployed profiler. Artifacts do not include session storage.
 Public body-less GETs already omitted JSON headers; a regression test protects
 that behavior. JSON POST bodies and private security headers remain required.
 
+## Dependency patches
+
+The initial runtime audit reported Next.js, Sharp, PostCSS, Nano ID and
+source-map-js advisories. Next.js and eslint-config-next move to 16.4.0 with a
+regenerated lockfile; audit-compatible transitive patches are included. CI now
+blocks on high/critical production dependency advisories. The old release is
+still deployed until the owner rolls out this PR.
+
+The full development-tool audit also reports unpatched braces/micromatch/
+fast-glob advisories inherited by eslint-config-next. Do not use npm audit fix
+--force: it proposes a framework-config downgrade. Those tools process
+repository-controlled paths during lint/build and are absent from the standalone
+runtime. Track the upstream patch; a clean runtime audit is not a claim that
+all development tools have zero advisories.
+
 ## Deployment sequence
 
 1. Review CI and merge the PR.

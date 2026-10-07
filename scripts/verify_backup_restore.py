@@ -42,7 +42,7 @@ def verify(backup, expected=None):
                  "--mount", "type=bind,source=" + str(backup) + ",target=/backup.dump,readonly",
                  "postgres:16-alpine"])
         for attempt in range(100):
-            result = subprocess.run(["docker", "exec", name, "pg_isready", "-U", "postgres"], capture_output=True, timeout=5)
+            result = subprocess.run(["docker", "exec", name, "pg_isready", "-h", "127.0.0.1", "-U", "postgres"], capture_output=True, timeout=5)
             if result.returncode == 0:
                 break
             time.sleep(0.2)

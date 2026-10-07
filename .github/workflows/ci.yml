@@ -93,7 +93,7 @@ jobs:
           docker exec "${{ job.services.postgres.id }}" pg_dump -U postgres -d testdb --format=custom > "$RUNNER_TEMP/accounting.dump"
           python3 -c 'import sys; sys.path.insert(0, "../scripts"); from verify_backup_restore import FINGERPRINT_SQL; print(FINGERPRINT_SQL)' > "$RUNNER_TEMP/fingerprint.sql"
           docker exec -i "${{ job.services.postgres.id }}" psql -U postgres -d testdb -At -v ON_ERROR_STOP=1 < "$RUNNER_TEMP/fingerprint.sql" > "$RUNNER_TEMP/fingerprint.txt"
-          python3 ../scripts/verify_backup_restore.py "$RUNNER_TEMP/accounting.dump" --expected-fingerprint "$RUNNER_TEMP/fingerprint.txt" > "$RUNNER_TEMP/restore-verification.json"
+          python3 ../scripts/verify_backup_restore.py "$RUNNER_TEMP/accounting.dump" --expected-fingerprint "$RUNNER_TEMP/fingerprint.txt" > "$RUNNER_TEMP/restore-verification.json" || { cat "$RUNNER_TEMP/restore-verification.json"; exit 1; }
           cat "$RUNNER_TEMP/restore-verification.json"
 
       - uses: actions/upload-artifact@v4
@@ -148,6 +148,9 @@ jobs:
 
       - name: Install Dependencies
         run: npm ci
+
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
 
       - name: Run ESLint
         run: npm run lint
@@ -260,37 +263,3 @@ jobs:
           name: homepage-performance-and-deployed-profile
           path: frontend/artifacts/
           retention-days: 7
-
-  dependency-preparation:
-    name: Prepare Patched Dependency Lockfile
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: frontend
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - name: Resolve patched packages without executing install scripts
-        run: |
-          cp package-lock.json "$RUNNER_TEMP/original-lock.json"
-          node -e 'const fs=require("node:fs"); const p=JSON.parse(fs.readFileSync("package.json")); p.dependencies.next="16.4.0"; p.devDependencies["eslint-config-next"]="16.4.0"; fs.writeFileSync("package.json",JSON.stringify(p,null,2)+String.fromCharCode(10))'
-          npm install --package-lock-only --ignore-scripts --no-audit
-          npm audit fix --package-lock-only --ignore-scripts
-          npm audit --omit=dev --audit-level=high
-      - name: Export exact lockfile changes for review
-        if: always()
-        run: |
-          node <<'NODE'
-          const fs = require("node:fs");
-          const old = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + "/original-lock.json"));
-          const next = JSON.parse(fs.readFileSync("package-lock.json"));
-          const changed = {};
-          for (const [key,value] of Object.entries(next.packages)) if (JSON.stringify(old.packages[key]) !== JSON.stringify(value)) changed[key]=value;
-          const removed = Object.keys(old.packages).filter(key => !Object.hasOwn(next.packages,key));
-          const { packages, ...top } = next;
-          console.log("LOCK_PATCH_BEGIN");
-          console.log(JSON.stringify({ packageJSON: JSON.parse(fs.readFileSync("package.json")), top, changed, removed }, null, 2));
-          console.log("LOCK_PATCH_END");
-          NODE

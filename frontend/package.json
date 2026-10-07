@@ -18,7 +18,7 @@
     "@vercel/speed-insights": "^2.0.0",
     "lightweight-charts": "^5.2.1",
     "lucide-react": "^1.46.0",
-    "next": "16.2.11",
+    "next": "16.4.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "zustand": "^5.0.15"
@@ -32,7 +32,7 @@
     "@types/react-dom": "^19",
     "babel-plugin-react-compiler": "1.0.0",
     "eslint": "^9",
-    "eslint-config-next": "16.2.11",
+    "eslint-config-next": "16.4.0",
     "tailwindcss": "^4",
     "tsx": "4.20.6",
     "typescript": "^5"
