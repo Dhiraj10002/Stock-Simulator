@@ -3,7 +3,7 @@ import { useEffect, useSyncExternalStore } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuthToken } from "@/hooks/useAuthToken";
 import { getAuthToken, sessionFetch } from "@/lib/api";
-import { accountEventDecoder, isAccountQuery, setAccountStreamHealth } from "@/lib/accountSync";
+import { accountEventDecoder, accountStreamHealthy, isAccountQuery, setAccountStreamHealth } from "@/lib/accountSync";
 
 const visibleSnapshot = () => document.visibilityState !== "hidden";
 const serverVisible = () => true;
@@ -86,8 +86,9 @@ export function AccountSyncProvider({ children }: { children: React.ReactNode })
       } catch {
         failed = true;
         if (active()) {
+          const wasHealthy = accountStreamHealthy(scope);
           setAccountStreamHealth("");
-          reconcile();
+          if (wasHealthy) reconcile();
         }
       } finally {
         clearTimeout(watchdog);

@@ -5,7 +5,9 @@ const after = JSON.parse(readFileSync(afterPath, "utf8"));
 if (before.conditions !== after.conditions || before.browser !== after.browser) throw new Error("Comparison conditions differ");
 const median = values => {
   const sorted = values.filter(Number.isFinite).sort((a, b) => a - b);
-  return sorted.length ? sorted[Math.floor(sorted.length / 2)] : null;
+  if (!sorted.length) return null;
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
 };
 const rows = ["no-preference", "reduce"].map(motion => {
   const prior = before.runs.filter(run => run.reducedMotion === motion);
