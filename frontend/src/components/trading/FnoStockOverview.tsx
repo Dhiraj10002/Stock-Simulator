@@ -3,6 +3,7 @@ import { useSessionDisplayPolling } from "@/hooks/useDisplayPolling";
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, Layers, Sparkles, TrendingUp } from "lucide-react";
 import { publicFetch } from "@/lib/api";
@@ -131,6 +132,7 @@ export default function FnoStockOverview({
   sessionLive?: boolean;
   onTrade: (underlying: string) => void;
 }) {
+  const router = useRouter();
   const [direction, setDirection] = useState<"gainers" | "losers">("gainers");
   const catalog = useQuery({
     queryKey: ["fno-equities", "catalog"],
@@ -442,12 +444,14 @@ export default function FnoStockOverview({
                       </td>
 
                       <td className="py-3 px-3 text-center">
-                        <Link
-                          href={`/stocks/${encodeURIComponent(underlying)}`}
+                        <button
+                          onClick={() => {
+                            router.push(`/stocks/${encodeURIComponent(underlying)}`);
+                          }}
                           className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-cyan-50 dark:bg-slate-800 dark:hover:bg-cyan-950/60 text-slate-700 dark:text-slate-300 hover:text-cyan-600 dark:hover:text-cyan-400 font-semibold text-[11px] transition-colors inline-block cursor-pointer"
                         >
                           Trade Stock →
-                        </Link>
+                        </button>
                       </td>
                     </tr>
                   );

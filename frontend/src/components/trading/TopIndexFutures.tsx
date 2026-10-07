@@ -117,7 +117,7 @@ export default function TopIndexFutures({
           Index quote refresh failed. Retained prices are last available.
         </p>
       )}
-      {!displayed.length && query.isPending ? (
+      {!displayed.length && symbols.length > 0 && query.isPending ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3.5 animate-pulse" aria-label="Loading top traded index futures">
           {[1, 2, 3, 4].map((i) => (
             <div
