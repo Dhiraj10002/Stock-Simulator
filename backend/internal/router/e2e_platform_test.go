@@ -56,6 +56,7 @@ func TestE2E_FullPlatformSuite(t *testing.T) {
 			method string
 			path   string
 		}{
+			{http.MethodGet, "/api/v1/account/events"},
 			{http.MethodGet, "/api/v1/wallet"},
 			{http.MethodGet, "/api/v1/wallet/transactions"},
 			{http.MethodGet, "/api/v1/portfolio"},

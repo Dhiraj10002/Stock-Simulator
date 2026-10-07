@@ -3,10 +3,11 @@ import { sessionFetch } from "@/lib/api";
 import { exitRetryKey, completeExitRetry } from "@/lib/exitRetry";
 import { useAuthToken } from "@/hooks/useAuthToken";
 import { useAccountWallet } from "@/hooks/useAccountWallet";
+import { useAccountPortfolio } from "@/hooks/useAccountPortfolio";
 
 import { useState, useMemo } from "react";
 import Link from "next/link";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import Navbar from "@/components/layout/Navbar";
 import PositionsTable from "@/components/portfolio/PositionsTable";
 import PortfolioHoldingsTable from "@/components/portfolio/PortfolioHoldingsTable";
@@ -35,10 +36,10 @@ import {
 import { formatPaise } from "@/lib/format";
 import { useMultiSymbolQuotes, useTargetedSubscription } from "@/stores/market-store";
 import { resolveCanonicalSymbol } from "@/lib/alias";
-import { API_URL, apiFetch, extractApiDiagnostic, type ApiDiagnostic } from "@/lib/api";
+import { API_URL, extractApiDiagnostic, type ApiDiagnostic } from "@/lib/api";
 import ErrorDiagnosticModal from "@/components/ui/ErrorDiagnosticModal";
 import { useToast } from "@/components/ui/ToastProvider";
-import type { Portfolio, Position } from "@/types";
+import type { Position } from "@/types";
 
 const STOCK_INFO_MAP: Record<
   string,
@@ -104,12 +105,7 @@ export default function PortfolioPage() {
     data: portfolio,
     refetch: refetchPortfolio,
     isError: portfolioError,
-  } = useQuery<Portfolio>({
-    queryKey: ["portfolio", token],
-    queryFn: () => apiFetch<Portfolio>("/portfolio"),
-    enabled: !!token,
-    refetchInterval: token ? 5000 : false,
-  });
+  } = useAccountPortfolio();
 
   // 2. Fetch Wallet via TanStack Query
   const { data: wallet, isError: walletError } = useAccountWallet();

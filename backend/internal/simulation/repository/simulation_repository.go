@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/accountchanges"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/database"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
 	"github.com/google/uuid"
@@ -15,7 +16,12 @@ func New() *SimulationRepository { return &SimulationRepository{} }
 
 // ResetCurrentState atomically starts a new simulation while retaining all
 // historical orders, trades, and wallet transactions.
-func (r *SimulationRepository) ResetCurrentState(userUUID uuid.UUID, initialBalancePaise int64) error {
+func (r *SimulationRepository) ResetCurrentState(userUUID uuid.UUID, initialBalancePaise int64) (resultErr error) {
+	defer func() {
+		if resultErr == nil {
+			accountchanges.Notify(userUUID.String())
+		}
+	}()
 	return database.GetDB().Transaction(func(tx *gorm.DB) error {
 		// The wallet is the per-user serialization point. Order reservation,
 		// cancellation, execution, and reset all lock it before order rows.

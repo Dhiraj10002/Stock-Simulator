@@ -1,6 +1,7 @@
 "use client";
 import { useSessionDisplayPolling } from "@/hooks/useDisplayPolling";
 import { useAccountWallet } from "@/hooks/useAccountWallet";
+import { useAccountPortfolio } from "@/hooks/useAccountPortfolio";
 
 import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
@@ -30,8 +31,8 @@ import {
   ShoppingBag,
 } from "lucide-react";
 import { formatPaise } from "@/lib/format";
-import { getAuthToken, apiFetch } from "@/lib/api";
-import type { Portfolio, Candle } from "@/types";
+import { apiFetch } from "@/lib/api";
+import type { Candle } from "@/types";
 import IndicesBar from "@/components/dashboard/IndicesBar";
 import MarketStatusBanner from "@/components/dashboard/MarketStatusBanner";
 import MarketMoversCard from "@/components/dashboard/MarketMoversCard";
@@ -245,22 +246,13 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
   const [sectorSearch, setSectorSearch] = useState<string>("");
   const [sectorFilter, setSectorFilter] = useState<"all" | "gainers" | "losers">("all");
 
-  const [token, setToken] = useState(getAuthToken);
   const [resetError, setResetError] = useState<string | null>(null);
-  useEffect(() => {
-    const update = () => setToken(getAuthToken());
-    window.addEventListener("auth-changed", update);
-    return () => window.removeEventListener("auth-changed", update);
-  }, []);
 
   // 1. Fetch Wallet
   const { data: wallet, refetch: refetchWallet } = useAccountWallet();
 
   // 2. Fetch Portfolio
-  const { data: portfolio, isError: portfolioError } = useQuery<Portfolio>({
-    queryKey: ["portfolio", token], queryFn: () => apiFetch<Portfolio>("/portfolio"),
-    enabled: !!token, refetchInterval: token ? 5000 : false,
-  });
+  const { data: portfolio, isError: portfolioError } = useAccountPortfolio();
 
   // Reset simulation handler
   const handleResetSimulation = async () => {

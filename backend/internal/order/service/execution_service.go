@@ -6,6 +6,7 @@ import (
 	"math"
 	"time"
 
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/accountchanges"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/database"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/product"
@@ -18,7 +19,12 @@ import (
 
 // Execute settles an order at the current market quote. The client cannot
 // provide a fill price: the Redis market-data service is the only price source.
-func (s *OrderService) Execute(userID, orderID string) error {
+func (s *OrderService) Execute(userID, orderID string) (resultErr error) {
+	defer func() {
+		if resultErr == nil {
+			accountchanges.Notify(userID)
+		}
+	}()
 	execStart := time.Now()
 	userUUID, err := uuid.Parse(userID)
 	if err != nil {

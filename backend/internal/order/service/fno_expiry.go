@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/accountchanges"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/database"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/calendar"
 	marketDTO "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/dto"
@@ -172,12 +173,19 @@ func validateSettlementReference(ref model.SettlementReference, day time.Time, m
 	return nil
 }
 
-func (s *OrderService) settleExpiredPosition(positionID uuid.UUID, settlementPrice int64, kind string, exitIDs ...uuid.UUID) error {
+func (s *OrderService) settleExpiredPosition(positionID uuid.UUID, settlementPrice int64, kind string, exitIDs ...uuid.UUID) (resultErr error) {
+	var owner string
+	defer func() {
+		if resultErr == nil && owner != "" {
+			accountchanges.Notify(owner)
+		}
+	}()
 	return database.GetDB().Transaction(func(tx *gorm.DB) error {
 		var preview model.Position
 		if err := tx.Where("uuid = ?", positionID).First(&preview).Error; err != nil {
 			return err
 		}
+		owner = preview.UserUUID.String()
 		// Enforce uniform locking hierarchy: Wallet -> Position
 		var wallet model.Wallet
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_uuid = ?", preview.UserUUID).First(&wallet).Error; err != nil {

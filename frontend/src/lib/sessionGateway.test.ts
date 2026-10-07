@@ -38,3 +38,30 @@ test("login tokens stay HttpOnly; refresh retries keep identical server key; log
   assert.equal(logout.cookies.get("stocksim_refresh")?.maxAge, 0);
  } finally { globalThis.fetch = original; if(old===undefined) delete process.env.BACKEND_API_URL; else process.env.BACKEND_API_URL=old; }
 });
+
+test("private account stream forwards authenticated chunks without caching or browser credentials", async () => {
+ const original = globalThis.fetch;
+ const encoder = new TextEncoder();
+ try {
+  globalThis.fetch = async (_url, init) => {
+   assert.equal(new Headers(init?.headers).get("Authorization"), "Bearer private-access");
+   assert.equal(new Headers(init?.headers).get("Accept"), "text/event-stream");
+   return new Response(new ReadableStream({ start(controller) {
+    controller.enqueue(encoder.encode('data: {"kind":"ready","revision":"0"}\n\n'));
+    controller.close();
+   } }), { headers: { "Content-Type": "text/event-stream" } });
+  };
+  const req = new NextRequest(`${origin}/api/backend/account/events`, { headers: { Cookie: "stocksim_access=private-access" } });
+  const response = await GET(req, ctx("account/events"));
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get("cache-control")!, /private, no-store/);
+  assert.equal(response.headers.get("x-accel-buffering"), "no");
+  assert.equal(response.headers.get("set-cookie"), null);
+  assert.match(await response.text(), /"kind":"ready"/);
+  assert.equal((await GET(new NextRequest(`${origin}/api/backend/account/events`), ctx("account/events"))).status, 401);
+  assert.equal((await POST(request("account/events", "{}", "stocksim_access=a"), ctx("account/events"))).status, 405);
+  assert.equal((await GET(req, ctx("account/another-user"))).status, 404);
+  globalThis.fetch = async () => Response.json({ success: true });
+  assert.equal((await GET(req, ctx("account/events"))).status, 502);
+ } finally { globalThis.fetch = original; }
+});

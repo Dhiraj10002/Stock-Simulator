@@ -4,6 +4,7 @@
  */
 
 import { orderIntentKey, completeOrderIntent } from "./orderIntent";
+import { isAccountMutation, notifyAccountMutation } from "./accountSync";
 import { getApiUrl } from "./config";
 
 export const API_URL = getApiUrl();
@@ -35,7 +36,7 @@ let sessionRevision = "";
 function authRevision(): string | null {
   try { return localStorage.getItem("auth-session-change") || sessionRevision; } catch { return sessionRevision; }
 }
-const privatePath = (path: string) => /^\/(auth|wallet|portfolio|orders|trades|watchlist|reports|simulation|analytics|ai|risk)(?:\/|\?|$)/.test(path);
+const privatePath = (path: string) => /^\/(account|auth|wallet|portfolio|orders|trades|watchlist|reports|simulation|analytics|ai|risk)(?:\/|\?|$)/.test(path);
 
 /** Raw response variant for existing views; never sends credentials to public quote endpoints. */
 export async function sessionFetch(url: string, options: RequestInit = {}): Promise<Response> {
@@ -62,6 +63,7 @@ export async function sessionFetch(url: string, options: RequestInit = {}): Prom
       if (accepted.success && typeof accepted.data?.uuid === "string" && accepted.data.uuid) completeOrderIntent(sessionStorage, scope, options.body as string);
     } catch { /* A lost/invalid response body must retain the original intent key. */ }
   }
+  if (res.ok && getAuthToken() === scope && isAccountMutation(path, method)) notifyAccountMutation(scope);
   return res;
 }
 let refreshInFlight: Promise<string | null> | null = null;

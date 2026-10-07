@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/accountchanges"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/config"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/wallet/dto"
@@ -100,7 +101,12 @@ func (s *WalletService) Transactions(userID string) ([]dto.TransactionResponse, 
 
 // Credit, Debit, Reserve, and Release are server-side operations used by the
 // order/trading engine. They intentionally have no public HTTP endpoint.
-func (s *WalletService) Credit(userID string, amount int64, note string) error {
+func (s *WalletService) Credit(userID string, amount int64, note string) (resultErr error) {
+	defer func() {
+		if resultErr == nil {
+			accountchanges.Notify(userID)
+		}
+	}()
 	wallet, err := s.walletForUser(userID)
 	if err != nil {
 		return err
@@ -108,7 +114,12 @@ func (s *WalletService) Credit(userID string, amount int64, note string) error {
 	return s.repo.Credit(wallet.UUID, amount, note)
 }
 
-func (s *WalletService) Debit(userID string, amount int64, note string) error {
+func (s *WalletService) Debit(userID string, amount int64, note string) (resultErr error) {
+	defer func() {
+		if resultErr == nil {
+			accountchanges.Notify(userID)
+		}
+	}()
 	wallet, err := s.walletForUser(userID)
 	if err != nil {
 		return err
@@ -116,7 +127,12 @@ func (s *WalletService) Debit(userID string, amount int64, note string) error {
 	return s.repo.Debit(wallet.UUID, amount, note)
 }
 
-func (s *WalletService) Reserve(userID string, amount int64, note string) error {
+func (s *WalletService) Reserve(userID string, amount int64, note string) (resultErr error) {
+	defer func() {
+		if resultErr == nil {
+			accountchanges.Notify(userID)
+		}
+	}()
 	wallet, err := s.walletForUser(userID)
 	if err != nil {
 		return err
@@ -124,7 +140,12 @@ func (s *WalletService) Reserve(userID string, amount int64, note string) error 
 	return s.repo.Reserve(wallet.UUID, amount, note)
 }
 
-func (s *WalletService) Release(userID string, amount int64, note string) error {
+func (s *WalletService) Release(userID string, amount int64, note string) (resultErr error) {
+	defer func() {
+		if resultErr == nil {
+			accountchanges.Notify(userID)
+		}
+	}()
 	wallet, err := s.walletForUser(userID)
 	if err != nil {
 		return err
@@ -140,7 +161,12 @@ func (s *WalletService) walletForUser(userID string) (*model.Wallet, error) {
 	return s.ensureWallet(userUUID)
 }
 
-func (s *WalletService) Reset(userID string) (*dto.WalletResponse, error) {
+func (s *WalletService) Reset(userID string) (result *dto.WalletResponse, resultErr error) {
+	defer func() {
+		if resultErr == nil {
+			accountchanges.Notify(userID)
+		}
+	}()
 	userUUID, err := uuid.Parse(userID)
 	if err != nil {
 		return nil, fmt.Errorf("invalid user identity")
@@ -156,7 +182,12 @@ func (s *WalletService) Reset(userID string) (*dto.WalletResponse, error) {
 	return toWalletResponse(wallet), nil
 }
 
-func (s *WalletService) Deposit(userID string, amountPaise int64) (*dto.WalletResponse, error) {
+func (s *WalletService) Deposit(userID string, amountPaise int64) (result *dto.WalletResponse, resultErr error) {
+	defer func() {
+		if resultErr == nil {
+			accountchanges.Notify(userID)
+		}
+	}()
 	if amountPaise <= 0 {
 		return nil, errors.New("deposit amount must be positive")
 	}

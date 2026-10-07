@@ -1,6 +1,9 @@
 "use client";
 import { sessionFetch } from "@/lib/api";
-import { getAuthToken } from "@/lib/api";
+import { apiFetch } from "@/lib/api";
+import { useAuthToken } from "@/hooks/useAuthToken";
+import { useAccountPolling } from "@/hooks/useAccountPolling";
+import { useAccountPortfolio } from "@/hooks/useAccountPortfolio";
 import { useAccountWallet } from "@/hooks/useAccountWallet";
 
 import React, { useState, useMemo } from "react";
@@ -25,7 +28,7 @@ import {
   FileText,
   Trash2,
 } from "lucide-react";
-import type { Order, Trade, Portfolio, ApiResponse } from "@/types";
+import type { Order, Trade } from "@/types";
 import { useToast } from "@/components/ui/ToastProvider";
 
 type OrdersTab = "orders" | "trades" | "contract-note";
@@ -36,7 +39,8 @@ export default function OrdersPage() {
   const [activeTab, setActiveTab] = useState<OrdersTab>("orders");
 
   const [mounted, setMounted] = useState(false);
-  const [token, setToken] = useState("");
+  const token = useAuthToken();
+  const { interval } = useAccountPolling();
   const [mountTime] = useState(() => Date.now());
 
   const apiUrl = API_URL;
@@ -45,10 +49,6 @@ export default function OrdersPage() {
   React.useEffect(() => {
     queueMicrotask(() => {
       setMounted(true);
-      const t =
-        getAuthToken() ||
-        "";
-      setToken(t);
       const params = new URLSearchParams(window.location.search);
       const tabParam = params.get("tab");
       if (tabParam === "contract-note" || tabParam === "trades" || tabParam === "orders") {
@@ -64,21 +64,11 @@ export default function OrdersPage() {
     refetch: refetchOrders,
   } = useQuery<Order[]>({
     queryKey: ["orders", token],
-    queryFn: async () => {
-      if (!token) return [];
-      try {
-        const res = await sessionFetch(`${apiUrl}/orders`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!res.ok) return [];
-        const json: ApiResponse<Order[]> = await res.json();
-        return json.data || [];
-      } catch {
-        return [];
-      }
-    },
+    queryFn: ({ signal }) => apiFetch<Order[]>("/orders", { signal }),
     enabled: !!token,
-    refetchInterval: token ? 5000 : false,
+    refetchInterval: interval,
+    refetchOnWindowFocus: true,
+    retry: false,
   });
 
   // 2. Fetch Trades via TanStack Query
@@ -88,71 +78,18 @@ export default function OrdersPage() {
     refetch: refetchTrades,
   } = useQuery<Trade[]>({
     queryKey: ["trades", token],
-    queryFn: async () => {
-      if (!token) return [];
-      try {
-        const res = await sessionFetch(`${apiUrl}/trades`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!res.ok) return [];
-        const json: ApiResponse<Trade[]> = await res.json();
-        return json.data || [];
-      } catch {
-        return [];
-      }
-    },
+    queryFn: ({ signal }) => apiFetch<Trade[]>("/trades", { signal }),
     enabled: !!token,
-    refetchInterval: token ? 5000 : false,
+    refetchInterval: interval,
+    refetchOnWindowFocus: true,
+    retry: false,
   });
 
   // 3. Fetch Wallet for Navbar margin
   const { data: wallet } = useAccountWallet();
 
   // 4. Fetch Portfolio for Navbar unrealized PnL
-  const { data: portfolio } = useQuery<Portfolio>({
-    queryKey: ["portfolio", token],
-    queryFn: async () => {
-      if (!token) {
-        return {
-          invested_value_paise: 0,
-          current_value_paise: 0,
-          unrealized_pnl_paise: 0,
-          positions: [],
-        };
-      }
-      try {
-        const res = await sessionFetch(`${apiUrl}/portfolio`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!res.ok) {
-          return {
-            invested_value_paise: 0,
-            current_value_paise: 0,
-            unrealized_pnl_paise: 0,
-            positions: [],
-          };
-        }
-        const json: ApiResponse<Portfolio> = await res.json();
-        return (
-          json.data || {
-            invested_value_paise: 0,
-            current_value_paise: 0,
-            unrealized_pnl_paise: 0,
-            positions: [],
-          }
-        );
-      } catch {
-        return {
-          invested_value_paise: 0,
-          current_value_paise: 0,
-          unrealized_pnl_paise: 0,
-          positions: [],
-        };
-      }
-    },
-    enabled: !!token,
-    refetchInterval: token ? 5000 : false,
-  });
+  const { data: portfolio } = useAccountPortfolio();
 
   // Cancel order action
   const handleCancelOrder = async (order: Order) => {
@@ -327,7 +264,7 @@ export default function OrdersPage() {
     <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-150">
       <Navbar
         availableBalancePaise={wallet?.available_balance_paise}
-        unrealizedPnlPaise={portfolio?.unrealized_pnl_paise ?? 0}
+        unrealizedPnlPaise={portfolio?.unrealized_pnl_paise}
       />
 
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6">

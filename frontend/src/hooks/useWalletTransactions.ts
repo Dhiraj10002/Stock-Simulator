@@ -1,7 +1,8 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { apiFetch, getAuthToken } from "@/lib/api";
+import { apiFetch } from "@/lib/api";
+import { useAccountPolling } from "@/hooks/useAccountPolling";
 import type { Transaction } from "@/types";
 
 export interface UseWalletTransactionsReturn {
@@ -13,14 +14,16 @@ export interface UseWalletTransactionsReturn {
 }
 
 export function useWalletTransactions(tokenProp?: string): UseWalletTransactionsReturn {
-  const token = tokenProp !== undefined ? tokenProp : getAuthToken();
+  const { scope, interval } = useAccountPolling();
+  const token = tokenProp !== undefined ? tokenProp : scope;
 
   const { data, isLoading, isError, error, refetch } = useQuery<Transaction[]>({
     queryKey: ["wallet-transactions", token],
-    queryFn: () => apiFetch<Transaction[]>("/wallet/transactions"),
+    queryFn: ({ signal }) => apiFetch<Transaction[]>("/wallet/transactions", { signal }),
     enabled: !!token,
     staleTime: 5000,
-    refetchInterval: 10000,
+    refetchInterval: interval,
+    refetchOnWindowFocus: true,
   });
 
   return {

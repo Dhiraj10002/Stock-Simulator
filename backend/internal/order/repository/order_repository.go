@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/accountchanges"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/database"
 	instrumentService "github.com/Dhiraj10002/Stock-Simulator/backend/internal/instrument/service"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/alias"
@@ -30,7 +31,12 @@ func (r *OrderRepository) Create(order *model.Order) error {
 
 // CreateDeliverySell verifies that the user holds enough free shares
 // (position quantity minus open/pending sell orders) and creates the order atomically.
-func (r *OrderRepository) CreateDeliverySell(order *model.Order) error {
+func (r *OrderRepository) CreateDeliverySell(order *model.Order) (resultErr error) {
+	defer func() {
+		if resultErr == nil {
+			accountchanges.Notify(order.UserUUID.String())
+		}
+	}()
 	if database.GetDB() == nil {
 		return errors.New("database not connected")
 	}
@@ -79,7 +85,12 @@ func createDeliverySell(tx *gorm.DB, order *model.Order) error {
 	return tx.Create(order).Error
 }
 
-func (r *OrderRepository) CreateWithReservation(order *model.Order, reservation int64) error {
+func (r *OrderRepository) CreateWithReservation(order *model.Order, reservation int64) (resultErr error) {
+	defer func() {
+		if resultErr == nil {
+			accountchanges.Notify(order.UserUUID.String())
+		}
+	}()
 	if database.GetDB() == nil {
 		return errors.New("database not connected")
 	}
@@ -269,7 +280,12 @@ func (r *OrderRepository) TriggerOrder(orderUUID uuid.UUID, newStatus string) er
 
 // Reject marks an order as rejected and releases any reserved funds atomically,
 // ensuring zero orphaned reservations even if a reserved order is rejected.
-func (r *OrderRepository) Reject(userUUID, orderUUID uuid.UUID) error {
+func (r *OrderRepository) Reject(userUUID, orderUUID uuid.UUID) (resultErr error) {
+	defer func() {
+		if resultErr == nil {
+			accountchanges.Notify(userUUID.String())
+		}
+	}()
 	return database.GetDB().Transaction(func(tx *gorm.DB) error {
 		var wallet model.Wallet
 		if err := tx.
@@ -319,7 +335,12 @@ func (r *OrderRepository) Reject(userUUID, orderUUID uuid.UUID) error {
 	})
 }
 
-func (r *OrderRepository) Cancel(userUUID, orderUUID uuid.UUID) error {
+func (r *OrderRepository) Cancel(userUUID, orderUUID uuid.UUID) (resultErr error) {
+	defer func() {
+		if resultErr == nil {
+			accountchanges.Notify(userUUID.String())
+		}
+	}()
 	return database.GetDB().Transaction(func(tx *gorm.DB) error {
 		// Lock the wallet first, matching reservation, execution, and reset.
 		var wallet model.Wallet
@@ -394,7 +415,12 @@ func (r *OrderRepository) FindIntent(user uuid.UUID, key, hash string) (*model.O
 
 // The transaction-scoped intent lock prevents concurrent retries from reserving
 // funds/shares twice. The unique index is the durable backstop across processes.
-func (r *OrderRepository) CreateIntent(order *model.Order, reservation int64) error {
+func (r *OrderRepository) CreateIntent(order *model.Order, reservation int64) (resultErr error) {
+	defer func() {
+		if resultErr == nil {
+			accountchanges.Notify(order.UserUUID.String())
+		}
+	}()
 	if database.GetDB() == nil {
 		return errors.New("database not connected")
 	}

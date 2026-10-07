@@ -3,11 +3,12 @@ import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 const secure = process.env.NODE_ENV === "production";
 const accessName = secure ? "__Host-stocksim_access" : "stocksim_access";
 const refreshName = secure ? "__Host-stocksim_refresh" : "stocksim_refresh";
 const markerName = "stocksim_session";
-const allowed = new Set(["auth", "wallet", "portfolio", "orders", "trades", "watchlist", "reports", "simulation", "analytics", "ai", "risk"]);
+const allowed = new Set(["account", "auth", "wallet", "portfolio", "orders", "trades", "watchlist", "reports", "simulation", "analytics", "ai", "risk"]);
 const cookieOptions = { httpOnly: true, secure, sameSite: "lax" as const, path: "/" };
 const maxBody = 1024 * 1024;
 
@@ -37,6 +38,9 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path: st
   const { path } = await context.params;
   if (!allowed.has(path[0]) || path.some(part => !/^[a-zA-Z0-9._&+-]+$/.test(part) || part === "." || part === "..")) return failure(404, "Endpoint not found");
   const endpoint = path.join("/");
+  const accountStream = endpoint === "account/events";
+  if (path[0] === "account" && !accountStream) return failure(404, "Endpoint not found");
+  if (accountStream && request.method !== "GET") return failure(405, "Method not allowed");
   const authWrite = ["auth/register", "auth/login", "auth/refresh", "auth/logout"].includes(endpoint);
   if (path[0] === "auth" && endpoint !== "auth/me" && !authWrite) return failure(404, "Endpoint not found");
   if (authWrite && request.method !== "POST") return failure(405, "Method not allowed");
@@ -56,7 +60,7 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path: st
   const refresh = request.cookies.get(refreshName)?.value;
   if (!authWrite && !access) return failure(401, "Please sign in");
   if (endpoint === "auth/refresh" && !refresh) { const response = failure(401, "Session expired"); clear(response); return response; }
-  const headers = new Headers({ Accept: "application/json" });
+  const headers = new Headers({ Accept: accountStream ? "text/event-stream" : "application/json" });
   if (access && !authWrite) headers.set("Authorization", `Bearer ${access}`);
   for (const name of ["idempotency-key", "x-request-id"]) {
     const value = request.headers.get(name);
@@ -81,8 +85,16 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path: st
   try {
     const upstream = await fetch(`${base.toString().replace(/\/$/, "")}/${path.map(part => encodeURIComponent(part)).join("/")}${request.nextUrl.search}`, {
       method: request.method, headers, body, cache: "no-store", redirect: "error",
-      signal: AbortSignal.any([request.signal, AbortSignal.timeout(endpoint.startsWith("ai/") ? 45000 : 20000)]),
+      signal: AbortSignal.any([request.signal, AbortSignal.timeout(accountStream ? 55000 : endpoint.startsWith("ai/") ? 45000 : 20000)]),
     });
+    if (accountStream && upstream.ok) {
+      if (!upstream.body || !upstream.headers.get("content-type")?.startsWith("text/event-stream")) return failure(502, "Invalid account stream");
+      return new NextResponse(upstream.body, { headers: {
+        "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "private, no-store",
+        "Vary": "Cookie", "X-Accel-Buffering": "no", "X-Content-Type-Options": "nosniff",
+      } });
+    }
+    if (accountStream && !upstream.ok) return failure(upstream.status, "Account updates temporarily unavailable");
     const payload = await upstream.json();
     if (upstream.ok && (endpoint === "auth/login" || endpoint === "auth/refresh")) {
       const { access_token, refresh_token } = payload.data || {};

@@ -1,6 +1,7 @@
 "use client";
 import { useSessionDisplayPolling } from "@/hooks/useDisplayPolling";
 import { useAccountWallet } from "@/hooks/useAccountWallet";
+import { useAccountPortfolio } from "@/hooks/useAccountPortfolio";
 
 import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
@@ -8,7 +9,6 @@ import { useQuery } from "@tanstack/react-query";
 import Navbar from "@/components/layout/Navbar";
 import { useMultiSymbolQuotes } from "@/stores/market-store";
 import { fetchBatchQuotes, getCachedQuote } from "@/lib/quoteService";
-import { useAuthToken } from "@/hooks/useAuthToken";
 import { dayMovement, valuationStatus } from "@/lib/marketDisplay";
 import { apiFetch } from "@/lib/api";
 import {
@@ -32,7 +32,6 @@ import {
 } from "lucide-react";
 import { formatPaise } from "@/lib/format";
 import { MASTER_STOCKS_CATALOG, SECTOR_CONSTITUENTS } from "@/components/dashboard/DashboardPage";
-import type { Portfolio } from "@/types";
 
 // ---------------------------------------------------------------------------
 // TYPES & DATASETS FOR STOCKS EXPLORE
@@ -149,7 +148,6 @@ export default function StocksExplorePage() {
   const [moverTab, setMoverTab] = useState<"gainers" | "losers" | "volume">("gainers");
   const [indexScope, setIndexScope] = useState<"NIFTY 100" | "NIFTY 500">("NIFTY 100");
 
-  const token = useAuthToken();
 
   // 1. Fetch Wallet for Available Margin
   const { data: wallet } = useAccountWallet();
@@ -160,13 +158,7 @@ export default function StocksExplorePage() {
     isError: isPortfolioError,
     refetch: refetchPortfolio,
     isFetching: isPortfolioFetching,
-  } = useQuery<Portfolio>({
-    queryKey: ["portfolio", token],
-    queryFn: () => apiFetch<Portfolio>("/portfolio"),
-    enabled: !!token,
-    refetchInterval: token ? 5000 : false,
-    retry: false,
-  });
+  } = useAccountPortfolio();
 
   const exploreSymbols = useMemo(() => {
     const s = new Set<string>();

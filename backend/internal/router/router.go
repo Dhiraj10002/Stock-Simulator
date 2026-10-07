@@ -2,6 +2,7 @@ package router
 
 import (
 	"context"
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/accountchanges"
 	aiHandler "github.com/Dhiraj10002/Stock-Simulator/backend/internal/ai/handler"
 	analyticsHandler "github.com/Dhiraj10002/Stock-Simulator/backend/internal/analytics/handler"
 	authHandler "github.com/Dhiraj10002/Stock-Simulator/backend/internal/auth/handler"
@@ -93,6 +94,7 @@ func Setup(ctx context.Context, cfg *config.Config, opts ...SetupOption) *gin.En
 		market.Service().SetDB(database.GetDB())
 		market.Service().SetInstrumentFinder(newInstrumentFinder(database.GetDB(), cfg.RedisOperationTimeout))
 	}
+	accountEvents := accountchanges.Configure(ctx, market.Service().Client())
 	portfolio := portfolioHandler.New(market.Service())
 	orders := sOpts.ordersHandler
 	if orders == nil {
@@ -204,6 +206,7 @@ func Setup(ctx context.Context, cfg *config.Config, opts ...SetupOption) *gin.En
 		api.GET("/auth/me", authMiddleware.Authenticate(cfg.JWTSecret), auth.Me)
 
 		protected := api.Group("", authMiddleware.Authenticate(cfg.JWTSecret))
+		protected.GET("/account/events", accountEvents.Events)
 		protected.GET("/wallet", wallet.Get)
 		protected.GET("/wallet/transactions", wallet.Transactions)
 		protected.POST("/wallet/deposit", writeLimit, wallet.Deposit)
