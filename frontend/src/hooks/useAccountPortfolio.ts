@@ -16,6 +16,7 @@ export function useAccountPortfolio() {
     refetchOnWindowFocus: true,
     retry: false,
   });
-  // A failed valuation must not become a fabricated zero P&L.
-  return { ...query, data: scope && !query.isError ? query.data : undefined };
+  // Preserve last positions for the unavailable/last-available UI. Consumers
+  // must use isError and valuation_status before displaying authoritative P&L.
+  return { ...query, data: scope ? query.data : undefined };
 }

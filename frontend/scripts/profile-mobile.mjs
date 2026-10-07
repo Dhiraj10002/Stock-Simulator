@@ -5,9 +5,13 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const frontend = fileURLToPath(new URL("../", import.meta.url));
+const defaultFrontend = fileURLToPath(new URL("../", import.meta.url));
 const args = process.argv.slice(2);
 const option = (name, fallback) => args.includes(name) ? args[args.indexOf(name) + 1] : fallback;
+const frontend = resolve(option("--app-dir", defaultFrontend));
+const desktop = option("--device", "mobile") === "desktop";
+const accountWindow = Number(option("--account-window", "0"));
+if (!Number.isFinite(accountWindow) || accountWindow < 0 || accountWindow > 120) throw new Error("--account-window must be 0–120 seconds");
 const remote = option("--url");
 const origin = new URL(remote || "http://127.0.0.1:3100").origin;
 const output = resolve(option("--output", join(frontend, "artifacts/mobile")));
@@ -38,9 +42,9 @@ async function main() {
     browser = await chromium.launch(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH, args: ["--no-sandbox", "--disable-gpu", "--no-zygote"] } : {});
     const runs = [];
     for (const path of paths) for (const reducedMotion of modes) for (let repeat = 0; repeat < repeats; repeat++) {
-      const context = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1, isMobile: true, hasTouch: true, reducedMotion, ...(storageState ? { storageState } : {}) });
+      const context = await browser.newContext({ viewport: desktop ? { width: 1440, height: 900 } : { width: 390, height: 844 }, deviceScaleFactor: 1, isMobile: !desktop, hasTouch: !desktop, reducedMotion, ...(storageState ? { storageState } : {}) });
       try {
-        const page = await context.newPage(), requests = [], failures = [];
+        const page = await context.newPage(), requests = [], failures = [], preflights = [];
         let pageErrors = 0;
         page.on("pageerror", () => pageErrors++);
         page.on("request", req => requests.push({ path: new URL(req.url()).pathname, method: req.method() }));
@@ -60,8 +64,12 @@ async function main() {
         });
         const cdp = await context.newCDPSession(page);
         await cdp.send("Network.enable");
+        await cdp.send("Performance.enable");
+        cdp.on("Network.requestWillBeSent", event => {
+          if (event.request.method === "OPTIONS") preflights.push({ path: new URL(event.request.url).pathname });
+        });
         await cdp.send("Network.emulateNetworkConditions", { offline: false, latency: 150, downloadThroughput: 200000, uploadThroughput: 93750 });
-        await cdp.send("Emulation.setCPUThrottlingRate", { rate: 4 });
+        await cdp.send("Emulation.setCPUThrottlingRate", { rate: desktop ? 1 : 4 });
         const response = await page.goto(origin + path, { waitUntil: "load", timeout: 60000 });
         await page.waitForTimeout(3500);
         const navigation = await page.evaluate(() => {
@@ -80,14 +88,24 @@ async function main() {
           if (await timeframe.isVisible()) { await timeframe.tap(); interactions.push("Chart timeframe; no order submission"); }
         }
         await page.waitForTimeout(1500);
+        const accountStart = requests.length;
+        const observationStarted = Date.now();
+        const beforeMetrics = await cdp.send("Performance.getMetrics");
+        if (accountWindow) await page.waitForTimeout(accountWindow * 1000);
+        const afterMetrics = await cdp.send("Performance.getMetrics");
+        const metrics = new Map(afterMetrics.metrics.map(item => [item.name, item.value]));
+        const prior = new Map(beforeMetrics.metrics.map(item => [item.name, item.value]));
+        const accountRequests = requests.slice(accountStart).filter(item => new RegExp("^/api/backend/(wallet|portfolio|orders|trades)(?:/|$)").test(item.path));
+        const accountObservation = { seconds: (Date.now() - observationStarted) / 1000, requests: accountRequests, count: accountRequests.length };
+        const cpu = { scriptSeconds: (metrics.get("ScriptDuration") || 0) - (prior.get("ScriptDuration") || 0), taskSeconds: (metrics.get("TaskDuration") || 0) - (prior.get("TaskDuration") || 0), heapBytes: metrics.get("JSHeapUsedSize") };
         const interactionLab = await page.evaluate(() => ({ ...window.__mobileLab, overflow: document.documentElement.scrollWidth > innerWidth }));
-        const run = { path, finalPath: new URL(page.url()).pathname, reducedMotion, repeat: repeat + 1, status: response?.status(), navigation, interactions, interactionLab, requests, failures, pageErrors };
+        const run = { path, finalPath: new URL(page.url()).pathname, reducedMotion, repeat: repeat + 1, status: response?.status(), navigation, interactions, interactionLab, accountObservation, cpu, preflights, requests, failures, pageErrors };
         runs.push(run);
         if (repeat === 0) await page.screenshot({ path: join(output, `${path.replace(/[^a-z0-9]/gi, "_") || "home"}-${reducedMotion}.png`) });
         console.log(JSON.stringify({ path, reducedMotion, repeat: repeat + 1, ...navigation, pageErrors, failures: failures.length }));
       } finally { await context.close(); }
     }
-    const result = { mode: remote ? "deployed browser lab; real APIs" : "local production browser lab; public API fixtures", origin, conditions: "390x844 touch, CPU 4x, 1.6 Mbps download, 150 ms latency; cold contexts. Event Timing samples are scripted, not field INP. Redirects recorded. No writes submitted.", browser: browser.version(), node: process.version, runs };
+    const result = { mode: remote ? "deployed browser lab; real APIs" : "local production browser lab; public API fixtures", origin, conditions: `${desktop ? "1440x900 desktop, CPU 1x" : "390x844 touch, CPU 4x"}, 1.6 Mbps download, 150 ms latency; cold contexts. Event Timing samples are scripted, not field INP. Redirects recorded. No writes submitted.`, device: desktop ? "desktop" : "mobile", accountWindow, browser: browser.version(), node: process.version, runs };
     writeFileSync(join(output, "mobile.json"), JSON.stringify(result, null, 2) + "\n");
   } finally { await browser?.close(); stop(); process.removeListener("exit", stop); }
 }

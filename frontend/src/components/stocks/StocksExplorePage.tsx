@@ -2,6 +2,7 @@
 import { useSessionDisplayPolling } from "@/hooks/useDisplayPolling";
 import { useAccountWallet } from "@/hooks/useAccountWallet";
 import { useAccountPortfolio } from "@/hooks/useAccountPortfolio";
+import { useAuthToken } from "@/hooks/useAuthToken";
 
 import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
@@ -148,6 +149,8 @@ export default function StocksExplorePage() {
   const [moverTab, setMoverTab] = useState<"gainers" | "losers" | "volume">("gainers");
   const [indexScope, setIndexScope] = useState<"NIFTY 100" | "NIFTY 500">("NIFTY 100");
 
+
+  const token = useAuthToken();
 
   // 1. Fetch Wallet for Available Margin
   const { data: wallet } = useAccountWallet();

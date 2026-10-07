@@ -33,10 +33,28 @@ def inspect(root, url):
             pass
     except (ValueError, OSError):
         pass
-    stage = readiness.get("services", {}).get("worker", {}).get("initialization_stage")
+    if not isinstance(readiness, dict):
+        readiness = {}
+    services = readiness.get("services")
+    services = services if isinstance(services, dict) else {}
+    worker = services.get("worker")
+    worker = worker if isinstance(worker, dict) else {}
+    stage = worker.get("initialization_stage")
     if stage == "BROKER_PROXY_UNAVAILABLE" and "market-worker" in states:
         states["market-worker"]["broker_proxy_unavailable"] = True
-    return command, states, readiness.get("ready") is True
+    return command, states, operational(states, readiness)
+
+
+def operational(states, readiness):
+    # An old readiness response must not mask a stopped/unhealthy container.
+    required = {"backend", "caddy", "market-worker"}
+    return (
+        isinstance(readiness, dict)
+        and readiness.get("ready") is True
+        and required.issubset(states)
+        and all(states[name].get("state") == "running" and states[name].get("health") in {"", "healthy"} for name in required)
+        and all(row.get("state") == "running" and row.get("health") in {"", "healthy"} for name, row in states.items() if name in {"redis", "broker-proxy"})
+    )
 
 
 def recovery_decision(states, ready, previous, now):

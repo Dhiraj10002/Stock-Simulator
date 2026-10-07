@@ -2,13 +2,15 @@
 
 import { useEffect, useRef } from "react";
 
-const colors = ["6,182,212", "249,115,22", "16,185,129", "251,191,36", "168,85,247", "244,114,182"];
+const colors = ["rgb(6,182,212)", "rgb(249,115,22)", "rgb(16,185,129)", "rgb(251,191,36)", "rgb(168,85,247)", "rgb(244,114,182)"];
 
 export default function SpatialCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const canvas = canvasRef.current, context = canvas?.getContext("2d");
     if (!canvas || !context) return;
+    const circle = new Path2D();
+    circle.arc(0, 0, 1, 0, Math.PI * 2);
     const root = canvas.closest<HTMLElement>(".landing-experience")!;
     const reduced = matchMedia("(prefers-reduced-motion: reduce)");
     const mobile = matchMedia("(max-width: 767px)");
@@ -23,6 +25,7 @@ export default function SpatialCanvas() {
       if (time - previousTime >= 33 || reduced.matches) {
         const drift = reduced.matches ? 0 : Math.min((time - previousTime) / 33, 2) * 0.85;
         previousTime = time;
+        context.resetTransform();
         context.clearRect(0, 0, width, height);
         offsetX += ((Number(root.dataset.pointerX) || 0) * 15 - offsetX) * 0.04;
         offsetY += ((Number(root.dataset.pointerY) || 0) * 15 - offsetY) * 0.04;
@@ -34,10 +37,14 @@ export default function SpatialCanvas() {
           const scale = 400 / particle.z;
           const x = particle.x * scale + width / 2 + offsetX, y = particle.y * scale + height / 2 + offsetY;
           if (x < 0 || x > width || y < 0 || y > height) continue;
-          context.beginPath(); context.arc(x, y, Math.max(0.65, particle.size * scale * 0.8), 0, Math.PI * 2);
-          context.fillStyle = `rgba(${particle.color},${Math.min(1, Math.max(0.1, (1 - particle.z / 1000) * 1.3))})`;
-          context.fill();
+          const radius = Math.max(0.65, particle.size * scale * 0.8);
+          context.setTransform(radius, 0, 0, radius, x, y);
+          context.fillStyle = particle.color;
+          context.globalAlpha = Math.min(1, Math.max(0.1, (1 - particle.z / 1000) * 1.3));
+          context.fill(circle);
         }
+        context.resetTransform();
+        context.globalAlpha = 1;
         root.dataset.motionReady = "true";
       }
       if (!reduced.matches) frame = requestAnimationFrame(draw);

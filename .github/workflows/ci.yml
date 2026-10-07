@@ -88,12 +88,21 @@ jobs:
           cat "$RUNNER_TEMP/backend-benchmarks.txt"
           DATABASE_URL="$TEST_DATABASE_URL" go run ./cmd/profile-db -samples 5 -plans > "$RUNNER_TEMP/database-profile.json"
 
+      - name: Dump and restore accounting state in an isolated disposable database
+        run: |
+          docker exec "${{ job.services.postgres.id }}" pg_dump -U postgres -d testdb --format=custom > "$RUNNER_TEMP/accounting.dump"
+          python3 -c 'import sys; sys.path.insert(0, "../scripts"); from verify_backup_restore import FINGERPRINT_SQL; print(FINGERPRINT_SQL)' > "$RUNNER_TEMP/fingerprint.sql"
+          docker exec -i "${{ job.services.postgres.id }}" psql -U postgres -d testdb -At -v ON_ERROR_STOP=1 < "$RUNNER_TEMP/fingerprint.sql" > "$RUNNER_TEMP/fingerprint.txt"
+          python3 ../scripts/verify_backup_restore.py "$RUNNER_TEMP/accounting.dump" --expected-fingerprint "$RUNNER_TEMP/fingerprint.txt" > "$RUNNER_TEMP/restore-verification.json"
+          cat "$RUNNER_TEMP/restore-verification.json"
+
       - uses: actions/upload-artifact@v4
         with:
           name: backend-performance-measurements
           path: |
             ${{ runner.temp }}/backend-benchmarks.txt
             ${{ runner.temp }}/database-profile.json
+            ${{ runner.temp }}/restore-verification.json
 
   python-workers:
     name: Python Workers
@@ -203,3 +212,49 @@ jobs:
           test "$(docker exec frontend-smoke id -u)" = "1001"
           node frontend/scripts/smoke-standalone.mjs --url http://127.0.0.1:3200
           docker image inspect stock-simulator-frontend:ci --format 'Runtime image bytes: {{.Size}}'
+
+  performance-comparison:
+    name: Homepage Performance Comparison and Deployed Read-only Profile
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Prepare baseline build
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          test "${#BASE_REF}" = 40
+          git worktree add --detach "$RUNNER_TEMP/performance-baseline" "$BASE_REF"
+          npm --prefix "$RUNNER_TEMP/performance-baseline/frontend" ci
+          npm --prefix "$RUNNER_TEMP/performance-baseline/frontend" run build
+      - name: Compare the unchanged homepage design under identical browser conditions
+        run: |
+          node scripts/profile-mobile.mjs --app-dir "$RUNNER_TEMP/performance-baseline/frontend" --paths / --runs 2 --account-window 10 --output artifacts/comparison/before
+          npm run build
+          node scripts/profile-mobile.mjs --paths / --runs 2 --account-window 10 --output artifacts/comparison/after
+          node scripts/compare-lab.mjs artifacts/comparison/before/mobile.json artifacts/comparison/after/mobile.json artifacts/comparison/summary.json
+      - name: Measure current deployed public routes without account writes
+        continue-on-error: true
+        run: |
+          node scripts/profile-mobile.mjs --url https://stock-simulator-gules.vercel.app --paths /,/login --runs 1 --output artifacts/deployed/mobile
+          node scripts/profile-mobile.mjs --url https://stock-simulator-gules.vercel.app --device desktop --paths /,/login --runs 1 --output artifacts/deployed/desktop
+      - name: Record production dependency audit
+        run: npm audit --omit=dev --json > artifacts/comparison/dependency-audit.json || test -s artifacts/comparison/dependency-audit.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: homepage-performance-and-deployed-profile
+          path: frontend/artifacts/
+          retention-days: 7

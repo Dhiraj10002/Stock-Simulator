@@ -20,7 +20,7 @@ export function useWalletTransactions(tokenProp?: string): UseWalletTransactions
   const { data, isLoading, isError, error, refetch } = useQuery<Transaction[]>({
     queryKey: ["wallet-transactions", token],
     queryFn: ({ signal }) => apiFetch<Transaction[]>("/wallet/transactions", { signal }),
-    enabled: !!token,
+    enabled: !!token && token === scope,
     staleTime: 5000,
     refetchInterval: interval,
     refetchOnWindowFocus: true,

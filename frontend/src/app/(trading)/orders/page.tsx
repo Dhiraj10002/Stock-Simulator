@@ -89,7 +89,7 @@ export default function OrdersPage() {
   const { data: wallet } = useAccountWallet();
 
   // 4. Fetch Portfolio for Navbar unrealized PnL
-  const { data: portfolio } = useAccountPortfolio();
+  const { data: portfolio, isError: portfolioError } = useAccountPortfolio();
 
   // Cancel order action
   const handleCancelOrder = async (order: Order) => {
@@ -264,7 +264,7 @@ export default function OrdersPage() {
     <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-150">
       <Navbar
         availableBalancePaise={wallet?.available_balance_paise}
-        unrealizedPnlPaise={portfolio?.unrealized_pnl_paise}
+        unrealizedPnlPaise={portfolioError || portfolio?.valuation_status === "DEGRADED" ? undefined : portfolio?.unrealized_pnl_paise}
       />
 
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
