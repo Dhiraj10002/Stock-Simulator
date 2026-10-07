@@ -131,10 +131,10 @@ func (h *Handler) Search(c *gin.Context) {
 	if now.Hour() > 15 || (now.Hour() == 15 && now.Minute() >= 30) {
 		cutoff = now.AddDate(0, 0, 1).Format("2006-01-02")
 	}
-	dbQuery = dbQuery.Where(`COALESCE(expiry, '') = '' OR
+	dbQuery = dbQuery.Where(`(COALESCE(expiry, '') = '' OR
 		(CASE WHEN expiry ~ '^\d{4}-\d{2}-\d{2}$' THEN expiry::date
 		 WHEN expiry ~ '^\d{2}[A-Za-z]{3}\d{4}$' THEN to_date(expiry, 'DDMONYYYY')
-		 WHEN expiry ~ '^\d{2}-[A-Za-z]{3}-\d{4}$' THEN to_date(expiry, 'DD-MON-YYYY') END) >= ?::date`, cutoff)
+		 WHEN expiry ~ '^\d{2}-[A-Za-z]{3}-\d{4}$' THEN to_date(expiry, 'DD-MON-YYYY') END) >= ?::date)`, cutoff)
 
 	segment := strings.TrimSpace(c.Query("segment"))
 	if segment == "FUTURES" {
