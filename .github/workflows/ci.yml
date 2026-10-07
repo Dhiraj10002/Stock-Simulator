@@ -275,7 +275,7 @@ jobs:
       - name: Resolve patched packages without executing install scripts
         run: |
           cp package-lock.json "$RUNNER_TEMP/original-lock.json"
-          node -e 'const fs=require("node:fs"); const p=JSON.parse(fs.readFileSync("package.json")); p.dependencies.next="16.4.0"; p.devDependencies["eslint-config-next"]="16.4.0"; fs.writeFileSync("package.json",JSON.stringify(p,null,2)+"\\n")'
+          node -e 'const fs=require("node:fs"); const p=JSON.parse(fs.readFileSync("package.json")); p.dependencies.next="16.4.0"; p.devDependencies["eslint-config-next"]="16.4.0"; fs.writeFileSync("package.json",JSON.stringify(p,null,2)+String.fromCharCode(10))'
           npm install --package-lock-only --ignore-scripts --no-audit
           npm audit fix --package-lock-only --ignore-scripts
           npm audit --omit=dev --audit-level=high
