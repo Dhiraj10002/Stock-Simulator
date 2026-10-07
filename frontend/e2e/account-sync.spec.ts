@@ -84,17 +84,20 @@ test("active positions retain five-second valuation polling and another tab's ac
   const other = await context.newPage();
   await mocks(other);
   await other.goto("/login");
+  const beforeBroadcast = { ...counts };
   await other.evaluate(account => {
     const channel = new BroadcastChannel("stock-simulator-account");
     channel.postMessage({ scope: account });
     channel.close();
   }, scope);
-  await expect.poll(() => counts.wallet).toBeGreaterThan(initial.wallet);
+  await expect.poll(() => counts.wallet).toBeGreaterThan(beforeBroadcast.wallet);
+  await expect.poll(() => counts.portfolio).toBeGreaterThan(beforeBroadcast.portfolio);
   // Logout marker removal and cross-tab storage notification stop private polling.
   await other.evaluate(() => {
     document.cookie = "stocksim_session=; Path=/; Max-Age=0";
     localStorage.setItem("auth-session-change", crypto.randomUUID());
   });
+  await expect.poll(async () => page.evaluate(() => document.cookie)).not.toContain("stocksim_session");
   await page.waitForTimeout(1000);
   const afterLogout = { ...counts };
   await page.waitForTimeout(6000);
