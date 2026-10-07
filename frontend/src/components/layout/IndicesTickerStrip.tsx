@@ -24,12 +24,16 @@ export const MAJOR_INDICES_STRIP = [
 ];
 const symbols = MAJOR_INDICES_STRIP.map((i) => i.symbolKey);
 
-export default function IndicesTickerStrip() {
-  const [now, setNow] = useState(0);
+function LiveProvenance({ quote }: { quote?: Quote }) {
+  const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, []);
+  return <FnoProvenance quote={quote} now={now} sessionLive={false} compact />;
+}
+
+export default function IndicesTickerStrip() {
   const stream = useMultiSymbolQuotes(symbols);
   useTargetedSubscription(symbols);
   const displayInterval = useDisplayPolling(symbols);
@@ -74,12 +78,7 @@ export default function IndicesTickerStrip() {
                 <span className="font-bold font-tabular text-slate-900 dark:text-slate-100">
                   {priceStr}
                 </span>
-                <FnoProvenance
-                  quote={quote}
-                  now={now}
-                  sessionLive={false}
-                  compact
-                />
+                <LiveProvenance quote={quote} />
               </div>
               <FnoMovement quote={quote} />
             </div>

@@ -117,12 +117,34 @@ export default function TopIndexFutures({
           Index quote refresh failed. Retained prices are last available.
         </p>
       )}
-      {!displayed.length && (
+      {!displayed.length && query.isPending ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3.5 animate-pulse" aria-label="Loading top traded index futures">
+          {[1, 2, 3, 4].map((i) => (
+            <div
+              key={i}
+              className={`${panel} min-w-0 p-3.5 h-[190px] flex flex-col justify-between bg-slate-50/50 dark:bg-slate-900/40`}
+            >
+              <div className="space-y-2">
+                <div className="h-4 w-24 rounded bg-slate-200 dark:bg-slate-800" />
+                <div className="h-5 w-32 rounded bg-slate-200 dark:bg-slate-800" />
+                <div className="h-3 w-40 rounded bg-slate-100 dark:bg-slate-800/60" />
+              </div>
+              <div className="pt-2 border-t border-slate-100 dark:border-slate-800/60 space-y-2">
+                <div className="h-6 w-28 rounded bg-slate-200 dark:bg-slate-800" />
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="h-7 rounded bg-slate-200 dark:bg-slate-800" />
+                  <div className="h-7 rounded bg-slate-200 dark:bg-slate-800" />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : !displayed.length ? (
         <p role="status" className="text-sm text-slate-600 dark:text-slate-400">
           No current index futures available. Refresh the instrument master.
         </p>
-      )}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3.5">
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3.5">
         {displayed.map((inst) => {
           const quote = quotes[inst.symbol];
           const block = futuresTradeBlock(inst, quote, token, status, now);
@@ -199,6 +221,7 @@ export default function TopIndexFutures({
           );
         })}
       </div>
+      )}
     </section>
   );
 }

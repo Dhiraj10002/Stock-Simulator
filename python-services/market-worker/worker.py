@@ -1486,12 +1486,18 @@ class QuoteWriter:
         for sym in symbols_to_write:
             self.settlement_recorder.record(sym, price_paise, source, mode, now, subscription.exchange_segment)
 
+        existing = self.client.hgetall(quote_key)
+        old_stamp = broker_quote_time(existing.get("updated_at")) if existing else None
+        if existing.get("source") == source and old_stamp is not None and old_stamp > now:
+            return
+
+        sym_latest_map = {}
+        if build_history:
+            for sym in symbols_to_write:
+                sym_latest_map[sym] = self.client.lindex(f"market:history:{sym}", 0)
+
         t0 = time.perf_counter()
         with self.history_lock, self.client.pipeline() as pipe:
-            existing = self.client.hgetall(quote_key)
-            old_stamp = broker_quote_time(existing.get("updated_at")) if existing else None
-            if existing.get("source") == source and old_stamp is not None and old_stamp > now:
-                return
             pipe.hset("market:feed_state", mapping={"last_tick": now.isoformat()})
             for sym in symbols_to_write:
                 q_key = f"market:quote:{sym}"
@@ -1510,7 +1516,7 @@ class QuoteWriter:
                 pipe.expire(q_key, self.quote_ttl)
 
                 if build_history:
-                    sym_latest = self.client.lindex(h_key, 0)
+                    sym_latest = sym_latest_map.get(sym)
                     candle = make_candle(sym_latest, bucket, price_paise, self.volume_delta(sym, now.date(), volume), source, mode.upper())
                     try:
                         same_bucket = json.loads(sym_latest).get("timestamp") == bucket * 60 if sym_latest else False

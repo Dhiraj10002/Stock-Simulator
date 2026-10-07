@@ -1,7 +1,7 @@
 "use client";
 import { quoteLabel } from "@/lib/marketData";
 
-import { useEffect, useRef, useState, useMemo, useCallback } from "react";
+import { useEffect, useRef, useState, useMemo, useCallback, memo } from "react";
 import {
   createChart,
   ColorType,
@@ -58,6 +58,60 @@ interface TradingViewChartProps {
   defaultTimeframe?: string;
   onTimeframeChange?: (tf: string) => void;
 }
+
+interface LegendData {
+  time?: string;
+  open?: number;
+  high?: number;
+  low?: number;
+  close?: number;
+  volume?: number;
+  color?: string;
+}
+
+interface LatestBarData {
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+const ChartLegend = memo(function ChartLegend({
+  legend,
+  latestBar,
+}: {
+  legend: LegendData | null;
+  latestBar: LatestBarData | null;
+}) {
+  return (
+    <div className="px-4 py-1.5 bg-slate-50/50 dark:bg-slate-950/40 border-b border-slate-100 dark:border-slate-800/40 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] font-mono">
+      {legend ? (
+        <>
+          <span className="text-slate-400">Time: <span className="text-slate-800 dark:text-slate-200">{legend.time}</span></span>
+          <span className="text-slate-400">O: <span className="font-bold" style={{ color: legend.color }}>₹{legend.open?.toFixed(2)}</span></span>
+          <span className="text-slate-400">H: <span className="font-bold" style={{ color: legend.color }}>₹{legend.high?.toFixed(2)}</span></span>
+          <span className="text-slate-400">L: <span className="font-bold" style={{ color: legend.color }}>₹{legend.low?.toFixed(2)}</span></span>
+          <span className="text-slate-400">C: <span className="font-bold" style={{ color: legend.color }}>₹{legend.close?.toFixed(2)}</span></span>
+          {legend.volume !== undefined && (
+            <span className="text-slate-400">Vol: <span className="text-slate-700 dark:text-slate-300">{legend.volume.toLocaleString("en-IN")}</span></span>
+          )}
+        </>
+      ) : latestBar ? (
+        <>
+          <span className="text-slate-400">Latest Bar:</span>
+          <span className="text-slate-400">O: <span className="text-slate-700 dark:text-slate-300">₹{latestBar.open.toFixed(2)}</span></span>
+          <span className="text-slate-400">H: <span className="text-emerald-600 dark:text-emerald-400">₹{latestBar.high.toFixed(2)}</span></span>
+          <span className="text-slate-400">L: <span className="text-rose-600 dark:text-rose-400">₹{latestBar.low.toFixed(2)}</span></span>
+          <span className="text-slate-400">C: <span className="font-bold text-cyan-600 dark:text-cyan-400">₹{latestBar.close.toFixed(2)}</span></span>
+          <span className="text-slate-400">Vol: <span className="text-slate-700 dark:text-slate-300">{latestBar.volume.toLocaleString("en-IN")}</span></span>
+        </>
+      ) : (
+        <span className="text-slate-400 text-[10px]">Move crosshair over candles for OHLC metrics</span>
+      )}
+    </div>
+  );
+});
 
 export default function TradingViewChart({
   symbol,
@@ -736,31 +790,7 @@ export default function TradingViewChart({
       {/* ===================================================================== */}
       {/* FLOATING CROSSHAIR / TICK LEGEND                                      */}
       {/* ===================================================================== */}
-      <div className="px-4 py-1.5 bg-slate-50/50 dark:bg-slate-950/40 border-b border-slate-100 dark:border-slate-800/40 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] font-mono">
-        {legend ? (
-          <>
-            <span className="text-slate-400">Time: <span className="text-slate-800 dark:text-slate-200">{legend.time}</span></span>
-            <span className="text-slate-400">O: <span className="font-bold" style={{ color: legend.color }}>₹{legend.open?.toFixed(2)}</span></span>
-            <span className="text-slate-400">H: <span className="font-bold" style={{ color: legend.color }}>₹{legend.high?.toFixed(2)}</span></span>
-            <span className="text-slate-400">L: <span className="font-bold" style={{ color: legend.color }}>₹{legend.low?.toFixed(2)}</span></span>
-            <span className="text-slate-400">C: <span className="font-bold" style={{ color: legend.color }}>₹{legend.close?.toFixed(2)}</span></span>
-            {legend.volume !== undefined && (
-              <span className="text-slate-400">Vol: <span className="text-slate-700 dark:text-slate-300">{legend.volume.toLocaleString("en-IN")}</span></span>
-            )}
-          </>
-        ) : latestBar ? (
-          <>
-            <span className="text-slate-400">Latest Bar:</span>
-            <span className="text-slate-400">O: <span className="text-slate-700 dark:text-slate-300">₹{latestBar.open.toFixed(2)}</span></span>
-            <span className="text-slate-400">H: <span className="text-emerald-600 dark:text-emerald-400">₹{latestBar.high.toFixed(2)}</span></span>
-            <span className="text-slate-400">L: <span className="text-rose-600 dark:text-rose-400">₹{latestBar.low.toFixed(2)}</span></span>
-            <span className="text-slate-400">C: <span className="font-bold text-cyan-600 dark:text-cyan-400">₹{latestBar.close.toFixed(2)}</span></span>
-            <span className="text-slate-400">Vol: <span className="text-slate-700 dark:text-slate-300">{latestBar.volume.toLocaleString("en-IN")}</span></span>
-          </>
-        ) : (
-          <span className="text-slate-400 text-[10px]">Move crosshair over candles for OHLC metrics</span>
-        )}
-      </div>
+      <ChartLegend legend={legend} latestBar={latestBar} />
 
       {/* ===================================================================== */}
       {/* CANVAS CHART CONTAINER & EXPLICIT UNAVAILABLE STATE                   */}

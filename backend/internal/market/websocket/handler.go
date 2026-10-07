@@ -283,11 +283,13 @@ func (h *Handler) Serve(c *gin.Context) {
 			if !ok {
 				return
 			}
-			var raw map[string]interface{}
-			if err := json.Unmarshal([]byte(message.Payload), &raw); err != nil {
+			var env struct {
+				Type string `json:"type"`
+			}
+			if err := json.Unmarshal([]byte(message.Payload), &env); err != nil {
 				continue
 			}
-			if msgType, ok := raw["type"].(string); ok && msgType == "feed_status" {
+			if env.Type == "feed_status" {
 				var fs marketDTO.FeedStatusResponse
 				if err := json.Unmarshal([]byte(message.Payload), &fs); err == nil {
 					eventID := fmt.Sprintf("mkt_feed_%d_%s", time.Now().UnixNano(), uuid.NewString()[:8])

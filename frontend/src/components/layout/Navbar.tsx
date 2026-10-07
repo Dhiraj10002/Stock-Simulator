@@ -4,7 +4,7 @@ import { useAccountWallet } from "@/hooks/useAccountWallet";
 
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   TrendingUp,
   TrendingDown,
@@ -66,6 +66,7 @@ export default function Navbar({
   onSignOut,
   resetting = false,
 }: NavbarProps) {
+  const router = useRouter();
   const pathname = usePathname();
   const setSearchPaletteOpen = useUIStore((s) => s.setSearchPaletteOpen);
   const { theme, setTheme } = useTheme();
@@ -139,7 +140,7 @@ export default function Navbar({
     await logoutSession();
     localStorage.removeItem("user_name");
     localStorage.removeItem("user_email");
-    window.location.href = "/login";
+    router.push("/login");
   };
 
   // Indices — targeted symbol selectors prevent full navbar rerenders on unrelated ticks

@@ -2,10 +2,12 @@
 import { getAuthToken, logoutSession } from "@/lib/api";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import DashboardPage from "@/components/dashboard/DashboardPage";
 import AuthModal from "@/components/auth/AuthModal";
 
 export default function ExploreRoutePage() {
+  const router = useRouter();
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
   const [authModalOpen, setAuthModalOpen] = useState(false);
 
@@ -24,7 +26,7 @@ export default function ExploreRoutePage() {
     localStorage.removeItem("stock-simulator-refresh-token");
     localStorage.removeItem("user_name");
     localStorage.removeItem("user_email");
-    window.location.href = "/";
+    router.push("/");
   };
 
   if (isAuthenticated === null) {
