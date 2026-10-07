@@ -64,6 +64,7 @@ class StartupLivenessTest(unittest.TestCase):
              patch.object(worker.redis, "from_url", return_value=client), \
              patch.object(worker, "InstrumentStore", return_value=store), patch.object(worker, "QuoteWriter", return_value=writer), \
              patch.object(worker, "load_canonical_aliases"), patch.object(worker, "init_global_token_map"), \
+             patch.object(worker, "fetch_full_snapshot", return_value=None), \
              patch.object(store, "refresh", side_effect=refresh), \
              patch.object(worker, "init_smart_api", side_effect=blocked) as auth, \
              patch.object(worker.threading, "Thread", side_effect=thread_factory):
