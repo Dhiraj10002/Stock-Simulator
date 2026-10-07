@@ -49,3 +49,7 @@ python-services/**/logs/
 bin/
 *.prebuilt
 !Dockerfile.prebuilt
+*.dump
+backups/
+*-evidence.json
+artifacts/
