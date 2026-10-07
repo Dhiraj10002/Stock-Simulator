@@ -77,15 +77,16 @@ async function main() {
           return { lcpMs: window.__mobileLab.lcpMs, cls: window.__mobileLab.cls, fcpMs: performance.getEntriesByType("paint").find(entry => entry.name === "first-contentful-paint")?.startTime ?? null, ttfbMs: performance.getEntriesByType("navigation")[0]?.responseStart ?? null, jsBytes: js.reduce((sum, entry) => sum + entry.encodedBodySize, 0), jsRequests: js.length, overflow: document.documentElement.scrollWidth > innerWidth };
         });
         const interactions = [];
+        const activate = locator => desktop ? locator.click() : locator.tap();
         if (new URL(page.url()).pathname === "/") {
           const preview = page.locator('a[href="#platform"]:visible').first();
-          if (await preview.isVisible()) { await preview.tap(); interactions.push("Platform preview anchor"); }
+          if (await preview.isVisible()) { await activate(preview); interactions.push("Platform preview anchor"); }
         } else if (new URL(page.url()).pathname === "/login") {
           const email = page.locator('input[type="email"]');
-          if (await email.isVisible()) { await email.tap(); await email.pressSequentially("profile@example.com", { delay: 40 }); interactions.push("Focus and type email; no submit"); }
+          if (await email.isVisible()) { await activate(email); await email.pressSequentially("profile@example.com", { delay: 40 }); interactions.push("Focus and type email; no submit"); }
         } else if (/^\/stocks\/[^/]+$/.test(new URL(page.url()).pathname)) {
           const timeframe = page.getByRole("button", { name: "1D", exact: true });
-          if (await timeframe.isVisible()) { await timeframe.tap(); interactions.push("Chart timeframe; no order submission"); }
+          if (await timeframe.isVisible()) { await activate(timeframe); interactions.push("Chart timeframe; no order submission"); }
         }
         await page.waitForTimeout(1500);
         const accountStart = requests.length;

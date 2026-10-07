@@ -103,3 +103,57 @@ test("a broken private stream keeps five-second polling available", async ({ pag
   const initial = counts.wallet;
   await expect.poll(() => counts.wallet, { timeout: 12_000 }).toBeGreaterThan(initial);
 });
+
+test("expired cookie refresh is coordinated across two tabs; logout removes the private session", async ({ page, context }) => {
+  await context.addCookies([
+    { name: "stocksim_session", value: scope, url: "http://127.0.0.1:3100" },
+    { name: "stocksim_access", value: "expired-fixture", httpOnly: true, url: "http://127.0.0.1:3100" },
+  ]);
+  let refreshes = 0;
+  let privateSuccesses = 0;
+  let loggedOut = false;
+  await context.routeWebSocket("**/ws/market", ws => ws.onMessage(() => {}));
+  await context.route(/\/api\/(?:v1|backend)\//, async route => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname.replace(/^\/api\/(?:v1|backend)/, "");
+    const headers: Record<string, string> = {};
+    if (path === "/auth/refresh") {
+      refreshes++;
+      await new Promise(resolve => setTimeout(resolve, 100));
+      headers["set-cookie"] = "stocksim_access=fresh-fixture; Path=/; HttpOnly; SameSite=Lax";
+      return route.fulfill({ headers, json: { success: true, data: { authenticated: true } } });
+    }
+    if (path === "/auth/logout") {
+      loggedOut = true;
+      headers["set-cookie"] = "stocksim_access=; Path=/; HttpOnly; Max-Age=0; SameSite=Lax";
+      return route.fulfill({ headers, json: { success: true } });
+    }
+    if (["/wallet", "/portfolio", "/orders", "/trades"].includes(path)) {
+      if (loggedOut || !request.headers().cookie?.includes("stocksim_access=fresh-fixture")) return route.fulfill({ status: 401, json: { success: false, message: "Session expired" } });
+      privateSuccesses++;
+    }
+    let data: unknown = [];
+    if (path === "/auth/me") data = { uuid: scope, name: "Trader" };
+    if (path === "/wallet") data = { cash_balance_paise: 100000000, available_balance_paise: 100000000, blocked_paise: 0 };
+    if (path === "/portfolio") data = { positions: [], unrealized_pnl_paise: 0, valuation_status: "REALTIME" };
+    await route.fulfill({ json: { success: true, data } });
+  });
+  const second = await context.newPage();
+  await Promise.all([page.goto("/orders"), second.goto("/orders")]);
+  await expect.poll(() => privateSuccesses).toBeGreaterThanOrEqual(8);
+  expect(refreshes).toBe(1);
+  expect(await page.evaluate(() => document.cookie)).not.toContain("stocksim_access");
+  expect(await second.evaluate(() => document.cookie)).not.toContain("stocksim_access");
+  await second.evaluate(async () => {
+    await fetch("/api/backend/auth/logout", { method: "POST", headers: { "X-Requested-With": "stocksim" } });
+    document.cookie = "stocksim_session=; Path=/; Max-Age=0";
+    localStorage.setItem("auth-session-change", crypto.randomUUID());
+    window.dispatchEvent(new Event("auth-changed"));
+  });
+  const status = await page.evaluate(async () => (await fetch("/api/backend/wallet")).status);
+  expect(status).toBe(401);
+  await page.waitForTimeout(1000);
+  const afterLogout = privateSuccesses;
+  await page.waitForTimeout(6000);
+  expect(privateSuccesses).toBe(afterLogout);
+});
