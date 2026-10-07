@@ -1,4 +1,6 @@
 "use client";
+import { sessionFetch } from "@/lib/api";
+import { getAuthToken } from "@/lib/api";
 import { useAccountWallet } from "@/hooks/useAccountWallet";
 
 import React, { useState, useMemo } from "react";
@@ -44,8 +46,7 @@ export default function OrdersPage() {
     queueMicrotask(() => {
       setMounted(true);
       const t =
-        localStorage.getItem("auth_token") ||
-        localStorage.getItem("stock-simulator-access-token") ||
+        getAuthToken() ||
         "";
       setToken(t);
       const params = new URLSearchParams(window.location.search);
@@ -66,7 +67,7 @@ export default function OrdersPage() {
     queryFn: async () => {
       if (!token) return [];
       try {
-        const res = await fetch(`${apiUrl}/orders`, {
+        const res = await sessionFetch(`${apiUrl}/orders`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (!res.ok) return [];
@@ -90,7 +91,7 @@ export default function OrdersPage() {
     queryFn: async () => {
       if (!token) return [];
       try {
-        const res = await fetch(`${apiUrl}/trades`, {
+        const res = await sessionFetch(`${apiUrl}/trades`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (!res.ok) return [];
@@ -120,7 +121,7 @@ export default function OrdersPage() {
         };
       }
       try {
-        const res = await fetch(`${apiUrl}/portfolio`, {
+        const res = await sessionFetch(`${apiUrl}/portfolio`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (!res.ok) {
@@ -157,7 +158,7 @@ export default function OrdersPage() {
   const handleCancelOrder = async (order: Order) => {
     if (!token) return;
     try {
-      const res = await fetch(`${apiUrl}/orders/${order.uuid}`, {
+      const res = await sessionFetch(`${apiUrl}/orders/${order.uuid}`, {
         method: "DELETE",
         headers: {
           Authorization: `Bearer ${token}`,
@@ -253,7 +254,7 @@ export default function OrdersPage() {
     setIsClearing(true);
     try {
       if (token) {
-        await fetch(`${apiUrl}/orders/history`, {
+        await sessionFetch(`${apiUrl}/orders/history`, {
           method: "DELETE",
           headers: {
             Authorization: `Bearer ${token}`,

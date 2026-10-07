@@ -27,6 +27,7 @@ import (
 	portfolioDTO "github.com/Dhiraj10002/Stock-Simulator/backend/internal/portfolio/dto"
 	reportsDTO "github.com/Dhiraj10002/Stock-Simulator/backend/internal/reports/dto"
 	walletDTO "github.com/Dhiraj10002/Stock-Simulator/backend/internal/wallet/dto"
+	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -236,6 +237,9 @@ func sendRequest(router http.Handler, method, path, token string, body interface
 	}
 
 	req := httptest.NewRequest(method, path, bodyReader)
+	if method == http.MethodPost && path == "/api/v1/orders" {
+		req.Header.Set("Idempotency-Key", uuid.NewString())
+	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}

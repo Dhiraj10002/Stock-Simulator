@@ -1,0 +1,5 @@
+[Unit]
+Description=Record Stock Simulator production failure alert
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/logger -p daemon.err -t stocksim-alert "Stock Simulator is unavailable. Inspect journalctl -u stocksim-monitor.service and docker compose ps."

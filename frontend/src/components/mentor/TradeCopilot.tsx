@@ -1,4 +1,5 @@
 "use client";
+import { sessionFetch } from "@/lib/api";
 
 import { useState, useRef, useEffect } from "react";
 import {
@@ -125,7 +126,7 @@ export default function TradeCopilot({ token, apiUrl, initialQuery }: TradeCopil
     setCritiquing(true);
     setCritiqueError(null);
     try {
-      const res = await fetch(`${apiUrl}/ai/trade-critique`, {
+      const res = await sessionFetch(`${apiUrl}/ai/trade-critique`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -177,7 +178,7 @@ export default function TradeCopilot({ token, apiUrl, initialQuery }: TradeCopil
     // If authenticated, always call backend AI endpoint for live trade-aware analysis
     if (token) {
       try {
-        const res = await fetch(`${apiUrl}/ai/analyze-trade`, {
+        const res = await sessionFetch(`${apiUrl}/ai/analyze-trade`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",

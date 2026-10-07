@@ -1118,24 +1118,24 @@ export default function StocksExplorePage() {
                   <ShieldCheck className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
                   Market Volatility & Session
                 </span>
-                <span className="text-[10px] font-mono text-slate-400">NSE / BSE</span>
+                <span className="text-[10px] font-mono text-slate-400">NSE / NFO</span>
               </div>
 
               <div className="grid grid-cols-2 gap-2 text-xs">
                 <div className="p-2.5 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60">
                   <div className="text-[10px] text-slate-400">INDIA VIX</div>
                   <div className="text-sm font-bold text-emerald-600 dark:text-emerald-400 font-tabular mt-0.5">
-                    12.40 (-3.5%)
+                    Unavailable
                   </div>
-                  <div className="text-[9px] text-slate-400">Low Volatility</div>
+                  <div className="text-[9px] text-slate-400">Provider data unavailable</div>
                 </div>
 
                 <div className="p-2.5 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60">
                   <div className="text-[10px] text-slate-400">F&O Sentiment</div>
                   <div className="text-sm font-bold text-cyan-600 dark:text-cyan-400 font-tabular mt-0.5">
-                    PCR: 1.15
+                    Unavailable
                   </div>
-                  <div className="text-[9px] text-slate-400">Bullish Bias</div>
+                  <div className="text-[9px] text-slate-400">Verified PCR unavailable</div>
                 </div>
               </div>
 

@@ -204,7 +204,7 @@ func (h *HealthHandler) Readiness(c *gin.Context) {
 	// 5. Inspect Instrument Master
 	masterStatus, activeVersion, tradableCount, masterErr := h.checkInstrumentMaster(ctx)
 
-	worker := h.checkWorker(ctx, now)
+	worker := h.checkWorker(ctx, h.now())
 	if feedMode == "LIVE" && worker.Status == "UP" && worker.MasterVersion != activeVersion {
 		worker.Status = "DOWN"
 		worker.Error = "worker has not loaded the activated master"
@@ -436,8 +436,8 @@ func (h *HealthHandler) checkMarketFeed(ctx context.Context, now time.Time, mark
 		return "DOWN", feedMode, supervisorState, lastTickAge, subCount, "feed mode unavailable"
 	}
 
-	if marketState == "OPEN" {
-		// Regular trading hours (09:15-15:30 IST on a trading weekday)
+	if marketState == "OPEN" || calendar.IsMarketOpenForSegment(now, calendar.SegmentNFO) {
+		// Require fresh data while either equities or derivatives are open.
 		if feedMode == "LIVE" {
 			// Criterion 2: In LIVE mode, if last_tick_age_seconds > 60 during regular market hours, /ready reports degraded feed status.
 			if lastTickAge == nil || *lastTickAge > 60.0 {
@@ -488,11 +488,14 @@ func (h *HealthHandler) checkWorker(ctx context.Context, now time.Time) WorkerSe
 		result.Error = "worker heartbeat missing or invalid"
 		return result
 	}
-	age := now.Sub(stamp).Seconds()
+	age := h.now().Sub(stamp).Seconds()
 	result.HeartbeatAgeSeconds = &age
 	if age < -5 || age > 90 {
 		result.Error = "worker heartbeat expired or future dated"
 		return result
+	}
+	if age < 0 {
+		age = 0
 	}
 	result.Status = "UP"
 	return result

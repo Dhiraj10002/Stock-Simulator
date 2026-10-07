@@ -39,5 +39,5 @@ export function strategyJournalKey(token: string) {
   try {
     const payload = JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
     return typeof payload.user_id === "string" && payload.user_id ? `paper-strategy:${payload.user_id}` : null;
-  } catch { return null; }
+  } catch { return token && !token.includes(".") ? `paper-strategy:${token}` : null; }
 }

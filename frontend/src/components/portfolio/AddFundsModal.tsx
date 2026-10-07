@@ -1,4 +1,6 @@
 "use client";
+import { sessionFetch } from "@/lib/api";
+import { getAuthToken } from "@/lib/api";
 
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -39,7 +41,7 @@ export default function AddFundsModal({
 
   const [token] = useState<string>(() => {
     if (typeof window !== "undefined") {
-      return localStorage.getItem("auth_token") || "";
+      return getAuthToken();
     }
     return "";
   });
@@ -97,7 +99,7 @@ export default function AddFundsModal({
 
     try {
       if (token) {
-        await fetch(`${apiUrl}/simulation/reset`, {
+        await sessionFetch(`${apiUrl}/simulation/reset`, {
           method: "POST",
           headers: { Authorization: `Bearer ${token}` },
         });

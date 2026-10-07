@@ -1,4 +1,6 @@
 "use client";
+import { sessionFetch } from "@/lib/api";
+import { getAuthToken } from "@/lib/api";
 
 import { useState, useMemo } from "react";
 import Link from "next/link";
@@ -78,8 +80,7 @@ export default function AnalyticsConsole({
     if (propToken) return propToken;
     if (typeof window !== "undefined") {
       return (
-        localStorage.getItem("auth_token") ||
-        localStorage.getItem("stock-simulator-access-token") ||
+        getAuthToken() ||
         ""
       );
     }
@@ -118,7 +119,7 @@ export default function AnalyticsConsole({
     queryKey: ["analytics-performance", token],
     queryFn: async () => {
       if (!token) return null;
-      const res = await fetch(`${baseApi}/analytics/performance`, {
+      const res = await sessionFetch(`${baseApi}/analytics/performance`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
@@ -136,7 +137,7 @@ export default function AnalyticsConsole({
     queryKey: ["analytics-calendar", token, currentMonth],
     queryFn: async () => {
       if (!token) return null;
-      const res = await fetch(`${baseApi}/analytics/pnl-calendar?month=${currentMonth}`, {
+      const res = await sessionFetch(`${baseApi}/analytics/pnl-calendar?month=${currentMonth}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
@@ -154,7 +155,7 @@ export default function AnalyticsConsole({
     queryKey: ["trades"],
     queryFn: async () => {
       if (!token) return [];
-      const res = await fetch(`${baseApi}/trades`, {
+      const res = await sessionFetch(`${baseApi}/trades`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
@@ -255,7 +256,7 @@ export default function AnalyticsConsole({
     }
 
     try {
-      const res = await fetch(`${baseApi}/trades/${tradeUuid}/journal`, {
+      const res = await sessionFetch(`${baseApi}/trades/${tradeUuid}/journal`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",

@@ -1,9 +1,10 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
-import { getAuthToken } from "@/lib/api";
+import { getAuthToken, purgeLegacyCredentials } from "@/lib/api";
 
 function subscribe(listener: () => void) {
+  purgeLegacyCredentials();
   window.addEventListener("auth-changed", listener);
   window.addEventListener("storage", listener);
   return () => {

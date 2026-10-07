@@ -1,4 +1,5 @@
 "use client";
+import { sessionFetch } from "@/lib/api";
 
 import { useState, useEffect, useCallback } from "react";
 import {
@@ -69,7 +70,7 @@ export default function LedgerStatementView({
 
     setLoading(true);
     try {
-      const res = await fetch(`${apiUrl}/reports/ledger-statement?from=${fromDate}&to=${toDate}`, {
+      const res = await sessionFetch(`${apiUrl}/reports/ledger-statement?from=${fromDate}&to=${toDate}`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },

@@ -72,8 +72,13 @@ func (a *App) RunWithContext(ctx context.Context) error {
 	logger.Info("Router initialized", zap.Int64("duration_ms", time.Since(routerStarted).Milliseconds()))
 
 	srv := &http.Server{
-		Addr:    ":" + cfg.Port,
-		Handler: r,
+		Addr:              ":" + cfg.Port,
+		Handler:           r,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       90 * time.Second,
+		MaxHeaderBytes:    32 << 10,
 	}
 
 	serverErrors := make(chan error, 1)

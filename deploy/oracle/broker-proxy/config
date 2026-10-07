@@ -1,0 +1,7 @@
+# Private Compose network only; no published proxy port.
+listen-address  0.0.0.0:8118
+socket-timeout 10
+logdir /tmp
+logfile /dev/stdout
+# Add an approved upstream when broker egress requires it. Keep credentials out of Git.
+# Example: forward-socks5t / approved-proxy-host:1080 .

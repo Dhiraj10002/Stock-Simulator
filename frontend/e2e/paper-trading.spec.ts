@@ -64,12 +64,13 @@ async function mocks(
   } = {},
 ) {
   const posts: Record<string, unknown>[] = [];
-  await page.route("**/api/v1/**", async (route) => {
+  await page.route(/\/api\/(?:v1|backend)\//, async (route) => {
     const req = route.request(),
       url = new URL(req.url()),
-      path = url.pathname.replace("/api/v1", "");
+      path = url.pathname.replace(/^\/api\/(?:v1|backend)/, "");
     const headers = {
       "access-control-allow-origin": "http://127.0.0.1:3100",
+      ...(path === "/auth/login" ? {"set-cookie": "stocksim_session=browser-trader; Path=/; SameSite=Lax"} : {}),
       "access-control-allow-methods": "GET,POST,DELETE,OPTIONS",
       "access-control-allow-headers":
         "authorization,content-type,idempotency-key,x-request-id",
@@ -80,7 +81,7 @@ async function mocks(
     }
     let data: unknown;
     if (path === "/auth/login")
-      data = { access_token: token, refresh_token: "browser-refresh" };
+      data = { authenticated: true };
     else if (path === "/auth/logout") data = {};
     else if (path === "/auth/me")
       data = {
@@ -275,12 +276,12 @@ test("previous strategy recovery remains visible under Positions and scoped to i
   await expect(recovery.getByText("UNKNOWN", { exact: true })).toBeVisible();
   const otherToken = `test.${Buffer.from(JSON.stringify({ user_id: "another-trader" })).toString("base64url")}.test`;
   await page.evaluate((value) => {
-    localStorage.setItem("auth_token", value);
+    document.cookie = `stocksim_session=${value}; Path=/; SameSite=Lax`;
     window.dispatchEvent(new Event("auth-changed"));
   }, otherToken);
   await expect(recovery).not.toBeVisible();
   await page.evaluate((value) => {
-    localStorage.setItem("auth_token", value);
+    document.cookie = `stocksim_session=${value}; Path=/; SameSite=Lax`;
     window.dispatchEvent(new Event("auth-changed"));
   }, token);
   await expect(recovery.getByText("UNKNOWN", { exact: true })).toBeVisible();

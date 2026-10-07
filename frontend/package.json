@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@tanstack/react-query": "^5.103.1",
+    "@vercel/speed-insights": "^2.0.0",
     "lightweight-charts": "^5.2.1",
     "lucide-react": "^1.46.0",
     "next": "16.2.11",

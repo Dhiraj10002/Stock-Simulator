@@ -36,7 +36,7 @@ const (
 type Order struct {
 	ID                uint      `gorm:"primaryKey"`
 	UUID              uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();uniqueIndex"`
-	UserUUID          uuid.UUID `gorm:"type:uuid;index;not null;uniqueIndex:idx_order_exit_key"`
+	UserUUID          uuid.UUID `gorm:"type:uuid;index;not null;uniqueIndex:idx_order_exit_key;uniqueIndex:idx_order_intent_key"`
 	Symbol            string    `gorm:"size:30;index;not null"`
 	Side              string    `gorm:"size:10;not null"`
 	Type              string    `gorm:"size:10;not null"`
@@ -51,6 +51,9 @@ type Order struct {
 	Source             string `gorm:"size:16;not null;default:'USER'"`
 	Reason             string `gorm:"size:40"`
 	Status             string `gorm:"size:20;index;not null"`
+	// Durable new-order intents are independent of exit intents and survive history cleanup.
+	IntentKey  *string `gorm:"size:128;uniqueIndex:idx_order_intent_key"`
+	IntentHash string  `gorm:"size:64"`
 	// Nil on ordinary orders. Unique per user, retained even when history is hidden.
 	ExitKey               *string    `gorm:"size:128;uniqueIndex:idx_order_exit_key"`
 	ExitPositionUUID      *uuid.UUID `gorm:"type:uuid"`

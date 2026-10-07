@@ -4,3 +4,4 @@ pyotp>=2.9,<3
 smartapi-python>=1.4.8
 logzero>=1.7,<2
 websocket-client>=1.8,<2
+PySocks>=1.7.1,<2

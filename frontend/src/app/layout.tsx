@@ -1,3 +1,4 @@
+import { SpeedInsights } from "@vercel/speed-insights/next";
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
@@ -57,6 +58,7 @@ export default function RootLayout({
           <div className="absolute inset-0 bg-[radial-gradient(rgba(15,23,42,0.06)_1px,transparent_1px)] [background-size:24px_24px] [mask-image:radial-gradient(ellipse_75%_65%_at_50%_0%,#000_70%,transparent_100%)] opacity-70" />
         </div>
 
+        {process.env.NEXT_PUBLIC_ENABLE_SPEED_INSIGHTS === "true" && <SpeedInsights />}
         <div className="relative z-10 flex-1 flex flex-col">
           <ThemeProvider>
             <ToastProvider>

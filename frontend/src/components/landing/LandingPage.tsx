@@ -493,7 +493,7 @@ export default function LandingPage() {
         </div>
       </header>
 
-      <p className="sr-only">Illustrative preview: all homepage prices, balances, orders and trader stories are sample data, not live quotes or measured results.</p>
+      <p className="text-xs text-slate-400 text-center px-4 py-2">Illustrative preview: all homepage prices, balances, orders and trader stories are sample data, not live quotes or measured results.</p>
       {/* ================= TICKER MARQUEE ================= */}
       <div
         className="fixed top-[58px] left-0 right-0 z-40 w-full border-b border-white/[0.06] overflow-hidden"
@@ -968,7 +968,7 @@ export default function LandingPage() {
                   <div className="p-3 sm:p-4 flex flex-col justify-between space-y-2.5 group/col hover:bg-white/[0.02] rounded-2xl transition-colors">
                     <div className="flex items-center justify-between">
                       <span className="text-[9px] font-mono uppercase tracking-wider text-amber-300 bg-amber-500/10 border border-amber-500/25 px-2 py-0.5 rounded-md font-bold">
-                        ● SEBI COMPLIANT
+                        ● PAPER MARGIN RULES
                       </span>
                     </div>
                     <div>
@@ -1030,7 +1030,7 @@ export default function LandingPage() {
               </span>
             </h2>
             <p className="text-slate-300 text-xs sm:text-sm max-w-xl mx-auto leading-relaxed font-normal">
-              Direct exchange depth, algorithmic risk bounds, and sub-50ms tick streaming engineered into a single unified cockpit.
+              Direct exchange depth, algorithmic risk bounds, and streaming tick streaming engineered into a single unified cockpit.
             </p>
           </div>
 
@@ -1260,7 +1260,7 @@ export default function LandingPage() {
                       <div className="text-[10px] sm:text-[11px] font-mono text-slate-400">Finance &amp; Market Educator</div>
                     </div>
                     <span className="text-[9px] font-mono font-bold text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 rounded">
-                      ✓ AUDITED
+                      SAMPLE STORY
                     </span>
                   </div>
                 </div>

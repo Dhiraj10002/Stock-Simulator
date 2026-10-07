@@ -15,16 +15,16 @@ test("dashboard calendar fits content and index history recovers from provider r
   let calendarRequests = 0;
   const requests: URL[] = [];
   await page.addInitScript(() => {
-    localStorage.setItem("auth_token", "test.dashboard.test");
+    document.cookie = `stocksim_session=${"test.dashboard.test"}; Path=/; SameSite=Lax`;
     localStorage.setItem("stock_sim_theme", "light");
   });
   await page.routeWebSocket("**/ws/market", (ws) => {
     ws.onMessage(() => {});
   });
-  await page.route("**/api/v1/**", async (route) => {
+  await page.route(/\/api\/(?:v1|backend)\//, async (route) => {
     const request = route.request(),
       url = new URL(request.url());
-    const path = url.pathname.replace("/api/v1", "");
+    const path = url.pathname.replace(/^\/api\/(?:v1|backend)/, "");
     if (request.method() === "OPTIONS") {
       await route.fulfill({ status: 204, headers });
       return;

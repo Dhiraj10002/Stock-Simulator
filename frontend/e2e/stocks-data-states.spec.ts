@@ -5,15 +5,15 @@ async function stocksMocks(page: Page, mode: "refresh" | "unavailable" | "degrad
   let rotations = 0;
   const portfolioTokens: string[] = [];
   await page.addInitScript(() => {
-    localStorage.setItem("auth_token", "expired-token");
-    localStorage.setItem("refresh_token", "refresh-fixture");
+    document.cookie = `stocksim_session=${"expired-token"}; Path=/; SameSite=Lax`;
   });
   await page.routeWebSocket("**/ws/market", (ws) => ws.onMessage(() => {}));
-  await page.route("**/api/v1/**", async (route) => {
+  await page.route(/\/api\/(?:v1|backend)\//, async (route) => {
     const request = route.request();
-    const path = new URL(request.url()).pathname.replace("/api/v1", "");
+    const path = new URL(request.url()).pathname.replace(/^\/api\/(?:v1|backend)/, "");
     const headers = {
       "access-control-allow-origin": "http://127.0.0.1:3100",
+      ...(path === "/auth/login" ? {"set-cookie": "stocksim_session=browser-trader; Path=/; SameSite=Lax"} : {}),
       "access-control-allow-methods": "GET,POST,OPTIONS",
       "access-control-allow-headers": "authorization,content-type,idempotency-key",
     };
@@ -21,10 +21,11 @@ async function stocksMocks(page: Page, mode: "refresh" | "unavailable" | "degrad
       await route.fulfill({ status: 204, headers });
       return;
     }
-    const auth = request.headers().authorization;
+    const auth = request.headers().cookie?.includes("stocksim_session=renewed-scope") ? "renewed-scope" : "expired-scope";
+    expect(request.headers().authorization).toBeUndefined();
     if (path === "/auth/refresh") {
       rotations++;
-      await route.fulfill({ headers, json: { success: true, data: { access_token: "renewed-token", refresh_token: "renewed-refresh" } } });
+      await route.fulfill({ headers: { ...headers, "set-cookie": "stocksim_session=renewed-scope; Path=/; SameSite=Lax" }, json: { success: true, data: { authenticated: true } } });
       return;
     }
     if (path === "/portfolio") {
@@ -33,7 +34,7 @@ async function stocksMocks(page: Page, mode: "refresh" | "unavailable" | "degrad
         await route.fulfill({ status: 503, headers, json: { success: false, message: "Portfolio offline" } });
         return;
       }
-      if (mode === "refresh" && auth === "Bearer expired-token") {
+      if (mode === "refresh" && auth === "expired-scope") {
         await route.fulfill({ status: 401, headers, json: { success: false, message: "Token expired" } });
         return;
       }
@@ -65,8 +66,8 @@ test("Stocks portfolio renews expired authentication and subsequent polling uses
   await expect.poll(mock.rotations).toBe(1);
   const count = mock.portfolioTokens.length;
   await expect.poll(() => mock.portfolioTokens.length, { timeout: 12000 }).toBeGreaterThan(count);
-  expect(mock.portfolioTokens.slice(count)).toEqual(expect.arrayContaining(["Bearer renewed-token"]));
-  expect(mock.portfolioTokens.slice(count)).not.toContain("Bearer expired-token");
+  expect(mock.portfolioTokens.slice(count)).toEqual(expect.arrayContaining(["renewed-scope"]));
+  expect(mock.portfolioTokens.slice(count)).not.toContain("expired-scope");
   mock.failPortfolio(true);
   await expect(page.getByText("Portfolio network update failed: valuation may be stale.")).toBeVisible();
   await expect(navbar.getByText("Unrealized P&L · Last available")).toBeVisible();

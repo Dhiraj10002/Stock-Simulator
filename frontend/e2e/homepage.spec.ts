@@ -33,7 +33,7 @@ test("cinematic homepage starts no private requests or market socket for a signe
   page.on("request", request => { if (request.url().includes("/api/v1/")) apiRequests.push(request.url()); });
   page.on("websocket", socket => { if (socket.url().includes("/ws/market")) sockets.push(socket.url()); });
   page.on("pageerror", error => errors.push(error.message));
-  await page.addInitScript(() => localStorage.setItem("auth_token", "fixture.token"));
+  await page.addInitScript(() => { document.cookie = "stocksim_session=fixture; Path=/; SameSite=Lax"; });
   await page.goto("/");
   await expect(page.getByRole("link", { name: "Open Dashboard", exact: true })).toHaveAttribute("href", "/dashboard");
   await page.getByRole("link", { name: "Explore Platform ↓", exact: true }).click();

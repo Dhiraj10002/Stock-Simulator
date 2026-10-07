@@ -3,6 +3,7 @@ import { create } from "zustand";
 import { useShallow } from "zustand/shallow";
 import { Quote, Instrument } from "@/types";
 import { resolveCanonicalSymbol } from "@/lib/alias";
+import type { ObservedQuote } from "@/lib/liveStream";
 import { STREAM_FRESH_MS, type StreamObservation } from "@/lib/displayPolling";
 
 export type MarketStatus = "PRE_OPEN" | "OPEN" | "POST_MARKET" | "CLOSED" | "HOLIDAY";
@@ -36,6 +37,7 @@ interface MarketStoreState {
   // Actions
   setQuotes: (quotes: Record<string, Quote>) => void;
   updateStreamQuote: (quote: Quote) => void;
+ updateStreamQuotes: (quotes: ObservedQuote[]) => void;
   mergeQuotes: (quotes: Record<string, Quote>) => void;
   setInstruments: (instruments: Instrument[]) => void;
   setMarketStatus: (status: MarketStatus) => void;
@@ -110,18 +112,22 @@ export const useMarketStore = create<MarketStoreState>((set) => ({
     }
     set({ instruments: map, instrumentList });
   },
-  updateStreamQuote: (quote) => set((state) => {
-    const symbol = resolveCanonicalSymbol(quote.symbol);
-    const receivedAt = Date.now(), quotedAt = Date.parse(quote.updated_at);
-    const merged = Number.isFinite(quotedAt) && quotedAt <= receivedAt + 5000
-      ? mergeIncomingQuotes(state, { [quote.symbol]: quote }) : state;
-    const streamObservations = { ...state.streamObservations };
-    if (merged !== state && Number.isFinite(quotedAt) && quotedAt <= receivedAt + 5000 && receivedAt - quotedAt < STREAM_FRESH_MS && quote.source === "angelone_live" && !quote.is_quote_stale) {
-      streamObservations[symbol] = { receivedAt, quotedAt };
-    } else {
-      delete streamObservations[symbol];
+  updateStreamQuote: (quote) => useMarketStore.getState().updateStreamQuotes([{ quote, receivedAt: Date.now() }]),
+  updateStreamQuotes: (batch) => set((state) => {
+    const incoming: Record<string, Quote> = {};
+    const observations = { ...state.streamObservations };
+    let accepted = false;
+    for (const { quote, receivedAt } of batch) {
+      const key = quote.symbol.trim().toUpperCase();
+      const symbol = resolveCanonicalSymbol(key), quotedAt = Date.parse(quote.updated_at);
+      const previous = Date.parse((incoming[key] || state.quotes[key])?.updated_at || "");
+      if (!key || !Number.isSafeInteger(quote.price_paise) || quote.price_paise <= 0 || !Number.isFinite(quotedAt) || quotedAt > receivedAt + 5000 || (Number.isFinite(previous) && quotedAt < previous)) continue;
+      incoming[key] = quote; accepted = true;
+      if (receivedAt - quotedAt < STREAM_FRESH_MS && quote.source === "angelone_live" && !quote.is_quote_stale) observations[symbol] = { receivedAt, quotedAt };
+      else delete observations[symbol];
     }
-    return { ...merged, streamObservations };
+    if (!accepted) return state;
+    return { ...mergeIncomingQuotes(state, incoming), streamObservations: observations };
   }),
   mergeQuotes: (quotes) => set((state) => mergeIncomingQuotes(state, quotes)),
   setMarketStatus: (marketStatus) => set({ marketStatus, marketStatusReceivedAt: Date.now() }),

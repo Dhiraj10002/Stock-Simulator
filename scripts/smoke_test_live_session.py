@@ -4,6 +4,7 @@ No broker credentials, SmartConnect initialization, or real broker orders.
 Use a dedicated empty paper account for --paper-orders. Every failed assertion exits 1.
 """
 import argparse
+import uuid
 import json
 import os
 import sys
@@ -82,6 +83,8 @@ def run(args, result=None):
     token = os.environ.get(args.token_env, "")
     def api(path, method="GET", payload=None, unwrap=True):
         headers = {"Accept": "application/json"}
+        if path == "/orders" and method == "POST":
+            headers["Idempotency-Key"] = str(uuid.uuid4())
         if token:
             headers["Authorization"] = f"Bearer {token}"
         if payload is not None:

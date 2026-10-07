@@ -12,14 +12,14 @@ import (
 )
 
 // Append a migration when models/indexes change; never edit an applied version.
-const currentSchemaVersion int64 = 2026100601
+const currentSchemaVersion int64 = 2026100701
 
 type schemaMigration struct {
 	version int64
 	apply   func(*gorm.DB) error
 }
 
-var schemaMigrations = []schemaMigration{{2026100601, adoptBaselineSchema}}
+var schemaMigrations = []schemaMigration{{2026100601, adoptBaselineSchema}, {2026100701, addOrderIntents}}
 
 type migrationReport struct {
 	Version int64
@@ -208,4 +208,11 @@ type schemaValidationError struct{ missing []string }
 
 func (e *schemaValidationError) Error() string {
 	return fmt.Sprintf("schema validation failed (%s); repair with RUN_MIGRATION=true", strings.Join(e.missing, ", "))
+}
+
+// Additive migration: existing financial rows and exit retry keys remain intact.
+func addOrderIntents(tx *gorm.DB) error {
+	return tx.Exec(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS intent_key varchar(128);
+ ALTER TABLE orders ADD COLUMN IF NOT EXISTS intent_hash varchar(64);
+ CREATE UNIQUE INDEX IF NOT EXISTS idx_order_intent_key ON orders(user_uuid, intent_key);`).Error
 }

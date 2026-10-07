@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -62,6 +63,7 @@ func TestOrderHandler_ErrorSemantics(t *testing.T) {
 
 	t.Run("Returns 404 INSTRUMENT_NOT_FOUND when instrument master lookup fails", func(t *testing.T) {
 		h := New(nil, cfg)
+		h.Service().SetCreateOrderFunc(func(order *model.Order) error { return nil })
 		h.Service().SetNowFunc(func() time.Time { return tradingTime })
 		h.Service().SetInstrumentFinder(func(symbol string) (*model.Instrument, error) {
 			return nil, nil // unknown instrument
@@ -79,6 +81,7 @@ func TestOrderHandler_ErrorSemantics(t *testing.T) {
 		w := httptest.NewRecorder()
 		req, _ := http.NewRequest("POST", "/api/v1/orders", bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Idempotency-Key", "test-intent")
 		r.ServeHTTP(w, req)
 
 		if w.Code != http.StatusNotFound {
@@ -94,6 +97,7 @@ func TestOrderHandler_ErrorSemantics(t *testing.T) {
 
 	t.Run("Returns 404 QUOTE_NOT_FOUND when market quote is not found", func(t *testing.T) {
 		h := New(nil, cfg)
+		h.Service().SetCreateOrderFunc(func(order *model.Order) error { return nil })
 		h.Service().SetNowFunc(func() time.Time { return tradingTime })
 		h.Service().SetInstrumentFinder(func(symbol string) (*model.Instrument, error) {
 			return &model.Instrument{
@@ -120,6 +124,7 @@ func TestOrderHandler_ErrorSemantics(t *testing.T) {
 		w := httptest.NewRecorder()
 		req, _ := http.NewRequest("POST", "/api/v1/orders", bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Idempotency-Key", "test-intent")
 		r.ServeHTTP(w, req)
 
 		if w.Code != http.StatusNotFound {
@@ -135,6 +140,7 @@ func TestOrderHandler_ErrorSemantics(t *testing.T) {
 
 	t.Run("Returns 400 QUOTE_STALE when market quote is stale", func(t *testing.T) {
 		h := New(nil, cfg)
+		h.Service().SetCreateOrderFunc(func(order *model.Order) error { return nil })
 		h.Service().SetNowFunc(func() time.Time { return tradingTime })
 		h.Service().SetInstrumentFinder(func(symbol string) (*model.Instrument, error) {
 			return &model.Instrument{
@@ -161,6 +167,7 @@ func TestOrderHandler_ErrorSemantics(t *testing.T) {
 		w := httptest.NewRecorder()
 		req, _ := http.NewRequest("POST", "/api/v1/orders", bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Idempotency-Key", "test-intent")
 		r.ServeHTTP(w, req)
 
 		if w.Code != http.StatusBadRequest {
@@ -176,6 +183,7 @@ func TestOrderHandler_ErrorSemantics(t *testing.T) {
 
 	t.Run("Returns 400 QUOTE_INELIGIBLE when market quote source is ineligible", func(t *testing.T) {
 		h := New(nil, cfg)
+		h.Service().SetCreateOrderFunc(func(order *model.Order) error { return nil })
 		h.Service().SetNowFunc(func() time.Time { return tradingTime })
 		h.Service().SetInstrumentFinder(func(symbol string) (*model.Instrument, error) {
 			return &model.Instrument{
@@ -202,6 +210,7 @@ func TestOrderHandler_ErrorSemantics(t *testing.T) {
 		w := httptest.NewRecorder()
 		req, _ := http.NewRequest("POST", "/api/v1/orders", bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Idempotency-Key", "test-intent")
 		r.ServeHTTP(w, req)
 
 		if w.Code != http.StatusBadRequest {
@@ -217,6 +226,7 @@ func TestOrderHandler_ErrorSemantics(t *testing.T) {
 
 	t.Run("Returns 503 MARKET_DATA_UNAVAILABLE when market service is down", func(t *testing.T) {
 		h := New(nil, cfg)
+		h.Service().SetCreateOrderFunc(func(order *model.Order) error { return nil })
 		h.Service().SetNowFunc(func() time.Time { return tradingTime })
 		h.Service().SetInstrumentFinder(func(symbol string) (*model.Instrument, error) {
 			return &model.Instrument{
@@ -243,6 +253,7 @@ func TestOrderHandler_ErrorSemantics(t *testing.T) {
 		w := httptest.NewRecorder()
 		req, _ := http.NewRequest("POST", "/api/v1/orders", bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Idempotency-Key", "test-intent")
 		r.ServeHTTP(w, req)
 
 		if w.Code != http.StatusServiceUnavailable {
@@ -291,6 +302,7 @@ func TestOrderHandler_ErrorSemantics(t *testing.T) {
 		w := httptest.NewRecorder()
 		req, _ := http.NewRequest("POST", "/api/v1/orders/"+uuid.NewString()+"/execute", bytes.NewReader([]byte(`{"price": 100}`)))
 		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Idempotency-Key", "test-intent")
 		r.ServeHTTP(w, req)
 
 		if w.Code != http.StatusBadRequest {
@@ -322,4 +334,21 @@ func TestOrderHandler_ErrorSemantics(t *testing.T) {
 			t.Fatalf("expected Code DATABASE_UNAVAILABLE, got %v", apiResp.Code)
 		}
 	})
+}
+
+func TestCreateRequiresDurableIntentBeforeService(t *testing.T) {
+	h := New(nil, &config.Config{})
+	r := setupOrderTestRouter(h, uuid.NewString())
+	for _, key := range []string{"", strings.Repeat("k", 129)} {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/orders", strings.NewReader(`{"symbol":"TCS","side":"BUY","type":"MARKET","product":"DELIVERY","quantity":1}`))
+		req.Header.Set("Content-Type", "application/json")
+		if key != "" {
+			req.Header.Set("Idempotency-Key", key)
+		}
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		if w.Code != 400 || !strings.Contains(w.Body.String(), "IDEMPOTENCY_KEY_REQUIRED") {
+			t.Fatalf("missing key gate: %d %s", w.Code, w.Body.String())
+		}
+	}
 }

@@ -909,7 +909,7 @@ class RealBrokerDataRegressionTest(unittest.TestCase):
         from unittest.mock import patch
         socket = object.__new__(worker.VerifiedSmartWebSocket)
         socket.auth_token, socket.api_key, socket.client_code, socket.feed_token = "test", "test", "test", "test"
-        with patch.dict(worker.os.environ, {"ALL_PROXY": "socks5://127.0.0.1:40000"}):
+        with patch.dict(worker.os.environ, {"ALL_PROXY": "socks5://127.0.0.1:40000"}, clear=True):
             with patch.object(worker, "WebSocketApp") as app:
                 socket.connect()
         kwargs = app.return_value.run_forever.call_args.kwargs
@@ -1114,7 +1114,7 @@ class BrokerSessionRecoveryTest(unittest.TestCase):
         worker.init_smart_api()
         store,writer,control = MagicMock(),MagicMock(),MagicMock()
         store.master_version = "v1"
-        with patch.object(worker,"VerifiedSmartWebSocket"), patch.object(worker.threading,"Thread"):
+        with patch.object(worker,"check_proxy"), patch.object(worker,"VerifiedSmartWebSocket"), patch.object(worker.threading,"Thread"):
             worker.run_feed(store,writer,control)
             worker.run_feed(store,writer,control)
         self.api.generateSession.assert_called_once()
@@ -1161,7 +1161,7 @@ class BrokerSessionRecoveryTest(unittest.TestCase):
             socket.on_data(None, {"token":"50001", "exchange_type":2, "last_traded_price":12300, "exchange_timestamp":1780000000000})
 
         socket.connect.side_effect = deliver_after_refresh
-        with patch.object(worker, "VerifiedSmartWebSocket", return_value=socket), patch.object(worker.threading, "Thread"):
+        with patch.object(worker, "check_proxy"), patch.object(worker, "VerifiedSmartWebSocket", return_value=socket), patch.object(worker.threading, "Thread"):
             worker.run_feed(store, writer, control)
         writer.write.assert_not_called()
         control.tick.assert_not_called()

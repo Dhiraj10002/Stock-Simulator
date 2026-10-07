@@ -1,4 +1,6 @@
 "use client";
+import { sessionFetch } from "@/lib/api";
+import { getAuthToken } from "@/lib/api";
 import { useAccountWallet } from "@/hooks/useAccountWallet";
 
 import { useState, Suspense } from "react";
@@ -31,8 +33,7 @@ function MentorContent() {
   const [token] = useState<string>(() => {
     if (typeof window !== "undefined") {
       return (
-        localStorage.getItem("auth_token") ||
-        localStorage.getItem("stock-simulator-access-token") ||
+        getAuthToken() ||
         ""
       );
     }
@@ -56,7 +57,7 @@ function MentorContent() {
         };
       }
       try {
-        const res = await fetch(`${apiUrl}/portfolio`, {
+        const res = await sessionFetch(`${apiUrl}/portfolio`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (!res.ok) {

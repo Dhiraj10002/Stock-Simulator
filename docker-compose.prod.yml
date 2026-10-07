@@ -8,6 +8,12 @@
 #   WebSocket Endpoint: wss://api.<your-oracle-domain>.com/ws/market
 # ==============================================================================
 
+x-runtime-logging: &runtime-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   # The only public service. DNS for API_DOMAIN must point to this VM.
   caddy:
@@ -24,6 +30,7 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     restart: unless-stopped
+    logging: *runtime-logging
     networks:
       gateway_net:
         ipv4_address: ${CADDY_INTERNAL_IP:-172.30.250.2}
@@ -42,6 +49,7 @@ services:
     image: redis:7-alpine
     command: ["redis-server", "--appendonly", "yes"]
     restart: unless-stopped
+    logging: *runtime-logging
     volumes:
       - redis_prod_data:/data
     networks:
@@ -71,10 +79,12 @@ services:
       - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:?CORS_ALLOWED_ORIGINS is required in production (e.g. https://<your-vercel-app>.vercel.app)}
       - DATABASE_URL=${DATABASE_URL:?DATABASE_URL is required in production}
       - JWT_SECRET=${JWT_SECRET:?JWT_SECRET is required in production}
+      - FRONTEND_PROXY_SECRET=${FRONTEND_PROXY_SECRET:-}
       - MARKET_FEED_MODE=${MARKET_FEED_MODE:-live}
     expose:
       - "8080"
     restart: unless-stopped
+    logging: *runtime-logging
     networks:
       - stock_sim_net
       - gateway_net
@@ -107,12 +117,13 @@ services:
       - DATABASE_URL=${DATABASE_URL:?DATABASE_URL is required in production}
       - INSTRUMENT_REFRESH_SECONDS=${INSTRUMENT_REFRESH_SECONDS:-60}
       - MARKET_STATUS_URL=http://backend:8080/api/v1/market/status
-      - HTTP_PROXY=${BROKER_HTTP_PROXY:-http://host.docker.internal:8118}
-      - HTTPS_PROXY=${BROKER_HTTPS_PROXY:-http://host.docker.internal:8118}
+      - HTTP_PROXY=${BROKER_HTTP_PROXY:-}
+      - HTTPS_PROXY=${BROKER_HTTPS_PROXY:-}
       - NO_PROXY=backend,redis,localhost,127.0.0.1
     expose:
       - "8085"
     restart: unless-stopped
+    logging: *runtime-logging
     networks:
       - stock_sim_net
     depends_on:
@@ -127,6 +138,26 @@ services:
       retries: 5
       start_period: 5s
 
+  # Optional supervised HTTP CONNECT proxy. Enable only after verifying its egress.
+  broker-proxy:
+    profiles: ["broker-proxy"]
+    build:
+      context: ./deploy/oracle/broker-proxy
+    volumes:
+      - ./deploy/oracle/broker-proxy/config:/etc/privoxy/config:ro
+    expose:
+      - "8118"
+    restart: unless-stopped
+    logging: *runtime-logging
+    networks:
+      - stock_sim_net
+    healthcheck:
+      test: ["CMD", "curl", "--head", "--silent", "--show-error", "--max-time", "8", "--proxy", "http://127.0.0.1:8118", "https://smartapisocket.angelone.in/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
   # Financial News & Sentiment Worker
   news-worker:
     build:
@@ -137,6 +168,7 @@ services:
     environment:
       - REDIS_URL=redis://redis:6379/0
     restart: unless-stopped
+    logging: *runtime-logging
     networks:
       - stock_sim_net
     depends_on:
@@ -154,12 +186,16 @@ services:
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://${API_DOMAIN}/api/v1}
         NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-wss://${API_DOMAIN}/ws/market}
+        NEXT_PUBLIC_ENABLE_SPEED_INSIGHTS: ${NEXT_PUBLIC_ENABLE_SPEED_INSIGHTS:-false}
     ports:
       - "127.0.0.1:3000:3000"
     environment:
+      - BACKEND_API_URL=${BACKEND_API_URL:-https://${API_DOMAIN}/api/v1}
+      - BACKEND_PROXY_SECRET=${FRONTEND_PROXY_SECRET:-}
       - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-https://${API_DOMAIN}/api/v1}
       - NEXT_PUBLIC_WS_URL=${NEXT_PUBLIC_WS_URL:-wss://${API_DOMAIN}/ws/market}
     restart: unless-stopped
+    logging: *runtime-logging
     networks:
       - stock_sim_net
     depends_on:

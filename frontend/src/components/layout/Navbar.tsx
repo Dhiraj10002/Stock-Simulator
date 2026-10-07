@@ -1,4 +1,5 @@
 "use client";
+import { logoutSession } from "@/lib/api";
 import { useAccountWallet } from "@/hooks/useAccountWallet";
 
 import { useState, useEffect, useRef } from "react";
@@ -32,7 +33,6 @@ import { getAuthoritativeFeedStatus } from "@/lib/feedStatus";
 import { useUIStore } from "@/stores/ui-store";
 import { useTheme } from "@/providers/theme-provider";
 import { useRiskOverview } from "@/hooks/useRiskOverview";
-import { API_URL } from "@/lib/api";
 import ResetSimulationModal from "@/components/modals/ResetSimulationModal";
 import { useToast } from "@/components/ui/ToastProvider";
 import styles from "./Navbar.module.css";
@@ -136,22 +136,7 @@ export default function Navbar({
       onSignOut();
       return;
     }
-    const refreshToken = localStorage.getItem("stock-simulator-refresh-token");
-    if (refreshToken) {
-      try {
-        const apiUrl = API_URL;
-        await fetch(`${apiUrl}/auth/logout`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ refresh_token: refreshToken }),
-        });
-      } catch {
-        // Continue clearing credentials even if backend is offline
-      }
-    }
-    localStorage.removeItem("auth_token");
-    localStorage.removeItem("stock-simulator-access-token");
-    localStorage.removeItem("stock-simulator-refresh-token");
+    await logoutSession();
     localStorage.removeItem("user_name");
     localStorage.removeItem("user_email");
     window.location.href = "/login";

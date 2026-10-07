@@ -84,7 +84,11 @@ func (r *RateLimiter) Limit(scope string, maximum int, window time.Duration) gin
 		if userID := c.GetString("user_id"); userID != "" {
 			identifier = "user:" + userID
 		} else {
-			identifier = "ip:" + c.ClientIP()
+			ip := c.GetString("frontend_client_ip")
+			if ip == "" {
+				ip = c.ClientIP()
+			}
+			identifier = "ip:" + ip
 		}
 
 		key := fmt.Sprintf("rate_limit:%s:%s", scope, identifier)

@@ -1,4 +1,5 @@
 "use client";
+import { sessionFetch } from "@/lib/api";
 import { exitRetryKey, completeExitRetry } from "@/lib/exitRetry";
 import { useAuthToken } from "@/hooks/useAuthToken";
 import { useAccountWallet } from "@/hooks/useAccountWallet";
@@ -292,7 +293,7 @@ export default function PortfolioPage() {
       if (!pos.uuid) throw new Error("Position identity unavailable; refresh the portfolio before exiting.");
       const endpoint = `${apiUrl}/portfolio/positions/${pos.uuid}/squareoff`;
       const retryKey = exitRetryKey(sessionStorage, pos.uuid);
-      const res = await fetch(endpoint, {
+      const res = await sessionFetch(endpoint, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Idempotency-Key": retryKey },
       });
@@ -330,7 +331,7 @@ export default function PortfolioPage() {
     if (!token) return;
     try {
       const endpoint = `${apiUrl}/orders/squareoff-mis`;
-      const res = await fetch(endpoint, {
+      const res = await sessionFetch(endpoint, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,

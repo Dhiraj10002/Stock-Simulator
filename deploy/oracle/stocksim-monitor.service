@@ -1,0 +1,11 @@
+[Unit]
+Description=Stock Simulator readiness monitor and bounded worker recovery
+After=docker.service network-online.target
+Requires=docker.service
+OnFailure=stocksim-alert.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/ubuntu/stock-simulator-prod
+ExecStart=/usr/bin/python3 /home/ubuntu/stock-simulator-prod/scripts/check_production.py --root /home/ubuntu/stock-simulator-prod --url https://stocksim-api.duckdns.org/api/v1/ready --restart-worker
+StateDirectory=stocksim-monitor

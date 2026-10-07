@@ -1,4 +1,5 @@
 "use client";
+import { sessionFetch } from "@/lib/api";
 
 import { useState, useEffect, useCallback } from "react";
 import {
@@ -46,7 +47,7 @@ export default function ContractNoteView({
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch(`${apiUrl}/reports/contract-note?date=${date}`, {
+        const res = await sessionFetch(`${apiUrl}/reports/contract-note?date=${date}`, {
           headers: {
             Authorization: `Bearer ${token}`,
           },

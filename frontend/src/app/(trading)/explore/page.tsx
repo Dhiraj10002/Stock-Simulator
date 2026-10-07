@@ -1,4 +1,5 @@
 "use client";
+import { getAuthToken, logoutSession } from "@/lib/api";
 
 import { useState, useEffect } from "react";
 import DashboardPage from "@/components/dashboard/DashboardPage";
@@ -11,13 +12,13 @@ export default function ExploreRoutePage() {
   useEffect(() => {
     queueMicrotask(() => {
       const token =
-        localStorage.getItem("auth_token") ||
-        localStorage.getItem("stock-simulator-access-token");
+        getAuthToken();
       setIsAuthenticated(!!token);
     });
   }, []);
 
-  const handleSignOut = () => {
+  const handleSignOut = async () => {
+    await logoutSession();
     localStorage.removeItem("auth_token");
     localStorage.removeItem("stock-simulator-access-token");
     localStorage.removeItem("stock-simulator-refresh-token");

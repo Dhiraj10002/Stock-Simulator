@@ -68,6 +68,8 @@ func Setup(ctx context.Context, cfg *config.Config, opts ...SetupOption) *gin.En
 		middleware.RequestID(),
 		middleware.RequestLogger(),
 		middleware.CORS(cfg.CORSAllowedOrigins),
+		middleware.FrontendClientIP(cfg.FrontendProxySecret),
+		middleware.BodyLimit(1<<20),
 	)
 
 	healthHandler := handler.NewHealthHandler()

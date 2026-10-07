@@ -1,4 +1,5 @@
 "use client";
+import { sessionFetch } from "@/lib/api";
 
 import React, { useState, useMemo, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
@@ -178,7 +179,7 @@ export default function PreTradeRiskLab({
           stop_loss_paise: stopLossRupees > 0 ? Math.round(stopLossRupees * 100) : undefined,
         };
 
-        const res = await fetch(`${apiUrl}/ai/pretrade-check`, {
+        const res = await sessionFetch(`${apiUrl}/ai/pretrade-check`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",

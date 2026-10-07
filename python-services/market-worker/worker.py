@@ -106,6 +106,7 @@ import redis
 from SmartApi import SmartConnect
 from SmartApi.smartWebSocketV2 import SmartWebSocketV2
 from websocket import WebSocketApp
+from broker_proxy import check_proxy, configured_proxy
 install_log_sanitizer()
 
 
@@ -117,9 +118,12 @@ class VerifiedSmartWebSocket(SmartWebSocketV2):
         proxy_kwargs = {}
         proxy_url = os.getenv("HTTPS_PROXY") or os.getenv("HTTP_PROXY") or os.getenv("ALL_PROXY")
         if proxy_url:
-            parsed = urlsplit(proxy_url)
+            parsed = configured_proxy()
             if parsed.hostname:
                 proxy_kwargs["http_proxy_host"] = parsed.hostname
+            if parsed.username:
+                from urllib.parse import unquote
+                proxy_kwargs["http_proxy_auth"] = (unquote(parsed.username), unquote(parsed.password or ""))
             if parsed.port:
                 proxy_kwargs["http_proxy_port"] = parsed.port
             if parsed.scheme.startswith("socks"):
@@ -135,6 +139,8 @@ class VerifiedSmartWebSocket(SmartWebSocketV2):
         self.wsapp.run_forever(sslopt={"cert_reqs": ssl.CERT_REQUIRED, "check_hostname": True},
                               ping_interval=self.HEART_BEAT_INTERVAL, **proxy_kwargs)
 
+
+BROKER_STREAM_HOST = urlsplit(SmartWebSocketV2.ROOT_URI).hostname
 
 INSTRUMENT_MASTER_URL = "https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json"
 LOCAL_CACHE_PATH = "/tmp/OpenAPIScripMaster.json"
@@ -1833,6 +1839,12 @@ def recover_quote_snapshots(store, writer, attempts, epoch):
 
 def run_feed(store: InstrumentStore, writer: QuoteWriter, control: FeedControl) -> bool:
     global GLOBAL_SMART_API, GLOBAL_WRITER
+    try:
+        check_proxy(BROKER_STREAM_HOST)
+    except Exception as error:
+        publish_worker_progress(writer.client, store, "BROKER_PROXY_UNAVAILABLE")
+        publish_feed_state(writer.client, feed_provider="angel_one", feed_state="UNAVAILABLE", is_synthetic=False)
+        raise ConnectionError(f"configured broker proxy unavailable ({type(error).__name__})") from None
     if not store.master_version:
         raise RuntimeError("activated canonical master unavailable")
     api_key = os.getenv("ANGEL_API_KEY", "").strip()
@@ -1882,6 +1894,7 @@ def run_feed(store: InstrumentStore, writer: QuoteWriter, control: FeedControl) 
             grouped.setdefault(item.exchange_type, []).append(item.token)
         websocket.subscribe("stock-sim", QUOTE_SUBSCRIPTION_MODE, [{"exchangeType": exchange_type, "tokens": tokens} for exchange_type, tokens in grouped.items()])
         control.opened()
+        publish_worker_progress(writer.client, store, "RUNNING")
         connected.set()
         print(f"market worker: Angel One WebSocket connected! Subscribed to {len(store.subscriptions())} instruments", flush=True)
 
@@ -2120,7 +2133,9 @@ def main() -> None:
     backoff = 1
     while True:
         supervisor.handle_feed_cycle(run_feed)
-        time.sleep(backoff)
+        if supervisor.fail_count == 0:
+            backoff = 1
+        time.sleep(random.uniform(backoff * 0.5, backoff))
         backoff = min(backoff * 2, 60)
 
 

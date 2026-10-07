@@ -136,6 +136,7 @@ func TestObservabilityE2E(t *testing.T) {
 	orderReq.Header.Set("Authorization", "Bearer "+jwtToken)
 	orderReq.Header.Set("X-Request-ID", orderReqID)
 	orderReq.Header.Set("Content-Type", "application/json")
+	orderReq.Header.Set("Idempotency-Key", "observability-test")
 	orderResp := httptest.NewRecorder()
 	env.router.ServeHTTP(orderResp, orderReq)
 	require.Equal(t, http.StatusCreated, orderResp.Code)

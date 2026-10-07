@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,6 +22,7 @@ import (
 	"github.com/Dhiraj10002/Stock-Simulator/backend/pkg/logger"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
 
 var (
@@ -104,7 +106,7 @@ func (s *OrderService) now() time.Time {
 	return time.Now()
 }
 
-func (s *OrderService) Create(userID string, request dto.CreateOrderRequest) (*dto.OrderResponse, error) {
+func (s *OrderService) Create(userID string, request dto.CreateOrderRequest, retryKeys ...string) (*dto.OrderResponse, error) {
 	createStart := time.Now()
 	var redisDuration time.Duration
 
@@ -153,6 +155,27 @@ func (s *OrderService) Create(userID string, request dto.CreateOrderRequest) (*d
 	}
 	if (request.Type == model.OrderTypeSL || request.Type == model.OrderTypeSLM) && request.TriggerPricePaise <= 0 {
 		return nil, fmt.Errorf("stop-loss orders require a positive trigger price")
+	}
+
+	var intentKey *string
+	var intentHash string
+	if len(retryKeys) > 0 {
+		key := strings.TrimSpace(retryKeys[0])
+		if key == "" || len(key) > 128 {
+			return nil, fmt.Errorf("Idempotency-Key must contain 1-128 characters")
+		}
+		encoded, _ := json.Marshal(request)
+		intentHash = fmt.Sprintf("%x", sha256.Sum256(encoded))
+		intentKey = &key
+		if s.createOrderFunc == nil {
+			prior, err := s.repo.FindIntent(userUUID, key, intentHash)
+			if err == nil {
+				return s.finishCreated(userID, prior)
+			}
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, err
+			}
+		}
 	}
 
 	// Market Session Check: New orders are rejected outside trading hours.
@@ -346,16 +369,12 @@ func (s *OrderService) Create(userID string, request dto.CreateOrderRequest) (*d
 		return toResponse(order), nil
 	}
 
+	order.IntentKey, order.IntentHash = intentKey, intentHash
 	dbStart := time.Now()
-	if reservation > 0 {
-		if err := s.repo.CreateWithReservation(order, reservation); err != nil {
+	if err := s.repo.CreateIntent(order, reservation); err != nil {
+		if errors.Is(err, gorm.ErrInvalidData) {
 			return nil, fmt.Errorf("insufficient available wallet balance")
 		}
-	} else if request.Product == model.OrderProductDelivery && request.Side == model.OrderSideSell {
-		if err := s.repo.CreateDeliverySell(order); err != nil {
-			return nil, err
-		}
-	} else if err := s.repo.Create(order); err != nil {
 		return nil, err
 	}
 	dbDuration := time.Since(dbStart)
@@ -376,21 +395,32 @@ func (s *OrderService) Create(userID string, request dto.CreateOrderRequest) (*d
 		logger.DBLatency(dbDuration),
 	)
 
+	return s.finishCreated(userID, order)
+}
+
+func (s *OrderService) finishCreated(userID string, order *model.Order) (*dto.OrderResponse, error) {
+	if order.Status == model.OrderStatusExecuted || order.Status == model.OrderStatusRejected || order.Status == model.OrderStatusCancelled {
+		return toResponse(order), nil
+	}
 	if order.Type == model.OrderTypeMarket {
 		if err := s.Execute(userID, order.UUID.String()); err != nil {
-			if rejectErr := s.repo.Reject(userUUID, order.UUID); rejectErr != nil {
+			// Another concurrent retry may have finished while this request waited.
+			if current, readErr := s.Get(userID, order.UUID.String()); readErr == nil && (current.Status == model.OrderStatusExecuted || current.Status == model.OrderStatusRejected || current.Status == model.OrderStatusCancelled) {
+				return current, nil
+			}
+			if rejectErr := s.repo.Reject(order.UserUUID, order.UUID); rejectErr != nil {
+				if current, readErr := s.Get(userID, order.UUID.String()); readErr == nil && current.Status == model.OrderStatusExecuted {
+					return current, nil
+				}
 				return nil, fmt.Errorf("market order execution failed: %w (could not mark rejected: %v)", err, rejectErr)
 			}
-			return nil, err
+			return s.Get(userID, order.UUID.String())
 		}
 		return s.Get(userID, order.UUID.String())
 	}
-
-	// A limit or stop order may already be marketable/triggered at creation.
-	if order.Type != model.OrderTypeMarket {
-		s.RegisterActiveOrder(*order)
-	}
-	if err := s.MatchSymbol(request.Symbol); err != nil {
+	// RegisterActiveOrder replaces matching UUIDs; recovery never duplicates an order.
+	s.RegisterActiveOrder(*order)
+	if err := s.MatchSymbol(order.Symbol); err != nil {
 		return nil, err
 	}
 	return s.Get(userID, order.UUID.String())
@@ -421,6 +451,12 @@ func (s *OrderService) RegisterActiveOrder(order model.Order) {
 	}
 	if s.activeOrders == nil {
 		s.activeOrders = make(map[string][]model.Order)
+	}
+	for i, existing := range s.activeOrders[sym] {
+		if order.UUID != uuid.Nil && existing.UUID == order.UUID {
+			s.activeOrders[sym][i] = order
+			return
+		}
 	}
 	s.activeSymbols[sym]++
 	s.activeOrders[sym] = append(s.activeOrders[sym], order)

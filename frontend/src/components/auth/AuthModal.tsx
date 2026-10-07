@@ -1,4 +1,5 @@
 "use client";
+import { sessionFetch } from "@/lib/api";
 
 import React, { useState, useEffect, useRef } from "react";
 import {
@@ -13,7 +14,7 @@ import {
   TrendingUp,
   Zap,
 } from "lucide-react";
-import { getApiUrl } from "@/lib/config";
+import { notifyAuthChanged } from "@/lib/api";
 import { useToast } from "@/components/ui/ToastProvider";
 
 interface AuthModalProps {
@@ -154,7 +155,7 @@ export default function AuthModal({
   }, [isOpen]);
 
   if (!isOpen) return null;
-  const apiUrl = getApiUrl();
+  const apiUrl = "";
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -163,7 +164,7 @@ export default function AuthModal({
 
     try {
       if (mode === "register") {
-        const regRes = await fetch(`${apiUrl}/auth/register`, {
+        const regRes = await sessionFetch(`${apiUrl}/auth/register`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ name: name || "Trader", email, password }),
@@ -174,7 +175,7 @@ export default function AuthModal({
         }
       }
 
-      const loginRes = await fetch(`${apiUrl}/auth/login`, {
+      const loginRes = await sessionFetch(`${apiUrl}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
@@ -184,11 +185,7 @@ export default function AuthModal({
         throw new Error(loginBody.message || "Invalid email or password");
       }
 
-      const { access_token, refresh_token } = loginBody.data;
       const userDisplay = name || (email === "trader@example.com" ? "Demo Scalper" : email.split("@")[0]);
-      localStorage.setItem("auth_token", access_token);
-      localStorage.setItem("stock-simulator-access-token", access_token);
-      localStorage.setItem("stock-simulator-refresh-token", refresh_token);
       localStorage.setItem("user_name", name || (email === "trader@example.com" ? "Demo Scalper" : "Trader"));
       localStorage.setItem("user_email", email);
 
@@ -198,6 +195,7 @@ export default function AuthModal({
         addToast("Signed In", `Welcome back, ${userDisplay}!`, "success");
       }
 
+      notifyAuthChanged();
       onSuccess();
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Authentication failed";

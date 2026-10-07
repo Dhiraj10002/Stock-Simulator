@@ -46,7 +46,7 @@ async function setup(
     },
   });
   await page.addInitScript((value) => {
-    localStorage.setItem("auth_token", value);
+    document.cookie = `stocksim_session=${value}; Path=/; SameSite=Lax`;
     localStorage.setItem("stock_sim_theme", "light");
   }, token);
   await page.routeWebSocket("**/ws/market", (ws) => {
@@ -58,12 +58,13 @@ async function setup(
         ws.send(JSON.stringify({ type: "pong" }));
     });
   });
-  await page.route("**/api/v1/**", async (route) => {
+  await page.route(/\/api\/(?:v1|backend)\//, async (route) => {
     const req = route.request(),
       url = new URL(req.url()),
-      path = url.pathname.replace("/api/v1", "");
+      path = url.pathname.replace(/^\/api\/(?:v1|backend)/, "");
     const headers = {
       "access-control-allow-origin": "http://127.0.0.1:3100",
+      ...(path === "/auth/login" ? {"set-cookie": "stocksim_session=browser-trader; Path=/; SameSite=Lax"} : {}),
       "access-control-allow-methods": "GET,POST,DELETE,OPTIONS",
       "access-control-allow-headers":
         "authorization,content-type,idempotency-key",
@@ -349,7 +350,7 @@ for (const uncertain of [false, true])
     // A routine access-token refresh for this account must not unlock a POST.
     await page.evaluate(
       (value) => {
-        localStorage.setItem("auth_token", value);
+        document.cookie = `stocksim_session=${value}; Path=/; SameSite=Lax`;
         window.dispatchEvent(new Event("auth-changed"));
       },
       `test.${Buffer.from(JSON.stringify({ user_id: "stock-ui-trader", exp: 9999999999 })).toString("base64url")}.refreshed`,

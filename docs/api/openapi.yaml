@@ -239,11 +239,17 @@ paths:
     post:
       summary: Place Order
       description: >
-        Submits a new market or limit order. Validates trading session hours (09:15-15:30 IST),
+        Submits a new market or limit order. Validates trading session hours (NSE 09:15-15:30 and NFO 09:15-15:40 IST),
         lot size multiples, delivery holdings, available cash, and margin reservations.
       tags: [Orders]
       security:
         - bearerAuth: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: Durable new-order intent; reuse after a lost response. A different payload with the same key returns 409.
+          schema: { type: string, minLength: 1, maxLength: 128 }
       requestBody:
         required: true
         content:

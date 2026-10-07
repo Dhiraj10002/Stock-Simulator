@@ -95,7 +95,7 @@ async function setup(
     open_interest_available: !symbol.includes("DYNAMIC"),
   });
   await page.addInitScript((value) => {
-    localStorage.setItem("auth_token", value);
+    document.cookie = `stocksim_session=${value}; Path=/; SameSite=Lax`;
     localStorage.setItem("stock_sim_theme", "light");
   }, token);
   await page.routeWebSocket("**/ws/market", (ws) => {
@@ -106,12 +106,13 @@ async function setup(
       if (body.action === "ping") ws.send(JSON.stringify({ type: "pong" }));
     });
   });
-  await page.route("**/api/v1/**", async (route) => {
+  await page.route(/\/api\/(?:v1|backend)\//, async (route) => {
     const req = route.request(),
       url = new URL(req.url()),
-      path = url.pathname.replace("/api/v1", "");
+      path = url.pathname.replace(/^\/api\/(?:v1|backend)/, "");
     const headers = {
       "access-control-allow-origin": "http://127.0.0.1:3100",
+      ...(path === "/auth/login" ? {"set-cookie": "stocksim_session=browser-trader; Path=/; SameSite=Lax"} : {}),
       "access-control-allow-methods": "GET,POST,OPTIONS",
       "access-control-allow-headers":
         "authorization,content-type,idempotency-key,x-request-id",
@@ -479,7 +480,7 @@ test("paper ticket retains virtual funds while preview refreshes and blocks fail
   const { posts } = await setup(page);
   let hold = false;
   let release: (() => void) | undefined;
-  await page.route("**/api/v1/orders/preview", async (route) => {
+  await page.route(/\/api\/(?:v1|backend)\/orders\/preview/, async (route) => {
     const headers = {
       "access-control-allow-origin": "http://127.0.0.1:3100",
       "access-control-allow-methods": "POST,OPTIONS",
@@ -684,7 +685,7 @@ test("empty master and signed-out account stay explicit", async ({ page }) => {
     }),
   ).toBeVisible();
   await page.evaluate(() => {
-    localStorage.removeItem("auth_token");
+    document.cookie = "stocksim_session=; Path=/; Max-Age=0";
     window.dispatchEvent(new Event("auth-changed"));
   });
   await expect(

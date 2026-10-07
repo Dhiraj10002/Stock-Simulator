@@ -9,6 +9,7 @@ import { getApiUrl, getWsUrl } from "@/lib/config";
 import { apiFetch } from "@/lib/api";
 import { fetchInstruments } from "@/lib/instruments";
 import { subscriptionTargets } from "@/lib/marketSubscriptions";
+import { coalesceQuote, reconnectDelay, type ObservedQuote } from "@/lib/liveStream";
 import type { Quote } from "@/types";
 
 // Mounted only by the trading layout. Route changes within the app keep one socket.
@@ -86,6 +87,12 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let active = true;
+    let attempt = 0, openedAt = 0, lastMessageAt = 0;
+    const pending = new Map<string, ObservedQuote>();
+    let frame: number | undefined;
+    const flush = () => { frame = undefined; if (active && pending.size) useMarketStore.getState().updateStreamQuotes([...pending.values()]); pending.clear(); };
+    const onVisibility = () => { if (!document.hidden) { if (frame !== undefined) cancelAnimationFrame(frame); flush(); } };
+    document.addEventListener("visibilitychange", onVisibility);
     let reconnect: ReturnType<typeof setTimeout> | undefined;
     let heartbeat: ReturnType<typeof setInterval> | undefined;
     const connect = () => {
@@ -96,20 +103,27 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
       const current = () => active && wsRef.current === ws;
       ws.onopen = () => {
         if (!current()) return;
+        openedAt = lastMessageAt = Date.now();
         useMarketStore.getState().setConnectionState("connected");
         subscribed.current.clear();
         syncSubscriptions();
-        heartbeat = setInterval(() => { if (current() && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ action: "ping" })); }, 30000);
+        heartbeat = setInterval(() => {
+          if (!current() || ws.readyState !== WebSocket.OPEN) return;
+          if (Date.now() - lastMessageAt > 70000) { ws.close(); return; }
+          ws.send(JSON.stringify({ action: "ping" }));
+        }, 30000);
       };
       ws.onmessage = event => {
         if (!current()) return;
+        lastMessageAt = Date.now();
         try {
           const data = JSON.parse(event.data);
           if (data.type === "feed_status") {
             const status = data.feed_status || data;
             useMarketStore.getState().setFeedStatus({ feedProvider: status.feed_provider, feedState: status.feed_state, isSynthetic: Boolean(status.is_synthetic), lastTick: status.last_tick, updatedAt: status.updated_at });
           } else if (data.type === "quote" && data.quote) {
-            useMarketStore.getState().updateStreamQuote(data.quote as Quote);
+            coalesceQuote(pending, data.quote as Quote);
+            if (!document.hidden && frame === undefined) frame = requestAnimationFrame(flush);
           }
         } catch { /* Ignore malformed provider messages. */ }
       };
@@ -120,12 +134,19 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
         useMarketStore.getState().setConnectionState("disconnected");
         subscribed.current.clear();
         useMarketStore.getState().setSubscribedSymbols([]);
-        reconnect = setTimeout(connect, 2000);
+        pending.clear();
+        if (frame !== undefined) { cancelAnimationFrame(frame); frame = undefined; }
+        if (openedAt && Date.now() - openedAt >= 30000) attempt = 0;
+        openedAt = 0;
+        reconnect = setTimeout(connect, reconnectDelay(attempt++));
       };
     };
     connect();
     return () => {
       active = false;
+      document.removeEventListener("visibilitychange", onVisibility);
+      if (frame !== undefined) cancelAnimationFrame(frame);
+      pending.clear();
       if (reconnect) clearTimeout(reconnect);
       if (heartbeat) clearInterval(heartbeat);
       const ws = wsRef.current;

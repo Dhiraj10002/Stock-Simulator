@@ -3,83 +3,89 @@
  * Handles auth tokens, JSON parsing, and consistent error handling.
  */
 
+import { orderIntentKey, completeOrderIntent } from "./orderIntent";
 import { getApiUrl } from "./config";
 
 export const API_URL = getApiUrl();
 
-/** Read auth token from localStorage (client-side only). */
+/** Non-secret session scope for UI/query caches. Credentials are HttpOnly cookies. */
 export function getAuthToken(): string {
-  if (typeof window !== "undefined") {
-    return (
-      localStorage.getItem("auth_token") ||
-      localStorage.getItem("stock-simulator-access-token") ||
-      ""
-    );
-  }
-  return "";
+  if (typeof document === "undefined") return "";
+  return document.cookie.split("; ").find(value => value.startsWith("stocksim_session="))?.slice("stocksim_session=".length) || "";
 }
 
-/** Clear all auth tokens from localStorage (client-side only). */
+export function purgeLegacyCredentials(): void {
+  if (typeof window === "undefined") return;
+  try {
+    for (const name of ["auth_token", "stock-simulator-access-token", "refresh_token", "stock-simulator-refresh-token", "auth-refresh-attempt"]) localStorage.removeItem(name);
+  } catch { /* Session cookies work even if storage is blocked. */ }
+}
+export function notifyAuthChanged(): void {
+  if (typeof window === "undefined") return;
+  purgeLegacyCredentials();
+  sessionRevision = crypto.randomUUID();
+  try { localStorage.setItem("auth-session-change", sessionRevision); } catch { /* storage may be blocked */ }
+  window.dispatchEvent(new Event("auth-changed"));
+}
 export function clearAuthTokens(): void {
-  if (typeof window !== "undefined") {
-    localStorage.removeItem("auth_token");
-    localStorage.removeItem("stock-simulator-access-token");
-    localStorage.removeItem("refresh_token");
-    localStorage.removeItem("stock-simulator-refresh-token");
-    localStorage.removeItem("auth-refresh-attempt");
-    window.dispatchEvent(new Event("auth-changed"));
-  }
+  if (typeof document !== "undefined") document.cookie = "stocksim_session=; Path=/; Max-Age=0; SameSite=Lax";
+  notifyAuthChanged();
 }
+let sessionRevision = "";
+function authRevision(): string | null {
+  try { return localStorage.getItem("auth-session-change") || sessionRevision; } catch { return sessionRevision; }
+}
+const privatePath = (path: string) => /^\/(auth|wallet|portfolio|orders|trades|watchlist|reports|simulation|analytics|ai|risk)(?:\/|\?|$)/.test(path);
 
-let refreshInFlight: Promise<string | null> | null = null;
-
-/** Share one rotation per tab and serialize rotations across tabs when Web Locks is available. */
-export function tryRefreshToken(failedAccessToken = getAuthToken()): Promise<string | null> {
-  if (typeof window === "undefined") return Promise.resolve(null);
-  if (refreshInFlight) return refreshInFlight;
-  const rotate = async (): Promise<string | null> => {
-    if (getAuthToken() && getAuthToken() !== failedAccessToken) return getAuthToken();
-    const refreshToken = localStorage.getItem("stock-simulator-refresh-token") || localStorage.getItem("refresh_token");
-    if (!refreshToken) return null;
-    const attemptName = "auth-refresh-attempt";
-    let attempt: {token: string; key: string} | null = null;
-    try { attempt = JSON.parse(localStorage.getItem(attemptName) || "null"); } catch { /* create a new attempt */ }
-    if (!attempt || attempt.token !== refreshToken) {
-      attempt = {token: refreshToken, key: crypto.randomUUID()};
-      localStorage.setItem(attemptName, JSON.stringify(attempt));
-    }
-    const stillCurrent = () => (localStorage.getItem("stock-simulator-refresh-token") || localStorage.getItem("refresh_token")) === refreshToken;
+/** Raw response variant for existing views; never sends credentials to public quote endpoints. */
+export async function sessionFetch(url: string, options: RequestInit = {}): Promise<Response> {
+  const path = url.startsWith(API_URL) ? url.slice(API_URL.length) : url;
+  const headers = new Headers(options.headers);
+  if (options.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+  if (!privatePath(path)) return fetch(url.startsWith("/") ? `${API_URL}${url}` : url, { ...options, headers });
+  headers.delete("Authorization");
+  headers.set("X-Requested-With", "stocksim");
+  const method = options.method?.toUpperCase() || "GET";
+  if (options.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+  const intent = path === "/orders" && method === "POST" && typeof options.body === "string" && !headers.has("Idempotency-Key");
+  const scope = getAuthToken();
+  const revision = authRevision();
+  if (intent) headers.set("Idempotency-Key", orderIntentKey(sessionStorage, scope, options.body as string));
+  const run = () => fetch(`/api/backend${path}`, { ...options, headers, credentials: "same-origin", cache: "no-store" });
+  let res = await run();
+  if (res.status === 401 && scope && !path.startsWith("/auth/")) {
+    if (await tryRefreshToken(scope, revision)) res = await run();
+  }
+  if (intent && res.ok) {
     try {
-      const res = await fetch(`${API_URL}/auth/refresh`, {
-        method: "POST",
-        headers: {"Content-Type": "application/json", "Idempotency-Key": attempt.key},
-        body: JSON.stringify({refresh_token: refreshToken}),
-      });
-      if (!stillCurrent()) return getAuthToken() || null; // logout or another login won
-      if (res.ok) {
-        const data = await res.json();
-        if (!stillCurrent()) return getAuthToken() || null;
-        if (data.success && data.data?.access_token && data.data?.refresh_token) {
-          localStorage.setItem("auth_token", data.data.access_token);
-          localStorage.setItem("stock-simulator-access-token", data.data.access_token);
-          localStorage.setItem("stock-simulator-refresh-token", data.data.refresh_token);
-          localStorage.setItem("refresh_token", data.data.refresh_token);
-          localStorage.removeItem(attemptName);
-          window.dispatchEvent(new Event("auth-changed"));
-          return data.data.access_token;
-        }
-      } else if (res.status === 401) {
-        clearAuthTokens();
-      }
-    } catch { /* Keep the retry key and credentials after a lost response. */ }
+      const accepted = await res.clone().json();
+      if (accepted.success && typeof accepted.data?.uuid === "string" && accepted.data.uuid) completeOrderIntent(sessionStorage, scope, options.body as string);
+    } catch { /* A lost/invalid response body must retain the original intent key. */ }
+  }
+  return res;
+}
+let refreshInFlight: Promise<string | null> | null = null;
+export function tryRefreshToken(failedScope = getAuthToken(), failedRevision = authRevision()): Promise<string | null> {
+  if (typeof window === "undefined" || !getAuthToken()) return Promise.resolve(null);
+  if (refreshInFlight) return refreshInFlight;
+  const rotate = async () => {
+    if (getAuthToken() !== failedScope || authRevision() !== failedRevision) return getAuthToken() || null;
+    try {
+      const res = await sessionFetch("/auth/refresh", { method: "POST" });
+      if (getAuthToken() !== failedScope) return getAuthToken() || null;
+      if (res.ok) { notifyAuthChanged(); return getAuthToken() || null; }
+      if (res.status === 401) clearAuthTokens();
+    } catch { /* Preserve the server-side retry intent after a lost response. */ }
     return null;
   };
-  const run = async () => typeof navigator !== "undefined" && navigator.locks
-    ? await navigator.locks.request("stock-simulator-auth-refresh", rotate)
-    : await rotate();
+  const run = async () => navigator.locks ? await navigator.locks.request("stock-simulator-auth-refresh", rotate) : await rotate();
   const pending = run().finally(() => { refreshInFlight = null; });
   refreshInFlight = pending;
   return pending;
+}
+export async function logoutSession() {
+  const logout = async () => { try { await sessionFetch("/auth/logout", { method: "POST" }); } finally { clearAuthTokens(); } };
+  return navigator.locks ? navigator.locks.request("stock-simulator-auth-refresh", logout) : logout();
 }
 
 /** Standard API response wrapper from the Go backend. */
@@ -190,31 +196,7 @@ export async function apiFetch<T>(
   path: string,
   options: RequestInit = {}
 ): Promise<T> {
-  const token = getAuthToken();
-  const headers: Record<string, string> = {
-    ...(options.body ? { "Content-Type": "application/json" } : {}),
-    ...(options.headers as Record<string, string>),
-  };
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
-  }
-
-  let res = await fetch(`${API_URL}${path}`, {
-    ...options,
-    headers,
-  });
-
-  // If 401 Unauthorized and we were authenticated, try token refresh once
-  if (res.status === 401 && token) {
-    const newToken = await tryRefreshToken(token);
-    if (newToken) {
-      headers["Authorization"] = `Bearer ${newToken}`;
-      res = await fetch(`${API_URL}${path}`, {
-        ...options,
-        headers,
-      });
-    }
-  }
+  const res = await sessionFetch(`${API_URL}${path}`, options);
 
   if (!res.ok) {
     let msg = `API error ${res.status}`;
@@ -244,7 +226,6 @@ export async function apiFetch<T>(
 export async function publicFetch<T>(path: string, signal?: AbortSignal): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     signal,
-    headers: { "Content-Type": "application/json" },
   });
 
   if (!res.ok) {

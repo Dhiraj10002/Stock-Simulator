@@ -1,33 +1,44 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {tryRefreshToken, clearAuthTokens} from "./api";
-
-test("refresh single-flight, late 401, lost response and logout safety", async () => {
- const values = new Map<string,string>();
- const storage = {getItem:(k:string)=>values.get(k)??null,setItem:(k:string,v:string)=>{values.set(k,v);},removeItem:(k:string)=>{values.delete(k);}};
+import { tryRefreshToken, clearAuthTokens, sessionFetch } from "./api";
+test("cookie session refresh is single-flight; network failures keep session; logout wins", async () => {
+ const originals = new Map(["window", "document", "localStorage", "sessionStorage"].map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)]));
  const originalFetch = globalThis.fetch;
- const windowDescriptor = Object.getOwnPropertyDescriptor(globalThis,"window");
- const storageDescriptor = Object.getOwnPropertyDescriptor(globalThis,"localStorage");
- Object.defineProperty(globalThis,"window",{configurable:true,value:{dispatchEvent:()=>true}});
- Object.defineProperty(globalThis,"localStorage",{configurable:true,value:storage});
- const seed = () => {values.clear();storage.setItem("auth_token","old-access");storage.setItem("refresh_token","old-refresh");};
+ const values = new Map<string, string>();
+ const storage = { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value); }, removeItem: (key: string) => { values.delete(key); } };
+ const doc = { cookie: "stocksim_session=account" };
+ Object.defineProperty(globalThis, "window", { configurable: true, value: { dispatchEvent: () => true } });
+ Object.defineProperty(globalThis, "document", { configurable: true, value: doc });
+ for (const name of ["localStorage", "sessionStorage"]) Object.defineProperty(globalThis, name, { configurable: true, value: storage });
  try {
-  seed(); let calls=0;
-  globalThis.fetch = async () => {calls++;await new Promise(r=>setTimeout(r,5));return Response.json({success:true,data:{access_token:"new-access",refresh_token:"new-refresh"}});};
-  const results = await Promise.all(Array.from({length:8},()=>tryRefreshToken("old-access")));
-  assert.equal(calls,1);assert.deepEqual(new Set(results),new Set(["new-access"]));
-  assert.equal(await tryRefreshToken("old-access"),"new-access");assert.equal(calls,1);
-  seed();let key="";
-  globalThis.fetch = async (_url,options) => {key=new Headers(options?.headers).get("Idempotency-Key")!;throw new Error("response lost");};
-  assert.equal(await tryRefreshToken("old-access"),null);
-  assert.equal(storage.getItem("refresh_token"),"old-refresh");
-  globalThis.fetch = async (_url,options) => {assert.equal(new Headers(options?.headers).get("Idempotency-Key"),key);return Response.json({success:true,data:{access_token:"recovered",refresh_token:"replacement"}});};
-  assert.equal(await tryRefreshToken("old-access"),"recovered");
-  seed();globalThis.fetch = async () => {clearAuthTokens();return Response.json({success:true,data:{access_token:"must-not-restore",refresh_token:"must-not-restore"}});};
-  assert.equal(await tryRefreshToken("old-access"),null);assert.equal(storage.getItem("auth_token"),null);
+  let calls = 0;
+  globalThis.fetch = async (url, options) => {
+   assert.equal(url, "/api/backend/auth/refresh");
+   assert.equal(new Headers(options?.headers).get("Authorization"), null);
+   assert.equal(options?.body, undefined);
+   calls++; await new Promise(resolve => setTimeout(resolve, 5)); return Response.json({ success: true, data: { authenticated: true } });
+  };
+  const results = await Promise.all(Array.from({ length: 8 }, () => tryRefreshToken("account")));
+  assert.equal(calls, 1); assert.deepEqual(new Set(results), new Set(["account"]));
+  globalThis.fetch = async () => { throw new Error("response lost"); };
+  assert.equal(await tryRefreshToken(), null); assert.equal(doc.cookie, "stocksim_session=account");
+  globalThis.fetch = async () => { clearAuthTokens(); return Response.json({ success: true }); };
+  assert.equal(await tryRefreshToken(), null);
+  doc.cookie = "stocksim_session=account";
+  const keys: (string | null)[] = [];
+  globalThis.fetch = async (_url, options) => { keys.push(new Headers(options?.headers).get("Idempotency-Key")); throw new Error("lost"); };
+  for (let i=0; i<2; i++) await assert.rejects(sessionFetch("/orders", { method: "POST", body: '{"symbol":"TCS"}' }));
+  assert.equal(keys.length, 2); assert.ok(keys[0]); assert.equal(keys[0], keys[1]);
+  globalThis.fetch = async (_url, options) => { keys.push(new Headers(options?.headers).get("Idempotency-Key")); return new Response("{broken-json", {status:201}); };
+  await sessionFetch("/orders", {method:"POST",body:'{"symbol":"TCS"}'});
+  assert.equal(keys.at(-1), keys[0]);
+  globalThis.fetch = async (_url, options) => { keys.push(new Headers(options?.headers).get("Idempotency-Key")); return Response.json({success:true,data:{uuid:"accepted"}}); };
+  await sessionFetch("/orders", {method:"POST",body:'{"symbol":"TCS"}'});
+  await sessionFetch("/orders", {method:"POST",body:'{"symbol":"TCS"}'});
+  assert.notEqual(keys.at(-1), keys[0]);
+  assert.equal(values.get("auth_token"), undefined);
  } finally {
-  globalThis.fetch=originalFetch;
-  if(windowDescriptor) Object.defineProperty(globalThis,"window",windowDescriptor);else Reflect.deleteProperty(globalThis,"window");
-  if(storageDescriptor) Object.defineProperty(globalThis,"localStorage",storageDescriptor);else Reflect.deleteProperty(globalThis,"localStorage");
+  globalThis.fetch = originalFetch;
+  for (const [name, descriptor] of originals) { if (descriptor) Object.defineProperty(globalThis, name, descriptor); else Reflect.deleteProperty(globalThis, name); }
  }
 });

@@ -10,6 +10,7 @@ import (
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/config"
 	marketService "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/service"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/order/dto"
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/order/repository"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/order/service"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/pkg/response"
 	"github.com/gin-gonic/gin"
@@ -42,8 +43,17 @@ func (h *OrderHandler) Create(c *gin.Context) {
 		response.ErrorWithCode(c, http.StatusBadRequest, "INVALID_REQUEST_PAYLOAD", "Invalid order request", err.Error())
 		return
 	}
-	order, err := h.service.Create(c.GetString("user_id"), request)
+	key := strings.TrimSpace(c.GetHeader("Idempotency-Key"))
+	if key == "" || len(key) > 128 {
+		response.ErrorWithCode(c, http.StatusBadRequest, "IDEMPOTENCY_KEY_REQUIRED", "Idempotency-Key must contain 1-128 characters", nil)
+		return
+	}
+	order, err := h.service.Create(c.GetString("user_id"), request, key)
 	if err != nil {
+		if errors.Is(err, repository.ErrIntentConflict) {
+			response.ErrorWithCode(c, http.StatusConflict, "IDEMPOTENCY_KEY_CONFLICT", err.Error(), nil)
+			return
+		}
 		if errors.Is(err, service.ErrInstrumentNotFound) {
 			response.ErrorWithCode(c, http.StatusNotFound, "INSTRUMENT_NOT_FOUND", "Instrument not found in canonical master", nil)
 			return

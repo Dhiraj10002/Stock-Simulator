@@ -46,7 +46,7 @@ func TestSchemaMigrationFreshThenReadOnlyRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.Version != currentSchemaVersion || report.Applied != 1 {
+	if report.Version != currentSchemaVersion || report.Applied != len(schemaMigrations) {
 		t.Fatalf("unexpected fresh migration: %+v", report)
 	}
 	user := model.User{Name: "Test", Email: uuid.NewString() + "@test.local", Password: "test"}
@@ -140,7 +140,7 @@ func TestCurrentSchemaAdoptionSkipsModelIntrospection(t *testing.T) {
 	}
 	recorder := &queryRecorder{Interface: gormLogger.Default}
 	report, err := migrateSchema(tx.Session(&gorm.Session{Logger: recorder}), false)
-	if err != nil || report.Applied != 1 {
+	if err != nil || report.Applied != len(schemaMigrations) {
 		t.Fatalf("adoption failed: %+v %v", report, err)
 	}
 	for _, query := range recorder.queries {

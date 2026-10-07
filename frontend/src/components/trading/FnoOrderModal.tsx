@@ -11,7 +11,7 @@ import { validLot } from "@/lib/strategyExecution";
 import { dayMovement } from "@/lib/marketDisplay";
 import { quoteLabel } from "@/lib/marketData";
 import { displayQuote } from "@/lib/fnoExplore";
-import { useSymbolQuote, useTargetedSubscription } from "@/stores/market-store";
+import { useMarketStore, useSymbolQuote, useTargetedSubscription } from "@/stores/market-store";
 import { useToast } from "@/components/ui/ToastProvider";
 import { formatKiteSymbol } from "@/lib/instrumentDisplay";
 import type { Instrument, Order, Quote } from "@/types";
@@ -97,7 +97,13 @@ export default function FnoOrderModal({
       }
     };
     void refresh();
-    const timer = setInterval(refresh, 3000);
+    const timer = setInterval(() => {
+      if (document.hidden) return;
+      const stream = useMarketStore.getState();
+      const live = stream.streamObservations[instrument.symbol];
+      if (stream.connectionState === "connected" && live && Date.now() - live.receivedAt < 15000) return;
+      void refresh();
+    }, 10000);
     return () => {
       cancelled = true;
       controller.abort();
