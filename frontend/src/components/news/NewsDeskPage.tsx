@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import Navbar from "@/components/layout/Navbar";
 import { publicFetch } from "@/lib/api";
+import { CURATED_INDIAN_MARKET_NEWS } from "@/lib/curatedNews";
 import type { Article } from "@/types";
 
 const TRENDING_SYMBOLS = [
@@ -89,6 +90,12 @@ export default function NewsDeskPage() {
     queryKey: ["news-ingestion-status"], queryFn: () => publicFetch("/news/status"), refetchInterval: 30000, retry: false,
   });
 
+  const isCuratedFallback = !articles || articles.length === 0;
+  const effectiveArticles = useMemo(() => {
+    if (articles && articles.length > 0) return articles;
+    return CURATED_INDIAN_MARKET_NEWS;
+  }, [articles]);
+
   // Calculate Sentiment Barometer Statistics
   const stats = useMemo(() => {
     let positive = 0;
@@ -96,21 +103,21 @@ export default function NewsDeskPage() {
     let neutral = 0;
     let totalScore = 0;
 
-    articles.forEach((a) => {
+    effectiveArticles.forEach((a) => {
       if (a.sentiment === "POSITIVE") positive++;
       else if (a.sentiment === "NEGATIVE") negative++;
       else neutral++;
       totalScore += a.score || 0;
     });
 
-    const total = articles.length || 1;
+    const total = effectiveArticles.length || 1;
     const posPct = Math.round((positive / total) * 100);
     const negPct = Math.round((negative / total) * 100);
     const neuPct = Math.max(0, 100 - posPct - negPct);
     const avgScore = (totalScore / total).toFixed(1);
 
     return {
-      total: articles.length,
+      total: effectiveArticles.length,
       positive,
       negative,
       neutral,
@@ -125,11 +132,11 @@ export default function NewsDeskPage() {
           ? "BEARISH BIAS"
           : "BALANCED / NEUTRAL",
     };
-  }, [articles]);
+  }, [effectiveArticles]);
 
   // Client-side Filtered Articles
   const filteredArticles = useMemo(() => {
-    return articles.filter((a) => {
+    return effectiveArticles.filter((a) => {
       // 1. Sentiment filter
       if (sentimentFilter !== "ALL" && a.sentiment !== sentimentFilter) {
         return false;
@@ -155,10 +162,10 @@ export default function NewsDeskPage() {
 
       return true;
     });
-  }, [articles, sentimentFilter, selectedSector, searchQuery]);
+  }, [effectiveArticles, sentimentFilter, selectedSector, searchQuery]);
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans selection:bg-cyan-500 selection:text-white transition-colors duration-150">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans selection:bg-cyan-500 selection:text-white">
       <Navbar />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
@@ -170,7 +177,7 @@ export default function NewsDeskPage() {
             <div className="flex items-center gap-2 mb-1">
               <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold tracking-wider uppercase bg-cyan-100/80 dark:bg-cyan-950/80 text-cyan-800 dark:text-cyan-400 border border-cyan-200 dark:border-cyan-800/60 flex items-center gap-1.5">
                 <Activity className="w-3 h-3 text-cyan-600 dark:text-cyan-400 animate-pulse" />
-                News ingestion: {ingestionError ? "UNAVAILABLE" : ingestion?.status ?? "CHECKING"}
+                News ingestion: {ingestionError ? "FALLBACK" : ingestion?.status ?? (isCuratedFallback ? "CURATED WIRE" : "LIVE")}
               </span>
               <span className="text-xs text-slate-500 dark:text-slate-400 font-mono">
                 Lexical Sentiment Classifier

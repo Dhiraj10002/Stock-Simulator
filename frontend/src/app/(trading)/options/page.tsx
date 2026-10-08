@@ -25,7 +25,7 @@ export default function OptionsPage() {
     .filter((p) => p.quantity !== 0);
 
   return (
-    <div className="flex min-h-screen flex-col bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 transition-colors duration-150">
+    <div className="flex min-h-screen flex-col bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
       <Navbar
         availableBalancePaise={wallet.data?.available_balance_paise}
         unrealizedPnlPaise={portfolio?.unrealized_pnl_paise}

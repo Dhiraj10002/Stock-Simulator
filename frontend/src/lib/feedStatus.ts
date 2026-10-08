@@ -20,7 +20,25 @@ export function getAuthoritativeFeedStatus(
   connectionState: ConnectionState,
   clientIstTime?: string
 ): AuthoritativeStatusInfo {
-  // 1. If frontend WS connection to backend is disconnected:
+  // 1. If exchange session is confirmed CLOSED (outside 09:15-15:30 IST):
+  if (marketStatus === "CLOSED") {
+    const timeStr = clientIstTime || "15:30 IST";
+    return {
+      badgeText: "MARKET CLOSED",
+      subText: timeStr,
+      fullLabel: `MARKET CLOSED — ${timeStr}`,
+      bannerType: "closed",
+      bannerTitle: "MARKET CLOSED",
+      bannerDescription: `NSE/BSE regular trading session is closed (09:15 - 15:30 IST). Last session closed at ${timeStr}. Orders placed now follow market hours rules.`,
+      bannerClasses: "bg-amber-50 border-amber-200 text-amber-800 dark:bg-amber-950/40 dark:border-amber-500/30 dark:text-amber-200",
+      pillClasses: "bg-amber-50 border-amber-200 text-amber-700 dark:bg-amber-950/40 dark:border-amber-500/30 dark:text-amber-300",
+      dotClasses: "bg-amber-400/80",
+      isLive: false,
+      tooltip: `NSE/BSE Market closed. Last exchange session closed at ${timeStr}`,
+    };
+  }
+
+  // 2. If market is open and frontend WS connection is disconnected:
   if (connectionState === "disconnected") {
     return {
       badgeText: "DISCONNECTED",
