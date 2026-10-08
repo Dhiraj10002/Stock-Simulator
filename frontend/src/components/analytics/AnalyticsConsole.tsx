@@ -26,10 +26,14 @@ import {
   Scale,
   Compass,
   Layers,
+  Share2,
 } from "lucide-react";
 import { formatPaise } from "@/lib/format";
 import type { PerformanceOverview, PnlCalendarResponse, DailyPnlDay, Trade } from "@/types";
 import LedgerStatementView from "@/components/analytics/LedgerStatementView";
+import SharePnlCardModal from "@/components/modals/SharePnlCardModal";
+import { calculateDisciplineGrade } from "@/lib/mentor";
+import type { PnlCardData } from "@/lib/pnlCardGenerator";
 
 export interface AnalyticsConsoleProps {
   apiUrl?: string;
@@ -97,6 +101,7 @@ export default function AnalyticsConsole({
   const [tagFilter, setTagFilter] = useState<string>("ALL");
   const [outcomeFilter, setOutcomeFilter] = useState<"ALL" | "WIN" | "LOSS">("ALL");
   const [searchQuery, setSearchQuery] = useState<string>("");
+  const [isSharePnlOpen, setIsSharePnlOpen] = useState(false);
 
   // Active hover day for calendar tooltip
   const [hoveredDay, setHoveredDay] = useState<DailyPnlDay | null>(null);
@@ -179,6 +184,48 @@ export default function AnalyticsConsole({
   );
 
   const trades: Trade[] = liveTrades;
+
+  const pnlCardData: PnlCardData = useMemo(() => {
+    const netPnl = performance.net_realized_pnl_paise;
+    const capitalPaise = 100000000; // 10 Lakhs seed capital
+    const roiPct = capitalPaise > 0 ? (netPnl / capitalPaise) * 100 : 0;
+
+    const bestTrade = (liveTrades || []).reduce(
+      (best, t) => (!best || (t.realized_pnl_paise ?? 0) > (best.realized_pnl_paise ?? 0) ? t : best),
+      null as (typeof liveTrades)[0] | null
+    );
+
+    const winRate = performance.win_rate_pct || 0;
+    const pf = performance.profit_factor || 1;
+    const score = Math.min(
+      98,
+      Math.max(
+        35,
+        Math.round(winRate * 0.5 + (pf >= 1 ? Math.min(45, pf * 20) : 15))
+      )
+    );
+    const disciplineGrade = calculateDisciplineGrade(score);
+
+    const userName =
+      typeof window !== "undefined"
+        ? localStorage.getItem("user_name") || "Trader"
+        : "Trader";
+
+    return {
+      userName,
+      totalPnlPaise: netPnl,
+      roiPct,
+      pnlType: "REALIZED",
+      winRatePct: performance.win_rate_pct,
+      totalTrades: performance.total_trades,
+      winningTrades: performance.winning_trades,
+      losingTrades: performance.losing_trades,
+      disciplineGrade,
+      bestTradeSymbol: bestTrade?.symbol || "NIFTY",
+      bestTradePnlPaise: bestTrade?.realized_pnl_paise,
+      capitalPaise,
+    };
+  }, [performance, liveTrades]);
 
   const loading = loadingPerformance || loadingCalendar || loadingTrades;
   const error =
@@ -483,6 +530,15 @@ export default function AnalyticsConsole({
             </button>
           </div>
 
+          <button
+            onClick={() => setIsSharePnlOpen(true)}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold shadow-xs transition-all hover:scale-105 active:scale-95 cursor-pointer"
+            title="Generate 1-click verified P&L card for social media"
+          >
+            <Share2 className="w-3.5 h-3.5" />
+            <span>Share Card</span>
+          </button>
+
           {onClose && (
             <button
               onClick={onClose}
@@ -531,8 +587,18 @@ export default function AnalyticsConsole({
                   <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
                     Net Realized P&L
                   </span>
-                  <div className="p-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400">
-                    <IndianRupee className="w-4 h-4" />
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setIsSharePnlOpen(true)}
+                      className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-cyan-500 transition-colors cursor-pointer"
+                      title="Share verified P&L card"
+                    >
+                      <Share2 className="w-3.5 h-3.5" />
+                    </button>
+                    <div className="p-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400">
+                      <IndianRupee className="w-4 h-4" />
+                    </div>
                   </div>
                 </div>
 
@@ -1206,6 +1272,12 @@ export default function AnalyticsConsole({
           <LedgerStatementView token={token} apiUrl={baseApi} />
         )}
       </div>
+
+      <SharePnlCardModal
+        isOpen={isSharePnlOpen}
+        onClose={() => setIsSharePnlOpen(false)}
+        data={pnlCardData}
+      />
     </div>
   );
 }

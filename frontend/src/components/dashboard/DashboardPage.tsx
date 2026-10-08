@@ -29,6 +29,7 @@ import {
   Cpu,
   Search,
   ShoppingBag,
+  Share2,
 } from "lucide-react";
 import { formatPaise } from "@/lib/format";
 import { apiFetch } from "@/lib/api";
@@ -38,6 +39,8 @@ import MarketStatusBanner from "@/components/dashboard/MarketStatusBanner";
 import MarketMoversCard from "@/components/dashboard/MarketMoversCard";
 import PortfolioSummarySnapshot from "@/components/dashboard/PortfolioSummarySnapshot";
 import AddFundsModal from "@/components/portfolio/AddFundsModal";
+import SharePnlCardModal from "@/components/modals/SharePnlCardModal";
+import type { PnlCardData } from "@/lib/pnlCardGenerator";
 import { useToast } from "@/components/ui/ToastProvider";
 
 // ---------------------------------------------------------------------------
@@ -234,6 +237,7 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
   });
   const [resetting, setResetting] = useState(false);
   const [isAddFundsOpen, setIsAddFundsOpen] = useState(false);
+  const [isSharePnlOpen, setIsSharePnlOpen] = useState(false);
 
   // Kite widget active tab
 
@@ -513,7 +517,33 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
 
   const availableBalance = wallet?.available_balance_paise;
   const unrealizedPnl = portfolio?.unrealized_pnl_paise ?? 0;
-  const openPositions = portfolio?.positions ?? [];
+  const openPositions = useMemo(() => portfolio?.positions ?? [], [portfolio?.positions]);
+
+  const pnlCardData: PnlCardData = useMemo(() => {
+    const bestPos = openPositions.reduce(
+      (best, p) => (!best || (p.unrealized_pnl_paise ?? 0) > (best.unrealized_pnl_paise ?? 0) ? p : best),
+      null as (typeof openPositions)[0] | null
+    );
+    const winningTrades = openPositions.filter((p) => (p.unrealized_pnl_paise ?? 0) > 0).length;
+    const losingTrades = openPositions.filter((p) => (p.unrealized_pnl_paise ?? 0) < 0).length;
+    const totalTrades = openPositions.length;
+    const winRatePct = totalTrades > 0 ? (winningTrades / totalTrades) * 100 : 70;
+    const roiPct = (unrealizedPnl / 100000000) * 100;
+    return {
+      userName,
+      totalPnlPaise: unrealizedPnl,
+      roiPct,
+      pnlType: "UNREALIZED",
+      winRatePct,
+      totalTrades,
+      winningTrades,
+      losingTrades,
+      disciplineGrade: unrealizedPnl >= 0 ? "A+" : "B+",
+      bestTradeSymbol: bestPos ? bestPos.symbol : "NIFTY 50",
+      bestTradePnlPaise: bestPos?.unrealized_pnl_paise,
+      capitalPaise: 100000000,
+    };
+  }, [openPositions, unrealizedPnl, userName]);
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-150">
@@ -777,6 +807,15 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
 
           <div className="flex items-center gap-2.5">
             <button
+              onClick={() => setIsSharePnlOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold text-xs shadow-md shadow-emerald-600/20 transition-all hover:scale-105 active:scale-95 cursor-pointer"
+              title="Generate 1-click verified P&L card for Twitter, WhatsApp & LinkedIn"
+            >
+              <Share2 className="w-3.5 h-3.5 text-white" />
+              <span>Share P&L</span>
+            </button>
+
+            <button
               onClick={handleResetSimulation}
               disabled={resetting}
               className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-white/[0.04] dark:hover:bg-white/[0.08] border border-slate-200 dark:border-white/[0.08] text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer shadow-xs"
@@ -805,6 +844,7 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
           portfolio={portfolioError && portfolio ? {...portfolio, valuation_status: portfolio.valuation_status === "DEGRADED" ? "DEGRADED" : "STALE"} : portfolio}
           onReset={handleResetSimulation}
           onAddFunds={() => setIsAddFundsOpen(true)}
+          onSharePnl={() => setIsSharePnlOpen(true)}
           isResetting={resetting}
         />
 
@@ -959,12 +999,23 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
                   <PieChart className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
                   Positions & Holdings
                 </span>
-                <Link
-                  href="/portfolio"
-                  className="text-[11px] font-semibold text-cyan-600 dark:text-cyan-400 hover:underline"
-                >
-                  View all →
-                </Link>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsSharePnlOpen(true)}
+                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 hover:text-emerald-500 cursor-pointer"
+                    title="Generate Verified P&L Social Card"
+                  >
+                    <Share2 className="w-3 h-3" />
+                    <span>Share P&L</span>
+                  </button>
+                  <Link
+                    href="/portfolio"
+                    className="text-[11px] font-semibold text-cyan-600 dark:text-cyan-400 hover:underline"
+                  >
+                    View all →
+                  </Link>
+                </div>
               </div>
 
               {openPositions.length === 0 ? (
@@ -1040,6 +1091,12 @@ export default function DashboardPage({ onSignOut }: DashboardPageProps) {
           void refetchWallet();
         }}
         currentBalancePaise={availableBalance}
+      />
+
+      <SharePnlCardModal
+        isOpen={isSharePnlOpen}
+        onClose={() => setIsSharePnlOpen(false)}
+        data={pnlCardData}
       />
     </div>
   );

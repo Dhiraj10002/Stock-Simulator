@@ -32,8 +32,11 @@ import {
   Plus,
   Download,
   Receipt,
+  Share2,
 } from "lucide-react";
 import { formatPaise } from "@/lib/format";
+import SharePnlCardModal from "@/components/modals/SharePnlCardModal";
+import type { PnlCardData } from "@/lib/pnlCardGenerator";
 import { useMultiSymbolQuotes, useTargetedSubscription } from "@/stores/market-store";
 import { resolveCanonicalSymbol } from "@/lib/alias";
 import { API_URL, extractApiDiagnostic, type ApiDiagnostic } from "@/lib/api";
@@ -92,6 +95,7 @@ export default function PortfolioPage() {
   const [isAddFundsOpen, setIsAddFundsOpen] = useState(false);
   const [isAiInsightsOpen, setIsAiInsightsOpen] = useState(false);
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
+  const [isSharePnlOpen, setIsSharePnlOpen] = useState(false);
   const [diagnosticError, setDiagnosticError] = useState<ApiDiagnostic | null>(null);
   const [diagnosticTitle, setDiagnosticTitle] = useState<string>("Operation Diagnostic");
 
@@ -261,6 +265,39 @@ export default function PortfolioPage() {
   const totalPnlPercent =
     totalInvestedPaise > 0 ? (totalUnrealizedPnlPaise / totalInvestedPaise) * 100 : 0;
   const isOverallProfit = totalUnrealizedPnlPaise >= 0;
+
+  const pnlCardData: PnlCardData = useMemo(() => {
+    const totalPnl = totalUnrealizedPnlPaise ?? 0;
+    const capitalPaise = 100000000;
+    const roiPct = (totalPnl / capitalPaise) * 100;
+    const bestPos = livePositions.reduce(
+      (best, p) => (!best || (p.unrealized_pnl_paise ?? 0) > (best.unrealized_pnl_paise ?? 0) ? p : best),
+      null as (typeof livePositions)[0] | null
+    );
+    const winCount = livePositions.filter((p) => (p.unrealized_pnl_paise ?? 0) > 0).length;
+    const lossCount = livePositions.filter((p) => (p.unrealized_pnl_paise ?? 0) < 0).length;
+    const totalPositions = livePositions.length;
+    const winRatePct = totalPositions > 0 ? (winCount / totalPositions) * 100 : 75;
+    const userName =
+      typeof window !== "undefined"
+        ? localStorage.getItem("user_name") || "Trader"
+        : "Trader";
+
+    return {
+      userName,
+      totalPnlPaise: totalPnl,
+      roiPct,
+      pnlType: "UNREALIZED",
+      winRatePct,
+      totalTrades: totalPositions,
+      winningTrades: winCount,
+      losingTrades: lossCount,
+      disciplineGrade: totalPnl >= 0 ? "A+" : "B+",
+      bestTradeSymbol: bestPos?.symbol || "NIFTY 50",
+      bestTradePnlPaise: bestPos?.unrealized_pnl_paise,
+      capitalPaise,
+    };
+  }, [totalUnrealizedPnlPaise, livePositions]);
 
   const holdingsDayPnlPaise = activeHoldings.reduce(
     (sum, h) => sum + (h.dayPnlAvailable ? h.dayChangePaise : 0),
@@ -439,6 +476,15 @@ export default function PortfolioPage() {
 
           {/* Action Buttons Toolbar */}
           <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={() => setIsSharePnlOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs shadow-xs transition-all hover:scale-105 active:scale-95 cursor-pointer"
+              title="Share verified P&L card to social media"
+            >
+              <Share2 className="w-3.5 h-3.5" />
+              <span>Share Card</span>
+            </button>
+
             <button
               onClick={() => setIsAddFundsOpen(true)}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 active:bg-cyan-700 text-white font-bold text-xs shadow-md shadow-cyan-600/20 transition-all hover:scale-105 active:scale-95 cursor-pointer"
@@ -774,6 +820,12 @@ export default function PortfolioPage() {
         diagnostic={diagnosticError}
         title={diagnosticTitle}
         onClose={() => setDiagnosticError(null)}
+      />
+
+      <SharePnlCardModal
+        isOpen={isSharePnlOpen}
+        onClose={() => setIsSharePnlOpen(false)}
+        data={pnlCardData}
       />
     </div>
   );

@@ -12,6 +12,7 @@ import {
   ShieldCheck,
   AlertTriangle,
   Clock,
+  Share2,
 } from "lucide-react";
 import { formatPaise, formatPercent } from "@/lib/format";
 import { valuationStatus as getValuationStatus } from "@/lib/marketDisplay";
@@ -22,6 +23,7 @@ interface PortfolioSummarySnapshotProps {
   portfolio?: Portfolio | null;
   onReset?: () => void;
   onAddFunds?: () => void;
+  onSharePnl?: () => void;
   isResetting?: boolean;
   className?: string;
 }
@@ -31,6 +33,7 @@ export default function PortfolioSummarySnapshot({
   portfolio,
   onReset,
   onAddFunds,
+  onSharePnl,
   isResetting = false,
   className = "",
 }: PortfolioSummarySnapshotProps) {
@@ -104,6 +107,17 @@ export default function PortfolioSummarySnapshot({
 
         {/* Action Buttons */}
         <div className="flex items-center gap-2 flex-wrap">
+          {onSharePnl && (
+            <button
+              onClick={onSharePnl}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold shadow-xs transition-all hover:scale-105 active:scale-95 cursor-pointer"
+              title="Generate 1-click verified P&L card for social media"
+            >
+              <Share2 className="w-3.5 h-3.5" />
+              <span>Share P&L</span>
+            </button>
+          )}
+
           {onAddFunds && (
             <button
               onClick={onAddFunds}
@@ -169,11 +183,23 @@ export default function PortfolioSummarySnapshot({
         <div className="p-3.5 rounded-xl bg-slate-50/70 dark:bg-slate-950/40 border border-slate-100 dark:border-slate-800/60 space-y-1">
           <div className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide flex items-center justify-between">
             <span>Unrealized P&L</span>
-            {isProfit ? (
-              <TrendingUp className="w-3 h-3 text-emerald-500" />
-            ) : (
-              <TrendingDown className="w-3 h-3 text-rose-500" />
-            )}
+            <div className="flex items-center gap-1">
+              {onSharePnl && (
+                <button
+                  type="button"
+                  onClick={onSharePnl}
+                  className="p-1 rounded-md text-slate-400 hover:text-cyan-500 hover:bg-slate-200/50 dark:hover:bg-slate-800 transition-colors"
+                  title="Share P&L Card"
+                >
+                  <Share2 className="w-3 h-3" />
+                </button>
+              )}
+              {isProfit ? (
+                <TrendingUp className="w-3 h-3 text-emerald-500" />
+              ) : (
+                <TrendingDown className="w-3 h-3 text-rose-500" />
+              )}
+            </div>
           </div>
           <div
             className={`text-lg font-black font-tabular ${
