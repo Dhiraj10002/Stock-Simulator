@@ -6,7 +6,6 @@ import { ArrowLeft, PieChart } from "lucide-react";
 import Navbar from "@/components/layout/Navbar";
 import IndicesTickerStrip from "@/components/layout/IndicesTickerStrip";
 import FnoExplorePage from "@/components/trading/FnoExplorePage";
-import OptionChainDesk from "@/components/trading/OptionChainDesk";
 import PaperOrderRecovery from "@/components/trading/PaperOrderRecovery";
 import { useAccountWallet } from "@/hooks/useAccountWallet";
 import { useAccountPortfolio } from "@/hooks/useAccountPortfolio";
@@ -15,7 +14,7 @@ import { formatPaise } from "@/lib/format";
 import { isDerivativePosition } from "@/lib/fnoExplore";
 
 export default function OptionsPage() {
-  const [tab, setTab] = useState<"chain" | "futures" | "positions">("chain");
+  const [tab, setTab] = useState<"futures" | "positions">("futures");
   const token = useAuthToken();
   const wallet = useAccountWallet();
   const portfolioQuery = useAccountPortfolio();
@@ -42,21 +41,6 @@ export default function OptionsPage() {
             className="inline-flex rounded-xl bg-slate-200/70 p-1 dark:bg-slate-800/80"
           >
             <button
-              id="chain-tab"
-              type="button"
-              role="tab"
-              aria-selected={tab === "chain"}
-              aria-controls="chain-panel"
-              onClick={() => setTab("chain")}
-              className={`rounded-lg px-3.5 py-1.5 text-xs font-bold transition-all cursor-pointer ${
-                tab === "chain"
-                  ? "bg-white text-cyan-800 shadow-xs dark:bg-slate-700 dark:text-cyan-200"
-                  : "text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
-              }`}
-            >
-              Option Chain
-            </button>
-            <button
               id="futures-tab"
               type="button"
               role="tab"
@@ -69,7 +53,7 @@ export default function OptionsPage() {
                   : "text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
               }`}
             >
-              Futures Desk
+              Explore
             </button>
             <button
               id="positions-tab"
@@ -95,17 +79,7 @@ export default function OptionsPage() {
           </Link>
         </div>
 
-        {/* 1. L2 OPTION CHAIN DESK */}
-        <div
-          id="chain-panel"
-          role="tabpanel"
-          aria-labelledby="chain-tab"
-          hidden={tab !== "chain"}
-        >
-          {tab === "chain" && <OptionChainDesk />}
-        </div>
-
-        {/* 2. EXPLORE DESK (Matches Screenshot 2) */}
+        {/* 1. EXPLORE DESK (Matches Screenshot 2) */}
         <div
           id="futures-panel"
           role="tabpanel"
