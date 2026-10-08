@@ -145,9 +145,12 @@ export default function PreTradeRiskLab({
       const live = Number((liveQuotes[symbol].price_paise / 100).toFixed(2));
       if (live > 0) {
         hasSyncedInitialPrice.current = true;
-        setPriceRupees(live);
-        setTargetRupees(Number((live * 1.02).toFixed(1)));
-        setStopLossRupees(Number((live * 0.99).toFixed(1)));
+        const timer = setTimeout(() => {
+          setPriceRupees(live);
+          setTargetRupees(Number((live * 1.02).toFixed(1)));
+          setStopLossRupees(Number((live * 0.99).toFixed(1)));
+        }, 0);
+        return () => clearTimeout(timer);
       }
     }
   }, [liveQuotes, symbol]);
