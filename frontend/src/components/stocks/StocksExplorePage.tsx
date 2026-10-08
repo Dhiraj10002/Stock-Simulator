@@ -144,6 +144,64 @@ const MAJOR_INDICES_STRIP = [
   { name: "FIN NIFTY", symbolKey: "FINNIFTY" },
 ];
 
+function formatVolume(vol?: number): string {
+  if (!vol || vol <= 0) return "—";
+  if (vol >= 10_000_000) return `${(vol / 10_000_000).toFixed(2)} Cr`;
+  if (vol >= 100_000) return `${(vol / 100_000).toFixed(2)}L`;
+  if (vol >= 1_000) return `${(vol / 1_000).toFixed(1)}k`;
+  return vol.toLocaleString("en-IN");
+}
+
+function MiniCandleSparkline({ isGain }: { isGain: boolean }) {
+  return (
+    <svg
+      width="56"
+      height="22"
+      viewBox="0 0 56 22"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className="shrink-0 select-none"
+      aria-hidden="true"
+    >
+      {isGain ? (
+        <>
+          <line x1="6" y1="8" x2="6" y2="18" stroke="#10b981" strokeWidth="1.2" strokeLinecap="round" />
+          <rect x="3.5" y="10" width="5" height="6" rx="1.5" fill="#10b981" />
+
+          <line x1="18" y1="6" x2="18" y2="17" stroke="#10b981" strokeWidth="1.2" strokeLinecap="round" />
+          <rect x="15.5" y="8" width="5" height="7" rx="1.5" fill="#10b981" />
+
+          <line x1="30" y1="2" x2="30" y2="16" stroke="#10b981" strokeWidth="1.2" strokeLinecap="round" />
+          <rect x="27.5" y="3" width="5" height="11" rx="1.5" fill="#10b981" />
+
+          <line x1="42" y1="4" x2="42" y2="13" stroke="#f43f5e" strokeWidth="1.2" strokeLinecap="round" />
+          <rect x="39.5" y="6" width="5" height="3" rx="1.5" fill="#f43f5e" />
+
+          <line x1="53" y1="1" x2="53" y2="15" stroke="#10b981" strokeWidth="1.2" strokeLinecap="round" />
+          <rect x="50.5" y="2" width="5" height="11" rx="1.5" fill="#10b981" />
+        </>
+      ) : (
+        <>
+          <line x1="6" y1="9" x2="6" y2="20" stroke="#f43f5e" strokeWidth="1.2" strokeLinecap="round" />
+          <rect x="3.5" y="11" width="5" height="6" rx="1.5" fill="#f43f5e" />
+
+          <line x1="18" y1="8" x2="18" y2="19" stroke="#10b981" strokeWidth="1.2" strokeLinecap="round" />
+          <rect x="15.5" y="10" width="5" height="7" rx="1.5" fill="#10b981" />
+
+          <line x1="30" y1="2" x2="30" y2="15" stroke="#10b981" strokeWidth="1.2" strokeLinecap="round" />
+          <rect x="27.5" y="4" width="5" height="9" rx="1.5" fill="#10b981" />
+
+          <line x1="42" y1="3" x2="42" y2="12" stroke="#f43f5e" strokeWidth="1.2" strokeLinecap="round" />
+          <rect x="39.5" y="5" width="5" height="3" rx="1.5" fill="#f43f5e" />
+
+          <line x1="53" y1="6" x2="53" y2="21" stroke="#f43f5e" strokeWidth="1.2" strokeLinecap="round" />
+          <rect x="50.5" y="7" width="5" height="11" rx="1.5" fill="#f43f5e" />
+        </>
+      )}
+    </svg>
+  );
+}
+
 export default function StocksExplorePage() {
   // Mover tabs & scope
   const [moverTab, setMoverTab] = useState<"gainers" | "losers" | "volume">("gainers");
@@ -470,8 +528,12 @@ export default function StocksExplorePage() {
                   const currentPct = movement?.percent ?? 0;
                   const isGain = currentPct >= 0;
 
-                  const lowPrice = live?.low_paise && live.low_paise > 0 ? live.low_paise / 100 : undefined;
-                  const highPrice = live?.high_paise && live.high_paise > 0 ? live.high_paise / 100 : undefined;
+                  const moverItem =
+                    marketMovers?.trending?.find((m) => m.symbol === stock.symbol) ||
+                    marketMovers?.most_traded?.find((m) => m.symbol === stock.symbol) ||
+                    marketMovers?.gainers?.find((m) => m.symbol === stock.symbol) ||
+                    marketMovers?.losers?.find((m) => m.symbol === stock.symbol);
+                  const stockVolume = live?.volume && live.volume > 0 ? live.volume : moverItem?.volume;
 
                   return (
                     <Link
@@ -496,27 +558,23 @@ export default function StocksExplorePage() {
                           </div>
                         </div>
 
-                        <span className="text-[9px] font-semibold px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                        <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
                           {stock.tag}
                         </span>
                       </div>
 
-                      {lowPrice && highPrice && lowPrice !== highPrice ? (
-                        <div className="space-y-1">
-                          <div className="flex items-center justify-between text-[9px] text-slate-400 font-tabular">
-                            <span>L: ₹{lowPrice.toFixed(1)}</span>
-                            <span>H: ₹{highPrice.toFixed(1)}</span>
-                          </div>
-                          <div className="w-full h-1 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden flex">
-                            <div
-                              className={`h-full ${isGain ? "bg-emerald-500" : "bg-rose-500"} rounded-full transition-all`}
-                              style={{
-                                width: `${Math.min(100, Math.max(10, ((currentPrice - lowPrice) / (highPrice - lowPrice || 1)) * 100))}%`
-                              }}
-                            />
-                          </div>
+                      {/* Performance-optimized: zero-overhead vector 5-candle sparkline + real volume */}
+                      <div className="flex items-center justify-between py-1 px-0.5">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                            Vol
+                          </span>
+                          <span className="text-xs font-mono font-semibold text-slate-700 dark:text-slate-300">
+                            {formatVolume(stockVolume)}
+                          </span>
                         </div>
-                      ) : null}
+                        <MiniCandleSparkline isGain={isGain} />
+                      </div>
 
                       <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 flex items-end justify-between">
                         <div>
