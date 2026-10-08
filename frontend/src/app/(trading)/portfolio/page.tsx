@@ -1,7 +1,7 @@
 "use client";
 import { sessionFetch } from "@/lib/api";
 import { exitRetryKey, completeExitRetry } from "@/lib/exitRetry";
-import { useAuthToken } from "@/hooks/useAuthToken";
+import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { useAccountWallet } from "@/hooks/useAccountWallet";
 import { useAccountPortfolio } from "@/hooks/useAccountPortfolio";
 
@@ -96,7 +96,7 @@ export default function PortfolioPage() {
   const [diagnosticTitle, setDiagnosticTitle] = useState<string>("Operation Diagnostic");
 
 
-  const token = useAuthToken();
+  const token = useRequireAuth("/portfolio");
 
   const apiUrl = API_URL;
 
@@ -394,6 +394,17 @@ export default function PortfolioPage() {
     document.body.removeChild(link);
     addToast("Portfolio Exported", "Portfolio summary CSV downloaded successfully.", "success");
   };
+
+  if (!token) {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 rounded-full border-2 border-cyan-500 border-t-transparent animate-spin" />
+          <span className="text-xs font-mono text-slate-500">Redirecting to login...</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-150">

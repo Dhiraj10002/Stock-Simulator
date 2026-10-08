@@ -22,14 +22,14 @@ import PreTradeRiskLab from "@/components/mentor/PreTradeRiskLab";
 import { formatPaise } from "@/lib/format";
 import { API_URL } from "@/lib/api";
 
-import { useAuthToken } from "@/hooks/useAuthToken";
+import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { useAccountPortfolio } from "@/hooks/useAccountPortfolio";
 
 function MentorContent() {
   const searchParams = useSearchParams();
   const initialQuery = searchParams.get("query") || undefined;
   const [activeTab, setActiveTab] = useState<"copilot" | "risklab">("copilot");
-  const token = useAuthToken();
+  const token = useRequireAuth("/mentor");
   const apiUrl = API_URL;
 
   // Server state via TanStack Query with graceful fallback
@@ -41,6 +41,20 @@ function MentorContent() {
   const unrealizedPnl = portfolio?.unrealized_pnl_paise ?? 0;
   const isPnlPositive = unrealizedPnl >= 0;
   const openPositionsCount = portfolio?.positions?.length ?? 0;
+
+  if (!token) {
+    return (
+      <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-150">
+        <Navbar />
+        <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
+          <div className="p-16 text-center text-slate-500">
+            <div className="w-8 h-8 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+            <p className="text-xs">Redirecting to login…</p>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-150">

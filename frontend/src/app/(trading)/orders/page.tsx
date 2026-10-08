@@ -1,7 +1,7 @@
 "use client";
 import { sessionFetch } from "@/lib/api";
 import { apiFetch } from "@/lib/api";
-import { useAuthToken } from "@/hooks/useAuthToken";
+import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { useAccountPolling } from "@/hooks/useAccountPolling";
 import { useAccountPortfolio } from "@/hooks/useAccountPortfolio";
 import { useAccountWallet } from "@/hooks/useAccountWallet";
@@ -39,7 +39,7 @@ export default function OrdersPage() {
   const [activeTab, setActiveTab] = useState<OrdersTab>("orders");
 
   const [mounted, setMounted] = useState(false);
-  const token = useAuthToken();
+  const token = useRequireAuth("/orders");
   const { interval } = useAccountPolling();
   const [mountTime] = useState(() => Date.now());
 
@@ -246,14 +246,14 @@ export default function OrdersPage() {
     document.body.removeChild(link);
   };
 
-  if (!mounted) {
+  if (!mounted || !token) {
     return (
       <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-150">
         <Navbar />
         <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
           <div className="p-16 text-center text-slate-500">
             <div className="w-8 h-8 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-            <p className="text-xs">Loading order book from exchange…</p>
+            <p className="text-xs">{!token ? "Redirecting to login…" : "Loading order book from exchange…"}</p>
           </div>
         </main>
       </div>

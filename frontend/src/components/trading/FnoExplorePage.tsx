@@ -11,6 +11,7 @@ import {
   Sparkles,
   TrendingUp,
   Wallet,
+  Zap,
 } from "lucide-react";
 import { publicFetch } from "@/lib/api";
 import { useAuthToken } from "@/hooks/useAuthToken";
@@ -716,21 +717,42 @@ export default function FnoExplorePage({
           )}
 
           <div className="space-y-2 pt-1">
-            <Link
-              href="/stocks"
-              className="w-full py-2.5 px-4 rounded-xl bg-cyan-600 hover:bg-cyan-500 dark:bg-cyan-500 dark:hover:bg-cyan-400 text-white dark:text-slate-950 font-bold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-cyan-500/20 transition-all hover:scale-[1.02]"
-            >
-              <TrendingUp className="w-4 h-4" />
-              <span>Explore Live Equities</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </Link>
-            <button
-              onClick={onViewPositions}
-              aria-label="View derivative positions"
-              className="w-full py-2 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-            >
-              View Derivative Holdings
-            </button>
+            {!token ? (
+              <>
+                <Link
+                  href="/login?redirect=/options"
+                  className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-cyan-500/20 transition-all hover:scale-[1.02]"
+                >
+                  <Zap className="w-3.5 h-3.5" />
+                  <span>Log In to Trade F&O</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </Link>
+                <Link
+                  href="/signup?redirect=/options"
+                  className="w-full py-2 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors text-center"
+                >
+                  <span>Create Free Account</span>
+                </Link>
+              </>
+            ) : (
+              <>
+                <Link
+                  href="/stocks"
+                  className="w-full py-2.5 px-4 rounded-xl bg-cyan-600 hover:bg-cyan-500 dark:bg-cyan-500 dark:hover:bg-cyan-400 text-white dark:text-slate-950 font-bold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-cyan-500/20 transition-all hover:scale-[1.02]"
+                >
+                  <TrendingUp className="w-4 h-4" />
+                  <span>Explore Live Equities</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </Link>
+                <button
+                  onClick={onViewPositions}
+                  aria-label="View derivative positions"
+                  className="w-full py-2 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  View Derivative Holdings
+                </button>
+              </>
+            )}
           </div>
         </section>
 

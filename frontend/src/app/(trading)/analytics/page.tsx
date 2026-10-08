@@ -1,9 +1,8 @@
 "use client";
 import { sessionFetch } from "@/lib/api";
-import { getAuthToken } from "@/lib/api";
 import { useAccountWallet } from "@/hooks/useAccountWallet";
+import { useRequireAuth } from "@/hooks/useRequireAuth";
 
-import { useState } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import Navbar from "@/components/layout/Navbar";
@@ -13,15 +12,7 @@ import { BarChart2, SlidersHorizontal, ArrowRight } from "lucide-react";
 import type { Portfolio, ApiResponse } from "@/types";
 
 export default function AnalyticsPage() {
-  const [token] = useState<string>(() => {
-    if (typeof window !== "undefined") {
-      return (
-        getAuthToken() ||
-        ""
-      );
-    }
-    return "";
-  });
+  const token = useRequireAuth("/analytics");
   const apiUrl = getApiUrl();
 
   // 1. Fetch Wallet for Navbar available balance
@@ -72,6 +63,20 @@ export default function AnalyticsPage() {
     enabled: !!token,
     refetchInterval: token ? 5000 : false,
   });
+
+  if (!token) {
+    return (
+      <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-150">
+        <Navbar />
+        <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
+          <div className="p-16 text-center text-slate-500">
+            <div className="w-8 h-8 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+            <p className="text-xs">Redirecting to login…</p>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-150">

@@ -10,6 +10,7 @@ import {
   Bookmark,
   Check,
   ChevronRight,
+  Lock,
   Newspaper,
   RefreshCw,
 } from "lucide-react";
@@ -814,17 +815,32 @@ function StockDesk({ symbol, token }: { symbol: string; token: string }) {
                   {preview.error.message}
                 </p>
               )}
-              <button
-                disabled={!canOrder || !confirmation}
-                onClick={placeOrder}
-                className={`mt-4 min-h-11 w-full rounded-xl text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-40 ${side === "BUY" ? "bg-cyan-700" : "bg-rose-700"}`}
-              >
-                {submitting
-                  ? "Submitting…"
-                  : submitted
-                    ? "Review order result"
-                    : "Place paper order"}
-              </button>
+              {!token ? (
+                <>
+                  <Link
+                    href={`/login?redirect=/stocks/${canonical}`}
+                    className="mt-4 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-sm font-bold text-white shadow-md shadow-cyan-500/20 transition-all hover:scale-[1.01]"
+                  >
+                    <Lock className="w-4 h-4" />
+                    <span>Log In to Trade</span>
+                  </Link>
+                  <p className="mt-2 text-center text-[11px] text-slate-500 dark:text-slate-400">
+                    Sign in to place paper orders with ₹10,00,000 seed capital.
+                  </p>
+                </>
+              ) : (
+                <button
+                  disabled={!canOrder || !confirmation}
+                  onClick={placeOrder}
+                  className={`mt-4 min-h-11 w-full rounded-xl text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-40 ${side === "BUY" ? "bg-cyan-700" : "bg-rose-700"}`}
+                >
+                  {submitting
+                    ? "Submitting…"
+                    : submitted
+                      ? "Review order result"
+                      : "Place paper order"}
+                </button>
+              )}
               {feedback && (
                 <p
                   role="status"

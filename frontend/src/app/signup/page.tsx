@@ -1,10 +1,13 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import AuthModal from "@/components/auth/AuthModal";
 
-export default function SignUpPage() {
+function SignUpContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const redirectUrl = searchParams.get("redirect") || "/dashboard";
 
   return (
     <div className="min-h-screen bg-[#04060b] flex items-center justify-center">
@@ -12,8 +15,16 @@ export default function SignUpPage() {
         isOpen={true}
         mode="register"
         onClose={() => router.push("/")}
-        onSuccess={() => router.push("/dashboard")}
+        onSuccess={() => router.push(redirectUrl)}
       />
     </div>
+  );
+}
+
+export default function SignUpPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-[#04060b]" />}>
+      <SignUpContent />
+    </Suspense>
   );
 }
