@@ -1,0 +1,69 @@
+import type { MetadataRoute } from "next";
+
+export default function manifest(): MetadataRoute.Manifest {
+  return {
+    name: "Stock Simulator — Institutional Paper Trading",
+    short_name: "StockSim",
+    description:
+      "Real-time Indian market paper trading simulator with NSE/NFO execution, integer paise accounting, and automated risk management.",
+    start_url: "/dashboard",
+    scope: "/",
+    display: "standalone",
+    background_color: "#06080e",
+    theme_color: "#06080e",
+    orientation: "portrait-primary",
+    categories: ["finance", "productivity", "utilities"],
+    icons: [
+      {
+        src: "/icons/icon-192.png",
+        sizes: "192x192",
+        type: "image/png",
+        purpose: "any",
+      },
+      {
+        src: "/icons/icon-512.png",
+        sizes: "512x512",
+        type: "image/png",
+        purpose: "any",
+      },
+      {
+        src: "/icons/icon-maskable-512.png",
+        sizes: "512x512",
+        type: "image/png",
+        purpose: "maskable",
+      },
+      {
+        src: "/icons/icon.svg",
+        sizes: "any",
+        type: "image/svg+xml",
+        purpose: "any",
+      },
+    ],
+    shortcuts: [
+      {
+        name: "Trading Dashboard",
+        short_name: "Dashboard",
+        url: "/dashboard",
+        icons: [{ src: "/icons/icon-192.png", sizes: "192x192" }],
+      },
+      {
+        name: "Option Chain & Derivatives",
+        short_name: "F&O Desk",
+        url: "/options",
+        icons: [{ src: "/icons/icon-192.png", sizes: "192x192" }],
+      },
+      {
+        name: "Market Watchlist",
+        short_name: "Watchlist",
+        url: "/watchlist",
+        icons: [{ src: "/icons/icon-192.png", sizes: "192x192" }],
+      },
+      {
+        name: "Portfolio & Positions",
+        short_name: "Portfolio",
+        url: "/portfolio",
+        icons: [{ src: "/icons/icon-192.png", sizes: "192x192" }],
+      },
+    ],
+  };
+}

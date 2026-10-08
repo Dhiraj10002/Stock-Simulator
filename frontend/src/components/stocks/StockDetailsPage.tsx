@@ -863,6 +863,38 @@ function StockDesk({ symbol, token }: { symbol: string; token: string }) {
           </aside>
         </div>
       </main>
+
+      {/* Mobile Sticky Quick Buy/Sell Action Bar */}
+      <div className="md:hidden fixed bottom-14 left-0 right-0 z-30 px-3 py-2 bg-white/95 dark:bg-[#06080e]/95 border-t border-slate-200 dark:border-slate-800 backdrop-blur-xl flex items-center justify-between gap-3 shadow-2xl">
+        <div className="min-w-0">
+          <div className="text-xs font-black font-tabular text-slate-900 dark:text-slate-100">
+            {quote?.price_paise !== undefined ? `₹${(quote.price_paise / 100).toFixed(2)}` : "—"}
+          </div>
+          <div className="text-[10px] text-slate-500 font-mono">
+            {symbol.replace(/-EQ$/, "")}
+          </div>
+        </div>
+        <div className="flex items-center gap-2 flex-1 max-w-[240px]">
+          <button
+            onClick={() => {
+              setSide("BUY");
+              document.getElementById("stock-order")?.scrollIntoView({ behavior: "smooth" });
+            }}
+            className="flex-1 py-2 px-3 rounded-xl bg-cyan-600 active:bg-cyan-700 text-white font-black text-xs shadow-md shadow-cyan-600/20 text-center transition-transform active:scale-95 cursor-pointer"
+          >
+            BUY
+          </button>
+          <button
+            onClick={() => {
+              setSide("SELL");
+              document.getElementById("stock-order")?.scrollIntoView({ behavior: "smooth" });
+            }}
+            className="flex-1 py-2 px-3 rounded-xl bg-rose-600 active:bg-rose-700 text-white font-black text-xs shadow-md shadow-rose-600/20 text-center transition-transform active:scale-95 cursor-pointer"
+          >
+            SELL
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

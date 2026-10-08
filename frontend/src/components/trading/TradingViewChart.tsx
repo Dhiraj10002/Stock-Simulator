@@ -85,7 +85,7 @@ const ChartLegend = memo(function ChartLegend({
   latestBar: LatestBarData | null;
 }) {
   return (
-    <div className="px-4 py-1.5 bg-slate-50/50 dark:bg-slate-950/40 border-b border-slate-100 dark:border-slate-800/40 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] font-mono">
+    <div className="px-3.5 py-1.5 bg-slate-50/50 dark:bg-slate-950/40 border-b border-slate-100 dark:border-slate-800/40 flex items-center gap-x-4 gap-y-1 text-[11px] font-mono overflow-x-auto scrollbar-none whitespace-nowrap select-none">
       {legend ? (
         <>
           <span className="text-slate-400">Time: <span className="text-slate-800 dark:text-slate-200">{legend.time}</span></span>
@@ -267,6 +267,21 @@ export default function TradingViewChart({
           style: 3,
           labelBackgroundColor: "#0891b2",
         },
+      },
+      handleScroll: {
+        mouseWheel: true,
+        pressedMouseMove: true,
+        horzTouchDrag: true,
+        vertTouchDrag: false,
+      },
+      handleScale: {
+        axisPressedMouseMove: true,
+        mouseWheel: true,
+        pinch: true,
+      },
+      kineticScroll: {
+        touch: true,
+        mouse: false,
       },
       timeScale: {
         borderColor: themeColors.border,
@@ -625,9 +640,9 @@ export default function TradingViewChart({
       {/* ===================================================================== */}
       {/* TOP CONTROLS TOOLBAR                                                  */}
       {/* ===================================================================== */}
-      <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 bg-slate-50/80 dark:bg-slate-950/60 border-b border-slate-200 dark:border-slate-800/80 text-xs">
+      <div className="flex items-center justify-between gap-2 px-3 py-2 bg-slate-50/80 dark:bg-slate-950/60 border-b border-slate-200 dark:border-slate-800/80 text-xs overflow-x-auto scrollbar-none">
         {/* Left: Symbol & Live Status & Timeframe */}
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           {/* Symbol & Price Chip */}
           <div className="flex items-center gap-1.5 font-bold text-slate-900 dark:text-slate-100">
             <span className="font-mono text-cyan-600 dark:text-cyan-400 font-black tracking-wide">

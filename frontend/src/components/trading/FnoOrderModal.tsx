@@ -288,13 +288,23 @@ export default function FnoOrderModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in duration-200">
+    <div
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/75 backdrop-blur-md animate-in fade-in duration-200"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
       <div
         role="dialog"
         aria-modal="true"
         aria-label="Paper order ticket"
-        className="max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto bg-[#ffffff] dark:bg-[#0f172a] border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl flex flex-col transition-colors"
+        className="max-h-[92dvh] sm:max-h-[calc(100dvh-2rem)] w-full sm:max-w-lg overflow-y-auto bg-[#ffffff] dark:bg-[#0f172a] border-t sm:border border-slate-200 dark:border-slate-800 rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col transition-all pb-[env(safe-area-inset-bottom,16px)] sm:pb-0"
       >
+        {/* Mobile Drag Handle Indicator */}
+        <div className="sm:hidden flex justify-center pt-2.5 pb-1">
+          <div className="w-12 h-1 rounded-full bg-slate-300 dark:bg-slate-700" />
+        </div>
+
         {/* Modal Header */}
         <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-start justify-between gap-3 bg-slate-50/70 dark:bg-slate-950/60">
           <div className="min-w-0 flex-1">
@@ -460,25 +470,41 @@ export default function FnoOrderModal({
             </div>
 
             <div className="flex items-center gap-2">
-              <input
-                type="number"
-                min="1"
-                max="100"
-                value={lots}
-                onChange={(e) =>
-                  setLots(Math.max(1, parseInt(e.target.value) || 1))
-                }
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-black font-tabular text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-500"
-              />
+              <div className="flex items-center rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 overflow-hidden shrink-0 shadow-xs">
+                <button
+                  type="button"
+                  onClick={() => setLots((prev) => Math.max(1, prev - 1))}
+                  className="w-10 h-10 flex items-center justify-center font-bold text-lg text-slate-500 hover:text-cyan-600 dark:hover:text-cyan-400 active:bg-slate-100 dark:active:bg-slate-700 transition-colors select-none"
+                >
+                  −
+                </button>
+                <input
+                  type="number"
+                  min="1"
+                  max="100"
+                  value={lots}
+                  onChange={(e) =>
+                    setLots(Math.max(1, parseInt(e.target.value) || 1))
+                  }
+                  className="w-16 text-center py-2 bg-transparent font-black font-tabular text-sm text-slate-900 dark:text-slate-100 focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => setLots((prev) => Math.min(100, prev + 1))}
+                  className="w-10 h-10 flex items-center justify-center font-bold text-lg text-slate-500 hover:text-cyan-600 dark:hover:text-cyan-400 active:bg-slate-100 dark:active:bg-slate-700 transition-colors select-none"
+                >
+                  +
+                </button>
+              </div>
 
-              <div className="flex gap-1">
-                {[1, 2, 5, 10].map((q) => (
+              <div className="flex gap-1 overflow-x-auto scrollbar-none">
+                {[1, 2, 5, 10, 25].map((q) => (
                   <button
                     key={q}
                     onClick={() => setLots(q)}
-                    className={`px-2.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    className={`px-3 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
                       lots === q
-                        ? "bg-cyan-600 text-white dark:bg-cyan-500 dark:text-slate-950 font-black"
+                        ? "bg-cyan-600 text-white dark:bg-cyan-500 dark:text-slate-950 font-black shadow-xs"
                         : "bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300"
                     }`}
                   >

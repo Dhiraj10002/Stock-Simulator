@@ -1,10 +1,11 @@
 import { SpeedInsights } from "@vercel/speed-insights/next";
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { ToastProvider } from "@/components/ui/ToastProvider";
 import { ThemeProvider } from "@/providers/theme-provider";
 import MobileBottomNav from "@/components/layout/MobileBottomNav";
+import PwaInstallPrompt from "@/components/layout/PwaInstallPrompt";
 
 const geistSans = Geist({
   variable: "--font-sans",
@@ -16,10 +17,38 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+export const viewport: Viewport = {
+  themeColor: "#06080e",
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 5,
+  userScalable: true,
+  viewportFit: "cover",
+};
+
 export const metadata: Metadata = {
   title: "Stock Simulator — Institutional Paper Trading Platform",
   description:
     "Real-time Indian market paper trading simulator with NSE/NFO execution, integer paise accounting, and automated risk management.",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "StockSim",
+  },
+  formatDetection: {
+    telephone: false,
+  },
+  icons: {
+    icon: [
+      { url: "/favicon.svg", type: "image/svg+xml" },
+      { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
+    ],
+    apple: [
+      { url: "/icons/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
+    ],
+  },
 };
 
 export default function RootLayout({
@@ -64,6 +93,7 @@ export default function RootLayout({
             <ToastProvider>
               {children}
               <MobileBottomNav />
+              <PwaInstallPrompt />
             </ToastProvider>
           </ThemeProvider>
         </div>
