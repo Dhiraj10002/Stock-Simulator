@@ -174,23 +174,12 @@ func (r *OrderRepository) FindInstrument(symbol string) (*model.Instrument, erro
 		}
 	}
 
-	// 2. Direct exact query using functional index on UPPER(symbol)
-	err := database.GetDB().Where("UPPER(symbol) = ?", clean).
-		Order("is_tradable DESC, active DESC, id DESC").First(&instrument).Error
-	if err == nil {
-		return &instrument, nil
-	}
-
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, err
-	}
-
-	// 2b. Direct query with / without -EQ suffix
+	// 2. Direct query with / without -EQ suffix, prioritizing tradable instruments
 	cleanAlt := clean + "-EQ"
 	if strings.HasSuffix(clean, "-EQ") {
 		cleanAlt = strings.TrimSuffix(clean, "-EQ")
 	}
-	err = database.GetDB().Where("UPPER(symbol) = ?", cleanAlt).
+	err := database.GetDB().Where("UPPER(symbol) IN (?, ?)", clean, cleanAlt).
 		Order("is_tradable DESC, active DESC, id DESC").First(&instrument).Error
 	if err == nil {
 		return &instrument, nil

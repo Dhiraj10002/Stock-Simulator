@@ -6,10 +6,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -123,6 +125,116 @@ func (s *Service) Get(ctx context.Context, symbol string) Snapshot {
 	return result
 }
 
+type keyMetricItem struct {
+	DisplayName string `json:"displayName"`
+	Key         string `json:"key"`
+	Value       any    `json:"value"`
+}
+
+func findMetricValue(sections map[string][]keyMetricItem, section string, keys ...string) string {
+	items, ok := sections[section]
+	if !ok {
+		return ""
+	}
+	for _, targetKey := range keys {
+		for _, item := range items {
+			if strings.EqualFold(item.Key, targetKey) {
+				if item.Value == nil {
+					continue
+				}
+				s := fmt.Sprint(item.Value)
+				s = strings.TrimSpace(s)
+				if s != "" && s != "-" && !strings.EqualFold(s, "null") && !strings.EqualFold(s, "none") && !strings.EqualFold(s, "nan") {
+					return s
+				}
+			}
+		}
+	}
+	return ""
+}
+
+func extractCuratedMetrics(raw []byte) []Metric {
+	var payload struct {
+		Industry string `json:"industry"`
+		Reusable struct {
+			MarketCap string `json:"marketCap"`
+			PE        string `json:"pPerEBasicExcludingExtraordinaryItemsTTM"`
+		} `json:"stockDetailsReusableData"`
+		KeyMetrics map[string][]keyMetricItem `json:"keyMetrics"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return nil
+	}
+
+	var metrics []Metric
+
+	if ind := strings.TrimSpace(payload.Industry); ind != "" && !strings.EqualFold(ind, "null") {
+		metrics = append(metrics, Metric{Label: "Industry / Sector", Value: ind})
+	}
+
+	mc := findMetricValue(payload.KeyMetrics, "priceandVolume", "marketCap")
+	if mc == "" {
+		mc = strings.TrimSpace(payload.Reusable.MarketCap)
+	}
+	if mc != "" {
+		if f, err := strconv.ParseFloat(mc, 64); err == nil && f > 0 {
+			metrics = append(metrics, Metric{Label: "Market Cap", Value: fmt.Sprintf("₹%.2f Cr", f)})
+		} else {
+			metrics = append(metrics, Metric{Label: "Market Cap", Value: "₹" + mc + " Cr"})
+		}
+	}
+
+	pe := findMetricValue(payload.KeyMetrics, "valuation", "pPerEBasicExcludingExtraordinaryItemsTTM", "pPerEIncludingExtraordinaryItemsTTM", "pPerENormalizedMostRecentFiscalYear")
+	if pe == "" {
+		pe = strings.TrimSpace(payload.Reusable.PE)
+	}
+	if pe != "" {
+		metrics = append(metrics, Metric{Label: "P/E Ratio (TTM)", Value: pe})
+	}
+
+	if pb := findMetricValue(payload.KeyMetrics, "valuation", "priceToTangibleBookMostFiscalYear", "priceToBookMostRecentQuarter", "priceToBookValueRatio"); pb != "" {
+		metrics = append(metrics, Metric{Label: "P/B Ratio", Value: pb})
+	}
+
+	if eps := findMetricValue(payload.KeyMetrics, "persharedata", "ePSIncludingExtraOrdinaryItemsTrailing12Month", "ePSBasicExcludingExtraordinaryItemsItrailing12Month", "ePSBasicExcludingExtraordinaryItemsMostRecentFiscalYear"); eps != "" {
+		metrics = append(metrics, Metric{Label: "EPS (TTM)", Value: "₹" + eps})
+	}
+
+	if div := findMetricValue(payload.KeyMetrics, "valuation", "dividendYieldIndicatedAnnualDividendDividedByClosingprice", "dividendYield5YearAverage", "currentDividendYieldCommonStockPrimaryIssueLTM"); div != "" {
+		metrics = append(metrics, Metric{Label: "Dividend Yield", Value: div + "%"})
+	}
+
+	if bv := findMetricValue(payload.KeyMetrics, "persharedata", "bookValuePerShare MostRecentFiscalYear", "bookValueTangibleperSharemostRecentQuarter"); bv != "" {
+		metrics = append(metrics, Metric{Label: "Book Value / Share", Value: "₹" + bv})
+	}
+
+	if roe := findMetricValue(payload.KeyMetrics, "mgmtEffectiveness", "returnOnAverageEquityMostRecentFiscalYear", "returnOnAverageEquity5YearAverage"); roe != "" {
+		metrics = append(metrics, Metric{Label: "Return on Equity (ROE)", Value: roe + "%"})
+	}
+
+	if roi := findMetricValue(payload.KeyMetrics, "mgmtEffectiveness", "returnOnInvestmentMostRecentFiscalYear", "returnOnInvestment5YearAverage"); roi != "" {
+		metrics = append(metrics, Metric{Label: "ROCE / ROI", Value: roi + "%"})
+	}
+
+	if opm := findMetricValue(payload.KeyMetrics, "margins", "operatingMarginTrailing12Month", "operatingMargin5YearAverage"); opm != "" {
+		metrics = append(metrics, Metric{Label: "Operating Margin", Value: opm + "%"})
+	}
+
+	if npm := findMetricValue(payload.KeyMetrics, "margins", "netProfitMarginPercentTrailing12Month", "netProfitMargin5YearAverage"); npm != "" {
+		metrics = append(metrics, Metric{Label: "Net Profit Margin", Value: npm + "%"})
+	}
+
+	if de := findMetricValue(payload.KeyMetrics, "financialstrength", "totalDebtPerTotalEquityMostRecentFiscalYear", "ltDebtPerEquityMostRecentFiscalYear"); de != "" {
+		metrics = append(metrics, Metric{Label: "Debt to Equity", Value: de})
+	}
+
+	if beta := findMetricValue(payload.KeyMetrics, "priceandVolume", "beta"); beta != "" {
+		metrics = append(metrics, Metric{Label: "Beta (1Y Volatility)", Value: beta})
+	}
+
+	return metrics
+}
+
 // Preserve provider labels, units and reporting periods. Do not invent a P/E,
 // EPS, currency, market-cap scale or 'as of' date from an undocumented field.
 func normalize(raw []byte, symbol string) (Snapshot, error) {
@@ -146,6 +258,16 @@ func normalize(raw []byte, symbol string) (Snapshot, error) {
 	}
 	if !strings.EqualFold(strings.TrimSuffix(identity, "-EQ"), symbol) {
 		return Snapshot{}, errors.New("identity unverified")
+	}
+	curated := extractCuratedMetrics(raw)
+	if len(curated) >= 2 {
+		return Snapshot{
+			Symbol:      symbol,
+			Source:      "IndianAPI",
+			Status:      "AVAILABLE",
+			RetrievedAt: time.Now().UTC().Format(time.RFC3339),
+			Metrics:     curated,
+		}, nil
 	}
 	var metrics any
 	d := json.NewDecoder(strings.NewReader(string(payload.Metrics)))

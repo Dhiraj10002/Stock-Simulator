@@ -53,28 +53,17 @@ const DEFAULT_WATCHLIST_DATA: Record<string, WatchlistItem[]> = {
   wl1: [
     { symbol: "RELIANCE", name: "Reliance Industries Ltd", exchange: "NSE" },
     { symbol: "TCS", name: "Tata Consultancy Services Ltd", exchange: "NSE" },
-    { symbol: "INFY", name: "Infosys Ltd", exchange: "NSE" },
     { symbol: "HDFCBANK", name: "HDFC Bank Ltd", exchange: "NSE" },
-    { symbol: "ICICIBANK", name: "ICICI Bank Ltd", exchange: "NSE" },
-    { symbol: "SBIN", name: "State Bank of India", exchange: "NSE" },
-    { symbol: "BHARTIARTL", name: "Bharti Airtel Ltd", exchange: "NSE" },
-    { symbol: "ITC", name: "ITC Ltd", exchange: "NSE" },
-    { symbol: "LT", name: "Larsen & Toubro Ltd", exchange: "NSE" },
+    { symbol: "INFY", name: "Infosys Ltd", exchange: "NSE" },
   ],
   wl2: [
     { symbol: "TATAMOTORS", name: "Tata Motors Ltd", exchange: "NSE" },
     { symbol: "BAJFINANCE", name: "Bajaj Finance Ltd", exchange: "NSE" },
-    { symbol: "ADANIENT", name: "Adani Enterprises Ltd", exchange: "NSE" },
-    { symbol: "APARINDS", name: "Apar Industries Ltd", exchange: "NSE" },
     { symbol: "ZOMATO", name: "Zomato Ltd (Eternal)", exchange: "NSE" },
-    { symbol: "KOTAKBANK", name: "Kotak Mahindra Bank Ltd", exchange: "NSE" },
-    { symbol: "AXISBANK", name: "Axis Bank Ltd", exchange: "NSE" },
   ],
   fno: [
     { symbol: "NIFTY", name: "Nifty 50 Benchmark Index", exchange: "NSE" },
     { symbol: "BANKNIFTY", name: "Bank Nifty Sectoral Index", exchange: "NSE" },
-    { symbol: "FINNIFTY", name: "Nifty Financial Services", exchange: "NSE" },
-    { symbol: "TCS24SEPFUT", name: "TCS 29 Sep Future", exchange: "NFO" },
   ],
 };
 
@@ -237,7 +226,7 @@ export default function WatchlistManagerDesk({ token: propToken }: WatchlistMana
     staleTime: 5000,
   });
 
-  // Synchronize cloud DB items into the primary watchlist tab (wl1) safely without losing local items
+  // Synchronize cloud DB items into the primary watchlist tab (wl1)
   useEffect(() => {
     if (token && Array.isArray(dbWatchlist) && dbWatchlist.length > 0) {
       const dbSymbols = dbWatchlist
@@ -247,33 +236,27 @@ export default function WatchlistManagerDesk({ token: propToken }: WatchlistMana
 
       queueMicrotask(() => {
         setWatchlists((prev) => {
-          const currentPrimary = Array.isArray(prev["wl1"]) ? prev["wl1"] : [];
-          const mergedMap = new Map<string, WatchlistItem>();
+          const seen = new Set<string>();
+          const cloudItems: WatchlistItem[] = [];
 
-          // 1. Retain all current items in wl1
-          currentPrimary.forEach((it) => {
-            if (it?.symbol) {
-              mergedMap.set(it.symbol.toUpperCase(), it);
-            }
-          });
-
-          // 2. Add any items from cloud DB
           dbWatchlist.forEach((item: WatchlistDbItem | Record<string, unknown>) => {
-            const sym = (item?.symbol || (item as Record<string, unknown>)?.ticker || "").toString().trim().toUpperCase();
-            if (!sym) return;
-            if (!mergedMap.has(sym)) {
-              const fromCatalog = MASTER_STOCKS_CATALOG.find((s) => s.symbol === sym);
-              mergedMap.set(sym, {
-                symbol: sym,
-                name: fromCatalog?.name || `${sym} Ltd`,
-                exchange: "NSE",
-              });
-            }
+            const rawSym = (item?.symbol || (item as Record<string, unknown>)?.ticker || "").toString().trim().toUpperCase();
+            if (!rawSym) return;
+            const cleanSym = rawSym.replace(/-EQ$/, "");
+            if (seen.has(cleanSym)) return;
+            seen.add(cleanSym);
+
+            const fromCatalog = MASTER_STOCKS_CATALOG.find((s) => s.symbol === cleanSym || s.symbol === rawSym);
+            cloudItems.push({
+              symbol: cleanSym,
+              name: fromCatalog?.name || `${cleanSym} Ltd`,
+              exchange: fromCatalog?.exchange || "NSE",
+            });
           });
 
           const updated = {
             ...prev,
-            wl1: Array.from(mergedMap.values()),
+            wl1: cloudItems,
           };
           try {
             localStorage.setItem(STORAGE_CUSTOM_KEY, JSON.stringify(updated));
@@ -454,20 +437,31 @@ export default function WatchlistManagerDesk({ token: propToken }: WatchlistMana
   };
 
   // Remove symbol from active watchlist (syncs deletion with cloud DB if authenticated)
-  const handleRemoveSymbol = async (symbol: string) => {
+  const handleRemoveSymbol = async (targetSymbol: string) => {
+    const rawTarget = targetSymbol.trim().toUpperCase();
+    const cleanTarget = rawTarget.replace(/-EQ$/, "");
     const existing = watchlists[activeTabId] ?? [];
     const updated = {
       ...watchlists,
-      [activeTabId]: existing.filter((i) => i.symbol !== symbol),
+      [activeTabId]: existing.filter((i) => {
+        const sym = (i?.symbol || "").trim().toUpperCase().replace(/-EQ$/, "");
+        return sym !== cleanTarget;
+      }),
     };
     persistWatchlists(updated);
-    useMarketStore.getState().removeWatchlistSymbol(symbol);
+    useMarketStore.getState().removeWatchlistSymbol(rawTarget);
+    useMarketStore.getState().removeWatchlistSymbol(cleanTarget);
+    useMarketStore.getState().removeWatchlistSymbol(`${cleanTarget}-EQ`);
 
     if (token) {
       try {
-        await apiFetch(`/watchlist/${encodeURIComponent(symbol)}`, {
+        await apiFetch(`/watchlist/${encodeURIComponent(rawTarget)}`, {
           method: "DELETE",
         });
+        if (rawTarget !== cleanTarget) {
+          apiFetch(`/watchlist/${encodeURIComponent(cleanTarget)}`, { method: "DELETE" }).catch(() => {});
+        }
+        apiFetch(`/watchlist/${encodeURIComponent(`${cleanTarget}-EQ`)}`, { method: "DELETE" }).catch(() => {});
         queryClient.invalidateQueries({ queryKey: ["watchlist"] });
       } catch (err) {
         if (err instanceof ApiError && err.status === 401) {
@@ -937,10 +931,11 @@ export default function WatchlistManagerDesk({ token: propToken }: WatchlistMana
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/40 font-medium">
                 {currentItems.map((item, idx) => {
-                  const symbol = (item?.symbol || "").toString().trim().toUpperCase();
-                  if (!symbol) return null;
+                  const rawSymbol = (item?.symbol || "").toString().trim().toUpperCase();
+                  if (!rawSymbol) return null;
+                  const symbol = rawSymbol.replace(/-EQ$/, "");
 
-                  const quote = quotes[symbol] ?? getQuoteSync(symbol);
+                  const quote = quotes[symbol] ?? quotes[rawSymbol] ?? quotes[`${symbol}-EQ`] ?? getQuoteSync(symbol) ?? getQuoteSync(rawSymbol);
                   const ltp = quote?.price_paise ?? 0;
                   const chgPct = quote?.change_percent ?? 0;
                   const isPos = chgPct >= 0;
@@ -952,10 +947,11 @@ export default function WatchlistManagerDesk({ token: propToken }: WatchlistMana
                   const highPaise = quote?.high_paise ?? Math.round(ltp * 1.015);
                   const range = highPaise - lowPaise || 1;
                   const rangePct = ltp > 0 ? Math.min(100, Math.max(0, ((ltp - lowPaise) / range) * 100)) : 0;
+                  const cleanName = item.name && !item.name.includes("-EQ") ? item.name : `${symbol} Ltd`;
 
                   return (
                     <tr
-                      key={`${symbol}-${idx}`}
+                      key={`${rawSymbol}-${idx}`}
                       className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors group"
                     >
                       {/* Instrument */}
@@ -977,7 +973,7 @@ export default function WatchlistManagerDesk({ token: propToken }: WatchlistMana
                               </span>
                             </div>
                             <span className="text-[11px] text-slate-400 line-clamp-1 max-w-[200px]">
-                              {item.name || `${symbol} Ltd`}
+                              {cleanName}
                             </span>
                           </div>
                         </div>
@@ -1071,7 +1067,7 @@ export default function WatchlistManagerDesk({ token: propToken }: WatchlistMana
                       {/* Delete from Watchlist */}
                       <td className="py-3.5 px-3 text-center">
                         <button
-                          onClick={() => handleRemoveSymbol(symbol)}
+                          onClick={() => handleRemoveSymbol(rawSymbol)}
                           className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors opacity-60 group-hover:opacity-100 cursor-pointer"
                           title="Remove from Watchlist"
                         >

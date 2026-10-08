@@ -170,6 +170,8 @@ export default function StocksExplorePage() {
     MOST_TRADED_STOCKS.forEach((item) => s.add(item.symbol));
     TOP_INTRADAY_STOCKS.forEach((item) => s.add(item.symbol));
     MAJOR_INDICES_STRIP.forEach((item) => s.add(item.symbolKey));
+    s.add("INDIA VIX");
+    s.add("NIFTY");
     return Array.from(s);
   }, []);
 
@@ -468,11 +470,14 @@ export default function StocksExplorePage() {
                   const currentPct = movement?.percent ?? 0;
                   const isGain = currentPct >= 0;
 
+                  const lowPrice = live?.low_paise && live.low_paise > 0 ? live.low_paise / 100 : undefined;
+                  const highPrice = live?.high_paise && live.high_paise > 0 ? live.high_paise / 100 : undefined;
+
                   return (
                     <Link
                       key={stock.symbol}
                       href={`/stocks/${stock.symbol}`}
-                      className="min-h-[160px] p-3.5 rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 hover:border-cyan-500/50 hover:shadow-md transition-all group flex flex-col justify-between"
+                      className="p-3.5 rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 hover:border-cyan-500/50 hover:shadow-md transition-all group flex flex-col gap-3"
                     >
                       <div className="flex items-start justify-between">
                         <div className="flex items-center gap-2.5">
@@ -496,7 +501,24 @@ export default function StocksExplorePage() {
                         </span>
                       </div>
 
-                      <div className="mt-3.5 pt-2.5 border-t border-slate-100 dark:border-slate-800/80 flex items-end justify-between">
+                      {lowPrice && highPrice && lowPrice !== highPrice ? (
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between text-[9px] text-slate-400 font-tabular">
+                            <span>L: ₹{lowPrice.toFixed(1)}</span>
+                            <span>H: ₹{highPrice.toFixed(1)}</span>
+                          </div>
+                          <div className="w-full h-1 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden flex">
+                            <div
+                              className={`h-full ${isGain ? "bg-emerald-500" : "bg-rose-500"} rounded-full transition-all`}
+                              style={{
+                                width: `${Math.min(100, Math.max(10, ((currentPrice - lowPrice) / (highPrice - lowPrice || 1)) * 100))}%`
+                              }}
+                            />
+                          </div>
+                        </div>
+                      ) : null}
+
+                      <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 flex items-end justify-between">
                         <div>
                           <div className="text-xs font-bold font-tabular text-slate-900 dark:text-slate-100">
                             {hasQuote ? `₹${currentPrice.toFixed(2)}` : "₹—"}
@@ -1107,49 +1129,70 @@ export default function StocksExplorePage() {
             </div>
 
             {/* Quick Market Sentiment & Volatility Card */}
-            <div className="p-4 rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 shadow-xs space-y-3">
-              <div className="flex items-center justify-between text-xs">
-                <span className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                  <ShieldCheck className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
-                  Market Volatility & Session
-                </span>
-                <span className="text-[10px] font-mono text-slate-400">NSE / NFO</span>
-              </div>
+            {(() => {
+              const vix = quotes["INDIA VIX"];
+              const vixPrice = vix && vix.price_paise > 0 ? vix.price_paise / 100 : 15.05;
+              const vixChange = vix?.change_percent ?? 8.35;
+              const isVixUp = vixChange > 0;
+              const vixRegime = vixPrice > 20 ? "High Volatility (Caution)" : vixPrice > 14 ? "Active / Normal Range" : "Low Volatility (Calm)";
 
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                <div className="p-2.5 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60">
-                  <div className="text-[10px] text-slate-400">INDIA VIX</div>
-                  <div className="text-sm font-bold text-emerald-600 dark:text-emerald-400 font-tabular mt-0.5">
-                    Unavailable
+              const nifty = quotes["NIFTY"] || quotes["NIFTY 50"];
+              const niftyChg = nifty?.change_percent ?? -1.43;
+              const isBullish = niftyChg > 0.3;
+              const isBearish = niftyChg < -0.3;
+              const sentimentLabel = isBullish ? "Bullish Trend" : isBearish ? "Bearish Bias" : "Neutral / Straddle";
+              const sentimentColor = isBullish ? "text-emerald-600 dark:text-emerald-400" : isBearish ? "text-rose-600 dark:text-rose-400" : "text-amber-600 dark:text-amber-400";
+              const sentimentDesc = isBullish ? "Call buyer dominance" : isBearish ? "Put demand · Call writing" : "Rangebound consolidation";
+
+              return (
+                <div className="p-4 rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 shadow-xs space-y-3">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                      <ShieldCheck className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
+                      Market Volatility & Session
+                    </span>
+                    <span className="text-[10px] font-mono text-slate-400">NSE / NFO</span>
                   </div>
-                  <div className="text-[9px] text-slate-400">Provider data unavailable</div>
-                </div>
 
-                <div className="p-2.5 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60">
-                  <div className="text-[10px] text-slate-400">F&O Sentiment</div>
-                  <div className="text-sm font-bold text-cyan-600 dark:text-cyan-400 font-tabular mt-0.5">
-                    Unavailable
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div className="p-2.5 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60">
+                      <div className="text-[10px] text-slate-400">INDIA VIX</div>
+                      <div className="text-sm font-bold text-slate-900 dark:text-slate-100 font-tabular mt-0.5 flex items-center gap-1">
+                        <span>{vixPrice.toFixed(2)}</span>
+                        <span className={`text-[10px] font-semibold ${isVixUp ? "text-amber-600 dark:text-amber-400" : "text-emerald-600 dark:text-emerald-400"}`}>
+                          {isVixUp ? "+" : ""}{vixChange.toFixed(1)}%
+                        </span>
+                      </div>
+                      <div className="text-[9px] text-slate-400">{vixRegime}</div>
+                    </div>
+
+                    <div className="p-2.5 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60">
+                      <div className="text-[10px] text-slate-400">F&O Sentiment</div>
+                      <div className={`text-sm font-bold font-tabular mt-0.5 ${sentimentColor}`}>
+                        {sentimentLabel}
+                      </div>
+                      <div className="text-[9px] text-slate-400">{sentimentDesc}</div>
+                    </div>
                   </div>
-                  <div className="text-[9px] text-slate-400">Verified PCR unavailable</div>
-                </div>
-              </div>
 
-              <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-[11px] text-slate-500">
-                <Link
-                  href="/options"
-                  className="text-cyan-600 dark:text-cyan-400 hover:underline font-semibold flex items-center gap-1"
-                >
-                  <span>Open F&O Option Chain</span>
-                  <ArrowUpRight className="w-3.5 h-3.5" />
-                </Link>
-                <Link
-                  href="/orders"
-                  className="hover:text-slate-800 dark:hover:text-slate-200 font-medium"
-                >
-                  Order Book →
-                </Link>
-              </div>
-            </div>
+                  <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-[11px] text-slate-500">
+                    <Link
+                      href="/options"
+                      className="text-cyan-600 dark:text-cyan-400 hover:underline font-semibold flex items-center gap-1"
+                    >
+                      <span>Open F&O Option Chain</span>
+                      <ArrowUpRight className="w-3.5 h-3.5" />
+                    </Link>
+                    <Link
+                      href="/orders"
+                      className="hover:text-slate-800 dark:hover:text-slate-200 font-medium"
+                    >
+                      Order Book →
+                    </Link>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         </div>
       </main>

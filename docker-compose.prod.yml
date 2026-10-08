@@ -81,6 +81,8 @@ services:
       - JWT_SECRET=${JWT_SECRET:?JWT_SECRET is required in production}
       - FRONTEND_PROXY_SECRET=${FRONTEND_PROXY_SECRET:-}
       - MARKET_FEED_MODE=${MARKET_FEED_MODE:-live}
+      - INDIAN_API_KEY=${INDIAN_API_KEY:-}
+      - INDIAN_API_PLAN=${INDIAN_API_PLAN:-free}
     expose:
       - "8080"
     restart: unless-stopped

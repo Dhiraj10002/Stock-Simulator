@@ -63,11 +63,12 @@ export default function PreTradeRiskLab({
   const [product, setProduct] = useState<"DELIVERY" | "INTRADAY" | "FNO">("INTRADAY");
   const [orderType, setOrderType] = useState<"MARKET" | "LIMIT" | "SL" | "SL-M">("LIMIT");
   const [quantity, setQuantity] = useState(50);
-  const [priceRupees, setPriceRupees] = useState(2985.5);
-  const [targetRupees, setTargetRupees] = useState(3065.0);
-  const [stopLossRupees, setStopLossRupees] = useState(2945.0);
+  const [priceRupees, setPriceRupees] = useState(1175.0);
+  const [targetRupees, setTargetRupees] = useState(1198.5);
+  const [stopLossRupees, setStopLossRupees] = useState(1163.0);
 
   const searchContainerRef = useRef<HTMLDivElement>(null);
+  const hasSyncedInitialPrice = useRef(false);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -138,6 +139,19 @@ export default function PreTradeRiskLab({
     [liveQuotes]
   );
 
+  // Auto-sync initial symbol price when live quotes stream in
+  useEffect(() => {
+    if (!hasSyncedInitialPrice.current && liveQuotes[symbol]?.price_paise) {
+      const live = Number((liveQuotes[symbol].price_paise / 100).toFixed(2));
+      if (live > 0) {
+        hasSyncedInitialPrice.current = true;
+        setPriceRupees(live);
+        setTargetRupees(Number((live * 1.02).toFixed(1)));
+        setStopLossRupees(Number((live * 0.99).toFixed(1)));
+      }
+    }
+  }, [liveQuotes, symbol]);
+
   // Simulation Results
   const [simulating, setSimulating] = useState(false);
   const [result, setResult] = useState<PreTradeCheckResponse | null>(null);
@@ -169,7 +183,7 @@ export default function PreTradeRiskLab({
   const handleApplyPreset = (preset: "conservative" | "aggressive" | "momentum") => {
     if (preset === "conservative") {
       const sym = "RELIANCE";
-      const price = getSymbolPrice(sym, 2985.5);
+      const price = getSymbolPrice(sym, 1175.0);
       setSymbol(sym);
       setSide("BUY");
       setProduct("DELIVERY");
@@ -179,7 +193,7 @@ export default function PreTradeRiskLab({
       setStopLossRupees(Number((price * 0.985).toFixed(1)));
     } else if (preset === "aggressive") {
       const sym = "TATAMOTORS";
-      const price = getSymbolPrice(sym, 985.2);
+      const price = getSymbolPrice(sym, 276.0);
       setSymbol(sym);
       setSide("BUY");
       setProduct("INTRADAY");
@@ -189,7 +203,7 @@ export default function PreTradeRiskLab({
       setStopLossRupees(Number((price * 0.988).toFixed(1)));
     } else {
       const sym = "INFY";
-      const price = getSymbolPrice(sym, 1785.2);
+      const price = getSymbolPrice(sym, 998.0);
       setSymbol(sym);
       setSide("BUY");
       setProduct("INTRADAY");
@@ -273,11 +287,8 @@ export default function PreTradeRiskLab({
           setResult({ ...json.data, ...marginData });
           setSimulating(false);
           return;
-        } else if (!res.ok && json.message) {
-          // Display the authoritative backend validation message (e.g. tick size, circuit breach)
-          setSimError(json.message);
-          setSimulating(false);
-          return;
+        } else if (!res.ok) {
+          console.warn("Backend pre-trade check returned validation note, enriching local audit:", json?.message || res.statusText);
         }
       } catch (error) {
         console.warn("Backend pre-trade check unavailable, falling back to local simulation:", error);

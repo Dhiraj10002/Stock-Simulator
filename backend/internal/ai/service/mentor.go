@@ -128,10 +128,27 @@ func (s *MentorService) PreTradeCheck(ctx context.Context, userID string, req dt
 		price = 0
 	}
 	preview, err := s.OrderPreview(userID, orderDTO.CreateOrderRequest{Symbol: req.Symbol, Side: req.Side, Product: req.Product, Type: orderType, Quantity: req.Quantity, PricePaise: price, TriggerPricePaise: req.StopLossPaise})
+	var availablePaise, requiredMarginPaise int64
+	var orderPreviewWarning string
 	if err != nil {
-		return nil, err
+		orderPreviewWarning = err.Error()
+		unitPrice := price
+		notional := unitPrice * req.Quantity
+		switch req.Product {
+		case model.OrderProductIntraday:
+			requiredMarginPaise = notional / 5
+		default:
+			requiredMarginPaise = notional
+		}
+		var w model.Wallet
+		if db := database.GetDB(); db != nil {
+			if wErr := db.Where("user_uuid = ?", userUUID).First(&w).Error; wErr == nil {
+				availablePaise = w.AvailableBalancePaise()
+			}
+		}
+	} else {
+		availablePaise, requiredMarginPaise = preview.AvailableBalancePaise, preview.RequiredFundsPaise
 	}
-	availablePaise, requiredMarginPaise := preview.AvailableBalancePaise, preview.RequiredFundsPaise
 	var positions []model.Position
 	if db := database.GetDB(); db != nil {
 		if err := db.Where("user_uuid = ? AND quantity <> 0", userUUID).Find(&positions).Error; err != nil {
@@ -170,6 +187,11 @@ func (s *MentorService) PreTradeCheck(ctx context.Context, userID string, req dt
 
 	var warnings []string
 	riskLevel := "SAFE"
+
+	if orderPreviewWarning != "" {
+		riskLevel = "HIGH_RISK"
+		warnings = append(warnings, fmt.Sprintf("Exchange Rule Alert: %s", orderPreviewWarning))
+	}
 
 	// 1. Margin & Capital Warnings
 	if requiredMarginPaise > availablePaise && !(req.Side == "SELL" && req.Product == "DELIVERY") {

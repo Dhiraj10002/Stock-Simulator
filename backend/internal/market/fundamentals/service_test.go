@@ -49,6 +49,42 @@ func TestFundamentalsPreserveUnitsPeriodsAndVerifyIdentity(t *testing.T) {
 		t.Fatalf("failed to normalize IndianAPI format: %+v %v", infyResult, err)
 	}
 }
+
+func TestFundamentalsCuratedKeyMetricsExtraction(t *testing.T) {
+	payload := []byte(`{
+		"companyProfile": {"exchangeCodeNse": "RELIANCE"},
+		"industry": "Oil & Gas Operations",
+		"keyMetrics": {
+			"priceandVolume": [{"key": "marketCap", "value": "1632903.79"}, {"key": "beta", "value": "1.00"}],
+			"valuation": [{"key": "pPerEBasicExcludingExtraordinaryItemsTTM", "value": "23.43"}, {"key": "dividendYield5YearAverage", "value": "0.39"}],
+			"persharedata": [{"key": "ePSIncludingExtraOrdinaryItemsTrailing12Month", "value": "55.22"}],
+			"mgmtEffectiveness": [{"key": "returnOnAverageEquityMostRecentFiscalYear", "value": "8.78"}]
+		}
+	}`)
+	res, err := normalize(payload, "RELIANCE")
+	if err != nil || res.Status != "AVAILABLE" {
+		t.Fatalf("failed to normalize curated metrics: %+v %v", res, err)
+	}
+	expected := map[string]string{
+		"Industry / Sector":      "Oil & Gas Operations",
+		"Market Cap":             "₹1632903.79 Cr",
+		"P/E Ratio (TTM)":        "23.43",
+		"Dividend Yield":         "0.39%",
+		"EPS (TTM)":              "₹55.22",
+		"Return on Equity (ROE)": "8.78%",
+		"Beta (1Y Volatility)":   "1.00",
+	}
+	for _, m := range res.Metrics {
+		if val, ok := expected[m.Label]; ok {
+			if m.Value != val {
+				t.Errorf("label %q: expected %q, got %q", m.Label, val, m.Value)
+			}
+		}
+	}
+	if len(res.Metrics) != len(expected) {
+		t.Errorf("expected %d metrics, got %d", len(expected), len(res.Metrics))
+	}
+}
 func TestFundamentalsUnconfiguredUnknownAndCacheFailureAreExplicit(t *testing.T) {
 	known := func(_ context.Context, s string) bool { return s == "TCS" }
 	s := New("", "free", nil, known)
