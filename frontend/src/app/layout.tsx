@@ -60,9 +60,16 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased dark`}
+      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-slate-50 dark:bg-[#06080e] text-slate-900 dark:text-slate-100 font-sans selection:bg-cyan-500 selection:text-slate-950 pb-16 md:pb-0 transition-colors duration-150 relative">
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var s=localStorage.getItem("stock_sim_theme");var p=window.matchMedia("(prefers-color-scheme: dark)").matches;var isDark=s==="dark"||(!s&&p);var d=document.documentElement;if(isDark){d.classList.add("dark");d.classList.remove("light");d.setAttribute("data-theme","dark");d.style.colorScheme="dark";}else{d.classList.remove("dark");d.classList.add("light");d.setAttribute("data-theme","light");d.style.colorScheme="light";}}catch(e){}})();`,
+          }}
+        />
+      </head>
+      <body className="min-h-full flex flex-col bg-slate-50 dark:bg-[#06080e] text-slate-900 dark:text-slate-100 font-sans selection:bg-cyan-500 selection:text-slate-950 pb-16 md:pb-0 relative">
         {/* MotionSites AI Signature Ambient Depth & Glow Mesh (Dark Mode) */}
         <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden hidden dark:block">
           {/* Top Center Electric Cyan/Indigo Aurora Flare */}

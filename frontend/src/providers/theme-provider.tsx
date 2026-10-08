@@ -29,22 +29,26 @@ function applyTheme(t: Theme) {
 }
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>("dark");
+  const [theme, setThemeState] = useState<Theme>(() => {
+    if (typeof document !== "undefined") {
+      return document.documentElement.classList.contains("dark") ? "dark" : "light";
+    }
+    return "light";
+  });
 
   useEffect(() => {
-    // Check saved theme or system preference
-    const savedTheme = localStorage.getItem("stock_sim_theme") as Theme | null;
-    let initialTheme: Theme = "dark";
-    if (savedTheme === "light" || savedTheme === "dark") {
-      initialTheme = savedTheme;
-    } else {
-      const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-      initialTheme = prefersDark ? "dark" : "light";
-    }
-    applyTheme(initialTheme);
-    queueMicrotask(() => {
-      setThemeState(initialTheme);
-    });
+    // Listen for OS system theme changes if no explicit user override is stored
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const handleChange = (e: MediaQueryListEvent) => {
+      const saved = localStorage.getItem("stock_sim_theme");
+      if (!saved) {
+        const next: Theme = e.matches ? "dark" : "light";
+        applyTheme(next);
+        setThemeState(next);
+      }
+    };
+    media.addEventListener("change", handleChange);
+    return () => media.removeEventListener("change", handleChange);
   }, []);
 
   const setTheme = (t: Theme) => {
