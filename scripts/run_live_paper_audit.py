@@ -17,7 +17,7 @@ import websockets
 
 BASE_URL = "https://stocksim-api.duckdns.org/api/v1"
 WS_URL = "wss://stocksim-api.duckdns.org/ws/market"
-ORIGIN = "https://stock-simulator-gules.vercel.app"
+ORIGIN = os.getenv("AUDIT_ORIGIN", "https://stock-simulator-dev.vercel.app")
 
 EMAIL = "live_audit_20261008@stocksim.in"
 PASSWORD = "TestPassword@123"

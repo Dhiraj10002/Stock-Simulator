@@ -95,6 +95,9 @@ async function main() {
         await cdp.send("Network.emulateNetworkConditions", { offline: false, latency: 150, downloadThroughput: 200000, uploadThroughput: 93750 });
         await cdp.send("Emulation.setCPUThrottlingRate", { rate: desktop ? 1 : 4 });
         const response = await page.goto(origin + path, { waitUntil: "load", timeout: 60000 });
+        if (!response || response.status() >= 400) {
+          throw new Error(`Route navigation to ${origin + path} failed with HTTP status ${response?.status() ?? "no response"}`);
+        }
         await page.waitForTimeout(3500);
         let authenticated = false;
         if (storageState) {
@@ -135,6 +138,16 @@ async function main() {
         runs.push(run);
         if (repeat === 0) await page.screenshot({ path: join(output, `${path.replace(/[^a-z0-9]/gi, "_") || "home"}-${reducedMotion}.png`) });
         console.log(JSON.stringify({ path, reducedMotion, repeat: repeat + 1, ...navigation, pageErrors, failures: failures.length }));
+        if (remote && pageErrors > 0) {
+          throw new Error(`Route ${path} on ${origin} encountered ${pageErrors} uncaught page error(s) during load`);
+        }
+        const apiFailures = failures.filter(f =>
+          typeof f.status === "number" && f.status >= 400 &&
+          (/^\/api\/(v1|backend)\//.test(f.path) || f.path.startsWith("/instruments") || f.path.startsWith("/market"))
+        );
+        if (remote && apiFailures.length > 0) {
+          throw new Error(`Route ${path} on ${origin} encountered ${apiFailures.length} backend API HTTP error(s): ${JSON.stringify(apiFailures)}`);
+        }
       } finally { await context.close(); }
     }
     const result = { mode: remote ? "deployed browser lab; real APIs" : "local production browser lab; public API fixtures", origin, conditions: `${desktop ? "1440x900 desktop, CPU 1x" : "390x844 touch, CPU 4x"}, 1.6 Mbps download, 150 ms latency; cold contexts. Event Timing samples are scripted, not field INP. Redirects recorded. No writes submitted.`, device: desktop ? "desktop" : "mobile", accountWindow, browser: browser.version(), node: process.version, runs };

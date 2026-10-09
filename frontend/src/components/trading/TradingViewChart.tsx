@@ -23,6 +23,7 @@ import {
   Minimize2,
   RefreshCw,
   BarChart3,
+  AlertCircle,
   Eye,
   EyeOff,
   Radio,
@@ -52,6 +53,8 @@ interface TradingViewChartProps {
   historicalCandles?: Candle[];
   liveQuote?: Quote | null;
   isLoading?: boolean;
+  isError?: boolean;
+  errorMessage?: string;
   onRefresh?: () => void;
   height?: number;
   className?: string;
@@ -118,6 +121,8 @@ export default function TradingViewChart({
   historicalCandles = [],
   liveQuote,
   isLoading = false,
+  isError = false,
+  errorMessage,
   onRefresh,
   height = 360,
   className = "",
@@ -814,8 +819,34 @@ export default function TradingViewChart({
         {/* Canvas DOM node */}
         <div ref={containerRef} className="w-full h-full" />
 
+        {/* Network / API Feed Error State */}
+        {isError && !isLoading && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-900/60 backdrop-blur-xs text-center p-6 space-y-3 z-10">
+            <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 shadow-lg">
+              <AlertCircle className="w-8 h-8 text-amber-400 opacity-90" />
+            </div>
+            <div className="space-y-1">
+              <h4 className="text-sm font-bold text-slate-100">
+                Market Data Unavailable
+              </h4>
+              <p className="text-xs text-slate-300 max-w-sm">
+                {errorMessage || `Unable to load market data for ${symbol}. Please check your network connection or backend status.`}
+              </p>
+            </div>
+            {onRefresh && (
+              <button
+                onClick={onRefresh}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition-colors cursor-pointer"
+              >
+                <RefreshCw className="w-3 h-3" />
+                <span>Retry Connection</span>
+              </button>
+            )}
+          </div>
+        )}
+
         {/* Graceful Missing History / Awaiting Data State (NO FAKE CANDLES) */}
-        {!hasData && !isLoading && (
+        {!isError && !hasData && !isLoading && (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-900/40 backdrop-blur-xs text-center p-6 space-y-3 z-10">
             <div className="p-3 rounded-2xl bg-slate-800/80 border border-slate-700/60 shadow-lg">
               <BarChart3 className="w-8 h-8 text-cyan-400 opacity-80" />

@@ -350,6 +350,8 @@ export default function FnoExplorePage({
           now={now}
           status={status}
           catalogPending={catalog.isPending}
+          catalogError={catalog.isError}
+          onRetry={() => catalog.refetch()}
           onOrder={startOrder}
         />
         <>

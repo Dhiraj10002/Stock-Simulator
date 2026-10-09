@@ -402,6 +402,22 @@ function StockDesk({ symbol, token }: { symbol: string; token: string }) {
           <span>{symbol.replace(/-EQ$/, "")}</span>
           <span className="ml-auto">Paper trading desk</span>
         </nav>
+        {instrument.isError && (
+          <div
+            role="alert"
+            className="flex items-center justify-between rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-800 dark:text-amber-300"
+          >
+            <span>
+              Unable to load instrument details for {symbol.replace(/-EQ$/, "")}. Check your backend connection.
+            </span>
+            <button
+              onClick={() => instrument.refetch()}
+              className="ml-2 font-semibold underline"
+            >
+              Retry
+            </button>
+          </div>
+        )}
         <header
           aria-label="Stock identity"
           className={`${panel} flex flex-wrap items-center justify-between gap-5`}
@@ -534,11 +550,22 @@ function StockDesk({ symbol, token }: { symbol: string; token: string }) {
                   timeframe,
                 )}
                 liveQuote={chartQuote}
-                isLoading={history.isLoading}
+                isLoading={history.isLoading || instrument.isPending}
+                isError={instrument.isError || history.isError}
+                errorMessage={
+                  instrument.isError
+                    ? `Instrument data for ${symbol.replace(/-EQ$/, "")} could not be loaded.`
+                    : history.isError
+                      ? `Historical candle feed for ${symbol.replace(/-EQ$/, "")} could not be loaded.`
+                      : undefined
+                }
                 height={380}
                 defaultTimeframe={timeframe}
                 onTimeframeChange={setTimeframe}
-                onRefresh={() => history.refetch()}
+                onRefresh={() => {
+                  if (instrument.isError) void instrument.refetch();
+                  if (history.isError) void history.refetch();
+                }}
               />
             </section>
             <section aria-label="Price performance" className={panel}>
@@ -818,7 +845,7 @@ function StockDesk({ symbol, token }: { symbol: string; token: string }) {
               {!token ? (
                 <>
                   <Link
-                    href={`/login?redirect=/stocks/${canonical}`}
+                    href={`/login?redirect=/stocks/${encodeURIComponent(symbol)}`}
                     className="mt-4 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-sm font-bold text-white shadow-md shadow-cyan-500/20 transition-all hover:scale-[1.01]"
                   >
                     <Lock className="w-4 h-4" />

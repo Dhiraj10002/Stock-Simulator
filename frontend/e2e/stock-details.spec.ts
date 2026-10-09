@@ -439,10 +439,11 @@ test("socket disconnect restores display polling and reconnect cannot reuse earl
   await page.clock.runFor(100);
   await expect(page.locator('header[aria-label="Stock identity"]').getByText("₹1,480.00", { exact: true })).toBeVisible();
   const initial = control.requests.filter(path => path === "/market/quotes/RELIANCE-EQ").length;
+  const beforeDisconnect = control.connectionCount();
   control.disconnect();
   for (let i = 0; i < 3; i++) await page.clock.runFor(5000);
   await expect.poll(() => control.requests.filter(path => path === "/market/quotes/RELIANCE-EQ").length).toBeGreaterThan(initial);
-  expect(control.connectionCount()).toBe(2);
+  expect(control.connectionCount()).toBe(beforeDisconnect + 1);
 });
 
 test("mobile touch ticket and chart stay usable under CPU throttling", async ({ browser }) => {

@@ -383,13 +383,21 @@ export function drawPnlCard(
   ctx.fillStyle = "#94a3b8";
   ctx.font = "bold 12px system-ui, -apple-system, monospace";
   const traderDisplay = data.userName ? `Trader: ${data.userName} • ` : "";
-  ctx.fillText(`${traderDisplay}stock-simulator-gules.vercel.app`, 64, footerY + 36);
+  const domain = typeof window !== "undefined" && window.location?.host ? window.location.host : "stock-simulator-dev.vercel.app";
+  ctx.fillText(`${traderDisplay}${domain}`, 64, footerY + 36);
 
   // Right Footer: Risk-Free Notice
   ctx.textAlign = "right";
   ctx.fillStyle = "rgba(148, 163, 184, 0.65)";
   ctx.font = "500 11px system-ui, -apple-system, sans-serif";
   ctx.fillText("100% Simulated Paper Trading • Real NSE/NFO Market Data Engine", width - 64, footerY + 36);
+}
+
+function getAppOrigin(): string {
+  if (typeof window !== "undefined" && window.location?.origin) {
+    return window.location.origin;
+  }
+  return "https://stock-simulator-dev.vercel.app";
 }
 
 export function exportPnlCardBlob(canvas: HTMLCanvasElement): Promise<Blob | null> {
@@ -430,7 +438,7 @@ export function getTwitterShareUrl(data: PnlCardData): string {
     (data.winRatePct ? `🎯 Win Rate: ${data.winRatePct.toFixed(1)}%\n` : "") +
     (data.disciplineGrade ? `🛡️ AI Discipline Grade: ${data.disciplineGrade}\n\n` : "\n") +
     `Practicing institutional NSE equities & NFO derivatives with zero financial risk. Check it out:`;
-  const url = "https://stock-simulator-gules.vercel.app";
+  const url = getAppOrigin();
   return `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}&hashtags=TradingPnl,NSE,PaperTrading,StockSimulator`;
 }
 
@@ -441,11 +449,11 @@ export function getWhatsAppShareUrl(data: PnlCardData): string {
     `💰 *Net Returns:* ${pnlStr} (${isProfit ? "+" : ""}${data.roiPct.toFixed(2)}% ROI)\n` +
     (data.winRatePct ? `🎯 *Win Rate:* ${data.winRatePct.toFixed(1)}%\n` : "") +
     (data.disciplineGrade ? `🛡️ *AI Discipline:* ${data.disciplineGrade}\n\n` : "\n") +
-    `Practise Indian stocks & F&O with ₹10L virtual money: https://stock-simulator-gules.vercel.app`;
+    `Practise Indian stocks & F&O with ₹10L virtual money: ${getAppOrigin()}`;
   return `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
 }
 
 export function getLinkedInShareUrl(): string {
-  const url = "https://stock-simulator-gules.vercel.app";
+  const url = getAppOrigin();
   return `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(url)}`;
 }

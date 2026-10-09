@@ -32,6 +32,8 @@ export default function TopIndexFutures({
   now,
   status,
   catalogPending,
+  catalogError,
+  onRetry,
   onOrder,
 }: {
   contracts: Instrument[];
@@ -39,6 +41,8 @@ export default function TopIndexFutures({
   now: number;
   status?: FuturesMarketStatus;
   catalogPending?: boolean;
+  catalogError?: boolean;
+  onRetry?: () => void;
   onOrder: (instrument: Instrument, side: "BUY" | "SELL") => void;
 }) {
   const indices = useMemo(
@@ -140,6 +144,23 @@ export default function TopIndexFutures({
               </div>
             </div>
           ))}
+        </div>
+      ) : catalogError ? (
+        <div
+          role="alert"
+          className={`${panel} p-6 text-center text-sm text-amber-800 dark:text-amber-300 space-y-3`}
+        >
+          <p>
+            Index futures catalog unavailable. Unable to load contracts from the backend.
+          </p>
+          {onRetry && (
+            <button
+              onClick={onRetry}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-900 dark:text-amber-200 font-semibold text-xs transition-colors"
+            >
+              Retry loading futures
+            </button>
+          )}
         </div>
       ) : !displayed.length ? (
         <p role="status" className="text-sm text-slate-600 dark:text-slate-400">

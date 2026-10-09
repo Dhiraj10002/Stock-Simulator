@@ -304,7 +304,7 @@ export default function AuthModal({
           <div className="flex items-center justify-between px-3.5 py-2 rounded-xl bg-white/[0.03] border border-white/[0.08] backdrop-blur-sm mb-5 text-[11px] font-mono">
             <div className="flex items-center gap-1.5 text-cyan-300 font-semibold">
               <Zap className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
-              <span>24ms Tick</span>
+              <span>Live Market Ticks</span>
             </div>
             <div className="h-3 w-px bg-white/10" />
             <div className="flex items-center gap-1.5 text-emerald-300 font-semibold">

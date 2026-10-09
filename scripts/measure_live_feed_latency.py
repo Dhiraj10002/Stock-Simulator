@@ -1,4 +1,5 @@
 import asyncio
+import os
 # pyrefly: ignore [missing-import]
 import websockets
 import json
@@ -8,7 +9,7 @@ import statistics
 
 async def measure_feed_latency(sample_count=50):
     uri = "wss://stocksim-api.duckdns.org/ws/market"
-    headers = {"Origin": "https://stock-simulator-gules.vercel.app"}
+    headers = {"Origin": os.getenv("AUDIT_ORIGIN", "https://stock-simulator-dev.vercel.app")}
     symbols = ["RELIANCE", "NIFTY", "INFY", "BANKNIFTY", "TATAMOTORS"]
     
     print(f"Connecting to live feed {uri}...")
