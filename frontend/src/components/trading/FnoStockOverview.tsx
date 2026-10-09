@@ -227,7 +227,8 @@ export default function FnoStockOverview({
 
       {/* 1. TOP 3 POPULAR STOCK CARDS (RELIANCE, HDFCBANK, TCS) */}
       <section aria-label="Featured F&O stocks" className="grid min-w-0 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
-        {featured.map((instrument) => {
+        {featured.length > 0 ? (
+          featured.map((instrument) => {
           const underlying = equityUnderlying(instrument);
           const future = currentFuture(underlying);
           const quote = display[instrument.symbol];
@@ -294,7 +295,33 @@ export default function FnoStockOverview({
               </div>
             </article>
           );
-        })}
+        })
+        ) : catalog.isPending ? (
+          [1, 2, 3].map((i) => (
+            <div
+              key={i}
+              className={`${panel} flex min-h-[160px] min-w-0 flex-col justify-between p-4 animate-pulse`}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="space-y-1.5">
+                  <div className="h-4 w-24 rounded bg-slate-200 dark:bg-slate-800" />
+                  <div className="h-3 w-36 rounded bg-slate-100 dark:bg-slate-800/60" />
+                </div>
+                <div className="h-10 w-14 rounded bg-slate-200 dark:bg-slate-800" />
+              </div>
+              <div className="flex items-end justify-between pt-2 border-t border-slate-100 dark:border-slate-800/80">
+                <div className="space-y-1">
+                  <div className="h-5 w-20 rounded bg-slate-200 dark:bg-slate-800" />
+                  <div className="h-3 w-14 rounded bg-slate-100 dark:bg-slate-800/60" />
+                </div>
+                <div className="flex gap-1.5">
+                  <div className="h-7 w-14 rounded-lg bg-slate-200 dark:bg-slate-800" />
+                  <div className="h-7 w-14 rounded-lg bg-slate-200 dark:bg-slate-800" />
+                </div>
+              </div>
+            </div>
+          ))
+        ) : null}
       </section>
 
       {/* 2. F&O STOCKS TABLE (EXACTLY 6 ROWS, NO SEARCH, NO PAGINATION) */}

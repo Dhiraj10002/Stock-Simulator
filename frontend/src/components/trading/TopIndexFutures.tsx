@@ -31,12 +31,14 @@ export default function TopIndexFutures({
   active,
   now,
   status,
+  catalogPending,
   onOrder,
 }: {
   contracts: Instrument[];
   active: boolean;
   now: number;
   status?: FuturesMarketStatus;
+  catalogPending?: boolean;
   onOrder: (instrument: Instrument, side: "BUY" | "SELL") => void;
 }) {
   const indices = useMemo(
@@ -117,7 +119,7 @@ export default function TopIndexFutures({
           Index quote refresh failed. Retained prices are last available.
         </p>
       )}
-      {!displayed.length && symbols.length > 0 && query.isPending ? (
+      {catalogPending ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3.5 animate-pulse" aria-label="Loading top traded index futures">
           {[1, 2, 3, 4].map((i) => (
             <div

@@ -80,11 +80,13 @@ export default function Navbar({
   const serverMarketStatus = useMarketStore((s) => s.marketStatus);
   const connectionState = useMarketStore((s) => s.connectionState);
 
+  const segment = pathname?.startsWith("/options") ? "NFO" : "NSE";
   const authoritativeStatus = getAuthoritativeFeedStatus(
     feedStatus,
     serverMarketStatus,
     connectionState,
-    clientIstTime
+    clientIstTime,
+    segment
   );
 
   const token = useAuthToken();

@@ -14,29 +14,115 @@ export interface AuthoritativeStatusInfo {
   tooltip: string;
 }
 
-export function getAuthoritativeFeedStatus(
-  feedStatus: FeedStatus,
-  marketStatus: MarketStatus,
-  connectionState: ConnectionState,
-  clientIstTime?: string
-): AuthoritativeStatusInfo {
-  // 1. If exchange session is confirmed CLOSED (outside 09:15-15:30 IST):
-  if (marketStatus === "CLOSED") {
-    const displaySub = clientIstTime || "15:30 IST";
-    const currentClock = clientIstTime ? ` (Current: ${clientIstTime})` : "";
+export interface SegmentSessionSchedule {
+  segmentName: string;
+  openTime: string;
+  closeTime: string;
+  schedule: string;
+}
+
+export function getSegmentSessionSchedule(segment?: string): SegmentSessionSchedule {
+  const seg = (segment || "").toUpperCase().trim();
+  if (seg === "NFO" || seg === "FO" || seg === "FNO" || seg === "DERIVATIVES") {
     return {
-      badgeText: "MARKET CLOSED",
-      subText: displaySub,
-      fullLabel: `MARKET CLOSED — ${displaySub}`,
+      segmentName: "NSE NFO Equity Derivatives",
+      openTime: "09:15 IST",
+      closeTime: "15:40 IST",
+      schedule: "(09:15 - 15:40 IST)",
+    };
+  }
+  return {
+    segmentName: "NSE/BSE",
+    openTime: "09:15 IST",
+    closeTime: "15:30 IST",
+    schedule: "(09:15 - 15:30 IST)",
+  };
+}
+
+export function formatNonOpenSessionStatus(
+  marketStatus: MarketStatus,
+  clientIstTime?: string,
+  segment?: string
+): AuthoritativeStatusInfo {
+  const schedule = getSegmentSessionSchedule(segment);
+  const currentClock = clientIstTime ? ` (Current: ${clientIstTime})` : "";
+  const displaySub = clientIstTime || schedule.closeTime;
+
+  if (marketStatus === "PRE_OPEN") {
+    const sub = clientIstTime || "09:00 IST";
+    return {
+      badgeText: "PRE-OPEN",
+      subText: sub,
+      fullLabel: `PRE-OPEN — ${sub}`,
       bannerType: "closed",
-      bannerTitle: "MARKET CLOSED",
-      bannerDescription: `NSE/BSE regular trading session is closed (09:15 - 15:30 IST). Regular trading session closed at 15:30 IST${currentClock}. Orders placed now follow market hours rules.`,
+      bannerTitle: "PRE-OPEN DISCOVERY",
+      bannerDescription: `${schedule.segmentName} order discovery session is active (09:00 - 09:15 IST). Regular continuous trading opens at ${schedule.openTime}${currentClock}.`,
       bannerClasses: "bg-amber-50 border-amber-200 text-amber-800 dark:bg-amber-950/40 dark:border-amber-500/30 dark:text-amber-200",
       pillClasses: "bg-amber-50 border-amber-200 text-amber-700 dark:bg-amber-950/40 dark:border-amber-500/30 dark:text-amber-300",
       dotClasses: "bg-amber-400/80",
       isLive: false,
-      tooltip: `NSE/BSE Market closed. Regular trading session closed at 15:30 IST${currentClock}.`,
+      tooltip: `${schedule.segmentName} Pre-open session active. Regular trading session opens at ${schedule.openTime}${currentClock}.`,
     };
+  }
+
+  if (marketStatus === "POST_MARKET") {
+    return {
+      badgeText: "POST-MARKET",
+      subText: displaySub,
+      fullLabel: `POST-MARKET — ${displaySub}`,
+      bannerType: "closed",
+      bannerTitle: "POST-MARKET SESSION",
+      bannerDescription: `${schedule.segmentName} regular trading session ended at ${schedule.closeTime}. Post-closing session active${currentClock}.`,
+      bannerClasses: "bg-amber-50 border-amber-200 text-amber-800 dark:bg-amber-950/40 dark:border-amber-500/30 dark:text-amber-200",
+      pillClasses: "bg-amber-50 border-amber-200 text-amber-700 dark:bg-amber-950/40 dark:border-amber-500/30 dark:text-amber-300",
+      dotClasses: "bg-amber-400/80",
+      isLive: false,
+      tooltip: `${schedule.segmentName} Post-market session. Regular session closed at ${schedule.closeTime}${currentClock}.`,
+    };
+  }
+
+  if (marketStatus === "HOLIDAY") {
+    return {
+      badgeText: "EXCHANGE HOLIDAY",
+      subText: "CLOSED",
+      fullLabel: "EXCHANGE HOLIDAY — CLOSED",
+      bannerType: "closed",
+      bannerTitle: "EXCHANGE HOLIDAY",
+      bannerDescription: `Indian stock exchanges (${schedule.segmentName}) are closed today for an official trading holiday${currentClock}. Orders placed now follow AMO rules.`,
+      bannerClasses: "bg-amber-50 border-amber-200 text-amber-800 dark:bg-amber-950/40 dark:border-amber-500/30 dark:text-amber-200",
+      pillClasses: "bg-amber-50 border-amber-200 text-amber-700 dark:bg-amber-950/40 dark:border-amber-500/30 dark:text-amber-300",
+      dotClasses: "bg-amber-400/80",
+      isLive: false,
+      tooltip: `${schedule.segmentName} Official exchange holiday. Next regular trading session opens at ${schedule.openTime}.`,
+    };
+  }
+
+  // Default CLOSED (regular trading session closed):
+  return {
+    badgeText: "MARKET CLOSED",
+    subText: displaySub,
+    fullLabel: `MARKET CLOSED — ${displaySub}`,
+    bannerType: "closed",
+    bannerTitle: "MARKET CLOSED",
+    bannerDescription: `${schedule.segmentName} regular trading session is closed ${schedule.schedule}. Regular trading session closed at ${schedule.closeTime}${currentClock}. Orders placed now follow market hours rules.`,
+    bannerClasses: "bg-amber-50 border-amber-200 text-amber-800 dark:bg-amber-950/40 dark:border-amber-500/30 dark:text-amber-200",
+    pillClasses: "bg-amber-50 border-amber-200 text-amber-700 dark:bg-amber-950/40 dark:border-amber-500/30 dark:text-amber-300",
+    dotClasses: "bg-amber-400/80",
+    isLive: false,
+    tooltip: `${schedule.segmentName} Market closed. Regular trading session closed at ${schedule.closeTime}${currentClock}.`,
+  };
+}
+
+export function getAuthoritativeFeedStatus(
+  feedStatus: FeedStatus,
+  marketStatus: MarketStatus,
+  connectionState: ConnectionState,
+  clientIstTime?: string,
+  segment?: string
+): AuthoritativeStatusInfo {
+  // 1. If exchange session is confirmed non-open (CLOSED, PRE_OPEN, POST_MARKET, HOLIDAY):
+  if (marketStatus !== "OPEN") {
+    return formatNonOpenSessionStatus(marketStatus, clientIstTime, segment);
   }
 
   // 2. If market is open and frontend WS connection is disconnected:
@@ -56,7 +142,7 @@ export function getAuthoritativeFeedStatus(
     };
   }
 
-  // 2. If backend feed supervisor is unavailable:
+  // 3. If backend feed supervisor is unavailable:
   if (feedStatus.feedState === "UNAVAILABLE") {
     return {
       badgeText: "UNAVAILABLE",
@@ -73,7 +159,7 @@ export function getAuthoritativeFeedStatus(
     };
   }
 
-  // 3. If backend feed supervisor is reconnecting / retrying:
+  // 4. If backend feed supervisor is reconnecting / retrying:
   if (feedStatus.feedState === "RETRYING" || feedStatus.feedState === "DISCONNECTED") {
     return {
       badgeText: "DISCONNECTED",
@@ -90,7 +176,7 @@ export function getAuthoritativeFeedStatus(
     };
   }
 
-  // 4. If connecting:
+  // 5. If connecting:
   if (feedStatus.feedState === "CONNECTING" || connectionState === "connecting") {
     const sub = feedStatus.feedProvider === "angel_one" ? "ANGEL ONE" : "CONNECTING";
     return {
@@ -108,7 +194,7 @@ export function getAuthoritativeFeedStatus(
     };
   }
 
-  // 5. If synthetic simulation feed:
+  // 6. If synthetic simulation feed:
   if (feedStatus.isSynthetic || feedStatus.feedProvider === "synthetic" || feedStatus.feedState === "FALLBACK") {
     return {
       badgeText: "SIMULATION",
@@ -125,42 +211,24 @@ export function getAuthoritativeFeedStatus(
     };
   }
 
-  // 6. If Angel One live feed:
+  // 7. If Angel One live feed:
   if (feedStatus.feedProvider === "angel_one" && feedStatus.feedState === "LIVE") {
-    const isMarketOpen = marketStatus === "OPEN";
-    if (isMarketOpen) {
-      return {
-        badgeText: "LIVE",
-        subText: "ANGEL ONE",
-        fullLabel: "LIVE FEED — ANGEL ONE",
-        bannerType: "live",
-        bannerTitle: "LIVE FEED",
-        bannerDescription: "Connected directly to Angel One institutional exchange feed. Real-time NSE/BSE market ticks active.",
-        bannerClasses: "bg-emerald-50 border-emerald-200 text-emerald-800 dark:bg-emerald-950/40 dark:border-emerald-500/30 dark:text-emerald-200",
-        pillClasses: "bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-950/40 dark:border-emerald-500/30 dark:text-emerald-300 dark:shadow-[0_0_12px_-2px_rgba(16,185,129,0.2)]",
-        dotClasses: "bg-emerald-400 animate-pulse",
-        isLive: true,
-        tooltip: "Connected to Angel One real-time institutional exchange feed",
-      };
-    } else {
-      const timeStr = clientIstTime || "15:30 IST";
-      return {
-        badgeText: "MARKET CLOSED",
-        subText: timeStr,
-        fullLabel: `MARKET CLOSED — ${timeStr}`,
-        bannerType: "closed",
-        bannerTitle: "MARKET CLOSED",
-        bannerDescription: `NSE/BSE regular trading session is closed (09:15 - 15:30 IST). Last session closed at ${timeStr}. Orders placed now follow market hours rules.`,
-        bannerClasses: "bg-amber-50 border-amber-200 text-amber-800 dark:bg-amber-950/40 dark:border-amber-500/30 dark:text-amber-200",
-        pillClasses: "bg-amber-50 border-amber-200 text-amber-700 dark:bg-amber-950/40 dark:border-amber-500/30 dark:text-amber-300",
-        dotClasses: "bg-amber-400/80",
-        isLive: false,
-        tooltip: `NSE/BSE Market closed. Last exchange session closed at ${timeStr}`,
-      };
-    }
+    return {
+      badgeText: "LIVE",
+      subText: "ANGEL ONE",
+      fullLabel: "LIVE FEED — ANGEL ONE",
+      bannerType: "live",
+      bannerTitle: "LIVE FEED",
+      bannerDescription: "Connected directly to Angel One institutional exchange feed. Real-time NSE/BSE market ticks active.",
+      bannerClasses: "bg-emerald-50 border-emerald-200 text-emerald-800 dark:bg-emerald-950/40 dark:border-emerald-500/30 dark:text-emerald-200",
+      pillClasses: "bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-950/40 dark:border-emerald-500/30 dark:text-emerald-300 dark:shadow-[0_0_12px_-2px_rgba(16,185,129,0.2)]",
+      dotClasses: "bg-emerald-400 animate-pulse",
+      isLive: true,
+      tooltip: "Connected to Angel One real-time institutional exchange feed",
+    };
   }
 
-  // 7. Default fallback:
+  // 8. Default fallback:
   return {
     badgeText: "SIMULATION",
     subText: "SYNTHETIC",

@@ -844,7 +844,7 @@ export default function LandingPage() {
                   <div className="pt-2 border-t border-white/[0.06] flex items-center justify-between text-[10px] font-mono text-emerald-300">
                     <span className="flex items-center gap-1 font-semibold">
                       <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                      Matched in 0.04s
+                      Simulated Fill · Executed
                     </span>
                     <span className="text-slate-400">Brokerage ₹0</span>
                   </div>
@@ -1208,7 +1208,7 @@ export default function LandingPage() {
             </div>
             <h2 className="text-3xl sm:text-4xl lg:text-5xl font-black uppercase tracking-tight leading-tight">
               <AnimatedPhrase
-                phrase="Trusted by"
+                phrase="Designed for"
                 className=""
                 letterClassName="text-white"
               />{" "}
@@ -1236,17 +1236,17 @@ export default function LandingPage() {
                       ))}
                     </div>
                     <span className="text-[10px] sm:text-[11px] font-mono px-3 py-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 font-bold">
-                      500+ STUDENTS MENTORED
+                      EDUCATION LAB PROFILE
                     </span>
                   </div>
 
                   <p className="text-slate-200 text-xs sm:text-[14px] lg:text-[14.5px] leading-relaxed italic mb-4">
-                    &ldquo;I train 500+ students with zero financial risk. The AI Mentor trade audits and real-time execution analytics turn paper practice into a genuinely professional classroom.&rdquo;
+                    &ldquo;I practice teaching market structure with zero financial risk. The AI Mentor trade audits and real-time execution analytics turn paper practice into a genuinely professional classroom.&rdquo;
                   </p>
 
                   <div className="p-2.5 sm:p-3 rounded-xl bg-white/[0.03] border border-white/[0.06] flex items-center justify-between text-xs sm:text-[12.5px] font-mono text-slate-300 mb-4">
-                    <span className="text-emerald-300 font-bold">Institutional Partner</span>
-                    <span className="text-teal-300 font-bold">Indian Market Academy</span>
+                    <span className="text-emerald-300 font-bold">Simulated Curriculum</span>
+                    <span className="text-teal-300 font-bold">Market Education Lab</span>
                   </div>
                 </div>
 
@@ -1304,7 +1304,7 @@ export default function LandingPage() {
                       <div className="text-[10px] sm:text-[11px] font-mono text-slate-400">Full-Time Intraday Scalper</div>
                     </div>
                     <span className="text-[9px] font-mono font-bold text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 rounded">
-                      SAMPLE
+                      SAMPLE STORY
                     </span>
                   </div>
                 </div>
@@ -1334,7 +1334,7 @@ export default function LandingPage() {
 
                   <div className="p-2.5 sm:p-3 rounded-xl bg-white/[0.03] border border-white/[0.06] flex items-center justify-between text-xs sm:text-[12.5px] font-mono text-slate-300 mb-4">
                     <span className="text-cyan-300 font-bold">NIFTY 50 Options</span>
-                    <span className="text-emerald-400 font-bold">Win Rate 74%</span>
+                    <span className="text-emerald-400 font-bold">Simulated Run · 74%</span>
                   </div>
                 </div>
 
@@ -1348,7 +1348,7 @@ export default function LandingPage() {
                       <div className="text-[10px] sm:text-[11px] font-mono text-slate-400">College Finance Student</div>
                     </div>
                     <span className="text-[9px] font-mono font-bold text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 rounded">
-                      SAMPLE
+                      SAMPLE STORY
                     </span>
                   </div>
                 </div>
@@ -1378,7 +1378,7 @@ export default function LandingPage() {
 
                   <div className="p-2.5 sm:p-3 rounded-xl bg-white/[0.03] border border-white/[0.06] flex items-center justify-between text-xs sm:text-[12.5px] font-mono text-slate-300 mb-4">
                     <span className="text-purple-300 font-bold">Midcap Momentum</span>
-                    <span className="text-emerald-400 font-bold">Win Rate 68%</span>
+                    <span className="text-emerald-400 font-bold">Simulated Run · 68%</span>
                   </div>
                 </div>
 
@@ -1392,7 +1392,7 @@ export default function LandingPage() {
                       <div className="text-[10px] sm:text-[11px] font-mono text-slate-400">Systematic Algo Trader</div>
                     </div>
                     <span className="text-[9px] font-mono font-bold text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 rounded">
-                      SAMPLE
+                      SAMPLE STORY
                     </span>
                   </div>
                 </div>

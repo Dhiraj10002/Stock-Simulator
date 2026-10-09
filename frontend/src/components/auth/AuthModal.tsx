@@ -81,7 +81,7 @@ export default function AuthModal({
     };
     window.addEventListener("resize", onResize);
 
-    const count = 480;
+    const count = mobile.matches || reduced.matches ? 80 : 240;
     const particles = Array.from({ length: count }, () => {
       const colorObj = PARTICLE_PALETTE[Math.floor(Math.random() * PARTICLE_PALETTE.length)];
       return {
@@ -109,7 +109,7 @@ export default function AuthModal({
       const cx = width / 2;
       const cy = height / 2;
       const speed = reduced.matches ? 0 : 2.9;
-      const visibleCount = reduced.matches || mobile.matches ? 120 : count;
+      const visibleCount = count;
 
       for (let i = 0; i < visibleCount; i++) {
         const p = particles[i];
@@ -144,9 +144,14 @@ export default function AuthModal({
     };
     document.addEventListener("visibilitychange", restart);
     reduced.addEventListener("change", restart);
-    restart();
+
+    // Defer start slightly so initial card paint & LCP element render smoothly on mobile CPU
+    const startTimer = setTimeout(() => {
+      restart();
+    }, 120);
 
     return () => {
+      clearTimeout(startTimer);
       window.removeEventListener("resize", onResize);
       document.removeEventListener("visibilitychange", restart);
       reduced.removeEventListener("change", restart);

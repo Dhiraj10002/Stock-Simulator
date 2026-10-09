@@ -833,11 +833,32 @@ export default function StocksExplorePage() {
                         );
                       })
                     ) : (
-                      <tr>
-                        <td colSpan={5} className="py-8 text-center text-xs text-slate-400">
-                          Awaiting live market feed ticks...
-                        </td>
-                      </tr>
+                      [1, 2, 3, 4, 5, 6].map((i) => (
+                        <tr key={i} className="animate-pulse">
+                          <td className="py-3 pr-4">
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-7 h-7 rounded-md bg-slate-200 dark:bg-slate-800" />
+                              <div className="space-y-1">
+                                <div className="w-20 h-3.5 rounded bg-slate-200 dark:bg-slate-800" />
+                                <div className="w-28 h-2.5 rounded bg-slate-100 dark:bg-slate-800/60" />
+                              </div>
+                            </div>
+                          </td>
+                          <td className="py-3 px-2 text-center hidden sm:table-cell">
+                            <div className="w-20 h-3.5 mx-auto rounded bg-slate-100 dark:bg-slate-800" />
+                          </td>
+                          <td className="py-3 pl-2 pr-4 text-right">
+                            <div className="w-16 h-3.5 ml-auto rounded bg-slate-200 dark:bg-slate-800" />
+                            <div className="w-20 h-2.5 ml-auto mt-1 rounded bg-slate-100 dark:bg-slate-800/60" />
+                          </td>
+                          <td className="py-3 px-2 text-right hidden md:table-cell">
+                            <div className="w-14 h-3.5 ml-auto rounded bg-slate-100 dark:bg-slate-800" />
+                          </td>
+                          <td className="py-3 pl-2 text-right">
+                            <div className="w-12 h-6 ml-auto rounded-lg bg-slate-200 dark:bg-slate-800" />
+                          </td>
+                        </tr>
+                      ))
                     )}
                   </tbody>
                 </table>
@@ -1104,9 +1125,12 @@ export default function StocksExplorePage() {
                   </button>
                 </div>
               ) : !portfolio ? (
-                <p role="status" className="py-4 text-center text-xs text-slate-500">
-                  {token ? "Loading portfolio..." : "Sign in to view your portfolio."}
-                </p>
+                <div role="status" className="py-4 text-center text-xs text-slate-500 min-h-[140px] flex flex-col items-center justify-center space-y-2">
+                  <div className="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400">
+                    <WalletIcon className="w-5 h-5 animate-pulse" />
+                  </div>
+                  <span>{token ? "Loading portfolio..." : "Sign in to view your portfolio."}</span>
+                </div>
               ) : positionsCount === 0 ? (
                 /* Empty state matching the reference */
                 <div className="py-4 text-center space-y-3">
@@ -1213,8 +1237,9 @@ export default function StocksExplorePage() {
               const vix = quotes["INDIA VIX"];
               const hasVix = Boolean(vix && vix.price_paise > 0);
               const vixPrice = hasVix ? vix!.price_paise / 100 : null;
-              const vixChange = hasVix ? (vix!.change_percent ?? 0) : null;
-              const isVixUp = (vixChange ?? 0) > 0;
+              const vixMov = vix ? dayMovement(vix) : undefined;
+              const vixChange = vixMov ? vixMov.percent : null;
+              const isVixUp = vixChange !== null && vixChange > 0;
               const vixRegime = vixPrice !== null
                 ? vixPrice > 20
                   ? "High Volatility (Caution)"
@@ -1224,10 +1249,11 @@ export default function StocksExplorePage() {
                 : "Awaiting Live Ticks";
 
               const nifty = quotes["NIFTY"] || quotes["NIFTY 50"];
-              const hasNifty = Boolean(nifty && typeof nifty.change_percent === "number");
-              const niftyChg = hasNifty ? nifty!.change_percent : null;
-              const isBullish = (niftyChg ?? 0) > 0.3;
-              const isBearish = (niftyChg ?? 0) < -0.3;
+              const niftyMov = nifty ? dayMovement(nifty) : undefined;
+              const niftyChg = niftyMov ? niftyMov.percent : null;
+              const hasNifty = niftyChg !== null;
+              const isBullish = hasNifty && niftyChg > 0.3;
+              const isBearish = hasNifty && niftyChg < -0.3;
               const sentimentLabel = !hasNifty
                 ? "Neutral / Awaiting"
                 : isBullish
@@ -1245,9 +1271,9 @@ export default function StocksExplorePage() {
               const sentimentDesc = !hasNifty
                 ? "Awaiting index feed"
                 : isBullish
-                ? `NIFTY ${niftyChg! > 0 ? "+" : ""}${niftyChg!.toFixed(2)}% upward bias`
+                ? `NIFTY ${niftyChg > 0 ? "+" : ""}${niftyChg.toFixed(2)}% upward bias`
                 : isBearish
-                ? `NIFTY ${niftyChg!.toFixed(2)}% downward bias`
+                ? `NIFTY ${niftyChg.toFixed(2)}% downward bias`
                 : "Rangebound consolidation";
 
               return (
@@ -1265,9 +1291,13 @@ export default function StocksExplorePage() {
                       <div className="text-[10px] text-slate-400">INDIA VIX</div>
                       <div className="text-sm font-bold text-slate-900 dark:text-slate-100 font-tabular mt-0.5 flex items-center gap-1">
                         <span>{vixPrice !== null ? vixPrice.toFixed(2) : "—"}</span>
-                        {vixChange !== null && (
+                        {vixChange !== null ? (
                           <span className={`text-[10px] font-semibold ${isVixUp ? "text-amber-600 dark:text-amber-400" : "text-emerald-600 dark:text-emerald-400"}`}>
                             {isVixUp ? "+" : ""}{vixChange.toFixed(1)}%
+                          </span>
+                        ) : (
+                          <span className="text-[9px] text-slate-400 font-normal">
+                            Day change unavailable
                           </span>
                         )}
                       </div>

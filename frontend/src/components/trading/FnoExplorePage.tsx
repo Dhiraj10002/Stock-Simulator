@@ -349,6 +349,7 @@ export default function FnoExplorePage({
           active={active}
           now={now}
           status={status}
+          catalogPending={catalog.isPending}
           onOrder={startOrder}
         />
         <>

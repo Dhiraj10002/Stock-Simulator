@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { getAuthoritativeFeedStatus } from "./feedStatus";
+import { getAuthoritativeFeedStatus, getSegmentSessionSchedule } from "./feedStatus";
 
 test("feedStatus: Angel One live feed with open market", () => {
   const result = getAuthoritativeFeedStatus(
@@ -24,6 +24,78 @@ test("feedStatus: Angel One live feed with closed market", () => {
   assert.equal(result.badgeText, "MARKET CLOSED");
   assert.equal(result.subText, "15:30 IST");
   assert.equal(result.isLive, false);
+});
+
+test("feedStatus: Current clock late evening does not claim last session closed at current clock", () => {
+  const result = getAuthoritativeFeedStatus(
+    { feedProvider: "angel_one", feedState: "LIVE", isSynthetic: false },
+    "CLOSED",
+    "connected",
+    "22:15 IST"
+  );
+  assert.equal(result.badgeText, "MARKET CLOSED");
+  assert.equal(result.subText, "22:15 IST");
+  assert.equal(result.isLive, false);
+  // Must cite official 15:30 IST session close, never claiming the session closed at 22:15 IST
+  assert.match(result.tooltip, /Regular trading session closed at 15:30 IST \(Current: 22:15 IST\)/);
+  assert.match(result.bannerDescription, /Regular trading session closed at 15:30 IST \(Current: 22:15 IST\)/);
+});
+
+test("feedStatus: Derivatives NFO segment reflects official 15:40 close", () => {
+  const result = getAuthoritativeFeedStatus(
+    { feedProvider: "angel_one", feedState: "LIVE", isSynthetic: false },
+    "CLOSED",
+    "connected",
+    "18:00 IST",
+    "NFO"
+  );
+  assert.equal(result.badgeText, "MARKET CLOSED");
+  assert.equal(result.isLive, false);
+  assert.match(result.tooltip, /Regular trading session closed at 15:40 IST/);
+  assert.match(result.bannerDescription, /09:15 - 15:40 IST/);
+});
+
+test("feedStatus: Segment session schedule resolver", () => {
+  const nse = getSegmentSessionSchedule("NSE");
+  assert.equal(nse.closeTime, "15:30 IST");
+  const nfo = getSegmentSessionSchedule("NFO");
+  assert.equal(nfo.closeTime, "15:40 IST");
+});
+
+test("feedStatus: Pre-open discovery session", () => {
+  const result = getAuthoritativeFeedStatus(
+    { feedProvider: "angel_one", feedState: "LIVE", isSynthetic: false },
+    "PRE_OPEN",
+    "connected",
+    "09:05 IST"
+  );
+  assert.equal(result.badgeText, "PRE-OPEN");
+  assert.equal(result.isLive, false);
+  assert.match(result.bannerDescription, /discovery session is active/);
+  assert.match(result.tooltip, /opens at 09:15 IST/);
+});
+
+test("feedStatus: Post-market session", () => {
+  const result = getAuthoritativeFeedStatus(
+    { feedProvider: "angel_one", feedState: "LIVE", isSynthetic: false },
+    "POST_MARKET",
+    "connected",
+    "15:45 IST"
+  );
+  assert.equal(result.badgeText, "POST-MARKET");
+  assert.equal(result.isLive, false);
+  assert.match(result.bannerDescription, /Post-closing session active/);
+});
+
+test("feedStatus: Exchange holiday", () => {
+  const result = getAuthoritativeFeedStatus(
+    { feedProvider: "angel_one", feedState: "LIVE", isSynthetic: false },
+    "HOLIDAY",
+    "connected"
+  );
+  assert.equal(result.badgeText, "EXCHANGE HOLIDAY");
+  assert.equal(result.isLive, false);
+  assert.match(result.bannerDescription, /official trading holiday/);
 });
 
 test("feedStatus: Synthetic fallback feed", () => {
@@ -71,4 +143,3 @@ test("feedStatus: Explicit UNAVAILABLE state", () => {
   assert.equal(result.isLive, false);
   assert.match(result.pillClasses, /rose/);
 });
-
