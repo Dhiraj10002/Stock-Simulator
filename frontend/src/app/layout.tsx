@@ -5,7 +5,6 @@ import "./globals.css";
 import { ToastProvider } from "@/components/ui/ToastProvider";
 import { ThemeProvider } from "@/providers/theme-provider";
 import MobileBottomNav from "@/components/layout/MobileBottomNav";
-import PwaInstallPrompt from "@/components/layout/PwaInstallPrompt";
 
 const geistSans = Geist({
   variable: "--font-sans",
@@ -103,7 +102,6 @@ export default function RootLayout({
             <ToastProvider>
               {children}
               <MobileBottomNav />
-              <PwaInstallPrompt />
             </ToastProvider>
           </ThemeProvider>
         </div>
