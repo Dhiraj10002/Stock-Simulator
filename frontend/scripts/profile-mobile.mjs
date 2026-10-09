@@ -57,7 +57,11 @@ async function main() {
           requests.push(entry);
           requestData.set(req, { entry, start: performance.now() });
         });
-        page.on("requestfailed", req => failures.push({ path: reportPath(req.url()), kind: "network" }));
+        page.on("requestfailed", req => {
+          const errorText = req.failure()?.errorText || "unknown";
+          const isAborted = errorText === "net::ERR_ABORTED" || errorText === "NS_BINDING_ABORTED";
+          failures.push({ path: reportPath(req.url()), kind: isAborted ? "aborted" : "network", errorText });
+        });
         page.on("response", response => {
           const path = reportPath(response.url());
           const record = requestData.get(response.request());
@@ -78,9 +82,39 @@ async function main() {
         // reach the actual deployed services; no account writes or order submissions.
         if (!remote && !storageState) await page.route("**/api/v1/**", route => route.fulfill({ json: { success: true, data: [] } }));
         await page.addInitScript(() => {
-          window.__mobileLab = { lcpMs: null, cls: 0, longTasks: [], events: [] };
+          window.__mobileLab = { lcpMs: null, cls: 0, sessionCls: 0, longTasks: [], events: [], shiftAttributions: [] };
           new PerformanceObserver(list => { for (const entry of list.getEntries()) window.__mobileLab.lcpMs = entry.startTime; }).observe({ type: "largest-contentful-paint", buffered: true });
-          new PerformanceObserver(list => { for (const entry of list.getEntries()) if (!entry.hadRecentInput) window.__mobileLab.cls += entry.value; }).observe({ type: "layout-shift", buffered: true });
+          let sessionValue = 0, sessionEntries = [];
+          new PerformanceObserver(list => {
+            for (const entry of list.getEntries()) {
+              if (!entry.hadRecentInput) {
+                window.__mobileLab.cls += entry.value;
+                const firstEntry = sessionEntries[0];
+                const lastEntry = sessionEntries[sessionEntries.length - 1];
+                if (sessionValue && entry.startTime - lastEntry.startTime < 1000 && entry.startTime - firstEntry.startTime < 5000) {
+                  sessionValue += entry.value;
+                  sessionEntries.push(entry);
+                } else {
+                  sessionValue = entry.value;
+                  sessionEntries = [entry];
+                }
+                if (sessionValue > window.__mobileLab.sessionCls) {
+                  window.__mobileLab.sessionCls = sessionValue;
+                }
+                if (entry.sources && entry.value > 0.01) {
+                  window.__mobileLab.shiftAttributions.push({
+                    value: entry.value,
+                    sources: entry.sources.map(s => ({
+                      tag: s.node?.nodeName,
+                      className: s.node?.className?.toString().slice(0, 50),
+                      prevY: s.previousRect?.y,
+                      currY: s.currentRect?.y,
+                    })),
+                  });
+                }
+              }
+            }
+          }).observe({ type: "layout-shift", buffered: true });
           new PerformanceObserver(list => { for (const entry of list.getEntries()) window.__mobileLab.longTasks.push(entry.duration); }).observe({ type: "longtask", buffered: true });
           const collect = list => { for (const entry of list.getEntries()) if (entry.interactionId) window.__mobileLab.events.push({ name: entry.name, durationMs: entry.duration, inputDelayMs: entry.processingStart - entry.startTime }); };
           new PerformanceObserver(collect).observe({ type: "event", buffered: true, durationThreshold: 16 });
@@ -98,6 +132,18 @@ async function main() {
         if (!response || response.status() >= 400) {
           throw new Error(`Route navigation to ${origin + path} failed with HTTP status ${response?.status() ?? "no response"}`);
         }
+        // Content readiness assertions: confirm page DOM initialized
+        try {
+          if (path === "/") {
+            await page.locator("main, h1, a[href='#platform']").first().waitFor({ timeout: 5000 });
+          } else if (path === "/login") {
+            await page.locator("input[type='email']").waitFor({ timeout: 5000 });
+          } else if (path === "/stocks") {
+            await page.locator("main").waitFor({ timeout: 5000 });
+          } else if (path === "/options") {
+            await page.locator("main").waitFor({ timeout: 5000 });
+          }
+        } catch { /* proceed to observe stabilization */ }
         await page.waitForTimeout(3500);
         let authenticated = false;
         if (storageState) {
@@ -108,7 +154,7 @@ async function main() {
         if (requireAccount && !authenticated) throw new Error("Account profile blocked: sign in and export a fresh private storage state; no polling result was accepted");
         const navigation = await page.evaluate(() => {
           const js = performance.getEntriesByType("resource").filter(entry => /\.js(?:\?|$)/.test(entry.name));
-          return { lcpMs: window.__mobileLab.lcpMs, cls: window.__mobileLab.cls, fcpMs: performance.getEntriesByType("paint").find(entry => entry.name === "first-contentful-paint")?.startTime ?? null, ttfbMs: performance.getEntriesByType("navigation")[0]?.responseStart ?? null, jsBytes: js.reduce((sum, entry) => sum + entry.encodedBodySize, 0), jsRequests: js.length, overflow: document.documentElement.scrollWidth > innerWidth };
+          return { lcpMs: window.__mobileLab.lcpMs, cls: window.__mobileLab.sessionCls || window.__mobileLab.cls, cumulativeCls: window.__mobileLab.cls, fcpMs: performance.getEntriesByType("paint").find(entry => entry.name === "first-contentful-paint")?.startTime ?? null, ttfbMs: performance.getEntriesByType("navigation")[0]?.responseStart ?? null, jsBytes: js.reduce((sum, entry) => sum + entry.encodedBodySize, 0), jsRequests: js.length, overflow: document.documentElement.scrollWidth > innerWidth };
         });
         const interactions = [];
         const activate = locator => desktop ? locator.click() : locator.tap();
@@ -137,9 +183,16 @@ async function main() {
         const run = { path, finalPath: new URL(page.url()).pathname, reducedMotion, repeat: repeat + 1, status: response?.status(), navigation, interactions, interactionLab, accountObservation: account, accountStreams, apiTimings, apiSummary, sockets, cpu, preflights, requests, failures, pageErrors };
         runs.push(run);
         if (repeat === 0) await page.screenshot({ path: join(output, `${path.replace(/[^a-z0-9]/gi, "_") || "home"}-${reducedMotion}.png`) });
-        console.log(JSON.stringify({ path, reducedMotion, repeat: repeat + 1, ...navigation, pageErrors, failures: failures.length }));
+        console.log(JSON.stringify({ path, reducedMotion, repeat: repeat + 1, ...navigation, pageErrors, failures: failures.filter(f => f.kind !== "aborted").length, abortedRequests: failures.filter(f => f.kind === "aborted").length }));
         if (remote && pageErrors > 0) {
           throw new Error(`Route ${path} on ${origin} encountered ${pageErrors} uncaught page error(s) during load`);
+        }
+        const criticalNetworkFailures = failures.filter(f =>
+          f.kind === "network" &&
+          (/^\/api\/(v1|backend)\//.test(f.path) || f.path.startsWith("/instruments") || f.path.startsWith("/market"))
+        );
+        if (remote && criticalNetworkFailures.length > 0) {
+          throw new Error(`Route ${path} on ${origin} encountered ${criticalNetworkFailures.length} backend API network drop(s): ${JSON.stringify(criticalNetworkFailures)}`);
         }
         const apiFailures = failures.filter(f =>
           typeof f.status === "number" && f.status >= 400 &&
@@ -148,6 +201,7 @@ async function main() {
         if (remote && apiFailures.length > 0) {
           throw new Error(`Route ${path} on ${origin} encountered ${apiFailures.length} backend API HTTP error(s): ${JSON.stringify(apiFailures)}`);
         }
+
       } finally { await context.close(); }
     }
     const result = { mode: remote ? "deployed browser lab; real APIs" : "local production browser lab; public API fixtures", origin, conditions: `${desktop ? "1440x900 desktop, CPU 1x" : "390x844 touch, CPU 4x"}, 1.6 Mbps download, 150 ms latency; cold contexts. Event Timing samples are scripted, not field INP. Redirects recorded. No writes submitted.`, device: desktop ? "desktop" : "mobile", accountWindow, browser: browser.version(), node: process.version, runs };

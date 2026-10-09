@@ -564,7 +564,7 @@ function StockDesk({ symbol, token }: { symbol: string; token: string }) {
                 onTimeframeChange={setTimeframe}
                 onRefresh={() => {
                   if (instrument.isError) void instrument.refetch();
-                  if (history.isError) void history.refetch();
+                  void history.refetch();
                 }}
               />
             </section>

@@ -24,6 +24,16 @@ const nextConfig: NextConfig = {
         destination: "/stocks",
         permanent: false,
       },
+      {
+        source: "/explore",
+        destination: "/stocks",
+        permanent: false,
+      },
+      {
+        source: "/3d",
+        destination: "/",
+        permanent: false,
+      },
     ];
   },
 };

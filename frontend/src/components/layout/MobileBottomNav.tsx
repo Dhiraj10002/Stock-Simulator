@@ -27,7 +27,7 @@ const MOBILE_NAV_ITEMS: NavItem[] = [
 
 export default function MobileBottomNav() {
   const pathname = usePathname();
-  const items = pathname === "/" || pathname === "/3d"
+  const items = pathname === "/"
     ? [{ ...MOBILE_NAV_ITEMS[0], href: "/", label: "Home" }, ...MOBILE_NAV_ITEMS.slice(1)]
     : MOBILE_NAV_ITEMS;
 

@@ -8,6 +8,7 @@ import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import Navbar from "@/components/layout/Navbar";
+import IndicesTickerStrip, { MAJOR_INDICES_STRIP } from "@/components/layout/IndicesTickerStrip";
 import { useMultiSymbolQuotes } from "@/stores/market-store";
 import { fetchBatchQuotes, getCachedQuote } from "@/lib/quoteService";
 import { dayMovement, valuationStatus } from "@/lib/marketDisplay";
@@ -134,14 +135,6 @@ const SECTORS_TRENDING: SectorTrending[] = [
   { id: "pharma", name: "Pharmaceuticals & Healthcare", icon: Pill, gainersCount: 0, losersCount: 0, changePercent: 0, topStock: "—" },
   { id: "metals", name: "Metals & Mining", icon: Factory, gainersCount: 0, losersCount: 0, changePercent: 0, topStock: "—" },
   { id: "it", name: "Information Technology (IT)", icon: Cpu, gainersCount: 0, losersCount: 0, changePercent: 0, topStock: "—" },
-];
-
-const MAJOR_INDICES_STRIP = [
-  { name: "NIFTY 50", symbolKey: "NIFTY" },
-  { name: "SENSEX", symbolKey: "SENSEX" },
-  { name: "BANK NIFTY", symbolKey: "BANKNIFTY" },
-  { name: "MIDCP NIFTY", symbolKey: "MIDCPNIFTY" },
-  { name: "FIN NIFTY", symbolKey: "FINNIFTY" },
 ];
 
 function formatVolume(vol?: number): string {
@@ -427,49 +420,8 @@ export default function StocksExplorePage() {
         unrealizedPnlStale={valuation === "STALE"}
       />
 
-      {/* 2. HORIZONTAL INDICES STRIP (Marked by user in Green) */}
-      <div className="border-b border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60 backdrop-blur-sm px-4 sm:px-6 py-2 transition-colors">
-        <div className="max-w-7xl mx-auto flex items-center gap-6 sm:gap-8 overflow-x-auto no-scrollbar text-xs">
-          {MAJOR_INDICES_STRIP.map((idx) => {
-            const live = quotes[idx.symbolKey];
-            const hasQuote = live && live.price_paise > 0;
-            const livePrice = hasQuote
-              ? (live.price_paise / 100).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-              : "—";
-            const movement = dayMovement(live);
-            const livePct = movement?.percent ?? 0;
-            const isGain = livePct >= 0;
-            const liveChange = movement ? `${isGain ? "+" : ""}${movement.change.toFixed(2)}` : "—";
-
-            return (
-              <div key={idx.name} className="flex items-center gap-2 shrink-0">
-                <span className="font-bold text-slate-700 dark:text-slate-300">
-                  {idx.name}
-                </span>
-                <span className="font-semibold text-slate-900 dark:text-slate-100 font-tabular">
-                  {livePrice}
-                </span>
-                {hasQuote && movement ? (
-                  <span
-                    className={`flex items-center gap-0.5 text-[11px] font-bold ${
-                      isGain
-                        ? "text-emerald-600 dark:text-emerald-400"
-                        : "text-rose-600 dark:text-rose-400"
-                    }`}
-                  >
-                    <span>{liveChange}</span>
-                    <span>({isGain ? "+" : ""}{livePct.toFixed(2)}%)</span>
-                  </span>
-                ) : (
-                  <span className="text-[11px] font-medium text-amber-500">
-                    Awaiting Feed
-                  </span>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
+      {/* 2. HORIZONTAL INDICES STRIP */}
+      <IndicesTickerStrip />
 
       {/* 3. MAIN WORKSPACE */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-8">

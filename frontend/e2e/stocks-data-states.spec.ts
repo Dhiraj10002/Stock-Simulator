@@ -46,8 +46,9 @@ async function stocksMocks(page: Page, mode: "refresh" | "unavailable" | "degrad
     else if (path === "/portfolio") data = { positions: [{ symbol: "RELIANCE", quantity: 1 }], unrealized_pnl_paise: 12345, valuation_status: mode === "degraded" ? "DEGRADED" : "REALTIME" };
     else if (path === "/market/status") data = { status: "OPEN", is_open: true, feed_provider: "angel_one", feed_state: "LIVE", last_tick: new Date().toISOString() };
     else if (path === "/market/quotes/batch") {
-      const symbols = request.postDataJSON().symbols as string[];
-      data = Object.fromEntries(symbols.map((symbol) => [symbol, quote(symbol)]));
+      const rawSymbols = request.method() === "POST" ? request.postDataJSON()?.symbols : new URL(request.url()).searchParams.get("symbols")?.split(",");
+      const symbols: string[] = Array.isArray(rawSymbols) ? rawSymbols : [];
+      data = Object.fromEntries(symbols.map((symbol: string) => [symbol, quote(symbol)]));
     } else if (path === "/market/quotes") {
       const symbols = new URL(request.url()).searchParams.get("symbols")?.split(",") || [];
       data = Object.fromEntries(symbols.map((symbol) => [symbol, quote(symbol)]));
