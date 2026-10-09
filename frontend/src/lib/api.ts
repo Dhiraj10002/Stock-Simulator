@@ -71,10 +71,8 @@ export async function sessionFetch(url: string, options: RequestInit = {}): Prom
   let res = await run();
   if (res.status === 401 && scope && !path.startsWith("/auth/")) {
     const refreshed = await tryRefreshToken(scope, revision);
-    if (refreshed && getAuthToken() === scope) {
+    if (refreshed && (getAuthToken() === scope || !isAccountMutation(path, method))) {
       res = await run();
-    } else {
-      clearAuthTokens();
     }
   }
   if (intent && res.ok) {

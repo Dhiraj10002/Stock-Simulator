@@ -107,8 +107,10 @@ export default function Navbar({
       const storedEmail = localStorage.getItem("user_email");
       if (storedEmail) setUserEmail(storedEmail);
     };
-    syncUser();
-    setClientIstTime(getIndianMarketStatus().istTime);
+    queueMicrotask(() => {
+      syncUser();
+      setClientIstTime(getIndianMarketStatus().istTime);
+    });
 
     const timer = setInterval(() => {
       setClientIstTime(getIndianMarketStatus().istTime);
@@ -199,7 +201,7 @@ export default function Navbar({
       {/* Top Utility Bar */}
       <div className="px-4 lg:px-6 py-2 flex items-center justify-between gap-2 sm:gap-4 border-b border-slate-200/80 dark:border-white/[0.06] min-h-[50px]">
         {/* Left: Brand + Market Status + Indices Ticker */}
-        <div className="flex items-center gap-3 lg:gap-4 shrink-0 min-w-0">
+        <div className="flex items-center gap-3 lg:gap-4 shrink min-w-0">
           <Link href="/dashboard" className="flex items-center gap-2.5 group shrink-0">
             <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-cyan-500 to-indigo-600 flex items-center justify-center font-black text-sm text-slate-950 shadow-md group-hover:scale-105 transition-transform">
               SS
@@ -216,7 +218,7 @@ export default function Navbar({
 
           {/* Authoritative Market & Feed Session Status Pill */}
           <div
-            className={`hidden sm:flex items-center gap-2 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors shrink-0 ${authoritativeStatus.pillClasses}`}
+            className={`hidden lg:flex items-center gap-2 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors shrink-0 ${authoritativeStatus.pillClasses}`}
             title={authoritativeStatus.tooltip}
           >
             <span
