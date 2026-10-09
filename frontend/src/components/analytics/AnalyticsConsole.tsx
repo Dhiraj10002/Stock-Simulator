@@ -365,7 +365,8 @@ export default function AnalyticsConsole({
         const matchesSymbol = t.symbol.toLowerCase().includes(q);
         const matchesNotes = (t.notes || "").toLowerCase().includes(q);
         const matchesTag = (t.tag || "").toLowerCase().includes(q);
-        if (!matchesSymbol && !matchesNotes && !matchesTag) return false;
+        const matchesDate = (t.executed_at || "").toLowerCase().includes(q);
+        if (!matchesSymbol && !matchesNotes && !matchesTag && !matchesDate) return false;
       }
 
       if (tagFilter === "UNTAGGED" && t.tag) return false;
@@ -380,6 +381,11 @@ export default function AnalyticsConsole({
 
   const totalTradingDays =
     (calendarData?.profitable_days_count ?? 0) + (calendarData?.loss_days_count ?? 0);
+  const breakEvenDaysCount = useMemo(() => {
+    return (calendarData?.days || []).filter(
+      (d) => d.trades_count > 0 && d.realized_pnl_paise === 0
+    ).length;
+  }, [calendarData]);
   const winDaysRate =
     totalTradingDays > 0
       ? ((calendarData?.profitable_days_count ?? 0) / totalTradingDays) * 100
@@ -633,10 +639,11 @@ export default function AnalyticsConsole({
                   </div>
                 </div>
 
-                <div className="text-2xl sm:text-3xl font-extrabold font-tabular text-slate-900 dark:text-slate-100 tracking-tight my-1 flex items-baseline gap-2">
+                <div className="text-2xl sm:text-3xl font-extrabold font-tabular text-slate-900 dark:text-slate-100 tracking-tight my-1 flex items-baseline gap-2 flex-wrap">
                   <span>{performance.win_rate_pct.toFixed(1)}%</span>
                   <span className="text-xs text-slate-500 dark:text-slate-400 font-normal">
-                    ({performance.winning_trades}W / {performance.losing_trades}L)
+                    ({performance.winning_trades}W / {performance.losing_trades}L
+                    {performance.break_even_trades > 0 ? ` / ${performance.break_even_trades}BE` : ""})
                   </span>
                 </div>
 
@@ -860,12 +867,14 @@ export default function AnalyticsConsole({
                   {hoveredDay && (
                     <span
                       className={`text-[11px] font-bold font-tabular px-2.5 py-0.5 rounded-full border animate-in fade-in ${
-                        hoveredDay.realized_pnl_paise >= 0
+                        hoveredDay.realized_pnl_paise > 0
                           ? "bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700/50"
-                          : "bg-rose-100 dark:bg-rose-950/80 text-rose-800 dark:text-rose-300 border-rose-300 dark:border-rose-700/50"
+                          : hoveredDay.realized_pnl_paise < 0
+                          ? "bg-rose-100 dark:bg-rose-950/80 text-rose-800 dark:text-rose-300 border-rose-300 dark:border-rose-700/50"
+                          : "bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border-slate-300 dark:border-slate-700"
                       }`}
                     >
-                      {hoveredDay.date}: {hoveredDay.realized_pnl_paise >= 0 ? "+" : ""}
+                      {hoveredDay.date}: {hoveredDay.realized_pnl_paise > 0 ? "+" : ""}
                       {formatPaise(hoveredDay.realized_pnl_paise)} ({hoveredDay.trades_count} trades)
                     </span>
                   )}
@@ -919,19 +928,29 @@ export default function AnalyticsConsole({
                 {/* Actual month days */}
                 {daysOfMonth.map(({ date, dayNum, data }) => {
                   const hasTrades = !!data && data.trades_count > 0;
-                  const isProfit = hasTrades && data.realized_pnl_paise >= 0;
+                  const isProfit = hasTrades && data.realized_pnl_paise > 0;
+                  const isLoss = hasTrades && data.realized_pnl_paise < 0;
 
                   return (
                     <div
                       key={date}
+                      onClick={() => {
+                        if (hasTrades) {
+                          setSearchQuery(date);
+                          setActiveTab("journal");
+                        }
+                      }}
                       onMouseEnter={() => setHoveredDay(data)}
                       onMouseLeave={() => setHoveredDay(null)}
-                      className={`h-20 rounded-2xl p-2.5 flex flex-col justify-between transition-all relative border select-none cursor-default ${
+                      title={hasTrades ? `View ${data.trades_count} trade(s) on ${date} in Trade Journal` : undefined}
+                      className={`h-20 rounded-2xl p-2.5 flex flex-col justify-between transition-all relative border select-none ${
                         !hasTrades
-                          ? "bg-white/80 dark:bg-slate-900/40 border-slate-200/80 dark:border-slate-800/60 text-slate-400 dark:text-slate-600"
+                          ? "bg-white/80 dark:bg-slate-900/40 border-slate-200/80 dark:border-slate-800/60 text-slate-400 dark:text-slate-600 cursor-default"
                           : isProfit
-                          ? "bg-gradient-to-br from-emerald-50 to-emerald-100/60 dark:from-emerald-950/40 dark:to-emerald-900/30 border-emerald-300 dark:border-emerald-500/50 text-emerald-700 dark:text-emerald-400 hover:border-emerald-400 shadow-sm hover:scale-[1.02]"
-                          : "bg-gradient-to-br from-rose-50 to-rose-100/60 dark:from-rose-950/40 dark:to-rose-900/30 border-rose-300 dark:border-rose-500/50 text-rose-700 dark:text-rose-400 hover:border-rose-400 shadow-sm hover:scale-[1.02]"
+                          ? "bg-gradient-to-br from-emerald-50 to-emerald-100/60 dark:from-emerald-950/40 dark:to-emerald-900/30 border-emerald-300 dark:border-emerald-500/50 text-emerald-700 dark:text-emerald-400 hover:border-emerald-400 shadow-sm hover:scale-[1.02] cursor-pointer"
+                          : isLoss
+                          ? "bg-gradient-to-br from-rose-50 to-rose-100/60 dark:from-rose-950/40 dark:to-rose-900/30 border-rose-300 dark:border-rose-500/50 text-rose-700 dark:text-rose-400 hover:border-rose-400 shadow-sm hover:scale-[1.02] cursor-pointer"
+                          : "bg-gradient-to-br from-slate-100 to-slate-200/60 dark:from-slate-800/60 dark:to-slate-900/50 border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-slate-400 shadow-sm hover:scale-[1.02] cursor-pointer"
                       }`}
                     >
                       {/* Day Number Header */}
@@ -944,7 +963,9 @@ export default function AnalyticsConsole({
                             className={`text-[9px] font-bold px-1.5 py-0.2 rounded-full font-mono ${
                               isProfit
                                 ? "bg-emerald-200/80 dark:bg-emerald-900/80 text-emerald-900 dark:text-emerald-300"
-                                : "bg-rose-200/80 dark:bg-rose-900/80 text-rose-900 dark:text-rose-300"
+                                : isLoss
+                                ? "bg-rose-200/80 dark:bg-rose-900/80 text-rose-900 dark:text-rose-300"
+                                : "bg-slate-200/90 dark:bg-slate-700/80 text-slate-800 dark:text-slate-200"
                             }`}
                           >
                             {data.trades_count}t
@@ -956,7 +977,7 @@ export default function AnalyticsConsole({
                       {hasTrades ? (
                         <div className="text-right">
                           <span className="text-[11px] font-extrabold font-tabular block leading-tight">
-                            {data.realized_pnl_paise >= 0 ? "+" : ""}
+                            {isProfit ? "+" : ""}
                             {formatPaise(data.realized_pnl_paise)}
                           </span>
                         </div>
@@ -999,6 +1020,14 @@ export default function AnalyticsConsole({
                       {calendarData?.loss_days_count ?? 0}
                     </strong>
                   </span>
+                  {breakEvenDaysCount > 0 && (
+                    <span>
+                      Breakeven Days:{" "}
+                      <strong className="text-slate-700 dark:text-slate-300 font-bold">
+                        {breakEvenDaysCount}
+                      </strong>
+                    </span>
+                  )}
                   <span>
                     Win Days %:{" "}
                     <strong className="text-slate-900 dark:text-white font-bold">
@@ -1008,7 +1037,7 @@ export default function AnalyticsConsole({
                 </div>
               </div>
 
-              {calendarData.profitable_days_count === 0 && calendarData.loss_days_count === 0 && (
+              {calendarData.days.length === 0 && (
                 <div className="p-4 rounded-2xl bg-cyan-50/60 dark:bg-cyan-950/30 border border-cyan-200/80 dark:border-cyan-800/60 flex items-center gap-2.5 text-xs">
                   <Compass className="w-4 h-4 text-cyan-600 dark:text-cyan-400 shrink-0" />
                   <span className="text-slate-700 dark:text-slate-300">

@@ -132,6 +132,7 @@ export default function TradeCopilot({ token, apiUrl, initialQuery }: TradeCopil
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
+        signal: AbortSignal.timeout(10000),
       });
       const data = await res.json();
       if (data.success && data.data) {
@@ -185,6 +186,7 @@ export default function TradeCopilot({ token, apiUrl, initialQuery }: TradeCopil
             Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({ question: q }),
+          signal: AbortSignal.timeout(10000),
         });
         const data = await res.json();
         const reply =
