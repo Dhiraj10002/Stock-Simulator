@@ -226,7 +226,7 @@ export default function FnoStockOverview({
       </div>
 
       {/* 1. TOP 3 POPULAR STOCK CARDS (RELIANCE, HDFCBANK, TCS) */}
-      <section aria-label="Featured F&O stocks" className="grid min-w-0 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+      <section aria-label="Featured F&O stocks" className="grid min-w-0 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 min-h-[160px]">
         {featured.length > 0 ? (
           featured.map((instrument) => {
           const underlying = equityUnderlying(instrument);
@@ -327,7 +327,7 @@ export default function FnoStockOverview({
       {/* 2. F&O STOCKS TABLE (EXACTLY 6 ROWS, NO SEARCH, NO PAGINATION) */}
       <section
         aria-label="F&O stocks"
-        className={`${panel} overflow-hidden p-5 space-y-4`}
+        className={`${panel} overflow-hidden p-5 space-y-4 min-h-[440px]`}
       >
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200 dark:border-slate-800">
           <div>
@@ -380,7 +380,7 @@ export default function FnoStockOverview({
             </button>
           </p>
         ) : catalog.isPending || (symbols.length > 0 && quotes.isPending) ? (
-          <div className="space-y-3 py-2 animate-pulse min-h-[260px]" aria-label="Loading provider stock quotes">
+          <div className="space-y-3 py-2 animate-pulse min-h-[320px]" aria-label="Loading provider stock quotes">
             <div className="h-8 rounded-lg bg-slate-100/70 dark:bg-slate-800/40" />
             {[1, 2, 3, 4, 5].map((i) => (
               <div key={i} className="h-11 rounded-lg bg-slate-100/50 dark:bg-slate-800/30 flex items-center justify-between px-3">
@@ -402,7 +402,7 @@ export default function FnoStockOverview({
             No {direction} with available provider day movement.
           </p>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto min-h-[320px]">
             <table className="w-full text-left text-xs">
               <thead>
                 <tr className="border-b border-slate-200 dark:border-slate-800 text-[11px] uppercase font-bold tracking-wider text-slate-400 bg-slate-50/50 dark:bg-slate-900/50">

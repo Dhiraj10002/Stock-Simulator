@@ -193,7 +193,7 @@ export default function NewsDeskPage() {
             <div className="flex items-center gap-2 mb-1">
               <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold tracking-wider uppercase bg-cyan-100/80 dark:bg-cyan-950/80 text-cyan-800 dark:text-cyan-400 border border-cyan-200 dark:border-cyan-800/60 flex items-center gap-1.5">
                 <Activity className="w-3 h-3 text-cyan-600 dark:text-cyan-400 animate-pulse" />
-                News ingestion: {isLoading ? "CONNECTING..." : isError ? "FEED ERROR" : (ingestionError ? "OFFLINE" : (ingestion?.status ?? (effectiveArticles.length > 0 ? "LIVE WIRE" : "STANDBY")))}
+                News ingestion: {isLoading ? "CONNECTING..." : isError ? "FEED ERROR" : (ingestionError ? "OFFLINE" : (ingestion?.status ?? (effectiveArticles.length > 0 || selectedSymbol ? "LIVE WIRE" : "STANDBY")))}
               </span>
               <span className="text-xs text-slate-500 dark:text-slate-400 font-mono">
                 Lexical Sentiment Classifier
@@ -515,6 +515,23 @@ export default function NewsDeskPage() {
                 className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition-colors cursor-pointer"
               >
                 Retry Feed Connection
+              </button>
+            </div>
+          ) : effectiveArticles.length === 0 && selectedSymbol ? (
+            <div className="p-12 text-center rounded-2xl bg-white dark:bg-slate-900/30 border border-slate-200 dark:border-slate-800/80 space-y-3 shadow-xs">
+              <Newspaper className="w-10 h-10 text-slate-400 dark:text-slate-600 mx-auto" />
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                No recent headlines found for {selectedSymbol}
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
+                No articles mentioning {selectedSymbol} are present in the current aggregation buffer. Clear the symbol filter to view all market news.
+              </p>
+              <button
+                type="button"
+                onClick={() => setSelectedSymbol("")}
+                className="px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold transition-colors cursor-pointer"
+              >
+                Clear Symbol Filter
               </button>
             </div>
           ) : effectiveArticles.length === 0 ? (

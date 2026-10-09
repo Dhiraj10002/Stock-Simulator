@@ -47,6 +47,7 @@ func setupTestRouter(svc *service.Service) *gin.Engine {
 	r.GET("/api/v1/market/breadth", h.Breadth)
 	r.GET("/api/v1/market/indices", h.Indices)
 	r.GET("/api/v1/market/sectors", h.Sectors)
+	r.GET("/api/v1/market/status", h.Status)
 	return r
 }
 
@@ -276,4 +277,45 @@ func TestMarketHandler_ErrorSemantics(t *testing.T) {
 			t.Fatalf("expected status 200 for sectors, got %d", wSec.Code)
 		}
 	})
+
+	t.Run("Status returns segment metadata and bounds", func(t *testing.T) {
+		svc := &service.Service{}
+		r := setupTestRouter(svc)
+
+		// Test default segment (NSE)
+		wDefault := httptest.NewRecorder()
+		reqDefault, _ := http.NewRequest("GET", "/api/v1/market/status", nil)
+		r.ServeHTTP(wDefault, reqDefault)
+		if wDefault.Code != http.StatusOK {
+			t.Fatalf("expected status 200 for default status, got %d", wDefault.Code)
+		}
+		var respDefault map[string]interface{}
+		if err := json.Unmarshal(wDefault.Body.Bytes(), &respDefault); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+		dataDefault := respDefault["data"].(map[string]interface{})
+		if dataDefault["segment"] != "NSE" {
+			t.Fatalf("expected segment NSE, got %v", dataDefault["segment"])
+		}
+		if dataDefault["market_open"] == nil || dataDefault["market_close"] == nil {
+			t.Fatalf("expected market_open and market_close in response")
+		}
+
+		// Test NFO segment
+		wNFO := httptest.NewRecorder()
+		reqNFO, _ := http.NewRequest("GET", "/api/v1/market/status?segment=NFO", nil)
+		r.ServeHTTP(wNFO, reqNFO)
+		if wNFO.Code != http.StatusOK {
+			t.Fatalf("expected status 200 for NFO status, got %d", wNFO.Code)
+		}
+		var respNFO map[string]interface{}
+		if err := json.Unmarshal(wNFO.Body.Bytes(), &respNFO); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+		dataNFO := respNFO["data"].(map[string]interface{})
+		if dataNFO["segment"] != "NFO" {
+			t.Fatalf("expected segment NFO, got %v", dataNFO["segment"])
+		}
+	})
 }
+

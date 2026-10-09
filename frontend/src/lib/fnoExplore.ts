@@ -165,6 +165,10 @@ export function filterFutures(
 export type FuturesMarketStatus = {
   status: string;
   is_open: boolean;
+  segment?: string;
+  market_open?: string;
+  market_close?: string;
+  mis_cutoff?: string;
   feed_provider: string;
   feed_state: string;
   is_synthetic: boolean;

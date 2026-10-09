@@ -47,15 +47,15 @@ const PROMPT_CHIPS = [
 ];
 
 const PREBUILT_RESPONSES: Record<string, string> = {
-  "analyze my portfolio risk right now": `📊 **Institutional Portfolio Risk Analysis:**
+  "analyze my portfolio risk right now": `📊 **Institutional Portfolio Risk Framework:**
 
-• **Available Margin:** ₹10,00,000.00 (100% capacity)
-• **Margin Utilization:** 0% (Low Risk Profile)
-• **Maximum Drawdown Allowance:** ₹50,000 (5% account risk budget)
-• **Execution Discipline:** Healthy — No unhedged overnight delta exposures detected.
+• **Position Sizing Rule:** Limit single-trade margin commitment to 2% – 5% of total capital to protect against systemic adverse gap moves.
+• **Drawdown Protocol:** Enforce a hard daily account stop-loss (e.g. 2%–3% of total equity) to pause trading after consecutive loss legs.
+• **Overnight Delta Exposure:** Avoid carrying unhedged naked short options or excessive derivative delta across sessions.
+• **Leverage Discipline:** Use MIS intraday leverage with strict stop-losses; leverage accelerates drawdowns equally during volatile swings.
 
-💡 **Key Recommendation:**
-Maintain single-trade position sizing below 2% – 5% of total capital (₹20,000 – ₹50,000 margin per trade) to ensure statistical survivability across volatile market regimes.`,
+💡 **Key Takeaway:**
+Maintain predefined risk-reward asymmetry (minimum 1:1.5 or 1:2) before committing execution margin.`,
 
   "how do i hedge my open positions?": `🛡️ **Institutional Hedging Playbook:**
 
@@ -212,9 +212,14 @@ export default function TradeCopilot({ token, apiUrl, initialQuery }: TradeCopil
 
     // Guest mode or offline fallback
     setTimeout(() => {
-      const fallbackReply = matchedPrebuilt
+      const notice = token
+        ? "⚠️ *Live portfolio telemetry temporarily unreachable. Providing educational risk framework:*\n\n"
+        : "";
+      const baseReply = matchedPrebuilt
         ? PREBUILT_RESPONSES[matchedPrebuilt]
         : `💡 **Institutional Copilot Assessment:**\n\nRegarding "${q}":\n• **Risk Principle:** Maintain strict position limits so that adverse gap moves never exceed 1.5% of account margin.\n• **Execution Check:** Verify technical support/resistance levels on higher timeframes (15m and 1h) before committing margin.\n• **Discipline Rule:** If you take two consecutive losses in a session, enforce an automatic 30-minute cooling break to prevent emotional bias.\n\n*Note: Educational trade simulation critique only; not financial advice.*`;
+
+      const fallbackReply = `${notice}${baseReply}`;
 
       setMessages((prev) => [
         ...prev,

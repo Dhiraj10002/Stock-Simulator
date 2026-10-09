@@ -379,13 +379,15 @@ export default function AnalyticsConsole({
     });
   }, [trades, tagFilter, outcomeFilter, searchQuery]);
 
-  const totalTradingDays =
-    (calendarData?.profitable_days_count ?? 0) + (calendarData?.loss_days_count ?? 0);
   const breakEvenDaysCount = useMemo(() => {
     return (calendarData?.days || []).filter(
       (d) => d.trades_count > 0 && d.realized_pnl_paise === 0
     ).length;
   }, [calendarData]);
+  const totalTradingDays =
+    (calendarData?.profitable_days_count ?? 0) +
+    (calendarData?.loss_days_count ?? 0) +
+    breakEvenDaysCount;
   const winDaysRate =
     totalTradingDays > 0
       ? ((calendarData?.profitable_days_count ?? 0) / totalTradingDays) * 100

@@ -219,7 +219,7 @@ export default function FnoExplorePage({
   const market = useQuery({
     queryKey: ["fno-market-status"],
     queryFn: ({ signal }) =>
-      bounded<FuturesMarketStatus>("/market/status", signal),
+      bounded<FuturesMarketStatus>("/market/status?segment=NFO", signal),
     enabled: active,
     refetchInterval: active ? 10000 : false,
     retry: false,

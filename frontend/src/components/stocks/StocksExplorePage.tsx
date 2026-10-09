@@ -276,7 +276,7 @@ export default function StocksExplorePage() {
   }, [quotes]);
 
   const aggregateInterval = useSessionDisplayPolling(5000);
-  const { data: marketMovers } = useQuery<{
+  const { data: marketMovers, isLoading: isMoversLoading } = useQuery<{
     gainers: { symbol: string; name?: string; price_paise: number; change_paise: number; change_percent: number; volume: number }[];
     losers: { symbol: string; name?: string; price_paise: number; change_paise: number; change_percent: number; volume: number }[];
     most_traded: { symbol: string; name?: string; price_paise: number; change_paise: number; change_percent: number; volume: number }[];
@@ -685,7 +685,7 @@ export default function StocksExplorePage() {
             </section>
 
             {/* SECTION C: Top Movers Today (Marked by user: "add this -> Top movers today") */}
-            <section className="space-y-3 rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 p-5 shadow-xs">
+            <section className="space-y-3 rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 p-5 shadow-xs min-h-[440px]">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200 dark:border-slate-800">
                 <div>
                   <h2 className="text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
@@ -746,7 +746,7 @@ export default function StocksExplorePage() {
               </div>
 
               {/* Movers Table with 1D Sparklines */}
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto min-h-[320px]">
                 <table className="w-full text-left text-xs">
                   <thead>
                     <tr className="text-[11px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100 dark:border-slate-800/80 pb-2">
@@ -760,7 +760,34 @@ export default function StocksExplorePage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
-                    {moverList.length > 0 ? (
+                    {isMoversLoading && moverList.length === 0 ? (
+                      [1, 2, 3, 4, 5, 6].map((i) => (
+                        <tr key={i} className="animate-pulse">
+                          <td className="py-3 pr-4">
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-7 h-7 rounded-md bg-slate-200 dark:bg-slate-800" />
+                              <div className="space-y-1">
+                                <div className="w-20 h-3.5 rounded bg-slate-200 dark:bg-slate-800" />
+                                <div className="w-28 h-2.5 rounded bg-slate-100 dark:bg-slate-800/60" />
+                              </div>
+                            </div>
+                          </td>
+                          <td className="py-3 px-2 text-center hidden sm:table-cell">
+                            <div className="w-20 h-3.5 mx-auto rounded bg-slate-100 dark:bg-slate-800" />
+                          </td>
+                          <td className="py-3 pl-2 pr-4 text-right">
+                            <div className="w-16 h-3.5 ml-auto rounded bg-slate-200 dark:bg-slate-800" />
+                            <div className="w-20 h-2.5 ml-auto mt-1 rounded bg-slate-100 dark:bg-slate-800/60" />
+                          </td>
+                          <td className="py-3 px-2 text-right hidden md:table-cell">
+                            <div className="w-14 h-3.5 ml-auto rounded bg-slate-100 dark:bg-slate-800" />
+                          </td>
+                          <td className="py-3 pl-2 text-right">
+                            <div className="w-12 h-6 ml-auto rounded-lg bg-slate-200 dark:bg-slate-800" />
+                          </td>
+                        </tr>
+                      ))
+                    ) : moverList.length > 0 ? (
                       moverList.map((stock) => {
                         const isGain = stock.changePercent >= 0;
                         return (
@@ -833,32 +860,12 @@ export default function StocksExplorePage() {
                         );
                       })
                     ) : (
-                      [1, 2, 3, 4, 5, 6].map((i) => (
-                        <tr key={i} className="animate-pulse">
-                          <td className="py-3 pr-4">
-                            <div className="flex items-center gap-2.5">
-                              <div className="w-7 h-7 rounded-md bg-slate-200 dark:bg-slate-800" />
-                              <div className="space-y-1">
-                                <div className="w-20 h-3.5 rounded bg-slate-200 dark:bg-slate-800" />
-                                <div className="w-28 h-2.5 rounded bg-slate-100 dark:bg-slate-800/60" />
-                              </div>
-                            </div>
-                          </td>
-                          <td className="py-3 px-2 text-center hidden sm:table-cell">
-                            <div className="w-20 h-3.5 mx-auto rounded bg-slate-100 dark:bg-slate-800" />
-                          </td>
-                          <td className="py-3 pl-2 pr-4 text-right">
-                            <div className="w-16 h-3.5 ml-auto rounded bg-slate-200 dark:bg-slate-800" />
-                            <div className="w-20 h-2.5 ml-auto mt-1 rounded bg-slate-100 dark:bg-slate-800/60" />
-                          </td>
-                          <td className="py-3 px-2 text-right hidden md:table-cell">
-                            <div className="w-14 h-3.5 ml-auto rounded bg-slate-100 dark:bg-slate-800" />
-                          </td>
-                          <td className="py-3 pl-2 text-right">
-                            <div className="w-12 h-6 ml-auto rounded-lg bg-slate-200 dark:bg-slate-800" />
-                          </td>
-                        </tr>
-                      ))
+                      <tr>
+                        <td colSpan={5} className="py-12 text-center text-slate-400">
+                          <p className="font-semibold text-sm">No market mover updates available</p>
+                          <p className="text-xs text-slate-500 mt-1">Live market movers will populate during active market sessions.</p>
+                        </td>
+                      </tr>
                     )}
                   </tbody>
                 </table>

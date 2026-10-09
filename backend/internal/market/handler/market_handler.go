@@ -142,6 +142,14 @@ func (h *Handler) Status(c *gin.Context) {
 	isHoliday, holidayName := calendar.IsTradingHoliday(now)
 
 	ist := now.In(calendar.Location())
+	segment := strings.ToUpper(strings.TrimSpace(c.DefaultQuery("segment", "NSE")))
+	if segment == "" {
+		segment = "NSE"
+	}
+
+	openTime, misCutoff, closeTime := calendar.SegmentSessionBounds(now, segment)
+	openMinute := openTime.Hour()*60 + openTime.Minute()
+	closeMinute := closeTime.Hour()*60 + closeTime.Minute()
 	currentMinute := ist.Hour()*60 + ist.Minute()
 
 	status := "CLOSED"
@@ -151,12 +159,12 @@ func (h *Handler) Status(c *gin.Context) {
 		status = "CLOSED"
 	} else if isHoliday {
 		status = "HOLIDAY"
-	} else if currentMinute >= 9*60 && currentMinute < 9*60+15 {
+	} else if currentMinute >= 9*60 && currentMinute < openMinute {
 		status = "PRE_OPEN"
-	} else if currentMinute >= 9*60+15 && currentMinute < 15*60+30 {
+	} else if currentMinute >= openMinute && currentMinute < closeMinute {
 		status = "OPEN"
 		isOpen = true
-	} else if currentMinute >= 15*60+30 && currentMinute < 16*60 {
+	} else if currentMinute >= closeMinute && currentMinute < 16*60 {
 		status = "POST_MARKET"
 	} else {
 		status = "CLOSED"
@@ -182,6 +190,10 @@ func (h *Handler) Status(c *gin.Context) {
 	response.Success(c, http.StatusOK, "Market status retrieved successfully", gin.H{
 		"status":        status,
 		"is_open":       isOpen,
+		"segment":       segment,
+		"market_open":   openTime.Format(time.RFC3339),
+		"market_close":  closeTime.Format(time.RFC3339),
+		"mis_cutoff":    misCutoff.Format(time.RFC3339),
 		"server_time":   ist.Format(time.RFC3339),
 		"holiday_name":  holidayName,
 		"feed_provider": feedProvider,
