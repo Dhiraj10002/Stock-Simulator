@@ -62,8 +62,9 @@ for command in go npm python3 curl setsid fuser; do
 done
 for port in 8080 8085 3000; do
   if fuser "$port/tcp" >/dev/null 2>&1; then
-    echo "[!] Port $port is in use. Stop the existing service before restarting." >&2
-    exit 1
+    echo "[-] Port $port is in use. Freeing port $port for clean start..."
+    fuser -k "$port/tcp" 2>/dev/null || true
+    sleep 0.5
   fi
 done
 
@@ -155,13 +156,28 @@ if ! [[ "$STARTUP_TIMEOUT_SECONDS" =~ ^[1-9][0-9]*$ ]] || [ "$STARTUP_TIMEOUT_SE
   exit 1
 fi
 
-# Auto-start Redis only for the default local configuration.
-if [ "$MODE" != "--light" ] && [ "$MODE" != "-l" ] && [ "$REDIS_URL" = "redis://localhost:6379/0" ]; then
+# Auto-start Redis if targeting localhost and it is not already running.
+if [[ "$REDIS_URL" == *"localhost:6379"* || "$REDIS_URL" == *"127.0.0.1:6379"* ]]; then
   if ! python3 -c 'import socket; socket.create_connection(("127.0.0.1",6379),1).close()' >/dev/null 2>&1; then
     echo "[-] Starting the local Redis container..."
     docker rm -f stock-sim-redis >/dev/null 2>&1 || true
     docker run -d --name stock-sim-redis -p 127.0.0.1:6379:6379 redis:7-alpine >/dev/null
     STARTED_REDIS=1
+  fi
+fi
+
+# Auto-start PostgreSQL container if connecting to local database and port 5432 is not listening.
+if [[ "${DATABASE_URL:-}" == *"localhost:5432"* || "${DATABASE_URL:-}" == *"127.0.0.1:5432"* ]]; then
+  if ! python3 -c 'import socket; socket.create_connection(("127.0.0.1",5432),1).close()' >/dev/null 2>&1; then
+    echo "[-] Starting the local PostgreSQL container..."
+    docker start stock-simulator-db-1 2>/dev/null || docker compose --profile local-db up -d db >/dev/null 2>&1 || true
+    for _ in {1..20}; do
+      if python3 -c 'import socket; socket.create_connection(("127.0.0.1",5432),1).close()' >/dev/null 2>&1; then
+        echo "[✓] Local PostgreSQL container is listening on port 5432."
+        break
+      fi
+      sleep 0.5
+    done
   fi
 fi
 
@@ -187,7 +203,7 @@ if [ "$MODE" != "--light" ] && [ "$MODE" != "-l" ]; then
 fi
 
 echo "[*] Starting Next.js Frontend on http://localhost:3000..."
-start_service "$ROOT_DIR/frontend" env PORT=3000 npm run dev
+start_service "$ROOT_DIR/frontend" env PORT=3000 NEXT_PUBLIC_API_URL=http://localhost:8080/api/v1 NEXT_PUBLIC_WS_URL=ws://localhost:8080/ws/market BACKEND_API_URL=http://localhost:8080/api/v1 npm run dev
 wait_for_service http://127.0.0.1:3000/login "$SERVICE_PID" "Frontend"
 
 READY_OK=0

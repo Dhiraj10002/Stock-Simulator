@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useSyncExternalStore } from "react";
 
 type Theme = "dark" | "light";
 
@@ -28,35 +28,44 @@ function applyTheme(t: Theme) {
   }
 }
 
+const themeListeners = new Set<() => void>();
+
+function subscribe(callback: () => void) {
+  themeListeners.add(callback);
+  window.addEventListener("storage", callback);
+  const media = window.matchMedia("(prefers-color-scheme: dark)");
+  media.addEventListener("change", callback);
+  return () => {
+    themeListeners.delete(callback);
+    window.removeEventListener("storage", callback);
+    media.removeEventListener("change", callback);
+  };
+}
+
+function getSnapshot(): Theme {
+  if (typeof window === "undefined") return "dark";
+  const saved = localStorage.getItem("stock_sim_theme");
+  if (saved === "light" || saved === "dark") return saved;
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+function getServerSnapshot(): Theme {
+  return "dark";
+}
+
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>(() => {
-    if (typeof document !== "undefined") {
-      return document.documentElement.classList.contains("dark") ? "dark" : "light";
-    }
-    return "light";
-  });
+  const theme = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 
   useEffect(() => {
-    // Listen for OS system theme changes if no explicit user override is stored
-    const media = window.matchMedia("(prefers-color-scheme: dark)");
-    const handleChange = (e: MediaQueryListEvent) => {
-      const saved = localStorage.getItem("stock_sim_theme");
-      if (!saved) {
-        const next: Theme = e.matches ? "dark" : "light";
-        applyTheme(next);
-        setThemeState(next);
-      }
-    };
-    media.addEventListener("change", handleChange);
-    return () => media.removeEventListener("change", handleChange);
-  }, []);
+    applyTheme(theme);
+  }, [theme]);
 
   const setTheme = (t: Theme) => {
-    setThemeState(t);
     try {
       localStorage.setItem("stock_sim_theme", t);
     } catch {}
     applyTheme(t);
+    themeListeners.forEach((listener) => listener());
   };
 
   const toggleTheme = () => {

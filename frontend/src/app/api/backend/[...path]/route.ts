@@ -58,7 +58,7 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path: st
   } catch { return failure(503, "Backend gateway is not configured"); }
   const access = request.cookies.get(accessName)?.value;
   const refresh = request.cookies.get(refreshName)?.value;
-  if (!authWrite && !access) return failure(401, "Please sign in");
+  if (!authWrite && !access) { const response = failure(401, "Please sign in"); if (!refresh) clear(response); return response; }
   if (endpoint === "auth/refresh" && !refresh) { const response = failure(401, "Session expired"); clear(response); return response; }
   const headers = new Headers({ Accept: accountStream ? "text/event-stream" : "application/json" });
   if (access && !authWrite) headers.set("Authorization", `Bearer ${access}`);
@@ -114,7 +114,7 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path: st
     }
     const response = reply(payload, upstream.status);
     for (const name of ["x-request-id", "retry-after", "x-ratelimit-remaining"]) { const value = upstream.headers.get(name); if (value) response.headers.set(name, value); }
-    if (endpoint === "auth/logout" || (endpoint === "auth/refresh" && upstream.status === 401)) clear(response);
+    if (endpoint === "auth/logout" || (endpoint === "auth/refresh" && !upstream.ok)) clear(response);
     return response;
   } catch {
     // A lost refresh response keeps old cookies and reuses the HMAC retry key.

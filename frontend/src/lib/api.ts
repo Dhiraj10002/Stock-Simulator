@@ -29,7 +29,22 @@ export function notifyAuthChanged(): void {
   window.dispatchEvent(new Event("auth-changed"));
 }
 export function clearAuthTokens(): void {
-  if (typeof document !== "undefined") document.cookie = "stocksim_session=; Path=/; Max-Age=0; SameSite=Lax";
+  if (typeof document !== "undefined") {
+    const isHttps = typeof window !== "undefined" && window.location?.protocol === "https:";
+    const securePart = isHttps ? "; Secure" : "";
+    document.cookie = `stocksim_session=; Path=/; Max-Age=0; SameSite=Lax${securePart}`;
+    document.cookie = `stocksim_session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax${securePart}`;
+    if (typeof window !== "undefined" && window.location?.hostname) {
+      document.cookie = `stocksim_session=; Domain=${window.location.hostname}; Path=/; Max-Age=0; SameSite=Lax${securePart}`;
+      document.cookie = `stocksim_session=; Domain=${window.location.hostname}; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax${securePart}`;
+    }
+  }
+  purgeLegacyCredentials();
+  try {
+    localStorage.removeItem("user_name");
+    localStorage.removeItem("user_email");
+    localStorage.removeItem("auth-session-change");
+  } catch { /* storage may be blocked */ }
   notifyAuthChanged();
 }
 let sessionRevision = "";
@@ -55,7 +70,12 @@ export async function sessionFetch(url: string, options: RequestInit = {}): Prom
   const run = () => fetch(`/api/backend${path}`, { ...options, headers, credentials: "same-origin", cache: "no-store" });
   let res = await run();
   if (res.status === 401 && scope && !path.startsWith("/auth/")) {
-    if (await tryRefreshToken(scope, revision) && getAuthToken() === scope) res = await run();
+    const refreshed = await tryRefreshToken(scope, revision);
+    if (refreshed && getAuthToken() === scope) {
+      res = await run();
+    } else {
+      clearAuthTokens();
+    }
   }
   if (intent && res.ok) {
     try {
@@ -76,7 +96,7 @@ export function tryRefreshToken(failedScope = getAuthToken(), failedRevision = a
       const res = await sessionFetch("/auth/refresh", { method: "POST" });
       if (getAuthToken() !== failedScope) return getAuthToken() || null;
       if (res.ok) { notifyAuthChanged(); return getAuthToken() || null; }
-      if (res.status === 401) clearAuthTokens();
+      if (res.status === 401 || res.status === 400 || !res.ok) clearAuthTokens();
     } catch { /* Preserve the server-side retry intent after a lost response. */ }
     return null;
   };

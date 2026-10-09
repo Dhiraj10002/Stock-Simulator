@@ -1,5 +1,5 @@
 "use client";
-import { logoutSession } from "@/lib/api";
+import { logoutSession, sessionFetch } from "@/lib/api";
 import { useAccountWallet } from "@/hooks/useAccountWallet";
 import { useAuthToken } from "@/hooks/useAuthToken";
 
@@ -94,26 +94,55 @@ export default function Navbar({
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
   const [userName, setUserName] = useState("Trader");
+  const [userEmail, setUserEmail] = useState("");
   const profileMenuRef = useRef<HTMLDivElement>(null);
   const profileButtonRef = useRef<HTMLButtonElement>(null);
   const { overview, isBreached } = useRiskOverview();
   const { addToast } = useToast();
 
   useEffect(() => {
-    queueMicrotask(() => {
+    const syncUser = () => {
       const storedName = localStorage.getItem("user_name");
       if (storedName) setUserName(storedName);
-      setClientIstTime(getIndianMarketStatus().istTime);
-    });
+      const storedEmail = localStorage.getItem("user_email");
+      if (storedEmail) setUserEmail(storedEmail);
+    };
+    syncUser();
+    setClientIstTime(getIndianMarketStatus().istTime);
+
     const timer = setInterval(() => {
       setClientIstTime(getIndianMarketStatus().istTime);
     }, 10000);
-    return () => clearInterval(timer);
+
+    window.addEventListener("auth-changed", syncUser);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("auth-changed", syncUser);
+    };
   }, []);
+
+  // Fetch /auth/me when authenticated to resolve user's real name and email
+  useEffect(() => {
+    if (token) {
+      sessionFetch("/auth/me")
+        .then((res: Response) => (res.ok ? (res.json() as Promise<{ data?: { name?: string; email?: string } }>) : null))
+        .then((body: { data?: { name?: string; email?: string } } | null) => {
+          if (body?.data?.name) {
+            setUserName(body.data.name);
+            localStorage.setItem("user_name", body.data.name);
+          }
+          if (body?.data?.email) {
+            setUserEmail(body.data.email);
+            localStorage.setItem("user_email", body.data.email);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [token]);
 
   // Close profile dropdown when clicking outside
   useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
+    const handleClickOutside = (e: MouseEvent | TouchEvent) => {
       if (profileMenuRef.current && !profileMenuRef.current.contains(e.target as Node)) {
         setShowProfileMenu(false);
       }
@@ -126,10 +155,12 @@ export default function Navbar({
     };
     if (showProfileMenu) {
       document.addEventListener("mousedown", handleClickOutside);
+      document.addEventListener("touchstart", handleClickOutside, { passive: true });
       document.addEventListener("keydown", handleKeyDown);
     }
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("touchstart", handleClickOutside);
       document.removeEventListener("keydown", handleKeyDown);
     };
   }, [showProfileMenu]);
@@ -166,7 +197,7 @@ export default function Navbar({
       <div className="h-[1px] w-full bg-gradient-to-r from-transparent via-cyan-500/35 dark:via-cyan-500/30 to-transparent absolute -bottom-[1px] left-0 pointer-events-none" />
 
       {/* Top Utility Bar */}
-      <div className="px-4 lg:px-6 py-2 flex items-center justify-between gap-2 sm:gap-4 border-b border-slate-200/80 dark:border-white/[0.06] min-h-[50px] max-h-[50px] overflow-hidden">
+      <div className="px-4 lg:px-6 py-2 flex items-center justify-between gap-2 sm:gap-4 border-b border-slate-200/80 dark:border-white/[0.06] min-h-[50px]">
         {/* Left: Brand + Market Status + Indices Ticker */}
         <div className="flex items-center gap-3 lg:gap-4 shrink-0 min-w-0">
           <Link href="/dashboard" className="flex items-center gap-2.5 group shrink-0">
@@ -267,6 +298,7 @@ export default function Navbar({
                 className="w-8 h-8 rounded-full border border-slate-200 dark:border-white/[0.1] bg-slate-100 dark:bg-white/[0.05] flex items-center justify-center text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
                 title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
                 aria-label="Toggle theme"
+                suppressHydrationWarning
               >
                 {theme === "dark" ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-slate-700" />}
               </button>
@@ -365,6 +397,11 @@ export default function Navbar({
                             PRO
                           </span>
                         </div>
+                        {userEmail && (
+                          <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate font-mono">
+                            {userEmail}
+                          </div>
+                        )}
                         <div className="text-[11px] text-slate-500 dark:text-slate-400 font-mono flex items-center gap-1.5 mt-0.5">
                           <span>Demat: SS-89104</span>
                           <span>·</span>
