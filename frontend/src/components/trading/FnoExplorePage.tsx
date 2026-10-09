@@ -727,12 +727,13 @@ export default function FnoExplorePage({
                   <span>Log In to Trade F&O</span>
                   <ArrowRight className="w-3.5 h-3.5" />
                 </Link>
-                <Link
-                  href="/signup?redirect=/options"
-                  className="w-full py-2 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors text-center"
+                <button
+                  onClick={onViewPositions}
+                  aria-label="View derivative positions"
+                  className="w-full py-2 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                 >
-                  <span>Create Free Account</span>
-                </Link>
+                  View Derivative Holdings
+                </button>
               </>
             ) : (
               <>

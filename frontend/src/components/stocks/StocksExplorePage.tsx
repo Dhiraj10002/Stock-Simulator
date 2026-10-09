@@ -1211,18 +1211,44 @@ export default function StocksExplorePage() {
             {/* Quick Market Sentiment & Volatility Card */}
             {(() => {
               const vix = quotes["INDIA VIX"];
-              const vixPrice = vix && vix.price_paise > 0 ? vix.price_paise / 100 : 15.05;
-              const vixChange = vix?.change_percent ?? 8.35;
-              const isVixUp = vixChange > 0;
-              const vixRegime = vixPrice > 20 ? "High Volatility (Caution)" : vixPrice > 14 ? "Active / Normal Range" : "Low Volatility (Calm)";
+              const hasVix = Boolean(vix && vix.price_paise > 0);
+              const vixPrice = hasVix ? vix!.price_paise / 100 : null;
+              const vixChange = hasVix ? (vix!.change_percent ?? 0) : null;
+              const isVixUp = (vixChange ?? 0) > 0;
+              const vixRegime = vixPrice !== null
+                ? vixPrice > 20
+                  ? "High Volatility (Caution)"
+                  : vixPrice > 14
+                  ? "Active / Normal Range"
+                  : "Low Volatility (Calm)"
+                : "Awaiting Live Ticks";
 
               const nifty = quotes["NIFTY"] || quotes["NIFTY 50"];
-              const niftyChg = nifty?.change_percent ?? -1.43;
-              const isBullish = niftyChg > 0.3;
-              const isBearish = niftyChg < -0.3;
-              const sentimentLabel = isBullish ? "Bullish Trend" : isBearish ? "Bearish Bias" : "Neutral / Straddle";
-              const sentimentColor = isBullish ? "text-emerald-600 dark:text-emerald-400" : isBearish ? "text-rose-600 dark:text-rose-400" : "text-amber-600 dark:text-amber-400";
-              const sentimentDesc = isBullish ? "Call buyer dominance" : isBearish ? "Put demand · Call writing" : "Rangebound consolidation";
+              const hasNifty = Boolean(nifty && typeof nifty.change_percent === "number");
+              const niftyChg = hasNifty ? nifty!.change_percent : null;
+              const isBullish = (niftyChg ?? 0) > 0.3;
+              const isBearish = (niftyChg ?? 0) < -0.3;
+              const sentimentLabel = !hasNifty
+                ? "Neutral / Awaiting"
+                : isBullish
+                ? "Bullish Trend"
+                : isBearish
+                ? "Bearish Bias"
+                : "Neutral / Range";
+              const sentimentColor = !hasNifty
+                ? "text-slate-500 dark:text-slate-400"
+                : isBullish
+                ? "text-emerald-600 dark:text-emerald-400"
+                : isBearish
+                ? "text-rose-600 dark:text-rose-400"
+                : "text-amber-600 dark:text-amber-400";
+              const sentimentDesc = !hasNifty
+                ? "Awaiting index feed"
+                : isBullish
+                ? `NIFTY ${niftyChg! > 0 ? "+" : ""}${niftyChg!.toFixed(2)}% upward bias`
+                : isBearish
+                ? `NIFTY ${niftyChg!.toFixed(2)}% downward bias`
+                : "Rangebound consolidation";
 
               return (
                 <div className="p-4 rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 shadow-xs space-y-3">
@@ -1238,16 +1264,18 @@ export default function StocksExplorePage() {
                     <div className="p-2.5 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60">
                       <div className="text-[10px] text-slate-400">INDIA VIX</div>
                       <div className="text-sm font-bold text-slate-900 dark:text-slate-100 font-tabular mt-0.5 flex items-center gap-1">
-                        <span>{vixPrice.toFixed(2)}</span>
-                        <span className={`text-[10px] font-semibold ${isVixUp ? "text-amber-600 dark:text-amber-400" : "text-emerald-600 dark:text-emerald-400"}`}>
-                          {isVixUp ? "+" : ""}{vixChange.toFixed(1)}%
-                        </span>
+                        <span>{vixPrice !== null ? vixPrice.toFixed(2) : "—"}</span>
+                        {vixChange !== null && (
+                          <span className={`text-[10px] font-semibold ${isVixUp ? "text-amber-600 dark:text-amber-400" : "text-emerald-600 dark:text-emerald-400"}`}>
+                            {isVixUp ? "+" : ""}{vixChange.toFixed(1)}%
+                          </span>
+                        )}
                       </div>
                       <div className="text-[9px] text-slate-400">{vixRegime}</div>
                     </div>
 
                     <div className="p-2.5 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60">
-                      <div className="text-[10px] text-slate-400">F&O Sentiment</div>
+                      <div className="text-[10px] text-slate-400">Market Bias</div>
                       <div className={`text-sm font-bold font-tabular mt-0.5 ${sentimentColor}`}>
                         {sentimentLabel}
                       </div>
@@ -1260,7 +1288,7 @@ export default function StocksExplorePage() {
                       href="/options"
                       className="text-cyan-600 dark:text-cyan-400 hover:underline font-semibold flex items-center gap-1"
                     >
-                      <span>Open F&O Option Chain</span>
+                      <span>Explore F&O Derivatives</span>
                       <ArrowUpRight className="w-3.5 h-3.5" />
                     </Link>
                     <Link

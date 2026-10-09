@@ -21,7 +21,6 @@ import {
 } from "lucide-react";
 import Navbar from "@/components/layout/Navbar";
 import { publicFetch } from "@/lib/api";
-import { CURATED_INDIAN_MARKET_NEWS } from "@/lib/curatedNews";
 import type { Article } from "@/types";
 
 const TRENDING_SYMBOLS = [
@@ -90,10 +89,8 @@ export default function NewsDeskPage() {
     queryKey: ["news-ingestion-status"], queryFn: () => publicFetch("/news/status"), refetchInterval: 30000, retry: false,
   });
 
-  const isCuratedFallback = !articles || articles.length === 0;
   const effectiveArticles = useMemo(() => {
-    if (articles && articles.length > 0) return articles;
-    return CURATED_INDIAN_MARKET_NEWS;
+    return articles || [];
   }, [articles]);
 
   // Calculate Sentiment Barometer Statistics
@@ -177,7 +174,7 @@ export default function NewsDeskPage() {
             <div className="flex items-center gap-2 mb-1">
               <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold tracking-wider uppercase bg-cyan-100/80 dark:bg-cyan-950/80 text-cyan-800 dark:text-cyan-400 border border-cyan-200 dark:border-cyan-800/60 flex items-center gap-1.5">
                 <Activity className="w-3 h-3 text-cyan-600 dark:text-cyan-400 animate-pulse" />
-                News ingestion: {ingestionError ? "FALLBACK" : ingestion?.status ?? (isCuratedFallback ? "CURATED WIRE" : "LIVE")}
+                News ingestion: {isLoading ? "CONNECTING..." : (ingestionError ? "OFFLINE" : (ingestion?.status ?? (effectiveArticles.length > 0 ? "LIVE WIRE" : "IDLE")))}
               </span>
               <span className="text-xs text-slate-500 dark:text-slate-400 font-mono">
                 Lexical Sentiment Classifier
@@ -219,7 +216,24 @@ export default function NewsDeskPage() {
         {/* ------------------------------------------------------------------ */}
         {/* 2. MARKET SENTIMENT BAROMETER */}
         {/* ------------------------------------------------------------------ */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        {isLoading ? (
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            {[1, 2, 3, 4].map((i) => (
+              <div
+                key={i}
+                className="p-4 rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800/80 shadow-xs animate-pulse space-y-3"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="h-3.5 w-24 bg-slate-200 dark:bg-slate-800 rounded" />
+                  <div className="h-3.5 w-3.5 bg-slate-200 dark:bg-slate-800 rounded-full" />
+                </div>
+                <div className="h-7 w-28 bg-slate-200 dark:bg-slate-800 rounded mt-2" />
+                <div className="h-2 w-full bg-slate-100 dark:bg-slate-800/60 rounded-full" />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           {/* Card 1: Aggregate Market Sentiment */}
           <div className="p-4 rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800/80 shadow-xs flex flex-col justify-between">
             <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 font-semibold mb-2">
@@ -312,7 +326,8 @@ export default function NewsDeskPage() {
               />
             </div>
           </div>
-        </div>
+          </div>
+        )}
 
         {/* ------------------------------------------------------------------ */}
         {/* 3. FILTERS, SEARCH & TRENDING TICKERS */}
@@ -433,124 +448,43 @@ export default function NewsDeskPage() {
         <div className="space-y-3">
           <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 px-1 font-mono">
             <span>
-              Showing {filteredArticles.length} headline
-              {filteredArticles.length !== 1 ? "s" : ""}
+              {isLoading
+                ? "Connecting to market news stream..."
+                : `Showing ${filteredArticles.length} headline${filteredArticles.length !== 1 ? "s" : ""}`}
             </span>
-            <span>Real-time polling: Every 10 min</span>
+            <span>Real-time polling: Every 30s</span>
           </div>
 
-          {filteredArticles.map((article, idx) => {
-            const isPositive = article.sentiment === "POSITIVE";
-            const isNegative = article.sentiment === "NEGATIVE";
-
-            return (
-              <div
-                key={`${article.url}-${idx}`}
-                className="p-4 sm:p-5 rounded-2xl bg-white hover:bg-slate-50/80 dark:bg-slate-900/50 dark:hover:bg-slate-900/80 border border-slate-200 hover:border-slate-300 dark:border-slate-800/80 dark:hover:border-slate-700 transition-all duration-200 group flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xs"
-              >
-                <div className="flex-1 space-y-2 min-w-0">
-                  {/* Top Metadata Row: Source & Timestamp */}
-                  <div className="flex flex-wrap items-center gap-2 text-xs">
-                    <span className="font-bold text-cyan-700 dark:text-cyan-400 px-2 py-0.5 rounded bg-cyan-50 dark:bg-cyan-950/60 border border-cyan-200 dark:border-cyan-800/50">
-                      {article.source}
-                    </span>
-
-                    <span className="text-slate-500 dark:text-slate-400 flex items-center gap-1 font-mono">
-                      <Clock className="w-3 h-3" />
-                      {formatTimeAgo(article.published_at)}
-                    </span>
-
-                    {/* Sector Tag */}
-                    {article.sectors && article.sectors.length > 0 && (
-                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-mono uppercase">
-                        {article.sectors[0]}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Headline Title */}
-                  <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white group-hover:text-cyan-700 dark:group-hover:text-cyan-300 transition-colors leading-snug">
-                    <a
-                      href={article.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-start gap-1.5 hover:underline"
-                    >
-                      <span>{article.title}</span>
-                      <ExternalLink className="w-3.5 h-3.5 text-slate-400 group-hover:text-cyan-600 dark:group-hover:text-cyan-400 shrink-0 mt-1 opacity-70 group-hover:opacity-100" />
-                    </a>
-                  </h3>
-
-                  {/* Stock Symbol Tags */}
-                  {article.symbols && article.symbols.length > 0 && (
-                    <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                      <span className="text-[10px] text-slate-500 font-mono">
-                        Impacted:
-                      </span>
-                      {article.symbols.map((sym) => (
-                        <div key={sym} className="inline-flex items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={() => setSelectedSymbol(sym)}
-                            className="px-2 py-0.5 rounded bg-slate-100 hover:bg-slate-200 dark:bg-slate-950 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-300 hover:text-cyan-700 dark:hover:text-cyan-300 border border-slate-200 dark:border-slate-800 text-[11px] font-mono font-bold transition-colors cursor-pointer"
-                            title={`Filter news for ${sym}`}
-                          >
-                            {sym}
-                          </button>
-
-                          <Link
-                            href={`/stocks/${encodeURIComponent(sym)}`}
-                            className="p-1 rounded bg-slate-100 hover:bg-cyan-100 dark:bg-slate-950 dark:hover:bg-cyan-950 text-slate-500 hover:text-cyan-700 dark:text-slate-400 dark:hover:text-cyan-300 border border-slate-200 dark:border-slate-800 transition-colors text-[10px]"
-                            title={`View & Trade ${sym}`}
-                          >
-                            <TrendingUp className="w-3 h-3" />
-                          </Link>
-                        </div>
-                      ))}
+          {isLoading ? (
+            <div className="space-y-3">
+              {[1, 2, 3, 4, 5].map((i) => (
+                <div
+                  key={i}
+                  className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800/80 shadow-xs animate-pulse flex flex-col md:flex-row md:items-center justify-between gap-4"
+                >
+                  <div className="flex-1 space-y-2.5">
+                    <div className="flex items-center gap-2">
+                      <div className="h-4 w-24 bg-slate-200 dark:bg-slate-800 rounded" />
+                      <div className="h-3 w-16 bg-slate-200 dark:bg-slate-800 rounded" />
+                      <div className="h-3 w-12 bg-slate-200 dark:bg-slate-800 rounded" />
                     </div>
-                  )}
-                </div>
-
-                {/* Right Column: Sentiment Badge & Lexical Score */}
-                <div className="flex md:flex-col items-center md:items-end justify-between shrink-0 gap-2 pt-2 md:pt-0 border-t md:border-t-0 border-slate-100 dark:border-slate-800/60">
-                  <div
-                    className={`px-3 py-1 rounded-xl text-xs font-mono font-bold flex items-center gap-1.5 border shadow-xs ${
-                      isPositive
-                        ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/80 dark:text-emerald-400 dark:border-emerald-800/60"
-                        : isNegative
-                        ? "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/80 dark:text-rose-400 dark:border-rose-800/60"
-                        : "bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-700"
-                    }`}
-                  >
-                    {isPositive && <ArrowUpRight className="w-3.5 h-3.5 stroke-[2.5]" />}
-                    {isNegative && <ArrowDownRight className="w-3.5 h-3.5 stroke-[2.5]" />}
-                    <span>{article.sentiment}</span>
-                    <span className="text-[10px] px-1 py-0.2 rounded bg-black/10 dark:bg-black/30 opacity-90">
-                      {article.score > 0 ? `+${article.score}` : article.score}
-                    </span>
+                    <div className="h-5 w-4/5 bg-slate-200 dark:bg-slate-800 rounded" />
+                    <div className="h-4 w-1/2 bg-slate-200 dark:bg-slate-800 rounded" />
+                    <div className="flex items-center gap-2 pt-1">
+                      <div className="h-4 w-16 bg-slate-200 dark:bg-slate-800 rounded" />
+                      <div className="h-4 w-16 bg-slate-200 dark:bg-slate-800 rounded" />
+                    </div>
                   </div>
-
-                  <a
-                    href={article.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-xs text-slate-600 hover:text-cyan-700 dark:text-slate-400 dark:hover:text-cyan-300 font-semibold flex items-center gap-1 transition-colors"
-                  >
-                    <span>Read Source</span>
-                    <ChevronRight className="w-3.5 h-3.5" />
-                  </a>
+                  <div className="h-8 w-24 bg-slate-200 dark:bg-slate-800 rounded-xl shrink-0" />
                 </div>
-              </div>
-            );
-          })}
-
-          {/* Empty State */}
-          {filteredArticles.length === 0 && (
+              ))}
+            </div>
+          ) : filteredArticles.length === 0 ? (
             <div className="p-12 text-center rounded-2xl bg-white dark:bg-slate-900/30 border border-slate-200 dark:border-slate-800/80 space-y-3 shadow-xs">
               <Newspaper className="w-10 h-10 text-slate-400 dark:text-slate-600 mx-auto" />
               <h3 className="text-base font-bold text-slate-900 dark:text-white">No articles matched</h3>
               <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
-                No articles currently match your selected filters. Try resetting the sentiment, sector, or search query.
+                No financial news currently matches your selected filters. Check back shortly as market wire feeds update continuously.
               </p>
               <button
                 type="button"
@@ -565,6 +499,111 @@ export default function NewsDeskPage() {
                 Reset All Filters
               </button>
             </div>
+          ) : (
+            filteredArticles.map((article, idx) => {
+              const isPositive = article.sentiment === "POSITIVE";
+              const isNegative = article.sentiment === "NEGATIVE";
+
+              return (
+                <div
+                  key={`${article.url}-${idx}`}
+                  className="p-4 sm:p-5 rounded-2xl bg-white hover:bg-slate-50/80 dark:bg-slate-900/50 dark:hover:bg-slate-900/80 border border-slate-200 hover:border-slate-300 dark:border-slate-800/80 dark:hover:border-slate-700 transition-all duration-200 group flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xs"
+                >
+                  <div className="flex-1 space-y-2 min-w-0">
+                    {/* Top Metadata Row: Source & Timestamp */}
+                    <div className="flex flex-wrap items-center gap-2 text-xs">
+                      <span className="font-bold text-cyan-700 dark:text-cyan-400 px-2 py-0.5 rounded bg-cyan-50 dark:bg-cyan-950/60 border border-cyan-200 dark:border-cyan-800/50">
+                        {article.source}
+                      </span>
+
+                      <span className="text-slate-500 dark:text-slate-400 flex items-center gap-1 font-mono">
+                        <Clock className="w-3 h-3" />
+                        {formatTimeAgo(article.published_at)}
+                      </span>
+
+                      {/* Sector Tag */}
+                      {article.sectors && article.sectors.length > 0 && (
+                        <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-mono uppercase">
+                          {article.sectors[0]}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Headline Title */}
+                    <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white group-hover:text-cyan-700 dark:group-hover:text-cyan-300 transition-colors leading-snug">
+                      <a
+                        href={article.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-start gap-1.5 hover:underline"
+                      >
+                        <span>{article.title}</span>
+                        <ExternalLink className="w-3.5 h-3.5 text-slate-400 group-hover:text-cyan-600 dark:group-hover:text-cyan-400 shrink-0 mt-1 opacity-70 group-hover:opacity-100" />
+                      </a>
+                    </h3>
+
+                    {/* Stock Symbol Tags */}
+                    {article.symbols && article.symbols.length > 0 && (
+                      <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                        <span className="text-[10px] text-slate-500 font-mono">
+                          Impacted:
+                        </span>
+                        {article.symbols.map((sym) => (
+                          <div key={sym} className="inline-flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedSymbol(sym)}
+                              className="px-2 py-0.5 rounded bg-slate-100 hover:bg-slate-200 dark:bg-slate-950 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-300 hover:text-cyan-700 dark:hover:text-cyan-300 border border-slate-200 dark:border-slate-800 text-[11px] font-mono font-bold transition-colors cursor-pointer"
+                              title={`Filter news for ${sym}`}
+                            >
+                              {sym}
+                            </button>
+
+                            <Link
+                              href={`/stocks/${encodeURIComponent(sym)}`}
+                              className="p-1 rounded bg-slate-100 hover:cyan-100 dark:bg-slate-950 dark:hover:bg-cyan-950 text-slate-500 hover:text-cyan-700 dark:text-slate-400 dark:hover:text-cyan-300 border border-slate-200 dark:border-slate-800 transition-colors text-[10px]"
+                              title={`View & Trade ${sym}`}
+                            >
+                              <TrendingUp className="w-3 h-3" />
+                            </Link>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Right Column: Sentiment Badge & Lexical Score */}
+                  <div className="flex md:flex-col items-center md:items-end justify-between shrink-0 gap-2 pt-2 md:pt-0 border-t md:border-t-0 border-slate-100 dark:border-slate-800/60">
+                    <div
+                      className={`px-3 py-1 rounded-xl text-xs font-mono font-bold flex items-center gap-1.5 border shadow-xs ${
+                        isPositive
+                          ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/80 dark:text-emerald-400 dark:border-emerald-800/60"
+                          : isNegative
+                          ? "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/80 dark:text-rose-400 dark:border-rose-800/60"
+                          : "bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-700"
+                      }`}
+                    >
+                      {isPositive && <ArrowUpRight className="w-3.5 h-3.5 stroke-[2.5]" />}
+                      {isNegative && <ArrowDownRight className="w-3.5 h-3.5 stroke-[2.5]" />}
+                      <span>{article.sentiment}</span>
+                      <span className="text-[10px] px-1 py-0.2 rounded bg-black/10 dark:bg-black/30 opacity-90">
+                        {article.score > 0 ? `+${article.score}` : article.score}
+                      </span>
+                    </div>
+
+                    <a
+                      href={article.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-slate-600 hover:text-cyan-700 dark:text-slate-400 dark:hover:text-cyan-300 font-semibold flex items-center gap-1 transition-colors"
+                    >
+                      <span>Read Source</span>
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </a>
+                  </div>
+                </div>
+              );
+            })
           )}
         </div>
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 import { Download, X, Smartphone, ArrowUpRight } from "lucide-react";
 
 interface BeforeInstallPromptEvent extends Event {
@@ -9,6 +10,8 @@ interface BeforeInstallPromptEvent extends Event {
 }
 
 export default function PwaInstallPrompt() {
+  const pathname = usePathname();
+  const isTradeDetailPage = Boolean(pathname && (/^\/stocks\/[^/]+/.test(pathname) || pathname === "/trade"));
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [showPrompt, setShowPrompt] = useState(false);
   const [isIos] = useState(() => {
@@ -84,7 +87,7 @@ export default function PwaInstallPrompt() {
     localStorage.setItem("pwa_prompt_dismissed_until", String(Date.now() + 7 * 24 * 60 * 60 * 1000));
   };
 
-  if (!showPrompt) return null;
+  if (!showPrompt || isTradeDetailPage) return null;
 
   return (
     <div

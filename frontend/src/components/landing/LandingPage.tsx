@@ -942,7 +942,7 @@ export default function LandingPage() {
                   <div className="p-3 sm:p-4 flex flex-col justify-between space-y-2.5 group/col hover:bg-white/[0.02] rounded-2xl transition-colors">
                     <div className="flex items-center justify-between">
                       <span className="text-[9px] font-mono uppercase tracking-wider text-cyan-300 bg-cyan-500/10 border border-cyan-500/25 px-2 py-0.5 rounded-md font-bold">
-                        ● NSE DIRECT CO-LO
+                        ● DIRECT SMARTAPI STREAM
                       </span>
                     </div>
                     <div>
@@ -1113,7 +1113,7 @@ export default function LandingPage() {
                             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
                             NSE/NFO quote streaming
                           </span>
-                          <span className="text-emerald-400 font-bold">14,820 ticks/sec</span>
+                          <span className="text-emerald-400 font-bold">Low-Latency WebSocket</span>
                         </div>
                         {/* Live Frequency Wave */}
                         <div className="flex items-end justify-between gap-1 h-5 px-1 bg-white/[0.02] rounded-lg">
@@ -1217,7 +1217,7 @@ export default function LandingPage() {
               </span>
             </h2>
             <p className="text-slate-300 text-xs sm:text-sm max-w-2xl mx-auto leading-relaxed font-normal">
-              Read how real Indian market participants test F&amp;O and intraday equity setups risk-free before placing real capital on the line.
+              See how disciplined traders, educators and quants test F&amp;O and intraday equity setups risk-free before placing real capital on the line.
             </p>
           </div>
 
