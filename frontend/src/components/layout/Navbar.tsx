@@ -1,4 +1,5 @@
 "use client";
+import BrandLogo from "@/components/brand/BrandLogo";
 import { logoutSession, sessionFetch } from "@/lib/api";
 import { useAccountWallet } from "@/hooks/useAccountWallet";
 import { useAuthToken } from "@/hooks/useAuthToken";
@@ -203,17 +204,7 @@ export default function Navbar({
         {/* Left: Brand + Market Status + Indices Ticker */}
         <div className="flex items-center gap-3 lg:gap-4 shrink min-w-0">
           <Link href="/dashboard" className="flex items-center gap-2.5 group shrink-0">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-cyan-500 to-indigo-600 flex items-center justify-center font-black text-sm text-slate-950 shadow-md group-hover:scale-105 transition-transform">
-              SS
-            </div>
-            <div>
-              <span className="font-extrabold text-sm tracking-tight text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
-                STOCK <span className="text-cyan-600 dark:text-cyan-400 font-mono">SIMULATOR</span>
-              </span>
-              <span className="text-[10px] tracking-wider text-slate-600 dark:text-slate-400 uppercase font-semibold block -mt-0.5">
-                Institutional Paper Desk
-              </span>
-            </div>
+            <BrandLogo tagline="Institutional Paper Desk" />
           </Link>
 
           {/* Authoritative Market & Feed Session Status Pill */}

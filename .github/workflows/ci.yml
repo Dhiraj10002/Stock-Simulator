@@ -261,8 +261,8 @@ jobs:
           node scripts/compare-lab.mjs artifacts/comparison/before/mobile.json artifacts/comparison/after/mobile.json artifacts/comparison/summary.json
       - name: Measure current deployed public routes without account writes
         run: |
-          node scripts/profile-mobile.mjs --url https://stock-simulator-dev.vercel.app --paths /,/login,/stocks,/options --motion no-preference --runs 2 --output artifacts/deployed/mobile
-          node scripts/profile-mobile.mjs --url https://stock-simulator-dev.vercel.app --device desktop --paths /,/login,/stocks,/options --motion no-preference --runs 2 --output artifacts/deployed/desktop
+          node scripts/profile-mobile.mjs --url https://www.stock-simulator.in --paths /,/login,/stocks,/options --motion no-preference --runs 2 --output artifacts/deployed/mobile
+          node scripts/profile-mobile.mjs --url https://www.stock-simulator.in --device desktop --paths /,/login,/stocks,/options --motion no-preference --runs 2 --output artifacts/deployed/desktop
       - name: Record production dependency audit
         run: |
           npm audit --omit=dev --json > artifacts/comparison/dependency-audit.json || test -s artifacts/comparison/dependency-audit.json

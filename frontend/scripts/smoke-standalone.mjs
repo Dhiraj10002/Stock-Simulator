@@ -57,6 +57,39 @@ async function main() {
       assert.ok((await response.arrayBuffer()).byteLength > 0, asset);
     }
     assert.ok(scripts && styles, "JavaScript and CSS must both be served");
+    const canonicalOrigin = "https://www.stock-simulator.in";
+    const publicPaths = ["/", "/stocks", "/options", "/news", "/about", "/privacy", "/terms"];
+    for (const path of publicPaths) {
+      const response = await fetch(origin + path);
+      assert.equal(response.status, 200, path);
+      const html = await response.text();
+      const canonical = canonicalOrigin + (path === "/" ? "" : path);
+      assert.ok(html.includes('rel="canonical" href="' + canonical + '"'), path + " canonical");
+      assert.match(html, /name="robots" content="index, follow"/, path + " indexable");
+      assert.ok(html.includes('property="og:url" content="' + canonical + '"'), path + " social URL");
+      assert.ok(html.includes(canonicalOrigin + "/brand/social-preview.png"), path + " social preview");
+      if (path === "/") {
+        assert.match(html, /<title>Stock Simulator — Paper Trading in India<\/title>/);
+        assert.match(html, /type="application\/ld\+json"/);
+      }
+    }
+    for (const path of ["/login", "/signup", "/dashboard", "/portfolio", "/orders", "/analytics", "/watchlist", "/mentor", "/stocks/RELIANCE"]) {
+      const html = await (await fetch(origin + path)).text();
+      assert.match(html, /name="robots" content="noindex, follow"/, path + " excluded from search");
+      assert.ok(!html.includes('rel="canonical"'), path + " must not inherit explorer canonical");
+    }
+    const robots = await fetch(origin + "/robots.txt");
+    assert.equal(robots.status, 200);
+    assert.ok((await robots.text()).includes("Sitemap: " + canonicalOrigin + "/sitemap.xml"));
+    const sitemap = await fetch(origin + "/sitemap.xml");
+    assert.equal(sitemap.status, 200);
+    const locations = [...(await sitemap.text()).matchAll(/<loc>([^<]+)<\/loc>/g)].map(match => match[1]);
+    assert.deepEqual(locations.sort(), publicPaths.map(path => canonicalOrigin + (path === "/" ? "" : path)).sort());
+    for (const path of ["/brand/stock-simulator-mark.svg", "/brand/social-preview.png", "/favicon.ico", "/manifest.webmanifest"]) {
+      const response = await fetch(origin + path);
+      assert.equal(response.status, 200, path);
+      assert.ok((await response.arrayBuffer()).byteLength > 0, path);
+    }
     for (const path of ["/trade", "/terminal"]) {
       const response = await fetch(origin + path, { redirect: "manual" });
       assert.equal(response.status, 307);
