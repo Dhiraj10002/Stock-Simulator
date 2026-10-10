@@ -107,9 +107,11 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path: st
       } catch { /* Non-secret fallback; never used for server authorization. */ }
       const marker = endpoint === "auth/refresh" ? request.cookies.get(markerName)?.value || accountScope : accountScope;
       const response = reply({ ...payload, data: { authenticated: true } }, upstream.status);
-      response.cookies.set(accessName, access_token, { ...cookieOptions, maxAge: 7 * 86400 });
-      response.cookies.set(refreshName, refresh_token, { ...cookieOptions, maxAge: 7 * 86400 });
-      response.cookies.set(markerName, marker, { ...cookieOptions, httpOnly: false, maxAge: 7 * 86400 });
+      const accessMaxAge = 6 * 3600; // 6 hours
+      const refreshMaxAge = 7 * 86400; // 7 days
+      response.cookies.set(accessName, access_token, { ...cookieOptions, maxAge: accessMaxAge });
+      response.cookies.set(refreshName, refresh_token, { ...cookieOptions, maxAge: refreshMaxAge });
+      response.cookies.set(markerName, marker, { ...cookieOptions, httpOnly: false, maxAge: accessMaxAge });
       return response;
     }
     const response = reply(payload, upstream.status);

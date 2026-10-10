@@ -15,7 +15,7 @@ type Claims struct {
 }
 
 const (
-	accessTokenLifetime  = 15 * time.Minute
+	accessTokenLifetime  = 6 * time.Hour
 	refreshTokenLifetime = 7 * 24 * time.Hour
 )
 

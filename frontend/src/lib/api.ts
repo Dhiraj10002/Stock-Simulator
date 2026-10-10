@@ -28,7 +28,7 @@ export function notifyAuthChanged(): void {
   try { localStorage.setItem("auth-session-change", sessionRevision); } catch { /* storage may be blocked */ }
   window.dispatchEvent(new Event("auth-changed"));
 }
-export function clearAuthTokens(): void {
+export function clearAuthTokens(options?: { redirect?: boolean }): void {
   if (typeof document !== "undefined") {
     const isHttps = typeof window !== "undefined" && window.location?.protocol === "https:";
     const securePart = isHttps ? "; Secure" : "";
@@ -46,6 +46,13 @@ export function clearAuthTokens(): void {
     localStorage.removeItem("auth-session-change");
   } catch { /* storage may be blocked */ }
   notifyAuthChanged();
+  if (options?.redirect && typeof window !== "undefined") {
+    const p = window.location.pathname;
+    if (p !== "/login" && p !== "/signup" && !p.startsWith("/login") && !p.startsWith("/signup")) {
+      const target = encodeURIComponent(p + window.location.search);
+      window.location.replace(`/login?redirect=${target}`);
+    }
+  }
 }
 let sessionRevision = "";
 function authRevision(): string | null {
@@ -69,10 +76,16 @@ export async function sessionFetch(url: string, options: RequestInit = {}): Prom
   if (intent) headers.set("Idempotency-Key", orderIntentKey(sessionStorage, scope, options.body as string));
   const run = () => fetch(`/api/backend${path}`, { ...options, headers, credentials: "same-origin", cache: "no-store" });
   let res = await run();
-  if (res.status === 401 && scope && !path.startsWith("/auth/")) {
+  const isRefreshCandidate = path === "/auth/me" || (!path.startsWith("/auth/") && path !== "/auth/refresh");
+  if (res.status === 401 && scope && isRefreshCandidate) {
     const refreshed = await tryRefreshToken(scope, revision);
     if (refreshed && (getAuthToken() === scope || !isAccountMutation(path, method))) {
       res = await run();
+    }
+  }
+  if (res.status === 401 && privatePath(path) && path !== "/auth/login" && path !== "/auth/register" && path !== "/auth/refresh") {
+    if (!getAuthToken()) {
+      clearAuthTokens({ redirect: true });
     }
   }
   if (intent && res.ok) {
@@ -94,7 +107,7 @@ export function tryRefreshToken(failedScope = getAuthToken(), failedRevision = a
       const res = await sessionFetch("/auth/refresh", { method: "POST" });
       if (getAuthToken() !== failedScope) return getAuthToken() || null;
       if (res.ok) { notifyAuthChanged(); return getAuthToken() || null; }
-      if (res.status === 401 || res.status === 400 || !res.ok) clearAuthTokens();
+      if (res.status === 401 || res.status === 400 || !res.ok) clearAuthTokens({ redirect: true });
     } catch { /* Preserve the server-side retry intent after a lost response. */ }
     return null;
   };
@@ -104,7 +117,7 @@ export function tryRefreshToken(failedScope = getAuthToken(), failedRevision = a
   return pending;
 }
 export async function logoutSession() {
-  const logout = async () => { try { await sessionFetch("/auth/logout", { method: "POST" }); } finally { clearAuthTokens(); } };
+  const logout = async () => { try { await sessionFetch("/auth/logout", { method: "POST" }); } finally { clearAuthTokens({ redirect: true }); } };
   return (typeof navigator !== "undefined" && navigator.locks) ? navigator.locks.request("stock-simulator-auth-refresh", logout) : logout();
 }
 
