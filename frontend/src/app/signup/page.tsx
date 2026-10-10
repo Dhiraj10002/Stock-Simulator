@@ -18,7 +18,7 @@ function SignUpContent() {
   }, [token, router, redirectUrl]);
 
   return (
-    <div className="min-h-screen bg-[#04060b] flex items-center justify-center">
+    <div className="min-h-screen bg-slate-50 dark:bg-[#04060b] flex items-center justify-center">
       <AuthModal
         isOpen={true}
         mode="register"
@@ -31,7 +31,7 @@ function SignUpContent() {
 
 export default function SignUpPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-[#04060b]" />}>
+    <Suspense fallback={<div className="min-h-screen bg-slate-50 dark:bg-[#04060b]" />}>
       <SignUpContent />
     </Suspense>
   );

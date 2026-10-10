@@ -12,6 +12,12 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      - name: Pre-pull base images from public mirror
+        run: |
+          docker pull public.ecr.aws/docker/library/caddy:2-alpine && docker tag public.ecr.aws/docker/library/caddy:2-alpine caddy:2-alpine
+          docker pull public.ecr.aws/docker/library/redis:7-alpine && docker tag public.ecr.aws/docker/library/redis:7-alpine redis:7-alpine
+          docker pull public.ecr.aws/docker/library/postgres:16-alpine && docker tag public.ecr.aws/docker/library/postgres:16-alpine postgres:16-alpine
+          docker pull public.ecr.aws/docker/library/debian:bookworm-slim && docker tag public.ecr.aws/docker/library/debian:bookworm-slim debian:bookworm-slim
       - name: Verify production Compose and Caddy against real Go backend
         run: python3 scripts/smoke_production_gateway.py
       - name: Verify optional broker proxy image and configuration
@@ -24,7 +30,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:16-alpine
+        image: public.ecr.aws/docker/library/postgres:16-alpine
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -37,7 +43,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
       redis:
-        image: redis:7-alpine
+        image: public.ecr.aws/docker/library/redis:7-alpine
         ports:
           - 6380:6379
         options: >-
@@ -208,6 +214,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Pre-pull Node base image from public mirror
+        run: |
+          docker pull public.ecr.aws/docker/library/node:22-alpine && docker tag public.ecr.aws/docker/library/node:22-alpine node:22-alpine
       - name: Build production runtime image
         run: docker build --tag stock-simulator-frontend:ci frontend
       - name: Smoke non-root runtime, static assets and redirects

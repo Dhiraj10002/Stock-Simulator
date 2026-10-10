@@ -223,6 +223,21 @@ export default function AuthModal({
         // Fallback to name or email prefix
       }
 
+      try {
+        const currentTheme = localStorage.getItem("stock_sim_theme");
+        if (mode === "register" || !currentTheme) {
+          localStorage.setItem("stock_sim_theme", "light");
+          if (typeof document !== "undefined") {
+            const root = document.documentElement;
+            root.classList.remove("dark");
+            root.classList.add("light");
+            root.setAttribute("data-theme", "light");
+            root.style.colorScheme = "light";
+          }
+          window.dispatchEvent(new Event("storage"));
+        }
+      } catch {}
+
       if (mode === "register") {
         addToast("Account Created", `Welcome to Stock Simulator, ${userDisplay}!`, "success");
       } else {

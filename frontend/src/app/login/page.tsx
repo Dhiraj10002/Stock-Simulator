@@ -8,7 +8,7 @@ import { useAuthToken } from "@/hooks/useAuthToken";
 
 function LoginCardFallback() {
   return (
-    <div className="min-h-screen bg-[#04060b] flex items-center justify-center p-4">
+    <div className="min-h-screen bg-slate-50 dark:bg-[#04060b] flex items-center justify-center p-4">
       <div className="w-full max-w-md rounded-3xl bg-[#090d16]/90 border border-slate-800 p-6 sm:p-8 space-y-6 shadow-2xl">
         <div className="text-center space-y-2">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-950/60 border border-cyan-800/40 text-cyan-400 text-xs font-mono">
@@ -48,7 +48,7 @@ function LoginContent() {
   }, [token, router, redirectUrl]);
 
   return (
-    <div className="min-h-screen bg-[#04060b] flex items-center justify-center">
+    <div className="min-h-screen bg-slate-50 dark:bg-[#04060b] flex items-center justify-center">
       <AuthModal
         isOpen={true}
         mode="login"
