@@ -1,4 +1,7 @@
 "use client";
+import { historyPollingInterval } from "@/lib/historyPolling";
+import { useQuoteMetrics } from "@/hooks/useQuoteMetrics";
+import { useMarketStatus } from "@/hooks/useMarketStatus";
 import { useDisplayPolling } from "@/hooks/useDisplayPolling";
 
 import { useEffect, useRef, useState } from "react";
@@ -29,7 +32,7 @@ import { useAccountWallet } from "@/hooks/useAccountWallet";
 import { useToast } from "@/components/ui/ToastProvider";
 import { formatPaise } from "@/lib/format";
 import { aggregateCandles, historyRequest, quoteLabel } from "@/lib/marketData";
-import { displayQuote, type FuturesMarketStatus } from "@/lib/fnoExplore";
+import { displayQuote } from "@/lib/fnoExplore";
 import { nativeCandles } from "@/lib/fnoStockOverview";
 import { useOrderPreview } from "@/hooks/useOrderPreview";
 import { strategyJournalKey } from "@/lib/strategyExecution";
@@ -173,13 +176,7 @@ function StockDesk({ symbol, token }: { symbol: string; token: string }) {
     refetchInterval: displayInterval,
     retry: false,
   });
-  const market = useQuery({
-    queryKey: ["stock-market-status"],
-    queryFn: ({ signal }) =>
-      bounded<FuturesMarketStatus>("/market/status", signal),
-    refetchInterval: 10000,
-    retry: false,
-  });
+  const market = useMarketStatus("NSE");
   const status =
     !market.isError && now - market.dataUpdatedAt < 30000
       ? market.data
@@ -198,6 +195,7 @@ function StockDesk({ symbol, token }: { symbol: string; token: string }) {
   );
   const quote =
     chosen?.source === "angelone_live" && canonical ? chosen : undefined;
+  useQuoteMetrics(quote);
   const chartQuote = quote
     ? { ...quote, is_quote_stale: !sessionLive || quote.is_quote_stale }
     : null;
@@ -210,7 +208,14 @@ function StockDesk({ symbol, token }: { symbol: string; token: string }) {
         signal,
       ),
     enabled: !!canonical,
-    refetchInterval: 30000,
+    refetchInterval: (query) => historyPollingInterval({
+      healthyStream: sessionLive && displayInterval === false,
+      closed: status?.status === "CLOSED" || status?.status === "HOLIDAY",
+      missing: !query.state.data?.length,
+      error: query.state.status === "error",
+    }),
+    refetchOnWindowFocus: true,
+    staleTime: 10_000,
     retry: false,
   });
   const fundamentals = useQuery({

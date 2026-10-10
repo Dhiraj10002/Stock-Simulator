@@ -48,6 +48,7 @@ async function setup(
   await page.addInitScript((value) => {
     document.cookie = `stocksim_session=${value}; Path=/; SameSite=Lax`;
     localStorage.setItem("stock_sim_theme", "light");
+    sessionStorage.setItem("stocksim:quote-metrics", "1");
   }, token);
   await page.routeWebSocket("**/ws/market", (ws) => {
     connections++;
@@ -275,6 +276,7 @@ test("trading navigation updates subscriptions on one socket and reconnect repla
   const initialConnections = control.connectionCount();
   await page.getByRole("link", { name: "Stocks", exact: true }).first().click();
   await expect(page).toHaveURL(/\/stocks$/);
+
   await expect.poll(() => control.messages.some(m => m.action === "unsubscribe" && m.symbols?.includes("RELIANCE-EQ"))).toBe(true);
   expect(control.connectionCount()).toBe(initialConnections);
   await page.goBack();
@@ -474,4 +476,48 @@ test("mobile touch ticket and chart stay usable under CPU throttling", async ({ 
     }
     expect(control.errors).toEqual([]);
   } finally { await context.close(); }
+});
+
+
+test("stock detail shares NSE polling with its provider and records the rendered quote", async ({ page }) => {
+  const control = await setup(page);
+  await expect.poll(() => control.requests.filter(path => path === "/market/status").length).toBe(1);
+  for (let i=0;i<100;i++) control.tick(200000+i);
+  const header = page.locator('header[aria-label="Stock identity"]');
+  await expect(header.getByText("₹2,000.99", { exact: true })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => {
+    const fn = (window as unknown as { __stocksimQuoteMetrics?: () => { kind: string; receiveToCommitMs?: number }[] }).__stocksimQuoteMetrics;
+    return fn?.().filter(item => item.kind === "render" && typeof item.receiveToCommitMs === "number").length || 0;
+  })).toBeGreaterThan(0);
+  await page.waitForTimeout(16000);
+  // One provider interval, rather than a separate detail-page interval.
+  expect(control.requests.filter(path => path === "/market/status")).toHaveLength(2);
+  expect(control.connectionCount()).toBe(1);
+  expect(control.posts).toHaveLength(0);
+});
+
+
+test("mobile emulation captures a chart render trace with real-shaped fixture ticks", async ({ page }, testInfo) => {
+  const { startRenderTrace, stopRenderTrace } = await import("../scripts/render-trace.mjs");
+  const { quoteTimingSummary } = await import("../scripts/profile-report.mjs");
+  await page.setViewportSize({ width: 390, height: 844 });
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("Emulation.setCPUThrottlingRate", { rate: 4 });
+  await startRenderTrace(cdp);
+  const control = await setup(page);
+  const tickBurst = setInterval(() => { for (let i=0;i<20;i++) control.tick(200000+i); }, 200);
+  try {
+    await page.getByRole("button", { name: "1D", exact: true }).click();
+    await page.mouse.wheel(0,500);
+    await page.waitForTimeout(2500);
+  } finally { clearInterval(tickBurst); }
+  const trace = await stopRenderTrace(cdp);
+  const metrics = await page.evaluate(() => (window as unknown as { __stocksimQuoteMetrics?: () => unknown[] }).__stocksimQuoteMetrics?.() || []);
+  const result = { mode: "local production browser lab; fixture quotes/history; 390x844 CPU 4x; software rendering", render: trace.summary, quoteTimings: quoteTimingSummary(metrics), metrics };
+  mkdirSync("artifacts/streaming", { recursive: true });
+  writeFileSync("artifacts/streaming/chart-lab.json", JSON.stringify(result,null,2));
+  writeFileSync("artifacts/streaming/chart-trace.json", trace.raw);
+  await testInfo.attach("render-trace", { body: trace.raw, contentType: "application/json" });
+  expect(metrics.length).toBeGreaterThan(0);
+  expect(control.posts).toHaveLength(0);
 });

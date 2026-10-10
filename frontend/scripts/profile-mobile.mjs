@@ -4,7 +4,8 @@ import { spawn } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { accountObservation, reportPath, summarizeTimings } from "./profile-report.mjs";
+import { startRenderTrace, stopRenderTrace } from "./render-trace.mjs";
+import { accountObservation, reportPath, summarizeTimings, quoteTimingSummary } from "./profile-report.mjs";
 
 const defaultFrontend = fileURLToPath(new URL("../", import.meta.url));
 const args = process.argv.slice(2);
@@ -19,6 +20,7 @@ const output = resolve(option("--output", join(frontend, "artifacts/mobile")));
 const paths = option("--paths", "/,/login").split(",");
 const repeats = Number(option("--runs", "3"));
 const storageState = option("--storage-state");
+const captureTrace = args.includes("--trace");
 const requireAccount = args.includes("--require-account");
 if (requireAccount && (!storageState || !accountWindow)) throw new Error("--require-account needs --storage-state and --account-window");
 const modes = option("--motion", "no-preference,reduce").split(",");
@@ -82,6 +84,7 @@ async function main() {
         // reach the actual deployed services; no account writes or order submissions.
         if (!remote && !storageState) await page.route("**/api/v1/**", route => route.fulfill({ json: { success: true, data: [] } }));
         await page.addInitScript(() => {
+          sessionStorage.setItem("stocksim:quote-metrics", "1");
           window.__mobileLab = { lcpMs: null, cls: 0, sessionCls: 0, longTasks: [], events: [], shiftAttributions: [] };
           new PerformanceObserver(list => { for (const entry of list.getEntries()) window.__mobileLab.lcpMs = entry.startTime; }).observe({ type: "largest-contentful-paint", buffered: true });
           let sessionValue = 0, sessionEntries = [];
@@ -128,6 +131,7 @@ async function main() {
         });
         await cdp.send("Network.emulateNetworkConditions", { offline: false, latency: 150, downloadThroughput: 200000, uploadThroughput: 93750 });
         await cdp.send("Emulation.setCPUThrottlingRate", { rate: desktop ? 1 : 4 });
+        if (captureTrace) await startRenderTrace(cdp);
         const response = await page.goto(origin + path, { waitUntil: "load", timeout: 60000 });
         if (!response || response.status() >= 400) {
           throw new Error(`Route navigation to ${origin + path} failed with HTTP status ${response?.status() ?? "no response"}`);
@@ -135,7 +139,7 @@ async function main() {
         // Content readiness assertions: confirm page DOM initialized
         try {
           if (path === "/") {
-            await page.locator("main, h1, a[href='#platform']").first().waitFor({ timeout: 5000 });
+            await page.locator("main:visible, h1:visible, a[href='#platform']:visible").first().waitFor({ timeout: 5000 });
           } else if (path === "/login") {
             await page.locator("input[type='email']").waitFor({ timeout: 5000 });
           } else if (path === "/stocks") {
@@ -143,7 +147,7 @@ async function main() {
           } else if (path === "/options") {
             await page.locator("main").waitFor({ timeout: 5000 });
           }
-        } catch { /* proceed to observe stabilization */ }
+        } catch (error) { throw new Error(`Route ${path} failed content readiness: ${error.message}`); }
         await page.waitForTimeout(3500);
         let authenticated = false;
         if (storageState) {
@@ -180,8 +184,13 @@ async function main() {
         const cpu = { scriptSeconds: (metrics.get("ScriptDuration") || 0) - (prior.get("ScriptDuration") || 0), taskSeconds: (metrics.get("TaskDuration") || 0) - (prior.get("TaskDuration") || 0), heapBytes: metrics.get("JSHeapUsedSize") };
         const interactionLab = await page.evaluate(() => ({ ...window.__mobileLab, overflow: document.documentElement.scrollWidth > innerWidth }));
         const apiSummary = Object.fromEntries([...new Set(apiTimings.map(item => item.path))].sort().map(path => [path, summarizeTimings(apiTimings.filter(item => item.path === path && item.status >= 200 && item.status < 300).map(item => item.durationMs))]));
-        const run = { path, finalPath: new URL(page.url()).pathname, reducedMotion, repeat: repeat + 1, status: response?.status(), navigation, interactions, interactionLab, accountObservation: account, accountStreams, apiTimings, apiSummary, sockets, cpu, preflights, requests, failures, pageErrors };
+        const renderTrace = captureTrace ? await stopRenderTrace(cdp) : null;
+        if (renderTrace) writeFileSync(join(output, `${path.replace(/[^a-z0-9]/gi, "_") || "home"}-${reducedMotion}-${repeat + 1}-trace.json`), renderTrace.raw);
+        const quoteMetrics = await page.evaluate(() => window.__stocksimQuoteMetrics?.() || []);
+        const run = { quoteTimingSummary: quoteTimingSummary(quoteMetrics), renderTrace: renderTrace?.summary, quoteMetrics, path, finalPath: new URL(page.url()).pathname, reducedMotion, repeat: repeat + 1, status: response?.status(), navigation, interactions, interactionLab, accountObservation: account, accountStreams, apiTimings, apiSummary, sockets, cpu, preflights, requests, failures, pageErrors };
         runs.push(run);
+        // Retain completed observations even when a subsequent readiness/network gate fails.
+        writeFileSync(join(output, "mobile.json"), JSON.stringify({ mode: remote ? "deployed browser lab; real APIs" : "local browser lab; fixtures", origin, device: desktop ? "desktop" : "mobile emulation", partial: true, runs }, null, 2));
         if (repeat === 0) await page.screenshot({ path: join(output, `${path.replace(/[^a-z0-9]/gi, "_") || "home"}-${reducedMotion}.png`) });
         console.log(JSON.stringify({ path, reducedMotion, repeat: repeat + 1, ...navigation, pageErrors, failures: failures.filter(f => f.kind !== "aborted").length, abortedRequests: failures.filter(f => f.kind === "aborted").length }));
         if (remote && pageErrors > 0) {

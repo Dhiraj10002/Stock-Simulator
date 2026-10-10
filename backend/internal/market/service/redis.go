@@ -290,6 +290,10 @@ func (s *Service) rawCachedQuote(symbol string) (*dto.QuoteResponse, error) {
 		return nil, ErrQuoteNotFound
 	}
 
+	return s.displayQuoteFromValues(symbol, values)
+}
+
+func (s *Service) displayQuoteFromValues(symbol string, values map[string]string) (*dto.QuoteResponse, error) {
 	// CachedQuote is display-only, but it must preserve the active feed-mode
 	// and source provenance contract. A stale value from a different provider
 	// or simulation mode must not become visible in the current display.
@@ -335,10 +339,13 @@ func (s *Service) rawCachedQuote(symbol string) (*dto.QuoteResponse, error) {
 	previousClose, _ := strconv.ParseInt(values["previous_close_paise"], 10, 64)
 	dayAvailable, _ := strconv.ParseBool(values["day_change_available"])
 	return &dto.QuoteResponse{
-		OpenInterest:          openInterest,
-		OpenInterestAvailable: values["open_interest_available"] == "true",
-		VolumeAvailable:       optionalBool(values, "volume_available"),
-		OpenPaise:             optionalInt(values, "open_paise"), HighPaise: optionalInt(values, "high_paise"), LowPaise: optionalInt(values, "low_paise"),
+		MarketEventID:           values["market_event_id"],
+		WorkerReceivedAtMS:      optionalInt(values, "worker_received_at_ms"),
+		WorkerPublishQueuedAtMS: optionalInt(values, "worker_publish_queued_at_ms"),
+		OpenInterest:            openInterest,
+		OpenInterestAvailable:   values["open_interest_available"] == "true",
+		VolumeAvailable:         optionalBool(values, "volume_available"),
+		OpenPaise:               optionalInt(values, "open_paise"), HighPaise: optionalInt(values, "high_paise"), LowPaise: optionalInt(values, "low_paise"),
 		Week52HighPaise: optionalInt(values, "week_52_high_paise"), Week52LowPaise: optionalInt(values, "week_52_low_paise"),
 		TotalBuyQuantity: optionalCount(values, "total_buy_quantity"), TotalSellQuantity: optionalCount(values, "total_sell_quantity"),
 		LowerCircuitPaise: optionalInt(values, "lower_circuit_paise"), UpperCircuitPaise: optionalInt(values, "upper_circuit_paise"), Depth: optionalDepth(values),
@@ -354,35 +361,109 @@ func (s *Service) rawCachedQuote(symbol string) (*dto.QuoteResponse, error) {
 	}, nil
 }
 
-// BatchQuotes retrieves quotes for an array of symbols in a single call.
+// BatchQuotes pipelines display reads only. Execution still uses CurrentQuote.
+// One feed-state read and one demand update cover the entire normalized batch.
 func (s *Service) BatchQuotes(symbols []string) map[string]*dto.QuoteResponse {
 	results := make(map[string]*dto.QuoteResponse)
-	var mu sync.Mutex
-	var wg sync.WaitGroup
-	jobs := make(chan string)
-	for i := 0; i < 8; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for sym := range jobs {
-				if q, err := s.CachedQuote(sym); err == nil && q != nil && q.PricePaise > 0 {
-					mu.Lock()
-					results[sym] = q
-					mu.Unlock()
+	if s == nil || s.client == nil || s.FeedMode() == dto.FeedModeUnavailable {
+		return results
+	}
+	unique := make([]string, 0, len(symbols))
+	seen := make(map[string]bool)
+	for _, raw := range symbols {
+		symbol := strings.ToUpper(strings.TrimSpace(raw))
+		if symbol == "" || seen[symbol] {
+			continue
+		}
+		seen[symbol] = true
+		unique = append(unique, symbol)
+	}
+	// Keep cold metadata checks parallel and bounded, as in the former reader.
+	if s.instrumentFinder != nil {
+		accepted := make([]bool, len(unique))
+		jobs := make(chan int, len(unique))
+		var workers sync.WaitGroup
+		for i := 0; i < 8 && i < len(unique); i++ {
+			workers.Add(1)
+			go func() {
+				defer workers.Done()
+				for index := range jobs {
+					symbol := unique[index]
+					found, err := s.instrumentFinder(symbol)
+					accepted[index] = err == nil && (found || (s.FeedMode() == dto.FeedModeSynthetic && product.IsSyntheticContract(symbol)))
+				}
+			}()
+		}
+		for index := range unique {
+			jobs <- index
+		}
+		close(jobs)
+		workers.Wait()
+		filtered := unique[:0]
+		for index, symbol := range unique {
+			if accepted[index] {
+				filtered = append(filtered, symbol)
+			}
+		}
+		unique = filtered
+	}
+	if len(unique) == 0 {
+		return results
+	}
+	ctx, cancel := cache.Context(context.Background(), s.timeout)
+	defer cancel()
+	feed, err := s.client.HGet(ctx, FeedStateKey, "feed_state").Result()
+	if err != nil && !errors.Is(err, redis.Nil) {
+		return results
+	}
+	if strings.EqualFold(strings.TrimSpace(feed), string(dto.FeedModeUnavailable)) {
+		return results
+	}
+	for start := 0; start < len(unique); start += 100 {
+		end := start + 100
+		if end > len(unique) {
+			end = len(unique)
+		}
+		chunk := unique[start:end]
+		pipe := s.client.Pipeline()
+		reads := make(map[string]*redis.MapStringStringCmd)
+		demand := make([]redis.Z, 0, len(chunk))
+		for _, symbol := range chunk {
+			for _, key := range []string{symbol, alias.ResolveCanonicalSymbol(symbol)} {
+				if key != "" && reads[key] == nil {
+					reads[key] = pipe.HGetAll(ctx, quoteKey(key))
 				}
 			}
-		}()
-	}
-	seen := make(map[string]bool)
-	for _, sym := range symbols {
-		clean := strings.ToUpper(strings.TrimSpace(sym))
-		if clean != "" && !seen[clean] {
-			seen[clean] = true
-			jobs <- clean
+			demand = append(demand, redis.Z{Score: float64(time.Now().Unix()), Member: symbol})
+		}
+		if s.FeedMode() == dto.FeedModeLive && len(demand) > 0 {
+			pipe.ZAdd(ctx, "market:quote:demand", demand...)
+		}
+		// Inspect each read: an optional alias error must not discard a valid primary hash.
+		_, _ = pipe.Exec(ctx)
+		for _, symbol := range chunk {
+			values, readErr := reads[symbol].Result()
+			if readErr != nil || len(values) == 0 {
+				if canonical := alias.ResolveCanonicalSymbol(symbol); canonical != "" && canonical != symbol {
+					values, readErr = reads[canonical].Result()
+				}
+			}
+			if readErr != nil {
+				continue
+			}
+			if len(values) == 0 {
+				if s.FeedMode() == dto.FeedModeSynthetic {
+					if q, err := s.CachedQuote(symbol); err == nil && q != nil {
+						results[symbol] = q
+					}
+				}
+				continue
+			}
+			if q, err := s.displayQuoteFromValues(symbol, values); err == nil {
+				results[symbol] = q
+			}
 		}
 	}
-	close(jobs)
-	wg.Wait()
 	return results
 }
 
@@ -515,10 +596,13 @@ func (s *Service) CurrentQuote(symbol string) (*dto.QuoteResponse, error) {
 	previousClose, _ := strconv.ParseInt(values["previous_close_paise"], 10, 64)
 	dayAvailable, _ := strconv.ParseBool(values["day_change_available"])
 	return &dto.QuoteResponse{
-		OpenInterest:          openInterest,
-		OpenInterestAvailable: values["open_interest_available"] == "true",
-		VolumeAvailable:       optionalBool(values, "volume_available"),
-		OpenPaise:             optionalInt(values, "open_paise"), HighPaise: optionalInt(values, "high_paise"), LowPaise: optionalInt(values, "low_paise"),
+		MarketEventID:           values["market_event_id"],
+		WorkerReceivedAtMS:      optionalInt(values, "worker_received_at_ms"),
+		WorkerPublishQueuedAtMS: optionalInt(values, "worker_publish_queued_at_ms"),
+		OpenInterest:            openInterest,
+		OpenInterestAvailable:   values["open_interest_available"] == "true",
+		VolumeAvailable:         optionalBool(values, "volume_available"),
+		OpenPaise:               optionalInt(values, "open_paise"), HighPaise: optionalInt(values, "high_paise"), LowPaise: optionalInt(values, "low_paise"),
 		Week52HighPaise: optionalInt(values, "week_52_high_paise"), Week52LowPaise: optionalInt(values, "week_52_low_paise"),
 		TotalBuyQuantity: optionalCount(values, "total_buy_quantity"), TotalSellQuantity: optionalCount(values, "total_sell_quantity"),
 		LowerCircuitPaise: optionalInt(values, "lower_circuit_paise"), UpperCircuitPaise: optionalInt(values, "upper_circuit_paise"), Depth: optionalDepth(values),

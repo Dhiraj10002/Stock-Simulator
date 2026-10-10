@@ -71,6 +71,9 @@ export type Transaction = {
 };
 
 export type Quote = {
+  market_event_id?: string;
+  worker_received_at_ms?: number;
+  worker_publish_queued_at_ms?: number;
  depth?: { bids: DepthItem[]; asks: DepthItem[] };
  open_interest_available?: boolean;
  is_quote_stale?: boolean;

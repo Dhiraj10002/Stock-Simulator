@@ -14,6 +14,8 @@ See [Code cleanup and performance priorities](docs/code-cleanup-performance.md) 
 
 See [Mobile profiling, display polling and standalone runtime](docs/mobile-polling-standalone.md) for stream-aware display fallback, repeatable mobile measurements and the smaller Docker runner. Run `npm run profile:mobile -- --url https://YOUR_FRONTEND_HOST` after deployment; local observations are not field INP.
 
+See [Shared streaming, pipelined quote reads and opt-in latency diagnostics](docs/streaming-performance.md) for local benchmark evidence, real Android trace capture, rollback checks and Search Console launch steps.
+
 ---
 
 ## 🏛️ System Architecture

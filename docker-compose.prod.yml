@@ -116,6 +116,7 @@ services:
       - QUOTE_SERVER_PORT=8085
       - SYMBOL_ALIASES_FILE=/app/symbol_aliases.json
       - MARKET_FEED_MODE=${MARKET_FEED_MODE:-live}
+      - MARKET_TRACE_SAMPLE_RATE=${MARKET_TRACE_SAMPLE_RATE:-0}
       - DATABASE_URL=${DATABASE_URL:?DATABASE_URL is required in production}
       - INSTRUMENT_REFRESH_SECONDS=${INSTRUMENT_REFRESH_SECONDS:-60}
       - MARKET_STATUS_URL=http://backend:8080/api/v1/market/status

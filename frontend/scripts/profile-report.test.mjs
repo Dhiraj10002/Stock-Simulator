@@ -25,3 +25,11 @@ test("timing summaries retain missing evidence instead of reporting zero latency
   assert.deepEqual(summarizeTimings([NaN, Infinity]), { samples: 0, p50Ms: null, p95Ms: null });
   assert.deepEqual(summarizeTimings([400, 200, 300]), { samples: 3, p50Ms: 300, p95Ms: 400 });
 });
+
+test("quote timing percentiles exclude snapshots and absent/invalid transport measurements", async () => {
+  const { quoteTimingSummary } = await import("./profile-report.mjs");
+  const summary = quoteTimingSummary([{kind:"render", receiveToCommitMs:2}, {kind:"render", receiveToCommitMs:10}, {kind:"render", receiveToCommitMs:-1}, {kind:"render", snapshot:true, receiveToCommitMs:500}, {kind:"first-live", atMs:30}]);
+  assert.deepEqual(summary.receiveToCommitMs, {samples:2, p50Ms:2, p95Ms:10, p99Ms:10});
+  assert.equal(summary.workerToReceiveMs.samples,0);
+  assert.equal(summary.workerToReceiveMs.p99Ms,null);
+});

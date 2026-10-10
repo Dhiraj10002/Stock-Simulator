@@ -1,4 +1,5 @@
 "use client";
+import { useMarketStatus } from "@/hooks/useMarketStatus";
 import { useDisplayPolling } from "@/hooks/useDisplayPolling";
 
 import { useEffect, useState, useSyncExternalStore } from "react";
@@ -31,7 +32,7 @@ import {
   sortedFutures,
   parseFuturesCatalog,
   type FuturesFilters,
-  type FuturesMarketStatus,
+
 } from "@/lib/fnoExplore";
 import {
   useMultiSymbolQuotes,
@@ -216,14 +217,7 @@ export default function FnoExplorePage({
     refetchInterval: active ? 60000 : false,
     retry: false,
   });
-  const market = useQuery({
-    queryKey: ["fno-market-status"],
-    queryFn: ({ signal }) =>
-      bounded<FuturesMarketStatus>("/market/status?segment=NFO", signal),
-    enabled: active,
-    refetchInterval: active ? 10000 : false,
-    retry: false,
-  });
+  const market = useMarketStatus("NFO", active, true);
   const status =
     !market.isError && now - market.dataUpdatedAt < 30000
       ? market.data

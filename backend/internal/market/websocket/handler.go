@@ -2,7 +2,6 @@ package websocket
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -42,6 +41,7 @@ const (
 
 type Handler struct {
 	market   *marketService.Service
+	hub      *quoteHub
 	upgrader ws.Upgrader
 }
 
@@ -51,18 +51,22 @@ type command struct {
 }
 
 type event struct {
-	Type       string                        `json:"type"`
-	Symbols    []string                      `json:"symbols,omitempty"`
-	Quote      *marketDTO.QuoteResponse      `json:"quote,omitempty"`
-	FeedStatus *marketDTO.FeedStatusResponse `json:"feed_status,omitempty"`
-	Message    string                        `json:"message,omitempty"`
+	Snapshot           bool                          `json:"snapshot,omitempty"`
+	ServerReceivedAtMS int64                         `json:"server_received_at_ms,omitempty"`
+	ServerSentAtMS     int64                         `json:"server_sent_at_ms,omitempty"`
+	Type               string                        `json:"type"`
+	Symbols            []string                      `json:"symbols,omitempty"`
+	Quote              *marketDTO.QuoteResponse      `json:"quote,omitempty"`
+	FeedStatus         *marketDTO.FeedStatusResponse `json:"feed_status,omitempty"`
+	Message            string                        `json:"message,omitempty"`
 }
 
 type clientConn struct {
-	conn     *ws.Conn
-	send     chan event
-	reqID    string
-	clientIP string
+	conn        *ws.Conn
+	send        chan event
+	reqID       string
+	clientIP    string
+	slowDropped bool // protected by hub.mu for fanout warning deduplication
 }
 
 // New creates a new WebSocket Handler with origin restrictions.
@@ -114,6 +118,7 @@ func New(market *marketService.Service, allowedOrigins string, isProd ...bool) *
 
 	return &Handler{
 		market: market,
+		hub:    newQuoteHub(market),
 		upgrader: ws.Upgrader{
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,
@@ -206,8 +211,8 @@ func (h *Handler) Serve(c *gin.Context) {
 		}
 	}
 
-	pubsub := h.market.SubscribeQuotes(ctx)
-	defer pubsub.Close()
+	h.hub.add(client, cancel)
+	defer h.hub.remove(client)
 
 	subscribed := make(map[string]struct{})
 	for {
@@ -228,7 +233,6 @@ func (h *Handler) Serve(c *gin.Context) {
 				}
 				h.market.RenewQuoteSubscriptions(symbols)
 				// Application-level heartbeat support: refresh deadline & echo pong
-				_ = client.conn.SetReadDeadline(time.Now().Add(PongWait))
 				if !enqueueEvent(event{Type: "pong"}) {
 					return
 				}
@@ -243,14 +247,19 @@ func (h *Handler) Serve(c *gin.Context) {
 					zap.String("client_ip", client.clientIP),
 				)
 				excess := false
+				snapshotSymbols := make([]string, 0, len(symbols))
 				for _, symbol := range symbols {
 					if _, exists := subscribed[symbol]; !exists && len(subscribed) >= MaxSubscriptionsPerClient {
 						excess = true
 						continue
 					}
 					subscribed[symbol] = struct{}{}
-					if q, err := h.market.CurrentQuote(symbol); err == nil && q != nil && h.market.ValidateStreamQuote(q) == nil {
-						if !enqueueEvent(event{Type: "quote", Quote: q}) {
+					snapshotSymbols = append(snapshotSymbols, symbol)
+				}
+				h.hub.targets(client, subscribed)
+				for _, q := range h.market.BatchQuotes(snapshotSymbols) {
+					if _, accepted := subscribed[q.Symbol]; accepted && h.market.ValidateStreamQuote(q) == nil {
+						if !enqueueEvent(event{Type: "quote", Quote: q, Snapshot: true}) {
 							return
 						}
 					}
@@ -271,6 +280,7 @@ func (h *Handler) Serve(c *gin.Context) {
 				for _, symbol := range symbols {
 					delete(subscribed, symbol)
 				}
+				h.hub.targets(client, subscribed)
 				if !enqueueEvent(event{Type: "unsubscribed", Symbols: sortedSymbols(subscribed)}) {
 					return
 				}
@@ -278,46 +288,6 @@ func (h *Handler) Serve(c *gin.Context) {
 				if !enqueueEvent(event{Type: "error", Message: "action must be subscribe, unsubscribe, or ping"}) {
 					return
 				}
-			}
-		case message, ok := <-pubsub.Channel():
-			if !ok {
-				return
-			}
-			var env struct {
-				Type string `json:"type"`
-			}
-			if err := json.Unmarshal([]byte(message.Payload), &env); err != nil {
-				continue
-			}
-			if env.Type == "feed_status" {
-				var fs marketDTO.FeedStatusResponse
-				if err := json.Unmarshal([]byte(message.Payload), &fs); err == nil {
-					eventID := fmt.Sprintf("mkt_feed_%d_%s", time.Now().UnixNano(), uuid.NewString()[:8])
-					logger.Info("websocket streaming feed status event",
-						logger.RequestID(reqID),
-						logger.MarketEventID(eventID),
-						logger.FeedState(fs.FeedState),
-						logger.LastTick(fs.LastTick),
-					)
-					if !enqueueEvent(event{Type: "feed_status", FeedStatus: &fs}) {
-						return
-					}
-				}
-				continue
-			}
-
-			var quote marketDTO.QuoteResponse
-			if err := json.Unmarshal([]byte(message.Payload), &quote); err != nil || quote.Symbol == "" {
-				continue
-			}
-			if _, ok := subscribed[strings.ToUpper(quote.Symbol)]; !ok {
-				continue
-			}
-			if h.market.ValidateStreamQuote(&quote) != nil {
-				continue
-			}
-			if !enqueueEvent(event{Type: "quote", Quote: &quote}) {
-				return
 			}
 		}
 	}
@@ -342,6 +312,7 @@ func (h *Handler) readPump(ctx context.Context, cancel context.CancelFunc, clien
 		if err := client.conn.ReadJSON(&cmd); err != nil {
 			return
 		}
+		_ = client.conn.SetReadDeadline(time.Now().Add(PongWait))
 		select {
 		case <-ctx.Done():
 			return
@@ -375,6 +346,9 @@ func (h *Handler) writePump(ctx context.Context, cancel context.CancelFunc, clie
 			if !ok {
 				_ = client.conn.WriteMessage(ws.CloseMessage, ws.FormatCloseMessage(ws.CloseNormalClosure, ""))
 				return
+			}
+			if ev.ServerReceivedAtMS > 0 {
+				ev.ServerSentAtMS = time.Now().UnixMilli()
 			}
 			if err := client.conn.WriteJSON(ev); err != nil {
 				return
