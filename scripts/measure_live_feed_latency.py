@@ -8,8 +8,8 @@ from datetime import datetime, timezone
 import statistics
 
 async def measure_feed_latency(sample_count=50):
-    uri = "wss://stocksim-api.duckdns.org/ws/market"
-    headers = {"Origin": os.getenv("AUDIT_ORIGIN", "https://stock-simulator-dev.vercel.app")}
+    uri = os.getenv("WS_FEED_URL", "wss://api.stock-simulator.in/ws/market")
+    headers = {"Origin": os.getenv("AUDIT_ORIGIN", "https://www.stock-simulator.in")}
     symbols = ["RELIANCE", "NIFTY", "INFY", "BANKNIFTY", "TATAMOTORS"]
     
     print(f"Connecting to live feed {uri}...")

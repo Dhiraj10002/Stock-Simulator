@@ -31,10 +31,16 @@ export const viewport: Viewport = {
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
+  alternates: {
+    canonical: SITE_URL,
+  },
   title: { default: "Stock Simulator — Paper Trading in India", template: "%s | Stock Simulator" },
   description: SITE_DESCRIPTION,
   applicationName: SITE_NAME,
-  robots: { index: false, follow: true },
+  verification: {
+    google: process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION || undefined,
+  },
+  robots: { index: process.env.VERCEL_ENV !== "preview", follow: true },
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,

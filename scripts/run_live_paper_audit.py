@@ -8,6 +8,7 @@ Target: https://stocksim-api.duckdns.org/api/v1
 import asyncio
 import concurrent.futures
 import json
+import os
 import threading
 import time
 import urllib.error
@@ -15,9 +16,9 @@ import urllib.request
 import uuid
 import websockets
 
-BASE_URL = "https://stocksim-api.duckdns.org/api/v1"
-WS_URL = "wss://stocksim-api.duckdns.org/ws/market"
-ORIGIN = os.getenv("AUDIT_ORIGIN", "https://stock-simulator-dev.vercel.app")
+BASE_URL = os.getenv("API_BASE_URL", "https://api.stock-simulator.in/api/v1")
+WS_URL = os.getenv("WS_FEED_URL", "wss://api.stock-simulator.in/ws/market")
+ORIGIN = os.getenv("AUDIT_ORIGIN", "https://www.stock-simulator.in")
 
 EMAIL = "live_audit_20261008@stocksim.in"
 PASSWORD = "TestPassword@123"
