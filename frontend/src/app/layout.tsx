@@ -1,4 +1,5 @@
 import { SpeedInsights } from "@vercel/speed-insights/next";
+import { SITE_URL, SITE_NAME, SITE_DESCRIPTION } from "@/lib/seo";
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
@@ -29,10 +30,12 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: "Stock Simulator — Institutional Paper Trading Platform",
-  description:
-    "Real-time Indian market paper trading simulator with NSE/NFO execution, integer paise accounting, and automated risk management.",
-  manifest: "/manifest.json",
+  metadataBase: new URL(SITE_URL),
+  title: { default: "Stock Simulator — Paper Trading in India", template: "%s | Stock Simulator" },
+  description: SITE_DESCRIPTION,
+  applicationName: SITE_NAME,
+  robots: { index: false, follow: true },
+  manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",

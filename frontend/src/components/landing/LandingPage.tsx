@@ -1,3 +1,4 @@
+import BrandLogo from "@/components/brand/BrandLogo";
 import React from "react";
 import LandingExperience from "./LandingExperience";
 import LandingAuthLink from "./LandingAuthLink";
@@ -448,16 +449,7 @@ export default function LandingPage() {
         <div className="w-full h-full px-5 sm:px-6 lg:px-8 flex items-center justify-between relative">
           {/* ── Brand ── */}
           <Link prefetch={false} href="/" className="flex items-center gap-2.5 shrink-0 group">
-            <div className="relative w-8 h-8 rounded-lg overflow-hidden">
-              {/* Gradient border via pseudo background */}
-              <div className="absolute inset-0 bg-gradient-to-br from-cyan-400 via-blue-500 to-violet-500 rounded-lg" />
-              <div className="absolute inset-[1.5px] bg-[#0a0e1a] rounded-[6px] flex items-center justify-center">
-                <span className="font-black text-[11px] text-white tracking-wider">SS</span>
-              </div>
-            </div>
-            <span className="hidden sm:block font-bold text-[13px] tracking-[0.15em] uppercase text-white/90 group-hover:text-white transition-colors">
-              Stock Simulator
-            </span>
+            <BrandLogo compact className="text-white" />
           </Link>
 
           {/* ── Center Navigation ── */}
@@ -1532,18 +1524,7 @@ export default function LandingPage() {
           <div className="grid grid-cols-1 md:grid-cols-12 gap-10 sm:gap-12 mb-14">
             {/* Brand & Mission Column (Col 5) */}
             <div className="md:col-span-5 space-y-4">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-cyan-400 via-teal-400 to-emerald-400 flex items-center justify-center font-black text-slate-950 text-xs shadow-md shadow-cyan-500/20 border border-white/20">
-                  SS
-                </div>
-                <div>
-                  <span className="font-black text-base tracking-tight text-white block">STOCK SIMULATOR</span>
-                  <span className="text-[10px] font-mono text-cyan-400 uppercase tracking-widest flex items-center gap-1.5">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    INDIAN FINANCIAL MARKET ENGINE
-                  </span>
-                </div>
-              </div>
+              <BrandLogo className="text-white" tagline="Indian financial market engine" />
               <p className="text-xs sm:text-[13px] text-slate-400 leading-relaxed max-w-md font-normal">
                 India&apos;s premier institutional-fidelity paper trading platform. Practise NSE cash equities and NFO options and futures risk-free with ₹10,00,000 in virtual seed capital.
               </p>

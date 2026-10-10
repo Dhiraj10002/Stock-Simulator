@@ -1,4 +1,5 @@
 "use client";
+import { BrandMark } from "@/components/brand/BrandLogo";
 import { sessionFetch } from "@/lib/api";
 
 import React, { useState, useEffect, useRef } from "react";
@@ -11,7 +12,6 @@ import {
   CheckCircle2,
   Eye,
   EyeOff,
-  TrendingUp,
   Zap,
 } from "lucide-react";
 import { notifyAuthChanged } from "@/lib/api";
@@ -312,12 +312,7 @@ export default function AuthModal({
 
           {/* Header Branding */}
           <div className="flex items-center gap-3.5 mb-5">
-            {/* Holographic Glowing Icon Badge */}
-            <div className="relative p-[1px] rounded-2xl bg-gradient-to-br from-cyan-400 via-blue-500 to-emerald-400 shrink-0 shadow-[0_0_20px_rgba(6,182,212,0.35)]">
-              <div className="w-11 h-11 rounded-[15px] bg-[#070d1a] flex items-center justify-center">
-                <TrendingUp className="w-5 h-5 text-cyan-400" />
-              </div>
-            </div>
+            <BrandMark className="h-11 w-11" />
             <div>
               <h2 className="text-lg sm:text-xl font-black text-white tracking-tight leading-snug">
                 {mode === "login" ? (
