@@ -16,16 +16,19 @@ type MarketDepth struct {
 	Asks []DepthLevel `json:"asks"`
 }
 type QuoteResponse struct {
-	OpenInterestAvailable bool         `json:"open_interest_available"`
-	OpenPaise             int64        `json:"open_paise,omitempty"`
-	HighPaise             int64        `json:"high_paise,omitempty"`
-	LowPaise              int64        `json:"low_paise,omitempty"`
-	Week52HighPaise       int64        `json:"week_52_high_paise,omitempty"`
-	Week52LowPaise        int64        `json:"week_52_low_paise,omitempty"`
-	TotalBuyQuantity      *int64       `json:"total_buy_quantity,omitempty"`
-	TotalSellQuantity     *int64       `json:"total_sell_quantity,omitempty"`
-	Depth                 *MarketDepth `json:"depth,omitempty"`
-	IsQuoteStale          bool         `json:"is_quote_stale"`
+	MarketEventID           string       `json:"market_event_id,omitempty"`
+	WorkerReceivedAtMS      int64        `json:"worker_received_at_ms,omitempty"`
+	WorkerPublishQueuedAtMS int64        `json:"worker_publish_queued_at_ms,omitempty"`
+	OpenInterestAvailable   bool         `json:"open_interest_available"`
+	OpenPaise               int64        `json:"open_paise,omitempty"`
+	HighPaise               int64        `json:"high_paise,omitempty"`
+	LowPaise                int64        `json:"low_paise,omitempty"`
+	Week52HighPaise         int64        `json:"week_52_high_paise,omitempty"`
+	Week52LowPaise          int64        `json:"week_52_low_paise,omitempty"`
+	TotalBuyQuantity        *int64       `json:"total_buy_quantity,omitempty"`
+	TotalSellQuantity       *int64       `json:"total_sell_quantity,omitempty"`
+	Depth                   *MarketDepth `json:"depth,omitempty"`
+	IsQuoteStale            bool         `json:"is_quote_stale"`
 
 	OpenInterest       int64   `json:"open_interest"`
 	PreviousClosePaise int64   `json:"previous_close_paise"`

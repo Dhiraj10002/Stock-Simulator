@@ -1,0 +1,352 @@
+{
+  "date": "2026-10-10",
+  "label": "Local microbenchmarks and software-rendered browser lab. No real-phone or production latency claim.",
+  "redis": {
+    "symbols": 100,
+    "database": "disposable local Redis 7.4.2",
+    "go": "1.25.0 linux amd64",
+    "legacyNsPerOp": [
+      3081641,
+      3361002,
+      2758746
+    ],
+    "pipelineNsPerOp": [
+      536581,
+      527831,
+      566557
+    ],
+    "legacyAllocations": 5311,
+    "pipelineAllocations": 3459,
+    "legacyBytesPerOp": 260953,
+    "pipelineBytesPerOp": 205544,
+    "metadata": "No database lookup in this microbenchmark; cold metadata remains bounded to 8 workers."
+  },
+  "localPages": {
+    "mode": "local production browser lab; public API fixtures",
+    "origin": "http://127.0.0.1:3100",
+    "conditions": "390x844 touch, CPU 4x, 1.6 Mbps download, 150 ms latency; cold contexts. Event Timing samples are scripted, not field INP. Redirects recorded. No writes submitted.",
+    "device": "mobile",
+    "accountWindow": 0,
+    "browser": "134.0.6998.35",
+    "node": "v24.19.0",
+    "runs": [
+      {
+        "path": "/",
+        "navigation": {
+          "lcpMs": 1192,
+          "cls": 0,
+          "cumulativeCls": 0,
+          "fcpMs": 1192,
+          "ttfbMs": 18.300000000279397,
+          "jsBytes": 159295,
+          "jsRequests": 10,
+          "overflow": false
+        },
+        "renderTrace": [
+          {
+            "name": "RunTask",
+            "count": 11687,
+            "totalMs": 8526.830000000258,
+            "maxMs": 168.869
+          },
+          {
+            "name": "RasterTask",
+            "count": 174,
+            "totalMs": 1281.3050000000007,
+            "maxMs": 34.555
+          },
+          {
+            "name": "UpdateLayoutTree",
+            "count": 294,
+            "totalMs": 706.3690000000003,
+            "maxMs": 126.416
+          },
+          {
+            "name": "Layout",
+            "count": 12,
+            "totalMs": 335.2390000000001,
+            "maxMs": 108.787
+          },
+          {
+            "name": "FunctionCall",
+            "count": 410,
+            "totalMs": 320.156,
+            "maxMs": 12.665
+          },
+          {
+            "name": "PrePaint",
+            "count": 309,
+            "totalMs": 228.99300000000002,
+            "maxMs": 18.002
+          },
+          {
+            "name": "Paint",
+            "count": 129,
+            "totalMs": 146.86099999999982,
+            "maxMs": 36.582
+          }
+        ],
+        "pageErrors": 0,
+        "failures": []
+      },
+      {
+        "path": "/login",
+        "navigation": {
+          "lcpMs": 2776,
+          "cls": 0,
+          "cumulativeCls": 0,
+          "fcpMs": 960,
+          "ttfbMs": 13.899999999906868,
+          "jsBytes": 160619,
+          "jsRequests": 9,
+          "overflow": false
+        },
+        "renderTrace": [
+          {
+            "name": "RunTask",
+            "count": 13252,
+            "totalMs": 9423.326000000416,
+            "maxMs": 192.125
+          },
+          {
+            "name": "RasterTask",
+            "count": 179,
+            "totalMs": 1165.0110000000009,
+            "maxMs": 50.488
+          },
+          {
+            "name": "FunctionCall",
+            "count": 757,
+            "totalMs": 481.23799999999954,
+            "maxMs": 24.021
+          },
+          {
+            "name": "UpdateLayoutTree",
+            "count": 399,
+            "totalMs": 427.82999999999987,
+            "maxMs": 23.854
+          },
+          {
+            "name": "PrePaint",
+            "count": 422,
+            "totalMs": 208.15899999999993,
+            "maxMs": 5.644
+          },
+          {
+            "name": "Layout",
+            "count": 31,
+            "totalMs": 110.45800000000003,
+            "maxMs": 38.337
+          },
+          {
+            "name": "Paint",
+            "count": 70,
+            "totalMs": 54.95699999999999,
+            "maxMs": 5.65
+          }
+        ],
+        "pageErrors": 0,
+        "failures": []
+      }
+    ]
+  },
+  "deploymentChecks": {
+    "robots": "200 and sitemap directive confirmed via public GET",
+    "sitemap": "200; seven public URLs confirmed via public GET",
+    "remoteBrowser": "Unavailable in this environment: network proxy/TLS trust failure, so deployed/browser performance not measured."
+  },
+  "chartFirstRun": {
+    "mode": "local production browser lab; fixture quotes/history; 390x844 CPU 4x; software rendering",
+    "render": [
+      {
+        "name": "RunTask",
+        "count": 13310,
+        "totalMs": 5610.652000000258,
+        "maxMs": 164.309
+      },
+      {
+        "name": "FunctionCall",
+        "count": 592,
+        "totalMs": 1698.5489999999972,
+        "maxMs": 118.04
+      },
+      {
+        "name": "RasterTask",
+        "count": 154,
+        "totalMs": 356.31700000000006,
+        "maxMs": 23.306
+      },
+      {
+        "name": "UpdateLayoutTree",
+        "count": 147,
+        "totalMs": 225.49800000000002,
+        "maxMs": 24.764
+      },
+      {
+        "name": "Layout",
+        "count": 57,
+        "totalMs": 187.644,
+        "maxMs": 41.748
+      },
+      {
+        "name": "Paint",
+        "count": 66,
+        "totalMs": 131.16299999999998,
+        "maxMs": 11.454
+      },
+      {
+        "name": "PrePaint",
+        "count": 149,
+        "totalMs": 80.88800000000002,
+        "maxMs": 5.04
+      }
+    ],
+    "quoteTimings": {
+      "receiveToCommitMs": {
+        "samples": 22,
+        "p50Ms": 18.2,
+        "p95Ms": 31.6,
+        "p99Ms": 32.8
+      },
+      "receiveToFrameMs": {
+        "samples": 22,
+        "p50Ms": 40.7,
+        "p95Ms": 54.1,
+        "p99Ms": 54.6
+      },
+      "workerToReceiveMs": {
+        "samples": 0,
+        "p50Ms": null,
+        "p95Ms": null,
+        "p99Ms": null
+      },
+      "workerPrePublishMs": {
+        "samples": 0,
+        "p50Ms": null,
+        "p95Ms": null,
+        "p99Ms": null
+      },
+      "redisToGoMs": {
+        "samples": 0,
+        "p50Ms": null,
+        "p95Ms": null,
+        "p99Ms": null
+      },
+      "serverQueueMs": {
+        "samples": 0,
+        "p50Ms": null,
+        "p95Ms": null,
+        "p99Ms": null
+      }
+    },
+    "firstQuotes": [
+      {
+        "symbol": "RELIANCE-EQ",
+        "atMs": 1929.6000000000931,
+        "kind": "first-display"
+      },
+      {
+        "symbol": "RELIANCE-EQ",
+        "atMs": 1929.6000000000931,
+        "kind": "first-live"
+      }
+    ]
+  },
+  "chartFinalRun": {
+    "mode": "local production browser lab; fixture quotes/history; 390x844 CPU 4x; software rendering",
+    "render": [
+      {
+        "name": "RunTask",
+        "count": 13858,
+        "totalMs": 5443.328000000246,
+        "maxMs": 158.668
+      },
+      {
+        "name": "FunctionCall",
+        "count": 576,
+        "totalMs": 1643.910000000005,
+        "maxMs": 107.436
+      },
+      {
+        "name": "RasterTask",
+        "count": 125,
+        "totalMs": 333.03200000000004,
+        "maxMs": 22.381
+      },
+      {
+        "name": "UpdateLayoutTree",
+        "count": 151,
+        "totalMs": 221.59200000000004,
+        "maxMs": 38.663
+      },
+      {
+        "name": "Layout",
+        "count": 50,
+        "totalMs": 180.80400000000003,
+        "maxMs": 54.338
+      },
+      {
+        "name": "Paint",
+        "count": 58,
+        "totalMs": 102.22100000000003,
+        "maxMs": 12.596
+      },
+      {
+        "name": "PrePaint",
+        "count": 145,
+        "totalMs": 71.29999999999997,
+        "maxMs": 4.92
+      }
+    ],
+    "quoteTimings": {
+      "receiveToCommitMs": {
+        "samples": 21,
+        "p50Ms": 15.2,
+        "p95Ms": 59.1,
+        "p99Ms": 106
+      },
+      "receiveToFrameMs": {
+        "samples": 21,
+        "p50Ms": 33.3,
+        "p95Ms": 135.8,
+        "p99Ms": 145
+      },
+      "workerToReceiveMs": {
+        "samples": 0,
+        "p50Ms": null,
+        "p95Ms": null,
+        "p99Ms": null
+      },
+      "workerPrePublishMs": {
+        "samples": 0,
+        "p50Ms": null,
+        "p95Ms": null,
+        "p99Ms": null
+      },
+      "redisToGoMs": {
+        "samples": 0,
+        "p50Ms": null,
+        "p95Ms": null,
+        "p99Ms": null
+      },
+      "serverQueueMs": {
+        "samples": 0,
+        "p50Ms": null,
+        "p95Ms": null,
+        "p99Ms": null
+      }
+    },
+    "firstQuotes": [
+      {
+        "symbol": "RELIANCE-EQ",
+        "atMs": 1945.4000000003725,
+        "kind": "first-display"
+      },
+      {
+        "symbol": "RELIANCE-EQ",
+        "atMs": 1945.4000000003725,
+        "kind": "first-live"
+      }
+    ]
+  }
+}

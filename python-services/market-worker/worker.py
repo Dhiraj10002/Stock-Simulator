@@ -1433,7 +1433,7 @@ class QuoteWriter:
               previous_close_paise: int = 0, event_time: datetime | None = None,
               build_history: bool = True, open_interest: int = 0,
               lower_circuit_paise: int = 0, upper_circuit_paise: int = 0,
-              market_fields: dict[str, Any] | None = None) -> None:
+              market_fields: dict[str, Any] | None = None, worker_received_at_ms: int = 0) -> None:
         mode = self.feed_mode
         if mode == "live" and source != "angelone_live":
             print(f"market worker: rejected non-live quote write to Redis in LIVE mode (source={source}, symbol={subscription.symbol})", flush=True)
@@ -1496,6 +1496,9 @@ class QuoteWriter:
             for sym in symbols_to_write:
                 sym_latest_map[sym] = self.client.lindex(f"market:history:{sym}", 0)
 
+        if worker_received_at_ms > 0:
+            quote["worker_received_at_ms"] = worker_received_at_ms
+            quote["worker_publish_queued_at_ms"] = int(time.time() * 1000)
         t0 = time.perf_counter()
         with self.history_lock, self.client.pipeline() as pipe:
             pipe.hset("market:feed_state", mapping={"last_tick": now.isoformat()})
@@ -1509,7 +1512,7 @@ class QuoteWriter:
                     sym_quote.pop("change_percent", None)
                     pipe.hdel(q_key, "change_paise", "change_percent")
                 # Remove stale optional fields rather than preserving a prior guessed band/book.
-                for field in ("lower_circuit_paise", "upper_circuit_paise", "depth_json", "open_paise", "high_paise", "low_paise", "open_interest_available", "volume_available", "week_52_high_paise", "week_52_low_paise", "total_buy_quantity", "total_sell_quantity"):
+                for field in ("worker_received_at_ms", "worker_publish_queued_at_ms", "lower_circuit_paise", "upper_circuit_paise", "depth_json", "open_paise", "high_paise", "low_paise", "open_interest_available", "volume_available", "week_52_high_paise", "week_52_low_paise", "total_buy_quantity", "total_sell_quantity"):
                     if field not in sym_quote:
                         pipe.hdel(q_key, field)
                 pipe.hset(q_key, mapping={**sym_quote, "day_change_available": str(sym_quote["day_change_available"]).lower()})
@@ -1904,7 +1907,14 @@ def run_feed(store: InstrumentStore, writer: QuoteWriter, control: FeedControl) 
         connected.set()
         print(f"market worker: Angel One WebSocket connected! Subscribed to {len(store.subscriptions())} instruments", flush=True)
 
+    # Opt-in diagnostics only; no additional persistence round trips.
+    try:
+        trace_sample_rate = min(1.0, max(0.0, float(os.getenv("MARKET_TRACE_SAMPLE_RATE", "0"))))
+    except ValueError:
+        trace_sample_rate = 0.0
+
     def on_data(_wsapp: Any, message: dict[str, Any]) -> None:
+        received_at_ms = int(time.time() * 1000)
         try:
             exchange_type = integer(message.get("exchange_type"))
             subscription = store.lookup(clean(message.get("token")), exchange_type, master_epoch)
@@ -1925,7 +1935,8 @@ def run_feed(store: InstrumentStore, writer: QuoteWriter, control: FeedControl) 
             writer.write(subscription, price_paise, volume, source="angelone_live",
                          previous_close_paise=prev_close, event_time=stamp,
                          open_interest=integer(message.get("open_interest")),
-                         lower_circuit_paise=lower_c, upper_circuit_paise=upper_c, market_fields=provider_market_fields(message, scaled=True))
+                         lower_circuit_paise=lower_c, upper_circuit_paise=upper_c, market_fields=provider_market_fields(message, scaled=True),
+                         worker_received_at_ms=received_at_ms if trace_sample_rate > 0 and random.random() < trace_sample_rate else 0)
         except (ValueError, redis.RedisError) as error:
             print(f"market worker: error processing Angel One tick: {error}", flush=True)
 

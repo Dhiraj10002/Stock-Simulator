@@ -1,3 +1,5 @@
+"use client";
+import { useQuoteMetrics } from "@/hooks/useQuoteMetrics";
 import type { Quote } from "@/types";
 import { dayMovement } from "@/lib/marketDisplay";
 import { quoteLabel } from "@/lib/marketData";
@@ -39,6 +41,7 @@ export function FnoProvenance({
   sessionLive: boolean;
   compact?: boolean;
 }) {
+  useQuoteMetrics(quote);
   const live = sessionLive && quoteLabel(quote, now) === "LIVE";
   const age = quote
     ? Math.max(0, Math.floor((now - Date.parse(quote.updated_at)) / 1000))

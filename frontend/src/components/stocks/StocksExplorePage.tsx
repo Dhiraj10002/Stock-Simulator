@@ -9,7 +9,8 @@ import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import Navbar from "@/components/layout/Navbar";
 import IndicesTickerStrip, { MAJOR_INDICES_STRIP } from "@/components/layout/IndicesTickerStrip";
-import { useMultiSymbolQuotes } from "@/stores/market-store";
+import { useBufferedQuotes } from "@/hooks/useBufferedQuotes";
+import { LiveQuoteCard } from "./LiveQuoteCard";
 import { fetchBatchQuotes, getCachedQuote } from "@/lib/quoteService";
 import { dayMovement, valuationStatus } from "@/lib/marketDisplay";
 import { apiFetch } from "@/lib/api";
@@ -226,7 +227,7 @@ export default function StocksExplorePage() {
     return Array.from(s);
   }, []);
 
-  const quotes = useMultiSymbolQuotes(exploreSymbols);
+  const quotes = useBufferedQuotes(exploreSymbols);
 
   // Prefetch live quotes for all explore catalog items
   useEffect(() => {
@@ -472,8 +473,8 @@ export default function StocksExplorePage() {
 
               {/* 3-Col Card Grid */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
-                {POPULAR_STOCKS.map((stock) => {
-                  const live = quotes[stock.symbol];
+                {POPULAR_STOCKS.map((stock) => (
+                  <LiveQuoteCard key={stock.symbol} symbol={stock.symbol}>{(live) => {
                   const hasQuote = live && live.price_paise > 0;
                   const currentPrice = hasQuote ? live.price_paise / 100 : 0;
                   const movement = dayMovement(live);
@@ -556,7 +557,8 @@ export default function StocksExplorePage() {
                       </div>
                     </Link>
                   );
-                })}
+                  }}</LiveQuoteCard>
+                ))}
               </div>
             </section>
 
@@ -583,8 +585,8 @@ export default function StocksExplorePage() {
 
               {/* 4-Col Card Grid */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                {MOST_TRADED_STOCKS.map((stock) => {
-                  const live = quotes[stock.symbol] || (stock.symbol === "ZOMATO" ? quotes["ETERNAL"] : undefined);
+                {MOST_TRADED_STOCKS.map((stock) => (
+                  <LiveQuoteCard key={stock.symbol} symbol={stock.symbol}>{(live) => {
                   const hasQuote = live && live.price_paise > 0;
                   const currentPrice = hasQuote ? live.price_paise / 100 : 0;
                   const movement = dayMovement(live);
@@ -632,7 +634,8 @@ export default function StocksExplorePage() {
                       </div>
                     </Link>
                   );
-                })}
+                  }}</LiveQuoteCard>
+                ))}
               </div>
             </section>
 
@@ -856,8 +859,8 @@ export default function StocksExplorePage() {
 
               {/* 4-Col Card Grid with High-Low bars */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                {TOP_INTRADAY_STOCKS.map((stock) => {
-                  const live = quotes[stock.symbol];
+                {TOP_INTRADAY_STOCKS.map((stock) => (
+                  <LiveQuoteCard key={stock.symbol} symbol={stock.symbol}>{(live) => {
                   const hasQuote = live && live.price_paise > 0;
                   const price = hasQuote ? live.price_paise / 100 : 0;
                   const movement = dayMovement(live);
@@ -927,7 +930,8 @@ export default function StocksExplorePage() {
                       </div>
                     </Link>
                   );
-                })}
+                  }}</LiveQuoteCard>
+                ))}
               </div>
             </section>
 

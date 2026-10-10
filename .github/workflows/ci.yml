@@ -85,8 +85,11 @@ jobs:
       - name: Run Backend Tests
         run: go test -v -count=1 -p 1 ./...
 
-      - name: Race Check Order Accounting and Exit Retries
-        run: go test -race -count=1 ./internal/order/service ./internal/accountchanges
+      - name: Race Check Accounting, Exit Retries and Shared Market Streaming
+        run: go test -race -count=1 ./internal/order/service ./internal/accountchanges ./internal/market/service ./internal/market/websocket
+
+      - name: Compare Display Quote Readers on Disposable Redis
+        run: go test -run '^$' -bench BenchmarkDisplayBatch -benchmem -benchtime=1s -count=3 ./internal/market/service
 
       - name: Compare Backend Startup and Metadata Benchmarks
         run: |

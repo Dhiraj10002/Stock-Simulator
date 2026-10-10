@@ -596,6 +596,26 @@ class BenchmarkFallbackSourceTest(unittest.TestCase):
         mapping = quote_calls[0][2]["mapping"]
         self.assertEqual(mapping.get("source"), "angelone_live")
 
+    def test_optional_trace_preserves_exchange_time_and_clears_old_samples(self):
+        client = MagicMock()
+        writer = worker.QuoteWriter(client, 300, 86400, 500, feed_mode="live")
+        sub = worker.Subscription("TCS", "11536", "NSE", 1)
+        stamp = datetime.now(timezone.utc)
+        writer.write(sub, 10000, 100, source="angelone_live", event_time=stamp, worker_received_at_ms=12345)
+        pipe = client.pipeline.return_value.__enter__.return_value
+        quote_calls = [call for call in pipe.method_calls if call[0] == "hset" and "market:quote:" in call[1][0]]
+        mapping = quote_calls[0][2]["mapping"]
+        self.assertEqual(mapping["updated_at"], stamp.isoformat())
+        self.assertEqual(mapping["worker_received_at_ms"], 12345)
+        self.assertGreater(mapping["worker_publish_queued_at_ms"], 12345)
+        payload = json.loads(next(call[1][1] for call in pipe.method_calls if call[0] == "publish"))
+        self.assertEqual(payload["worker_received_at_ms"], 12345)
+        pipe.reset_mock()
+        writer.write(sub, 10000, 100, source="angelone_live", event_time=stamp)
+        deleted = [call[1][1] for call in pipe.method_calls if call[0] == "hdel"]
+        self.assertIn("worker_received_at_ms", deleted)
+        self.assertIn("worker_publish_queued_at_ms", deleted)
+
 
 class QuoteServerArchitectureTest(unittest.TestCase):
     def test_start_quote_server_defaults_to_all_interfaces(self):

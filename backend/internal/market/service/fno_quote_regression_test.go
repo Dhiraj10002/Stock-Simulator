@@ -22,7 +22,14 @@ type quoteFixture struct {
 
 func (f *quoteFixture) DialHook(next redis.DialHook) redis.DialHook { return next }
 func (f *quoteFixture) ProcessPipelineHook(next redis.ProcessPipelineHook) redis.ProcessPipelineHook {
-	return next
+	return func(ctx context.Context, commands []redis.Cmder) error {
+		for _, cmd := range commands {
+			if err := f.ProcessHook(nil)(ctx, cmd); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
 }
 func (f *quoteFixture) ProcessHook(next redis.ProcessHook) redis.ProcessHook {
 	return func(ctx context.Context, cmd redis.Cmder) error {
@@ -35,7 +42,9 @@ func (f *quoteFixture) ProcessHook(next redis.ProcessHook) redis.ProcessHook {
 			c.SetVal(f.state)
 		case *redis.IntCmd:
 			if c.Name() == "zadd" {
-				f.demand[c.Args()[3].(string)] = true
+				for i := 3; i < len(c.Args()); i += 2 {
+					f.demand[c.Args()[i].(string)] = true
+				}
 			}
 			c.SetVal(1)
 		default:

@@ -23,3 +23,12 @@ export function accountObservation(requests, seconds, authenticated) {
     byPath: eligible ? Object.fromEntries([...new Set(account.map(item => item.path))].sort().map(path => [path, account.filter(item => item.path === path).length])) : {},
   };
 }
+
+export function quoteTimingSummary(metrics) {
+  const fields = ["receiveToCommitMs", "receiveToFrameMs", "workerToReceiveMs", "workerPrePublishMs", "redisToGoMs", "serverQueueMs"];
+  return Object.fromEntries(fields.map(field => {
+    const values = metrics.filter(item => item.kind === "render" && !item.snapshot).map(item => item[field]).filter(value => Number.isFinite(value) && value >= 0).sort((a,b)=>a-b);
+    const percentile = p => values.length ? Math.round(values[Math.ceil(values.length*p)-1]*100)/100 : null;
+    return [field, { samples: values.length, p50Ms: percentile(.5), p95Ms: percentile(.95), p99Ms: percentile(.99) }];
+  }));
+}
