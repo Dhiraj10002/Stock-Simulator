@@ -53,11 +53,11 @@ interface NavbarProps {
 const NAV_LINKS = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/stocks", label: "Stocks", icon: TrendingUp },
-  { href: "/news", label: "News", icon: Newspaper },
-  { href: "/options", label: "Futures & Options", icon: Layers },
-  { href: "/portfolio", label: "Portfolio", icon: PieChart },
-  { href: "/orders", label: "Orders", icon: ClipboardList },
   { href: "/watchlist", label: "Watchlist", icon: Bookmark },
+  { href: "/orders", label: "Orders", icon: ClipboardList },
+  { href: "/portfolio", label: "Portfolio", icon: PieChart },
+  { href: "/options", label: "Futures & Options", icon: Layers },
+  { href: "/news", label: "News", icon: Newspaper },
   { href: "/analytics", label: "Analytics", icon: BarChart2 },
   { href: "/mentor", label: "AI Mentor", icon: BrainCircuit },
 ];
@@ -544,37 +544,45 @@ export default function Navbar({
         </div>
       )}
 
-      {/* Primary Route Navigation Tabs (Row 2): Modern MotionSites Floating Pill Tabs */}
-      <nav className="px-4 lg:px-6 py-1.5 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
-        {NAV_LINKS.map((link) => {
-          const Icon = link.icon;
-          const isActive =
-            link.href === "/"
-              ? pathname === "/"
-              : pathname.startsWith(link.href);
+      {/* Primary Route Navigation Tabs (Row 2): High-Visibility Segment Control Deck */}
+      <div className="bg-slate-100/90 dark:bg-[#070b14]/90 border-t border-b border-slate-200/90 dark:border-white/[0.08] backdrop-blur-md">
+        <nav
+          aria-label="Trading Desk Navigation"
+          className="px-3 sm:px-6 py-2 flex items-center gap-2 overflow-x-auto no-scrollbar scroll-smooth"
+        >
+          {NAV_LINKS.map((link) => {
+            const Icon = link.icon;
+            const isActive =
+              link.href === "/"
+                ? pathname === "/"
+                : pathname.startsWith(link.href);
 
-          return (
-            <Link
-              key={link.href}
-              href={link.href}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all duration-200 border ${
-                isActive
-                  ? "bg-cyan-500/10 dark:bg-cyan-500/15 text-cyan-700 dark:text-cyan-300 border-cyan-500/30 dark:border-cyan-400/40 shadow-[0_0_16px_-3px_rgba(6,182,212,0.3)] font-bold"
-                  : "border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100/70 dark:hover:bg-white/[0.05]"
-              }`}
-            >
-              <Icon
-                className={`w-3.5 h-3.5 ${
+            return (
+              <Link
+                key={link.href}
+                href={link.href}
+                className={`group relative flex items-center gap-2 px-3.5 sm:px-4 py-1.5 sm:py-2 rounded-xl text-xs sm:text-[13px] whitespace-nowrap transition-all duration-200 shrink-0 ${
                   isActive
-                    ? "text-cyan-600 dark:text-cyan-400"
-                    : "text-slate-500 dark:text-slate-400"
+                    ? "bg-gradient-to-r from-cyan-600 via-cyan-500 to-blue-600 text-white font-bold shadow-md shadow-cyan-500/30 dark:shadow-cyan-400/25 ring-2 ring-cyan-400/60 scale-[1.02]"
+                    : "bg-white dark:bg-slate-900/90 text-slate-700 dark:text-slate-300 border border-slate-200/90 dark:border-slate-800 hover:border-cyan-400/60 hover:text-cyan-600 dark:hover:text-cyan-300 hover:bg-cyan-50/40 dark:hover:bg-slate-800/90 shadow-xs font-semibold"
                 }`}
-              />
-              <span>{link.label}</span>
-            </Link>
-          );
-        })}
-      </nav>
+              >
+                <Icon
+                  className={`w-4 h-4 transition-transform duration-200 group-hover:scale-110 shrink-0 ${
+                    isActive
+                      ? "text-white"
+                      : "text-slate-500 dark:text-slate-400 group-hover:text-cyan-600 dark:group-hover:text-cyan-400"
+                  }`}
+                />
+                <span>{link.label}</span>
+                {isActive && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-white shadow-[0_0_8px_#ffffff] animate-pulse shrink-0 ml-0.5" />
+                )}
+              </Link>
+            );
+          })}
+        </nav>
+      </div>
     </header>
 
     {/* Institutional Simulation Reset Confirmation Modal */}

@@ -5,7 +5,6 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { ToastProvider } from "@/components/ui/ToastProvider";
 import { ThemeProvider } from "@/providers/theme-provider";
-import MobileBottomNav from "@/components/layout/MobileBottomNav";
 
 const geistSans = Geist({
   variable: "--font-sans",
@@ -80,7 +79,7 @@ export default function RootLayout({
           }}
         />
       </head>
-      <body className="min-h-full flex flex-col bg-slate-50 dark:bg-[#06080e] text-slate-900 dark:text-slate-100 font-sans selection:bg-cyan-500 selection:text-slate-950 pb-16 md:pb-0 relative">
+      <body className="min-h-full flex flex-col bg-slate-50 dark:bg-[#06080e] text-slate-900 dark:text-slate-100 font-sans selection:bg-cyan-500 selection:text-slate-950 relative">
         {/* MotionSites AI Signature Ambient Depth & Glow Mesh (Dark Mode) */}
         <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden hidden dark:block">
           {/* Top Center Electric Cyan/Indigo Aurora Flare */}
@@ -110,7 +109,6 @@ export default function RootLayout({
           <ThemeProvider>
             <ToastProvider>
               {children}
-              <MobileBottomNav />
             </ToastProvider>
           </ThemeProvider>
         </div>
