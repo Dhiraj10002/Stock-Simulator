@@ -10,7 +10,7 @@ export default function BrandLogo({ className = "", compact = false, tagline }: 
       <BrandMark />
       <span aria-hidden="true" className={compact ? "hidden sm:block" : "block"}>
         <span className="block text-[13px] font-extrabold uppercase tracking-tight whitespace-nowrap">Stock Simulator</span>
-        {tagline && <span className="block text-[9px] uppercase tracking-wider opacity-70">{tagline}</span>}
+        {tagline && <span className="hidden sm:block text-[9px] uppercase tracking-wider opacity-70">{tagline}</span>}
       </span>
     </span>
   );
