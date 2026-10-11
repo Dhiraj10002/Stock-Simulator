@@ -108,14 +108,25 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
         if (!current()) return;
         lastMessageAt = Date.now();
         try {
-          const data = JSON.parse(event.data);
-          if (data.type === "feed_status") {
-            const status = data.feed_status || data;
-            useMarketStore.getState().setFeedStatus({ feedProvider: status.feed_provider, feedState: status.feed_state, isSynthetic: Boolean(status.is_synthetic), lastTick: status.last_tick, updatedAt: status.updated_at });
-          } else if (data.type === "quote" && data.quote) {
-            observeQuote(data.quote as Quote, { received: performance.now(), receivedEpoch: Date.now(), snapshot: !!data.snapshot, serverReceived: data.server_received_at_ms, serverSent: data.server_sent_at_ms });
-            coalesceQuote(pending, data.quote as Quote);
-            if (!document.hidden && frame === undefined) frame = requestAnimationFrame(flush);
+          const raw = JSON.parse(event.data);
+          const messages = Array.isArray(raw) ? raw : [raw];
+          for (const data of messages) {
+            if (data.type === "feed_status") {
+              const status = data.feed_status || data;
+              useMarketStore.getState().setFeedStatus({ feedProvider: status.feed_provider, feedState: status.feed_state, isSynthetic: Boolean(status.is_synthetic), lastTick: status.last_tick, updatedAt: status.updated_at });
+            } else if (data.type === "quotes" && Array.isArray(data.data)) {
+              for (const q of data.data) {
+                if (q) {
+                  observeQuote(q as Quote, { received: performance.now(), receivedEpoch: Date.now(), snapshot: !!data.snapshot, serverReceived: data.server_received_at_ms, serverSent: data.server_sent_at_ms });
+                  coalesceQuote(pending, q as Quote);
+                }
+              }
+              if (!document.hidden && frame === undefined) frame = requestAnimationFrame(flush);
+            } else if (data.type === "quote" && data.quote) {
+              observeQuote(data.quote as Quote, { received: performance.now(), receivedEpoch: Date.now(), snapshot: !!data.snapshot, serverReceived: data.server_received_at_ms, serverSent: data.server_sent_at_ms });
+              coalesceQuote(pending, data.quote as Quote);
+              if (!document.hidden && frame === undefined) frame = requestAnimationFrame(flush);
+            }
           }
         } catch { /* Ignore malformed provider messages. */ }
       };

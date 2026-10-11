@@ -37,7 +37,7 @@ type Order struct {
 	ID                uint      `gorm:"primaryKey"`
 	UUID              uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();uniqueIndex"`
 	UserUUID          uuid.UUID `gorm:"type:uuid;index;not null;uniqueIndex:idx_order_exit_key;uniqueIndex:idx_order_intent_key"`
-	Symbol            string    `gorm:"size:30;index;not null"`
+	Symbol            string    `gorm:"size:30;index;index:idx_orders_symbol_status_created,priority:1;not null"`
 	Side              string    `gorm:"size:10;not null"`
 	Type              string    `gorm:"size:10;not null"`
 	Product           string    `gorm:"size:15;not null"`
@@ -50,7 +50,7 @@ type Order struct {
 	ReservedPaise      int64  `gorm:"not null;default:0"`
 	Source             string `gorm:"size:16;not null;default:'USER'"`
 	Reason             string `gorm:"size:40"`
-	Status             string `gorm:"size:20;index;not null"`
+	Status             string `gorm:"size:20;index;index:idx_orders_symbol_status_created,priority:2;not null"`
 	// Durable new-order intents are independent of exit intents and survive history cleanup.
 	IntentKey  *string `gorm:"size:128;uniqueIndex:idx_order_intent_key"`
 	IntentHash string  `gorm:"size:64"`
@@ -58,7 +58,7 @@ type Order struct {
 	ExitKey               *string    `gorm:"size:128;uniqueIndex:idx_order_exit_key"`
 	ExitPositionUUID      *uuid.UUID `gorm:"type:uuid"`
 	ExitPositionUpdatedAt *time.Time
-	HiddenFromHistory     bool `gorm:"not null;default:false"`
-	CreatedAt             time.Time
+	HiddenFromHistory     bool      `gorm:"not null;default:false"`
+	CreatedAt             time.Time `gorm:"index:idx_orders_symbol_status_created,priority:3"`
 	UpdatedAt             time.Time
 }

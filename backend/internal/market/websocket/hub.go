@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/alias"
 	marketDTO "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/dto"
 	marketService "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/service"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/pkg/logger"
@@ -127,8 +128,32 @@ func (h *quoteHub) publish(stream *redis.PubSub, payload string) {
 			h.deliver(client, cancel, ev)
 		}
 	} else {
-		for client := range h.symbols[symbol] {
-			h.deliver(client, h.clients[client], ev)
+		delivered := make(map[*clientConn]struct{})
+		deliverToSymbol := func(sym string) {
+			if sym == "" {
+				return
+			}
+			for client := range h.symbols[sym] {
+				if _, ok := delivered[client]; !ok {
+					delivered[client] = struct{}{}
+					h.deliver(client, h.clients[client], ev)
+				}
+			}
+		}
+
+		deliverToSymbol(symbol)
+		if strings.HasSuffix(symbol, "-EQ") {
+			deliverToSymbol(strings.TrimSuffix(symbol, "-EQ"))
+		} else {
+			deliverToSymbol(symbol + "-EQ")
+		}
+		for _, a := range alias.GetAliases(symbol) {
+			deliverToSymbol(a)
+			deliverToSymbol(a + "-EQ")
+		}
+		if canonical := alias.ResolveCanonicalSymbol(symbol); canonical != "" && canonical != symbol {
+			deliverToSymbol(canonical)
+			deliverToSymbol(canonical + "-EQ")
 		}
 	}
 }

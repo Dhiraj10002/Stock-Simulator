@@ -12,6 +12,7 @@ import (
 
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/config"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/database"
+	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/alias"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/calendar"
 	marketDTO "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/dto"
 	marketService "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/service"
@@ -614,7 +615,19 @@ func (s *OrderService) RunMatcher(ctx context.Context) {
 				}
 				// A failed fill (e.g. insufficient funds or a concurrently cancelled
 				// order) only affects that order; future quote updates remain usable.
-				_ = s.MatchSymbol(quote.Symbol)
+				sym := strings.ToUpper(quote.Symbol)
+				_ = s.MatchSymbol(sym)
+				for _, a := range alias.GetAliases(sym) {
+					_ = s.MatchSymbol(a)
+				}
+				if strings.HasSuffix(sym, "-EQ") {
+					_ = s.MatchSymbol(strings.TrimSuffix(sym, "-EQ"))
+				} else {
+					_ = s.MatchSymbol(sym + "-EQ")
+				}
+				if canonical := alias.ResolveCanonicalSymbol(sym); canonical != "" && canonical != sym {
+					_ = s.MatchSymbol(canonical)
+				}
 			}
 		}
 

@@ -347,11 +347,60 @@ func (h *Handler) writePump(ctx context.Context, cancel context.CancelFunc, clie
 				_ = client.conn.WriteMessage(ws.CloseMessage, ws.FormatCloseMessage(ws.CloseNormalClosure, ""))
 				return
 			}
-			if ev.ServerReceivedAtMS > 0 {
-				ev.ServerSentAtMS = time.Now().UnixMilli()
-			}
-			if err := client.conn.WriteJSON(ev); err != nil {
-				return
+			// Micro-batch coalescing: if high-frequency quote ticks are queued, drain the channel
+			// and keep only the latest tick per symbol before flushing to avoid browser event loop jank.
+			if ev.Type == "quote" && ev.Quote != nil {
+				coalesced := make(map[string]event)
+				var order []string
+				symbol := strings.ToUpper(ev.Quote.Symbol)
+				coalesced[symbol] = ev
+				order = append(order, symbol)
+
+				var nonQuoteEvents []event
+			drainLoop:
+				for {
+					select {
+					case nextEv, nextOk := <-client.send:
+						if !nextOk {
+							_ = client.conn.WriteMessage(ws.CloseMessage, ws.FormatCloseMessage(ws.CloseNormalClosure, ""))
+							return
+						}
+						if nextEv.Type == "quote" && nextEv.Quote != nil {
+							nextSym := strings.ToUpper(nextEv.Quote.Symbol)
+							if _, exists := coalesced[nextSym]; !exists {
+								order = append(order, nextSym)
+							}
+							coalesced[nextSym] = nextEv
+						} else {
+							nonQuoteEvents = append(nonQuoteEvents, nextEv)
+						}
+					default:
+						break drainLoop
+					}
+				}
+
+				nowMS := time.Now().UnixMilli()
+				for _, sym := range order {
+					qEv := coalesced[sym]
+					if qEv.ServerReceivedAtMS > 0 {
+						qEv.ServerSentAtMS = nowMS
+					}
+					if err := client.conn.WriteJSON(qEv); err != nil {
+						return
+					}
+				}
+				for _, nEv := range nonQuoteEvents {
+					if err := client.conn.WriteJSON(nEv); err != nil {
+						return
+					}
+				}
+			} else {
+				if ev.ServerReceivedAtMS > 0 {
+					ev.ServerSentAtMS = time.Now().UnixMilli()
+				}
+				if err := client.conn.WriteJSON(ev); err != nil {
+					return
+				}
 			}
 		}
 	}

@@ -1424,6 +1424,8 @@ class QuoteWriter:
         self.history_lock = threading.RLock()
         self._feed_mode = feed_mode
         self.settlement_recorder = SettlementRecorder(os.getenv("DATABASE_URL", ""))
+        self._last_quote_cache: dict[str, dict[str, Any]] = {}
+        self._latest_candle_cache: dict[str, str | None] = {}
 
     @property
     def feed_mode(self) -> str:
@@ -1486,15 +1488,45 @@ class QuoteWriter:
         for sym in symbols_to_write:
             self.settlement_recorder.record(sym, price_paise, source, mode, now, subscription.exchange_segment)
 
-        existing = self.client.hgetall(quote_key)
-        old_stamp = broker_quote_time(existing.get("updated_at")) if existing else None
-        if existing.get("source") == source and old_stamp is not None and old_stamp > now:
-            return
+        # In-memory hot cache lookup to eliminate synchronous Redis hgetall round trips
+        old_quote = self._last_quote_cache.get(subscription.symbol)
+        if old_quote is None and self.client is not None:
+            try:
+                existing = self.client.hgetall(quote_key)
+                if existing:
+                    old_stamp = broker_quote_time(existing.get("updated_at"))
+                    old_quote = {"source": existing.get("source"), "updated_at": old_stamp}
+                    self._last_quote_cache[subscription.symbol] = old_quote
+                    if existing.get("source") == source and old_stamp is not None and old_stamp > now:
+                        return
+            except Exception:
+                pass
 
+        if old_quote is not None:
+            old_stamp = old_quote.get("updated_at")
+            if old_quote.get("source") == source and old_stamp is not None and old_stamp > now:
+                return
+
+        # Update latest tick cache for current symbol and its aliases
+        self._last_quote_cache[subscription.symbol] = {"source": source, "updated_at": now}
+        for sym in symbols_to_write:
+            self._last_quote_cache[sym] = {"source": source, "updated_at": now}
+
+        # In-memory candle cache lookup to eliminate synchronous Redis lindex round trips
         sym_latest_map = {}
         if build_history:
             for sym in symbols_to_write:
-                sym_latest_map[sym] = self.client.lindex(f"market:history:{sym}", 0)
+                if sym in self._latest_candle_cache:
+                    sym_latest_map[sym] = self._latest_candle_cache[sym]
+                elif self.client is not None:
+                    try:
+                        latest = self.client.lindex(f"market:history:{sym}", 0)
+                    except Exception:
+                        latest = None
+                    self._latest_candle_cache[sym] = latest
+                    sym_latest_map[sym] = latest
+                else:
+                    sym_latest_map[sym] = None
 
         if worker_received_at_ms > 0:
             quote["worker_received_at_ms"] = worker_received_at_ms
@@ -1521,17 +1553,28 @@ class QuoteWriter:
                 if build_history:
                     sym_latest = sym_latest_map.get(sym)
                     candle = make_candle(sym_latest, bucket, price_paise, self.volume_delta(sym, now.date(), volume), source, mode.upper())
+                    candle_json = json.dumps(candle)
+                    self._latest_candle_cache[sym] = candle_json
                     try:
                         same_bucket = json.loads(sym_latest).get("timestamp") == bucket * 60 if sym_latest else False
                     except (TypeError, ValueError):
                         same_bucket = False
                     if same_bucket:
-                        pipe.lset(h_key, 0, json.dumps(candle))
+                        pipe.lset(h_key, 0, candle_json)
                     else:
-                        pipe.lpush(h_key, json.dumps(candle))
+                        pipe.lpush(h_key, candle_json)
                     pipe.ltrim(h_key, 0, self.history_max_items - 1)
                     pipe.expire(h_key, self.history_ttl)
-                pipe.publish("market:updates", json.dumps(quote_wire_payload(sym_quote)))
+
+            # Optimization: Publish only the canonical symbol event to market:updates once per tick.
+            # Go quoteHub and OrderService resolve symbol aliases in-memory, cutting Redis Pub/Sub volume in half.
+            canonical_sym = canonical if canonical in symbols_to_write else subscription.symbol
+            canonical_quote = dict(quote)
+            canonical_quote["symbol"] = canonical_sym
+            if benchmark <= 0:
+                canonical_quote.pop("change_paise", None)
+                canonical_quote.pop("change_percent", None)
+            pipe.publish("market:updates", json.dumps(quote_wire_payload(canonical_quote)))
             pipe.execute()
         redis_latency_ms = round((time.perf_counter() - t0) * 1000, 2)
         # Periodic or trace logging for tick persistence without log flooding

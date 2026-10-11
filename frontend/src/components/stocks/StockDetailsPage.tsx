@@ -19,7 +19,15 @@ import {
 } from "lucide-react";
 import Navbar from "@/components/layout/Navbar";
 import dynamic from "next/dynamic";
-const TradingViewChart = dynamic(() => import("@/components/trading/TradingViewChart"), { ssr: false });
+const TradingViewChart = dynamic(
+  () => import("@/components/trading/TradingViewChart"),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="h-96 w-full animate-pulse rounded-xl border border-slate-200/60 bg-slate-100/60 dark:border-slate-800/40 dark:bg-slate-900/50" />
+    ),
+  }
+);
 import MarketDepthPanel from "./MarketDepthPanel";
 import {
   FnoMovement,
