@@ -2,6 +2,7 @@ python-interpreter-path = "python-services/market-worker/venv/bin/python"
 search-path = [
   "python-services/market-worker/venv/lib/python3.14/site-packages",
   "python-services/market-worker/venv/lib64/python3.14/site-packages",
+  "python-services/market-worker",
   "."
 ]
 site-package-path = [

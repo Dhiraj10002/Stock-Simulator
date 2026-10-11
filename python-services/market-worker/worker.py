@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from zoneinfo import ZoneInfo
 from datetime import date, datetime, timezone, timedelta
 from decimal import Decimal, InvalidOperation
-from typing import Any
+from typing import Any, cast
 import uuid
 from settlement_store import SettlementRecorder
 
@@ -62,9 +62,13 @@ def install_log_sanitizer() -> None:
 
     try:
         import logzero
-        logzero.logger.addFilter(sanitizer)
-        for h in logzero.logger.handlers:
-            h.addFilter(sanitizer)
+        log_obj: Any = getattr(logzero, "logger", None)
+        if log_obj is not None:
+            if hasattr(log_obj, "addFilter"):
+                log_obj.addFilter(sanitizer)
+            for h in getattr(log_obj, "handlers", []):
+                if hasattr(h, "addFilter"):
+                    h.addFilter(sanitizer)
     except Exception:
         pass
 
@@ -112,29 +116,32 @@ install_log_sanitizer()
 
 class VerifiedSmartWebSocket(SmartWebSocketV2):
     """The SDK disables certificate checks; enforce verified TLS in our transport."""
+    def on_error(self, *args: Any, **kwargs: Any):
+        pass
+
     def connect(self):
         headers = {"Authorization": self.auth_token, "x-api-key": self.api_key,
                    "x-client-code": self.client_code, "x-feed-token": self.feed_token}
-        proxy_kwargs = {}
+        proxy_kwargs: dict[str, Any] = {}
         proxy_url = os.getenv("HTTPS_PROXY") or os.getenv("HTTP_PROXY") or os.getenv("ALL_PROXY")
         if proxy_url:
             parsed = configured_proxy()
-            if parsed.hostname:
+            if parsed and parsed.hostname:
                 proxy_kwargs["http_proxy_host"] = parsed.hostname
-            if parsed.username:
-                from urllib.parse import unquote
-                proxy_kwargs["http_proxy_auth"] = (unquote(parsed.username), unquote(parsed.password or ""))
-            if parsed.port:
-                proxy_kwargs["http_proxy_port"] = parsed.port
-            if parsed.scheme.startswith("socks"):
-                proxy_kwargs["proxy_type"] = parsed.scheme
-            else:
-                proxy_kwargs["proxy_type"] = "http"
+                if parsed.username:
+                    from urllib.parse import unquote
+                    proxy_kwargs["http_proxy_auth"] = (unquote(str(parsed.username)), unquote(str(parsed.password or "")))
+                if parsed.port:
+                    proxy_kwargs["http_proxy_port"] = parsed.port
+                if parsed.scheme.startswith("socks"):
+                    proxy_kwargs["proxy_type"] = parsed.scheme
+                else:
+                    proxy_kwargs["proxy_type"] = "http"
         no_proxy = os.getenv("NO_PROXY") or os.getenv("no_proxy")
         if no_proxy:
             proxy_kwargs["http_no_proxy"] = [h.strip() for h in no_proxy.split(",") if h.strip()]
         self.wsapp = WebSocketApp(self.ROOT_URI, header=headers, on_open=self.on_open,
-            on_error=self.on_error, on_close=lambda ws, code, message: self.on_close(ws),
+            on_error=lambda ws, err: self.on_error(ws, err), on_close=lambda ws, code, message: self.on_close(ws),
             on_data=self._on_data, on_ping=self._on_ping, on_pong=self._on_pong)
         self.wsapp.run_forever(sslopt={"cert_reqs": ssl.CERT_REQUIRED, "check_hostname": True},
                               ping_interval=self.HEART_BEAT_INTERVAL, **proxy_kwargs)
@@ -446,9 +453,11 @@ def smart_api_session() -> tuple[Any, dict[str, Any]]:
         SMART_API_SESSION = None
         SMART_API_LOGIN_RETRY_AFTER = now + 30
         api = SmartConnect(api_key=api_key, timeout=15)
-        session = api.generateSession(client_id, password, pyotp.TOTP(totp_secret).now())
+        session: Any = api.generateSession(client_id, password, pyotp.TOTP(totp_secret).now())
+        if not isinstance(session, dict):
+            raise RuntimeError("Angel One login failed or returned invalid response")
         data = session.get("data") or {}
-        if not session.get("status") or not data.get("jwtToken") or not data.get("feedToken"):
+        if not session.get("status") or not isinstance(data, dict) or not data.get("jwtToken") or not data.get("feedToken"):
             raise RuntimeError("Angel One login failed or returned incomplete session tokens")
         lifetime = 900.0
         try:
@@ -1086,22 +1095,23 @@ class InstrumentStore:
                 raise RuntimeError("LIVE feed requires the canonical database master")
             import psycopg
             from psycopg.rows import dict_row
-            with psycopg.connect(self.database_url, connect_timeout=15, row_factory=dict_row) as connection:
+            with psycopg.connect(self.database_url, connect_timeout=15, row_factory=cast(Any, dict_row)) as connection:
                 with connection.cursor() as cursor:
-                    cursor.execute("SELECT version FROM instrument_snapshots WHERE status = 'ACTIVE'")
-                    versions = list(cursor.fetchall())
+                    c: Any = cursor
+                    c.execute("SELECT version FROM instrument_snapshots WHERE status = 'ACTIVE'")
+                    versions: list[dict[str, Any]] = list(c.fetchall())
                     if len(versions) != 1:
                         raise RuntimeError("LIVE requires exactly one activated master")
-                    version = versions[0]["version"]
-                    cursor.execute("SELECT COUNT(*) AS count, MAX(updated_at) AS modified FROM instruments WHERE active = true AND (is_tradable = true OR instrument_type IN ('INDEX', 'AMXIDX')) AND snapshot_version = %s", (version,))
-                    meta = cursor.fetchone()
+                    version = str(versions[0]["version"])
+                    c.execute("SELECT COUNT(*) AS count, MAX(updated_at) AS modified FROM instruments WHERE active = true AND (is_tradable = true OR instrument_type IN ('INDEX', 'AMXIDX')) AND snapshot_version = %s", (version,))
+                    meta: dict[str, Any] | None = c.fetchone()
                     if not meta or meta["count"] == 0:
                         raise RuntimeError("activated master is empty")
                     signature = (version, meta["count"], str(meta["modified"]))
                     if signature == self._master_signature:
                         return False
-                    cursor.execute("SELECT token,symbol,name,underlying_symbol,expiry,strike,lot_size AS lotsize,instrument_type AS instrumenttype,exchange_segment AS exch_seg,tick_size FROM instruments WHERE active = true AND (is_tradable = true OR instrument_type IN ('INDEX', 'AMXIDX')) AND snapshot_version = %s", (version,))
-                    rows = list(cursor.fetchall())
+                    c.execute("SELECT token,symbol,name,underlying_symbol,expiry,strike,lot_size AS lotsize,instrument_type AS instrumenttype,exchange_segment AS exch_seg,tick_size FROM instruments WHERE active = true AND (is_tradable = true OR instrument_type IN ('INDEX', 'AMXIDX')) AND snapshot_version = %s", (version,))
+                    rows = list(c.fetchall())
             if not rows:
                 raise RuntimeError("active master is empty; run sync-instruments before starting LIVE")
             for row in rows:
@@ -1193,10 +1203,10 @@ class InstrumentStore:
         # Exact NFO symbols and NSE equities share the same subscription path.
         today = datetime.now(ZoneInfo("Asia/Kolkata")).date()
         cached_rows, cached_day, cached_index = getattr(self, "_subscription_index", (None, None, None))
-        if cached_rows is rows and cached_day == today:
-            by_symbol = cached_index
+        if cached_rows is rows and cached_day == today and isinstance(cached_index, dict):
+            by_symbol: dict[str, Any] = cached_index
         else:
-            by_symbol = {}
+            by_symbol: dict[str, Any] = {}
             for row in rows:
                 segment, symbol = clean(row.get("exch_seg")), clean(row.get("symbol")).upper()
                 if segment == "NFO":
@@ -1309,7 +1319,7 @@ def publish_feed_state(
 ) -> dict[str, Any]:
     now_iso = datetime.now(timezone.utc).isoformat()
     market_event_id = f"mkt_feed_{int(time.time() * 1000)}_{uuid.uuid4().hex[:6]}"
-    state_payload = {
+    state_payload: dict[str, Any] = {
         "market_event_id": market_event_id,
         "feed_provider": feed_provider,
         "feed_state": feed_state,
@@ -1492,12 +1502,12 @@ class QuoteWriter:
         old_quote = self._last_quote_cache.get(subscription.symbol)
         if old_quote is None and self.client is not None:
             try:
-                existing = self.client.hgetall(quote_key)
-                if existing:
-                    old_stamp = broker_quote_time(existing.get("updated_at"))
-                    old_quote = {"source": existing.get("source"), "updated_at": old_stamp}
+                raw_existing: Any = self.client.hgetall(quote_key)
+                if isinstance(raw_existing, dict) and raw_existing:
+                    old_stamp = broker_quote_time(raw_existing.get("updated_at"))
+                    old_quote = {"source": raw_existing.get("source"), "updated_at": old_stamp}
                     self._last_quote_cache[subscription.symbol] = old_quote
-                    if existing.get("source") == source and old_stamp is not None and old_stamp > now:
+                    if raw_existing.get("source") == source and old_stamp is not None and old_stamp > now:
                         return
             except Exception:
                 pass
@@ -1513,14 +1523,15 @@ class QuoteWriter:
             self._last_quote_cache[sym] = {"source": source, "updated_at": now}
 
         # In-memory candle cache lookup to eliminate synchronous Redis lindex round trips
-        sym_latest_map = {}
+        sym_latest_map: dict[str, str | None] = {}
         if build_history:
             for sym in symbols_to_write:
                 if sym in self._latest_candle_cache:
                     sym_latest_map[sym] = self._latest_candle_cache[sym]
                 elif self.client is not None:
                     try:
-                        latest = self.client.lindex(f"market:history:{sym}", 0)
+                        raw_latest: Any = self.client.lindex(f"market:history:{sym}", 0)
+                        latest = str(raw_latest) if raw_latest is not None else None
                     except Exception:
                         latest = None
                     self._latest_candle_cache[sym] = latest
@@ -1673,8 +1684,8 @@ def seed_historical_candles(client: redis.Redis, subscriptions: list[Subscriptio
         base_price = DEFAULT_BENCHMARK_PRICES_PAISE.get(sub.symbol, 200000)
 
         try:
-            existing_count = client.llen(history_key)
-            if existing_count >= 10:
+            llen_res: Any = client.llen(history_key)
+            if int(llen_res or 0) >= 10:
                 continue
         except Exception:
             continue
@@ -1934,7 +1945,7 @@ def run_feed(store: InstrumentStore, writer: QuoteWriter, control: FeedControl) 
             except Exception as error:
                 print(f"market worker: demand subscription refresh failed: {error}", flush=True)
 
-    def on_open(_wsapp: Any) -> None:
+    def on_open(wsapp: Any) -> None:
         if store.canonical_epoch() != master_epoch:
             control.reconnect("canonical master changed before connection opened")
             return
@@ -1956,8 +1967,9 @@ def run_feed(store: InstrumentStore, writer: QuoteWriter, control: FeedControl) 
     except ValueError:
         trace_sample_rate = 0.0
 
-    def on_data(_wsapp: Any, message: dict[str, Any]) -> None:
+    def on_data(wsapp: Any, data: Any) -> None:
         received_at_ms = int(time.time() * 1000)
+        message = data if isinstance(data, dict) else {}
         try:
             exchange_type = integer(message.get("exchange_type"))
             subscription = store.lookup(clean(message.get("token")), exchange_type, master_epoch)
@@ -1983,21 +1995,23 @@ def run_feed(store: InstrumentStore, writer: QuoteWriter, control: FeedControl) 
         except (ValueError, redis.RedisError) as error:
             print(f"market worker: error processing Angel One tick: {error}", flush=True)
 
-    def on_error(_wsapp: Any, error: Any) -> None:
+    def on_error(*args: Any, **kwargs: Any) -> None:
+        error = args[1] if len(args) > 1 else (args[0] if args else "unknown error")
         print(f"market worker: Angel One WebSocket error: {error}", flush=True)
         if writer and getattr(writer, "client", None):
             publish_feed_state(writer.client, feed_provider="angel_one", feed_state="DISCONNECTED", is_synthetic=False)
 
-    def on_close(_wsapp: Any) -> None:
+    def on_close(wsapp: Any) -> None:
         connected.clear()
         print("market worker: Angel One WebSocket closed", flush=True)
         if writer and getattr(writer, "client", None):
             publish_feed_state(writer.client, feed_provider="angel_one", feed_state="DISCONNECTED", is_synthetic=False)
 
-    websocket.on_open = on_open
-    websocket.on_data = on_data
-    websocket.on_error = on_error
-    websocket.on_close = on_close
+    ws_client: Any = websocket
+    ws_client.on_open = on_open
+    ws_client.on_data = on_data
+    ws_client.on_error = on_error
+    ws_client.on_close = on_close
     threading.Thread(target=demand_loop, daemon=True).start()
     threading.Thread(target=history_demand_loop, args=(store, writer, None, stopped), daemon=True).start()
     try:
