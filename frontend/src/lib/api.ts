@@ -117,7 +117,7 @@ export function tryRefreshToken(failedScope = getAuthToken(), failedRevision = a
   return pending;
 }
 export async function logoutSession() {
-  const logout = async () => { try { await sessionFetch("/auth/logout", { method: "POST" }); } finally { clearAuthTokens({ redirect: true }); } };
+  const logout = async () => { try { await sessionFetch("/auth/logout", { method: "POST" }); } finally { clearAuthTokens({ redirect: false }); } };
   return (typeof navigator !== "undefined" && navigator.locks) ? navigator.locks.request("stock-simulator-auth-refresh", logout) : logout();
 }
 
