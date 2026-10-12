@@ -27,14 +27,21 @@ export function formatHistoricalCandles(candles?: Candle[]): FormattedCandle[] {
     if (!c || c.timestamp === undefined) continue;
     // Normalize milliseconds (> 1e11) to UTC unix seconds
     const sec = c.timestamp > 1e11 ? Math.floor(c.timestamp / 1000) : c.timestamp;
+    if (!Number.isFinite(sec) || sec <= 0) continue;
+
+    const open = Number((c.open_paise / 100).toFixed(2));
+    const high = Number((c.high_paise / 100).toFixed(2));
+    const low = Number((c.low_paise / 100).toFixed(2));
+    const close = Number((c.close_paise / 100).toFixed(2));
+    if (![open, high, low, close].every(Number.isFinite)) continue;
 
     map.set(sec, {
       time: sec,
-      open: Number((c.open_paise / 100).toFixed(2)),
-      high: Number((c.high_paise / 100).toFixed(2)),
-      low: Number((c.low_paise / 100).toFixed(2)),
-      close: Number((c.close_paise / 100).toFixed(2)),
-      volume: c.volume || 0,
+      open,
+      high,
+      low,
+      close,
+      volume: Number.isFinite(c.volume) && c.volume > 0 ? c.volume : 0,
     });
   }
 

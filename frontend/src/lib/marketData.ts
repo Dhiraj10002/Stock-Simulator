@@ -8,8 +8,8 @@ export function quoteLabel(quote?: Quote | null, now = Date.now()) {
   if (quote.is_quote_stale || now - timestamp > 120_000) return "LAST AVAILABLE";
   return quote.source === "angelone_live" ? "LIVE" : "SIMULATED";
 }
-export function historyRequest(timeframe: string) {
-  return { interval: timeframe === "1H" ? "ONE_HOUR" : timeframe === "1D" ? "ONE_DAY" : "ONE_MINUTE", limit: 500 };
+export function historyRequest(_timeframe?: string) {
+  return { interval: "ONE_MINUTE", limit: 500 };
 }
 export function aggregateCandles(candles: Candle[], timeframe: string): Candle[] {
   const minutes = timeframe === "5m" ? 5 : timeframe === "15m" ? 15 : 1;

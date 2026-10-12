@@ -223,7 +223,10 @@ export default function TradingViewChart({
 
     const raw = formattedData as FormattedCandle[];
     const toSeries = (pts: { time: number; value: number }[]) =>
-      pts.map((p) => ({ time: p.time as UTCTimestamp, value: p.value }));
+      pts
+        .filter((p) => Number.isFinite(p.time) && Number.isFinite(p.value))
+        .filter((p, i, arr) => i === 0 || p.time > arr[i - 1].time)
+        .map((p) => ({ time: p.time as UTCTimestamp, value: p.value }));
 
     return {
       vwap: toSeries(calculateVWAP(raw)),
@@ -452,87 +455,105 @@ export default function TradingViewChart({
   useEffect(() => {
     if (!chartRef.current || formattedData.length === 0) return;
 
-    // 1. Candlestick Data
-    if (candleSeriesRef.current) {
-      candleSeriesRef.current.setData(
-        formattedData.map((d) => ({
-          time: d.time,
-          open: d.open,
-          high: d.high,
-          low: d.low,
-          close: d.close,
-        }))
-      );
-    }
+    try {
+      // 1. Candlestick Data
+      if (candleSeriesRef.current) {
+        candleSeriesRef.current.setData(
+          formattedData.map((d) => ({
+            time: d.time,
+            open: d.open,
+            high: d.high,
+            low: d.low,
+            close: d.close,
+          }))
+        );
+      }
 
-    // 2. Area Data
-    if (areaSeriesRef.current) {
-      areaSeriesRef.current.setData(
-        formattedData.map((d) => ({
-          time: d.time,
-          value: d.close,
-        }))
-      );
-    }
+      // 2. Area Data
+      if (areaSeriesRef.current) {
+        areaSeriesRef.current.setData(
+          formattedData.map((d) => ({
+            time: d.time,
+            value: d.close,
+          }))
+        );
+      }
 
-    // 3. Line Data
-    if (lineSeriesRef.current) {
-      lineSeriesRef.current.setData(
-        formattedData.map((d) => ({
-          time: d.time,
-          value: d.close,
-        }))
-      );
-    }
+      // 3. Line Data
+      if (lineSeriesRef.current) {
+        lineSeriesRef.current.setData(
+          formattedData.map((d) => ({
+            time: d.time,
+            value: d.close,
+          }))
+        );
+      }
 
-    // 4. Volume Data with green/red bar colors
-    if (volumeSeriesRef.current) {
-      volumeSeriesRef.current.setData(
-        formattedData.map((d) => ({
-          time: d.time,
-          value: d.volume,
-          color:
-            d.close >= d.open
-              ? "rgba(16, 185, 129, 0.4)" // Soft emerald
-              : "rgba(239, 68, 68, 0.4)", // Soft rose
-        }))
-      );
-    }
+      // 4. Volume Data with green/red bar colors
+      if (volumeSeriesRef.current) {
+        volumeSeriesRef.current.setData(
+          formattedData.map((d) => ({
+            time: d.time,
+            value: d.volume,
+            color:
+              d.close >= d.open
+                ? "rgba(16, 185, 129, 0.4)" // Soft emerald
+                : "rgba(239, 68, 68, 0.4)", // Soft rose
+          }))
+        );
+      }
 
-    // 5. Technical Overlays
-    if (vwapSeriesRef.current) {
-      vwapSeriesRef.current.setData(calculatedIndicators.vwap);
-    }
-    if (ema9SeriesRef.current) {
-      ema9SeriesRef.current.setData(calculatedIndicators.ema9);
-    }
-    if (ema21SeriesRef.current) {
-      ema21SeriesRef.current.setData(calculatedIndicators.ema21);
-    }
-    if (sma50SeriesRef.current) {
-      sma50SeriesRef.current.setData(calculatedIndicators.sma50);
-    }
+      // 5. Technical Overlays
+      if (vwapSeriesRef.current && calculatedIndicators.vwap.length > 0) {
+        vwapSeriesRef.current.setData(calculatedIndicators.vwap);
+      }
+      if (ema9SeriesRef.current && calculatedIndicators.ema9.length > 0) {
+        ema9SeriesRef.current.setData(calculatedIndicators.ema9);
+      }
+      if (ema21SeriesRef.current && calculatedIndicators.ema21.length > 0) {
+        ema21SeriesRef.current.setData(calculatedIndicators.ema21);
+      }
+      if (sma50SeriesRef.current && calculatedIndicators.sma50.length > 0) {
+        sma50SeriesRef.current.setData(calculatedIndicators.sma50);
+      }
 
-    // Track latest candle for live updates
-    const last = formattedData[formattedData.length - 1];
-    lastCandleRef.current = { ...last };
-    setLatestBar({
-      open: last.open,
-      high: last.high,
-      low: last.low,
-      close: last.close,
-      volume: last.volume,
-    });
+      // Track latest candle for live updates
+      const last = formattedData[formattedData.length - 1];
+      lastCandleRef.current = { ...last };
+      setLatestBar({
+        open: last.open,
+        high: last.high,
+        low: last.low,
+        close: last.close,
+        volume: last.volume,
+      });
 
-    // Auto-fit content to view
-    chartRef.current.timeScale().fitContent();
+      // Auto-fit content to view
+      chartRef.current.timeScale().fitContent();
+    } catch (err) {
+      console.warn("TradingViewChart setData caught:", err);
+    }
   }, [formattedData, calculatedIndicators]);
 
   // ---------------------------------------------------------------------------
   // Real-Time Live Tick Streaming into Active Candle Bar
   // ---------------------------------------------------------------------------
   useEffect(() => {
-    if (timeframe !== "1m" || !liveQuote || !["LIVE", "SIMULATED"].includes(quoteLabel(liveQuote)) || liveQuote.is_quote_stale || liveQuote.price_paise <= 0 || !chartRef.current) return;
+    if (
+      timeframe !== "1m" ||
+      !liveQuote ||
+      !["LIVE", "SIMULATED"].includes(quoteLabel(liveQuote)) ||
+      liveQuote.is_quote_stale ||
+      liveQuote.price_paise <= 0 ||
+      !chartRef.current
+    )
+      return;
+
+    const parsedQuoteTime = Date.parse(liveQuote.updated_at);
+    const tickSec =
+      Number.isFinite(parsedQuoteTime) && parsedQuoteTime > 0
+        ? Math.floor(parsedQuoteTime / 1000)
+        : Math.floor(Date.now() / 1000);
 
     const { candle: updatedCandle } = applyLiveTick(
       lastCandleRef.current
@@ -546,8 +567,18 @@ export default function TradingViewChart({
           }
         : null,
       liveQuote.price_paise,
-      Math.floor(Date.parse(liveQuote.updated_at) / 1000)
+      tickSec
     );
+
+    if (!Number.isFinite(updatedCandle.time) || updatedCandle.time <= 0) return;
+
+    // Reject backdated bar that violates lightweight-charts series monotonic ordering
+    if (
+      lastCandleRef.current &&
+      (updatedCandle.time as number) < (lastCandleRef.current.time as number)
+    ) {
+      return;
+    }
 
     const barForSeries = {
       ...updatedCandle,
@@ -563,24 +594,28 @@ export default function TradingViewChart({
       volume: updatedCandle.volume,
     });
 
-    if (candleSeriesRef.current && chartType === "candle") {
-      candleSeriesRef.current.update(barForSeries);
-    }
-    if (areaSeriesRef.current && chartType === "area") {
-      areaSeriesRef.current.update({ time: barForSeries.time, value: barForSeries.close });
-    }
-    if (lineSeriesRef.current && chartType === "line") {
-      lineSeriesRef.current.update({ time: barForSeries.time, value: barForSeries.close });
-    }
-    if (volumeSeriesRef.current && indicators.volume) {
-      volumeSeriesRef.current.update({
-        time: barForSeries.time,
-        value: barForSeries.volume,
-        color:
-          barForSeries.close >= barForSeries.open
-            ? "rgba(16, 185, 129, 0.4)"
-            : "rgba(239, 68, 68, 0.4)",
-      });
+    try {
+      if (candleSeriesRef.current && chartType === "candle") {
+        candleSeriesRef.current.update(barForSeries);
+      }
+      if (areaSeriesRef.current && chartType === "area") {
+        areaSeriesRef.current.update({ time: barForSeries.time, value: barForSeries.close });
+      }
+      if (lineSeriesRef.current && chartType === "line") {
+        lineSeriesRef.current.update({ time: barForSeries.time, value: barForSeries.close });
+      }
+      if (volumeSeriesRef.current && indicators.volume) {
+        volumeSeriesRef.current.update({
+          time: barForSeries.time,
+          value: barForSeries.volume,
+          color:
+            barForSeries.close >= barForSeries.open
+              ? "rgba(16, 185, 129, 0.4)"
+              : "rgba(239, 68, 68, 0.4)",
+        });
+      }
+    } catch (err) {
+      console.warn("TradingViewChart update caught:", err);
     }
   }, [liveQuote, chartType, indicators.volume, timeframe]);
 
@@ -676,9 +711,9 @@ export default function TradingViewChart({
           {/* Divider */}
           <div className="h-4 w-px bg-slate-200 dark:bg-slate-800 mx-1 hidden sm:block" />
 
-          {/* Timeframe Pills */}
+          {/* Timeframe Pills (Intraday Native Aggregation) */}
           <div className="flex items-center gap-0.5 bg-slate-200/60 dark:bg-slate-800/80 p-0.5 rounded-lg font-mono">
-            {["1m", "5m", "15m", "1H", "1D"].map((tf) => (
+            {["1m", "5m", "15m"].map((tf) => (
               <button
                 key={tf}
                 onClick={() => handleTimeframeSelect(tf)}

@@ -4,7 +4,7 @@ import { useQuoteMetrics } from "@/hooks/useQuoteMetrics";
 import { useMarketStatus } from "@/hooks/useMarketStatus";
 import { useDisplayPolling } from "@/hooks/useDisplayPolling";
 
-import { useEffect, useRef, useState } from "react";
+import React, { Component, useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -28,6 +28,44 @@ const TradingViewChart = dynamic(
     ),
   }
 );
+
+class ChartErrorBoundary extends Component<
+  { children: ReactNode; fallbackSymbol: string; onRetry?: () => void },
+  { hasError: boolean }
+> {
+  constructor(props: { children: ReactNode; fallbackSymbol: string; onRetry?: () => void }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    console.warn("ChartErrorBoundary caught chart display error:", error, info);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex h-96 w-full flex-col items-center justify-center space-y-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-6 text-center text-amber-800 dark:text-amber-300">
+          <p className="text-sm font-bold">Price Chart Display Unavailable</p>
+          <p className="max-w-md text-xs text-slate-600 dark:text-slate-400">
+            A temporary rendering reconciliation issue occurred for {this.props.fallbackSymbol}. Order execution and market depth remain active.
+          </p>
+          <button
+            onClick={() => {
+              this.setState({ hasError: false });
+              this.props.onRetry?.();
+            }}
+            className="rounded-lg bg-cyan-700 px-4 py-2 text-xs font-bold text-white hover:bg-cyan-800 cursor-pointer"
+          >
+            Retry Chart
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 import MarketDepthPanel from "./MarketDepthPanel";
 import {
   FnoMovement,
@@ -170,7 +208,7 @@ function StockDesk({ symbol, token }: { symbol: string; token: string }) {
     inst?.exchange === "NSE" && inst.instrument_type === "EQUITY"
       ? inst.symbol
       : undefined;
-  useTargetedSubscription(canonical || []);
+  useTargetedSubscription(canonical || symbol);
   const wsQuote = useSymbolQuote(canonical || "");
   const displayInterval = useDisplayPolling(canonical);
   const quoteQuery = useQuery({
@@ -555,31 +593,39 @@ function StockDesk({ symbol, token }: { symbol: string; token: string }) {
                   </button>
                 </p>
               )}
-              <TradingViewChart
-                key={canonical || symbol}
-                symbol={canonical || symbol}
-                historicalCandles={aggregateCandles(
-                  nativeCandles(history.data || [], now),
-                  timeframe,
-                )}
-                liveQuote={chartQuote}
-                isLoading={history.isLoading || instrument.isPending}
-                isError={instrument.isError || history.isError}
-                errorMessage={
-                  instrument.isError
-                    ? `Instrument data for ${symbol.replace(/-EQ$/, "")} could not be loaded.`
-                    : history.isError
-                      ? `Historical candle feed for ${symbol.replace(/-EQ$/, "")} could not be loaded.`
-                      : undefined
-                }
-                height={380}
-                defaultTimeframe={timeframe}
-                onTimeframeChange={setTimeframe}
-                onRefresh={() => {
+              <ChartErrorBoundary
+                fallbackSymbol={symbol.replace(/-EQ$/, "")}
+                onRetry={() => {
                   if (instrument.isError) void instrument.refetch();
                   void history.refetch();
                 }}
-              />
+              >
+                <TradingViewChart
+                  key={canonical || symbol}
+                  symbol={canonical || symbol}
+                  historicalCandles={aggregateCandles(
+                    nativeCandles(history.data || [], now),
+                    timeframe,
+                  )}
+                  liveQuote={chartQuote}
+                  isLoading={history.isLoading || instrument.isPending}
+                  isError={instrument.isError || history.isError}
+                  errorMessage={
+                    instrument.isError
+                      ? `Instrument data for ${symbol.replace(/-EQ$/, "")} could not be loaded.`
+                      : history.isError
+                        ? `Historical candle feed for ${symbol.replace(/-EQ$/, "")} could not be loaded.`
+                        : undefined
+                  }
+                  height={380}
+                  defaultTimeframe={timeframe}
+                  onTimeframeChange={setTimeframe}
+                  onRefresh={() => {
+                    if (instrument.isError) void instrument.refetch();
+                    void history.refetch();
+                  }}
+                />
+              </ChartErrorBoundary>
             </section>
             <section aria-label="Price performance" className={panel}>
               <h2 className="text-base font-bold">Price performance</h2>
@@ -635,13 +681,15 @@ function StockDesk({ symbol, token }: { symbol: string; token: string }) {
                 <>
                   <p className={`mt-3 text-xs ${muted}`}>
                     {fund.source} · Retrieved{" "}
-                    {new Date(fund.retrieved_at || "").toLocaleString("en-IN", {
-                      timeZone: "Asia/Kolkata",
-                    })}{" "}
+                    {fund.retrieved_at && !isNaN(new Date(fund.retrieved_at).getTime())
+                      ? new Date(fund.retrieved_at).toLocaleString("en-IN", {
+                          timeZone: "Asia/Kolkata",
+                        })
+                      : "Recently"}{" "}
                     IST. Retrieval time is not a financial reporting date.
                   </p>
                   <dl className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3">
-                    {fund.metrics.map((item, i) => (
+                    {(fund.metrics || []).map((item, i) => (
                       <div
                         key={i}
                         className="min-w-0 rounded-xl bg-slate-50 p-3 dark:bg-slate-950"
@@ -690,9 +738,9 @@ function StockDesk({ symbol, token }: { symbol: string; token: string }) {
                         className={`mt-1 block text-xs font-normal ${muted}`}
                       >
                         {article.source} ·{" "}
-                        {new Date(article.published_at).toLocaleDateString(
-                          "en-IN",
-                        )}
+                        {article.published_at && !isNaN(new Date(article.published_at).getTime())
+                          ? new Date(article.published_at).toLocaleDateString("en-IN")
+                          : "Recent"}
                       </span>
                     </a>
                   ))
@@ -852,7 +900,7 @@ function StockDesk({ symbol, token }: { symbol: string; token: string }) {
                   role="alert"
                   className="mt-3 text-xs text-amber-800 dark:text-amber-300"
                 >
-                  {preview.error.message}
+                  {preview.error?.message || "Order preview temporarily unavailable"}
                 </p>
               )}
               {!token ? (

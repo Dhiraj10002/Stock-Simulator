@@ -10,9 +10,10 @@ test("missing stream is not proof of synthetic history", () => {
   assert.equal(quoteLabel({ ...quote, source: "synthetic_gbm" }, 130000), "LAST AVAILABLE");
   assert.equal(quoteLabel({ ...quote, updated_at: "invalid" }), "UNAVAILABLE");
 });
-test("hour and day controls request native intervals", () => {
-  assert.equal(historyRequest("1H").interval, "ONE_HOUR");
-  assert.equal(historyRequest("1D").interval, "ONE_DAY");
+test("history request always uses standard 1-minute interval for native aggregation", () => {
+  assert.equal(historyRequest("1m").interval, "ONE_MINUTE");
+  assert.equal(historyRequest("5m").interval, "ONE_MINUTE");
+  assert.equal(historyRequest("15m").interval, "ONE_MINUTE");
 });
 test("five-minute aggregation respects session anchor and preserves OHLC and volume", () => {
   const open = Date.parse("2026-09-16T09:15:00+05:30") / 1000;

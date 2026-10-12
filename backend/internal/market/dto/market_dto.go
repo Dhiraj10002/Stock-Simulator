@@ -8,6 +8,8 @@ type MarketMoverItem struct {
 	ChangePaise   int64   `json:"change_paise"`
 	ChangePercent float64 `json:"change_percent"`
 	Volume        int64   `json:"volume"`
+	HighPaise     int64   `json:"high_paise,omitempty"`
+	LowPaise      int64   `json:"low_paise,omitempty"`
 	Turnover      float64 `json:"turnover,omitempty"` // in INR (price * volume)
 	TrendingScore float64 `json:"trending_score,omitempty"`
 	Exchange      string  `json:"exchange,omitempty"`

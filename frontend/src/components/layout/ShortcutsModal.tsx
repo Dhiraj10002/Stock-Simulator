@@ -49,8 +49,8 @@ const SHORTCUT_CATEGORIES: ShortcutCategory[] = [
     category: "Chart Timeframes & Order Actions",
     items: [
       {
-        keys: ["1", "–", "5"],
-        description: "Switch active timeframe (1m, 5m, 15m, 1H, 1D)",
+        keys: ["1", "–", "3"],
+        description: "Switch active timeframe (1m, 5m, 15m)",
         icon: BarChart2,
         badgeColor: "bg-blue-950/60 text-blue-300 border-blue-500/30",
       },

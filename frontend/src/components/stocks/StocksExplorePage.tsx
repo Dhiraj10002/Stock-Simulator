@@ -10,6 +10,7 @@ import { useQuery } from "@tanstack/react-query";
 import Navbar from "@/components/layout/Navbar";
 import IndicesTickerStrip, { MAJOR_INDICES_STRIP } from "@/components/layout/IndicesTickerStrip";
 import { useBufferedQuotes } from "@/hooks/useBufferedQuotes";
+import { useTargetedSubscription } from "@/stores/market-store";
 import { LiveQuoteCard } from "./LiveQuoteCard";
 import { fetchBatchQuotes, getCachedQuote } from "@/lib/quoteService";
 import { dayMovement, valuationStatus } from "@/lib/marketDisplay";
@@ -271,19 +272,19 @@ export default function StocksExplorePage() {
 
   const aggregateInterval = useSessionDisplayPolling(5000);
   const { data: marketMovers, isLoading: isMoversLoading } = useQuery<{
-    gainers: { symbol: string; name?: string; price_paise: number; change_paise: number; change_percent: number; volume: number }[];
-    losers: { symbol: string; name?: string; price_paise: number; change_paise: number; change_percent: number; volume: number }[];
-    most_traded: { symbol: string; name?: string; price_paise: number; change_paise: number; change_percent: number; volume: number }[];
-    trending: { symbol: string; name?: string; price_paise: number; change_paise: number; change_percent: number; volume: number }[];
+    gainers: { symbol: string; name?: string; price_paise: number; change_paise: number; change_percent: number; volume: number; high_paise?: number; low_paise?: number }[];
+    losers: { symbol: string; name?: string; price_paise: number; change_paise: number; change_percent: number; volume: number; high_paise?: number; low_paise?: number }[];
+    most_traded: { symbol: string; name?: string; price_paise: number; change_paise: number; change_percent: number; volume: number; high_paise?: number; low_paise?: number }[];
+    trending: { symbol: string; name?: string; price_paise: number; change_paise: number; change_percent: number; volume: number; high_paise?: number; low_paise?: number }[];
   }>({
     queryKey: ["market-movers-explore"],
     queryFn: async () => {
       try {
         const res = await apiFetch<{
-          gainers: { symbol: string; name?: string; price_paise: number; change_paise: number; change_percent: number; volume: number }[];
-          losers: { symbol: string; name?: string; price_paise: number; change_paise: number; change_percent: number; volume: number }[];
-          most_traded: { symbol: string; name?: string; price_paise: number; change_paise: number; change_percent: number; volume: number }[];
-          trending: { symbol: string; name?: string; price_paise: number; change_paise: number; change_percent: number; volume: number }[];
+          gainers: { symbol: string; name?: string; price_paise: number; change_paise: number; change_percent: number; volume: number; high_paise?: number; low_paise?: number }[];
+          losers: { symbol: string; name?: string; price_paise: number; change_paise: number; change_percent: number; volume: number; high_paise?: number; low_paise?: number }[];
+          most_traded: { symbol: string; name?: string; price_paise: number; change_paise: number; change_percent: number; volume: number; high_paise?: number; low_paise?: number }[];
+          trending: { symbol: string; name?: string; price_paise: number; change_paise: number; change_percent: number; volume: number; high_paise?: number; low_paise?: number }[];
         }>("/market/movers?limit=6");
         return res || { gainers: [], losers: [], most_traded: [], trending: [] };
       } catch {
@@ -292,6 +293,31 @@ export default function StocksExplorePage() {
     },
     refetchInterval: aggregateInterval,
   });
+
+  // Keep WebSocket quote stream fresh for dynamic top movers
+  const moverSymbols = useMemo(() => {
+    if (!marketMovers) return [];
+    const list: string[] = [];
+    for (const item of [
+      ...(marketMovers.gainers || []),
+      ...(marketMovers.losers || []),
+      ...(marketMovers.most_traded || []),
+      ...(marketMovers.trending || []),
+    ]) {
+      if (item?.symbol) {
+        list.push(item.symbol);
+        list.push(item.symbol.replace(/-EQ$/, ""));
+      }
+    }
+    return list;
+  }, [marketMovers]);
+  useTargetedSubscription(moverSymbols);
+
+  useEffect(() => {
+    if (moverSymbols.length > 0) {
+      fetchBatchQuotes(moverSymbols).catch(() => {});
+    }
+  }, [moverSymbols]);
 
   // Generate mover list based on tab
   const moverList = useMemo(() => {
@@ -318,9 +344,22 @@ export default function StocksExplorePage() {
             ? vol.toLocaleString("en-IN")
             : "—";
 
-        const live = quotes[item.symbol];
-        const dayLow = (item.low_paise && item.low_paise > 0 ? item.low_paise : live?.low_paise ? live.low_paise : 0) / 100;
-        const dayHigh = (item.high_paise && item.high_paise > 0 ? item.high_paise : live?.high_paise ? live.high_paise : 0) / 100;
+        const cleanSym = item.symbol.replace(/-EQ$/, "");
+        const live = quotes[item.symbol] || quotes[cleanSym] || quotes[`${cleanSym}-EQ`];
+        const lowPaise =
+          item.low_paise && item.low_paise > 0
+            ? item.low_paise
+            : live?.low_paise && live.low_paise > 0
+            ? live.low_paise
+            : 0;
+        const highPaise =
+          item.high_paise && item.high_paise > 0
+            ? item.high_paise
+            : live?.high_paise && live.high_paise > 0
+            ? live.high_paise
+            : 0;
+        const dayLow = lowPaise > 0 ? lowPaise / 100 : undefined;
+        const dayHigh = highPaise > 0 ? highPaise / 100 : undefined;
 
         return {
           symbol: item.symbol,
@@ -330,8 +369,8 @@ export default function StocksExplorePage() {
           hasMovement: true,
           changePercent: item.change_percent,
           volume: volumeStr,
-          dayLow: dayLow > 0 ? dayLow : undefined,
-          dayHigh: dayHigh > 0 ? dayHigh : undefined,
+          dayLow: typeof dayLow === "number" && dayLow > 0 ? dayLow : undefined,
+          dayHigh: typeof dayHigh === "number" && dayHigh > 0 ? dayHigh : undefined,
         };
       });
     }
@@ -773,7 +812,7 @@ export default function StocksExplorePage() {
                             <td className="py-3 px-2 text-center hidden sm:table-cell font-mono text-[11px] text-slate-500 dark:text-slate-400">
                               {stock.dayLow && stock.dayHigh ? (
                                 <span>
-                                  ₹{stock.dayLow.toFixed(1)} · ₹{stock.dayHigh.toFixed(1)}
+                                  ₹{stock.dayLow.toFixed(2)} · ₹{stock.dayHigh.toFixed(2)}
                                 </span>
                               ) : (
                                 <span>—</span>

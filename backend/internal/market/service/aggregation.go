@@ -208,6 +208,14 @@ func (s *Service) collectValidEquityQuotes(ctx context.Context) ([]dto.MarketMov
 			volume, _ = strconv.ParseInt(v, 10, 64)
 		}
 
+		var highPaise, lowPaise int64
+		if h, ok := values["high_paise"]; ok {
+			highPaise, _ = strconv.ParseInt(h, 10, 64)
+		}
+		if l, ok := values["low_paise"]; ok {
+			lowPaise, _ = strconv.ParseInt(l, 10, 64)
+		}
+
 		turnover := (float64(price) / 100.0) * float64(volume)
 
 		// TrendingScore Formula:
@@ -225,6 +233,8 @@ func (s *Service) collectValidEquityQuotes(ctx context.Context) ([]dto.MarketMov
 			ChangePaise:   changePaise,
 			ChangePercent: math.Round(changePercent*100) / 100,
 			Volume:        volume,
+			HighPaise:     highPaise,
+			LowPaise:      lowPaise,
 			Turnover:      math.Round(turnover*100) / 100,
 			TrendingScore: math.Round(trendingScore*100) / 100,
 			Exchange:      inst.Exchange,
