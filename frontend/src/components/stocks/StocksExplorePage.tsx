@@ -745,9 +745,6 @@ export default function StocksExplorePage() {
                   <thead>
                     <tr className="text-[11px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100 dark:border-slate-800/80 pb-2">
                       <th className="py-2 font-semibold">Company</th>
-                      <th className="py-2 font-semibold text-center hidden sm:table-cell">
-                        Day Range (L · H)
-                      </th>
                       <th className="py-2 font-semibold text-right">LTP & 1D Change</th>
                       <th className="py-2 font-semibold text-right hidden md:table-cell">Volume</th>
                       <th className="py-2 font-semibold text-right">Action</th>
@@ -765,9 +762,6 @@ export default function StocksExplorePage() {
                                 <div className="w-28 h-2.5 rounded bg-slate-100 dark:bg-slate-800/60" />
                               </div>
                             </div>
-                          </td>
-                          <td className="py-3 px-2 text-center hidden sm:table-cell">
-                            <div className="w-20 h-3.5 mx-auto rounded bg-slate-100 dark:bg-slate-800" />
                           </td>
                           <td className="py-3 pl-2 pr-4 text-right">
                             <div className="w-16 h-3.5 ml-auto rounded bg-slate-200 dark:bg-slate-800" />
@@ -806,17 +800,6 @@ export default function StocksExplorePage() {
                                   </div>
                                 </div>
                               </div>
-                            </td>
-
-                            {/* Day Range (L · H) */}
-                            <td className="py-3 px-2 text-center hidden sm:table-cell font-mono text-[11px] text-slate-500 dark:text-slate-400">
-                              {stock.dayLow && stock.dayHigh ? (
-                                <span>
-                                  ₹{stock.dayLow.toFixed(2)} · ₹{stock.dayHigh.toFixed(2)}
-                                </span>
-                              ) : (
-                                <span>—</span>
-                              )}
                             </td>
 
                             {/* Price & Change */}
