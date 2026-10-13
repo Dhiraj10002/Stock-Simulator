@@ -46,16 +46,16 @@ export default function SearchModal() {
   useEffect(() => {
     if (isSearchPaletteOpen) {
       const initQ = searchInitialQuery || "";
-      setQuery(initQ);
-      setDebouncedQuery(initQ.trim());
       const timer = setTimeout(() => {
+        setQuery(initQ);
+        setDebouncedQuery(initQ.trim());
         if (inputRef.current) {
           inputRef.current.focus();
           if (initQ) {
             inputRef.current.select();
           }
         }
-      }, 50);
+      }, 0);
       return () => clearTimeout(timer);
     }
   }, [isSearchPaletteOpen, searchInitialQuery]);

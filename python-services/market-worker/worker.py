@@ -151,7 +151,7 @@ BROKER_STREAM_HOST = urlsplit(SmartWebSocketV2.ROOT_URI).hostname
 
 INSTRUMENT_MASTER_URL = "https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json"
 LOCAL_CACHE_PATH = "/tmp/OpenAPIScripMaster.json"
-EXCHANGE_TYPES = {"NSE": 1, "NFO": 2}
+EXCHANGE_TYPES = {"NSE": 1, "NFO": 2, "BSE": 3}
 
 FALLBACK_INSTRUMENT_MASTER = [
     {"token": "2885", "symbol": "RELIANCE-EQ", "name": "RELIANCE", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "5.000000"},
@@ -744,10 +744,7 @@ def fetch_quote_for_symbol(symbol: str) -> dict[str, Any] | None:
                 close_paise = rupees_to_paise(data.get("close"))
                 stamp = full_snapshot_time(data)
                 if ltp_paise > 0:
-                    now_utc = datetime.now(timezone.utc)
-                    # For on-demand live quotes, if the contract has not traded recently or missing feed time,
-                    # use the retrieval timestamp so live broker quotes remain fresh and executable.
-                    quote_stamp = stamp if (stamp and (now_utc - stamp).total_seconds() < 120) else now_utc
+                    quote_stamp = stamp or datetime.now(timezone.utc)
                     lower_c = rupees_to_paise(data.get("lowerCircuit") or data.get("lower_circuit") or data.get("lower_circuit_limit"))
                     upper_c = rupees_to_paise(data.get("upperCircuit") or data.get("upper_circuit") or data.get("upper_circuit_limit"))
                     quote = {
@@ -775,7 +772,31 @@ def fetch_quote_for_symbol(symbol: str) -> dict[str, Any] | None:
         except Exception as e:
             print(f"market worker: error fetching live quote for {symbol} from Angel One: {e}", flush=True)
 
-    # If quote not found directly from broker, check if symbol is an NFO derivative (Future or Option)
+    # In LIVE, DISABLED, or UNAVAILABLE feed modes, strictly fail closed.
+    # Never return benchmark fallbacks or simulated derivatives, and never write them to Redis.
+    if mode != "synthetic":
+        return None
+
+    # Below here is EXPLICIT SYNTHETIC MODE ONLY
+    benchmark = DEFAULT_BENCHMARK_PRICES_PAISE.get(clean_sym) or DEFAULT_BENCHMARK_PRICES_PAISE.get(canonical_sym)
+    if benchmark:
+        now_iso = datetime.now(timezone.utc).isoformat()
+        quote = {
+            "symbol": symbol,
+            "price_paise": benchmark,
+            "change_paise": 0,
+            "change_percent": 0.0,
+            "source": "benchmark_fallback",
+            "updated_at": now_iso
+        }
+        if GLOBAL_WRITER:
+            exch_type = EXCHANGE_TYPES.get(exch, 1)
+            sub = Subscription(symbol, token or "0", exch, exch_type)
+            GLOBAL_WRITER.benchmark_prices[symbol] = benchmark
+            GLOBAL_WRITER.write(sub, benchmark, 5000, source="benchmark_fallback")
+        return quote
+
+    # If quote not found directly and symbol is NFO derivative (Future or Option)
     deriv_match = re.match(r"^([A-Z&]+?)(\d{1,2})?([A-Z]{3})(\d{2})?(?:(\d+(?:\.\d+)?)(CE|PE)|FUT)$", symbol)
     if deriv_match:
         underlying = deriv_match.group(1)
@@ -785,7 +806,6 @@ def fetch_quote_for_symbol(symbol: str) -> dict[str, Any] | None:
             spot_rs = spot_paise / 100.0
             under_change_pct = under_quote.get("change_percent", 0.0)
             now_iso = datetime.now(timezone.utc).isoformat()
-            deriv_source = "angelone_live" if mode == "live" else "simulated_deriv"
             
             if symbol.endswith("FUT"):
                 fut_price_paise = int(round(spot_paise * 1.0035))
@@ -795,12 +815,12 @@ def fetch_quote_for_symbol(symbol: str) -> dict[str, Any] | None:
                     "price_paise": fut_price_paise,
                     "change_paise": fut_change_paise,
                     "change_percent": under_change_pct,
-                    "source": deriv_source,
+                    "source": "simulated_deriv",
                     "updated_at": now_iso
                 }
                 if GLOBAL_WRITER:
                     GLOBAL_WRITER.benchmark_prices[symbol] = fut_price_paise
-                    GLOBAL_WRITER.write(Subscription(symbol, token or "0", "NFO", 2), fut_price_paise, 5000, source=deriv_source)
+                    GLOBAL_WRITER.write(Subscription(symbol, token or "0", "NFO", 2), fut_price_paise, 5000, source="simulated_deriv")
                 return fut_quote
             else:
                 strike_str = deriv_match.group(5)
@@ -830,37 +850,13 @@ def fetch_quote_for_symbol(symbol: str) -> dict[str, Any] | None:
                         "price_paise": opt_price_paise,
                         "change_paise": opt_change_paise,
                         "change_percent": opt_change_pct,
-                        "source": deriv_source,
+                        "source": "simulated_deriv",
                         "updated_at": now_iso
                     }
                     if GLOBAL_WRITER:
                         GLOBAL_WRITER.benchmark_prices[symbol] = opt_price_paise
-                        GLOBAL_WRITER.write(Subscription(symbol, token or "0", "NFO", 2), opt_price_paise, 5000, source=deriv_source)
+                        GLOBAL_WRITER.write(Subscription(symbol, token or "0", "NFO", 2), opt_price_paise, 5000, source="simulated_deriv")
                     return opt_quote
-
-    # In LIVE, DISABLED, or UNAVAILABLE feed modes, strictly fail closed for non-derivatives.
-    # Never return benchmark fallbacks for equities unless explicit synthetic mode is active.
-    if mode != "synthetic":
-        return None
-
-    # Below here is EXPLICIT SYNTHETIC MODE ONLY
-    benchmark = DEFAULT_BENCHMARK_PRICES_PAISE.get(clean_sym) or DEFAULT_BENCHMARK_PRICES_PAISE.get(canonical_sym)
-    if benchmark:
-        now_iso = datetime.now(timezone.utc).isoformat()
-        quote = {
-            "symbol": symbol,
-            "price_paise": benchmark,
-            "change_paise": 0,
-            "change_percent": 0.0,
-            "source": "benchmark_fallback",
-            "updated_at": now_iso
-        }
-        if GLOBAL_WRITER:
-            exch_type = EXCHANGE_TYPES.get(exch, 1)
-            sub = Subscription(symbol, token or "0", exch, exch_type)
-            GLOBAL_WRITER.benchmark_prices[symbol] = benchmark
-            GLOBAL_WRITER.write(sub, benchmark, 5000, source="benchmark_fallback")
-        return quote
 
     return None
 

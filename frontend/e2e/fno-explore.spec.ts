@@ -274,12 +274,10 @@ async function setup(
   await expect(
     page.getByRole("heading", { name: "Popular stocks", exact: true }),
   ).toBeVisible();
-  if (!options.compactView) {
-    const browseBtn = page.getByRole("button", { name: "Browse all futures", exact: true });
-    if (await browseBtn.isVisible()) {
-      await browseBtn.click();
-    }
-  }
+  if (!options.compactView)
+    await page
+      .getByRole("button", { name: "Browse all futures", exact: true })
+      .click();
   return {
     posts,
     requests,
