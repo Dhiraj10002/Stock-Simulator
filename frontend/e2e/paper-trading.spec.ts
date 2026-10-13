@@ -207,26 +207,35 @@ test("login, authenticated dashboard, portfolio/orders and logout", async ({
     await page.evaluate(() => localStorage.getItem("auth_token")),
   ).toBeNull();
 });
-test("chart timeframe controls request native archives", async ({ page }) => {
+test("native intraday timeframe controls reuse the one-minute archive", async ({ page }) => {
+  const intervals: string[] = [];
+  await page.routeWebSocket("**/ws/market", ws => ws.onMessage(message => {
+    if (JSON.parse(String(message)).action === "ping") ws.send(JSON.stringify({ type: "pong" }));
+  }));
+  page.on("request", request => {
+    const url = new URL(request.url());
+    if (request.method() === "GET" && url.pathname.endsWith("/history"))
+      intervals.push(url.searchParams.get("interval") || "");
+  });
   await mocks(page);
   await signIn(page);
   await page.goto("/stocks/RELIANCE");
-  await expect(
-    page.getByRole("heading", { name: "RELIANCE", exact: true }),
-  ).toBeVisible();
-  for (const [label, interval] of [
-    ["1H", "ONE_HOUR"],
-    ["1D", "ONE_DAY"],
-  ]) {
-    const request = page.waitForRequest(
-      (req) =>
-        req.url().includes("/history") &&
-        req.url().includes(`interval=${interval}`),
-    );
-    await page.getByRole("button", { name: label, exact: true }).click();
-    await request;
-  }
+  await expect(page.getByRole("heading", { name: "RELIANCE", exact: true })).toBeVisible();
   await expect(page.locator("canvas").first()).toBeVisible();
+  await expect.poll(() => intervals.length).toBeGreaterThan(0);
+  // Allow the initial socket-open reconciliation to settle before comparing controls.
+  await page.waitForTimeout(500);
+  expect([...new Set(intervals)]).toEqual(["ONE_MINUTE"]);
+  const initialReads = intervals.length;
+  for (const label of ["5m", "15m", "1m"]) {
+    const button = page.getByRole("button", { name: label, exact: true });
+    await button.click();
+    await expect(button).toHaveClass(/text-cyan-600/);
+  }
+  expect(intervals).toHaveLength(initialReads);
+  expect([...new Set(intervals)]).toEqual(["ONE_MINUTE"]);
+  for (const name of ["1H", "1D"])
+    await expect(page.getByRole("button", { name, exact: true })).toHaveCount(0);
 });
 test("unavailable quote, chart and portfolio stay explicit", async ({
   page,

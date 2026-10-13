@@ -834,6 +834,23 @@ class ProvenanceCandleTest(unittest.TestCase):
 
 
 class RealBrokerDataRegressionTest(unittest.TestCase):
+    def test_live_snapshot_without_provider_time_is_not_written_or_executable(self):
+        from unittest.mock import patch
+        writer = MagicMock()
+        info = {"token": "12345", "exch_seg": "NFO", "symbol": "TCS23NOV262640CE"}
+        snapshot = {"ltp": 4.6, "close": 4.6, "tradeVolume": 22}
+        with patch.dict(os.environ, MARKET_FEED_MODE="live"), patch.object(worker, "GLOBAL_TOKEN_MAP", {info["symbol"]: info}), patch.object(worker, "GLOBAL_WRITER", writer), patch.object(worker, "fetch_full_snapshot", return_value=snapshot):
+            self.assertIsNone(worker.fetch_quote_for_symbol(info["symbol"]))
+        writer.write.assert_not_called()
+
+    def test_bse_benchmark_support_does_not_subscribe_legacy_bse_equities(self):
+        rows = [{"token": "500325", "symbol": "RELIANCE", "name": "RELIANCE", "exch_seg": "BSE", "instrumenttype": "EQUITY"}]
+        store = worker.InstrumentStore("", [])
+        from unittest.mock import patch
+        with patch.object(worker, "get_feed_mode", return_value="live"):
+            subscriptions = store._build_subscriptions(rows, ["RELIANCE", "SENSEX"])
+        self.assertEqual([(s.symbol, s.exchange_type) for s in subscriptions], [("SENSEX", 3)])
+
     def test_zero_change_is_available_and_no_fake_volume_is_written(self):
         from unittest.mock import patch
         api = MagicMock()

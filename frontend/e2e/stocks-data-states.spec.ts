@@ -63,7 +63,7 @@ test("Stocks portfolio renews expired authentication and subsequent polling uses
   const mock = await stocksMocks(page, "refresh");
   await page.goto("/stocks");
   const navbar = page.getByRole("group", { name: "Portfolio unrealized P&L", exact: true });
-  await expect(navbar.getByText("₹123.45", { exact: true })).toBeVisible();
+  await expect(navbar.getByText("+₹123.45", { exact: true })).toBeVisible();
   await expect.poll(mock.rotations).toBe(1);
   const count = mock.portfolioTokens.length;
   await expect.poll(() => mock.portfolioTokens.length, { timeout: 12000 }).toBeGreaterThan(count);
@@ -72,7 +72,7 @@ test("Stocks portfolio renews expired authentication and subsequent polling uses
   mock.failPortfolio(true);
   await expect(page.getByText("Portfolio network update failed: valuation may be stale.")).toBeVisible();
   await expect(navbar.getByText("Unrealized P&L · Last available")).toBeVisible();
-  await expect(navbar.getByText("₹123.45", { exact: true })).toBeVisible();
+  await expect(navbar.getByText("+₹123.45", { exact: true })).toBeVisible();
   mock.failPortfolio(false);
   await page.getByRole("button", { name: "Retry", exact: true }).first().click();
   await expect(page.getByText("Portfolio network update failed: valuation may be stale.")).toHaveCount(0);
@@ -91,7 +91,7 @@ test("Stocks missing portfolio and unknown day movement stay unavailable while g
   await expect(page.getByText("+0.00 (0.00%)", { exact: true })).toHaveCount(0);
   mock.failPortfolio(false);
   await page.getByRole("button", { name: "Retry", exact: true }).first().click();
-  await expect(page.getByRole("group", { name: "Portfolio unrealized P&L", exact: true }).getByText("₹123.45", { exact: true })).toBeVisible();
+  await expect(page.getByRole("group", { name: "Portfolio unrealized P&L", exact: true }).getByText("+₹123.45", { exact: true })).toBeVisible();
 });
 
 test("Stocks degraded valuation cannot present a partial P&L as an authoritative balance", async ({ page }) => {
@@ -99,5 +99,5 @@ test("Stocks degraded valuation cannot present a partial P&L as an authoritative
   await page.goto("/stocks");
   await expect(page.getByText("Valuation unavailable", { exact: true })).toBeVisible();
   await expect(page.getByRole("group", { name: "Portfolio unrealized P&L", exact: true }).getByText("Unavailable", { exact: true })).toBeVisible();
-  await expect(page.getByRole("group", { name: "Portfolio unrealized P&L", exact: true }).getByText("₹123.45", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("group", { name: "Portfolio unrealized P&L", exact: true }).getByText("+₹123.45", { exact: true })).toHaveCount(0);
 });
