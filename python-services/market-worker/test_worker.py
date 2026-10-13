@@ -834,6 +834,33 @@ class ProvenanceCandleTest(unittest.TestCase):
 
 
 class RealBrokerDataRegressionTest(unittest.TestCase):
+    def test_live_snapshot_without_provider_time_is_not_written_or_executable(self):
+        from unittest.mock import patch
+        writer = MagicMock()
+        info = {"token": "12345", "exch_seg": "NFO", "symbol": "TCS23NOV262640CE"}
+        snapshot = {"ltp": 4.6, "close": 4.6, "tradeVolume": 22}
+        with patch.dict(os.environ, MARKET_FEED_MODE="live"), patch.object(worker, "GLOBAL_TOKEN_MAP", {info["symbol"]: info}), patch.object(worker, "GLOBAL_WRITER", writer), patch.object(worker, "fetch_full_snapshot", return_value=snapshot):
+            self.assertIsNone(worker.fetch_quote_for_symbol(info["symbol"]))
+        writer.write.assert_not_called()
+
+    def test_nse_nfo_only_subscriptions_exclude_bse_benchmarks_and_equities(self):
+        rows = [{"token": "500325", "symbol": "RELIANCE", "name": "RELIANCE", "exch_seg": "BSE", "instrumenttype": "EQUITY"}]
+        store = worker.InstrumentStore("", [])
+        from unittest.mock import patch
+        with patch.object(worker, "get_feed_mode", return_value="live"):
+            subscriptions = store._build_subscriptions(rows, ["RELIANCE", "SENSEX"])
+        self.assertEqual(worker.EXCHANGE_TYPES, {"NSE": 1, "NFO": 2})
+        self.assertEqual(subscriptions, [])
+
+    def test_disabled_exchange_never_fetches_quotes_or_uses_nse_fallback_type(self):
+        from unittest.mock import patch
+        store = worker.InstrumentStore("", ["NIFTY", "SENSEX"])
+        self.assertEqual([s.symbol for s in store._fallback_subscriptions()], ["NIFTY"])
+        for mode in ("live", "synthetic", "disabled"):
+            with patch.dict(os.environ, MARKET_FEED_MODE=mode), patch.object(worker, "fetch_full_snapshot") as fetch:
+                self.assertIsNone(worker.fetch_quote_for_symbol("SENSEX"))
+                fetch.assert_not_called()
+
     def test_zero_change_is_available_and_no_fake_volume_is_written(self):
         from unittest.mock import patch
         api = MagicMock()

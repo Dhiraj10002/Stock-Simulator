@@ -151,6 +151,10 @@ async function setup(
         return;
       }
       data = options.empty ? [] : universe;
+    } else if (path === "/stocks") {
+      data = universe.filter(i => i.exchange === "NFO" && i.symbol === url.searchParams.get("q")).map(i => ({
+        ...i, exchange_segment: i.exchange, display_name: "TCS OCT FUT", price_paise: state.price,
+      }));
     } else if (path === "/instruments/derivative-stocks") {
       if (state.stockCatalogError) {
         await fail();
@@ -270,16 +274,11 @@ async function setup(
     }
     await route.fulfill({ headers, json: { success: true, data } });
   });
+  await page.clock.install();
   await page.goto("/options");
   await expect(
     page.getByRole("heading", { name: "Popular stocks", exact: true }),
   ).toBeVisible();
-  if (!options.compactView) {
-    const browseBtn = page.getByRole("button", { name: "Browse all futures", exact: true });
-    if (await browseBtn.isVisible()) {
-      await browseBtn.click();
-    }
-  }
   return {
     posts,
     requests,
@@ -301,99 +300,33 @@ async function setup(
   };
 }
 const card = (page: Page, symbol = "BANKNIFTY27OCT2099FUT") =>
-  page.getByRole("article", { name: `${symbol} futures card`, exact: true });
+  page.getByRole("article", { name: `${symbol} top traded card`, exact: true });
 async function refresh(page: Page) {
-  const button = page.getByRole("button", {
-    name: "Refresh data",
-    exact: true,
-  });
-  await expect(button).toBeEnabled();
-  await button.click();
-  await expect(button).toBeEnabled();
+  // Exercise the shared polling owner, not the removed futures-browser toolbar.
+  await page.clock.fastForward(20_100);
+}
+async function openStockTicket(page: Page, side: "BUY" | "SELL" = "BUY") {
+  await page.getByRole("button", { name: "Trade futures for TCS", exact: true }).click();
+  const input = page.getByPlaceholder("Search stocks, futures & options (e.g. TCS, KEI, NIFTY 23500 CE)...");
+  await expect(input).toHaveValue("TCS");
+  await input.fill("TCS27OCT2099FUT");
+  const result = page.getByRole("button").filter({ has: page.getByText("TCS OCT FUT", { exact: true }) });
+  await result.getByRole("button", { name: side === "BUY" ? "B" : "S", exact: true }).click();
 }
 
-test("restored market layout excludes All stocks, option chain and test scrips; futures filters and requests remain dynamic", async ({
-  page,
-}) => {
+test("compact discovery excludes the removed futures browser, BFO and test contracts", async ({ page }) => {
   const control = await setup(page);
-  await expect(
-    card(page).getByText("₹2,076.40", { exact: true }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "All stocks", exact: true }),
-  ).toHaveCount(0);
-  await expect(
-    page.getByRole("tab", { name: "Option Chain", exact: true }),
-  ).toHaveCount(0);
-  await expect(
-    page.getByRole("region", { name: "F&O stocks", exact: true }),
-  ).toBeVisible();
-  await expect(
-    page
-      .getByRole("region", { name: "Futures market", exact: true })
-      .getByRole("article"),
-  ).toHaveCount(12);
-  await page.getByRole("button", { name: "Next", exact: true }).click();
-  await expect(page.getByText("Showing 13–17 of 17")).toBeVisible();
-  await expect(
-    page
-      .getByRole("region", { name: "Futures market", exact: true })
-      .getByRole("article"),
-  ).toHaveCount(5);
-  await page
-    .getByLabel("Futures exchange", { exact: true })
-    .selectOption("BFO");
-  await expect(card(page, "SENSEX27OCT2099FUT")).toBeVisible();
-  await expect(
-    page
-      .getByRole("region", { name: "Futures market", exact: true })
-      .getByRole("article"),
-  ).toHaveCount(1);
-  await page
-    .getByRole("button", { name: "Stock futures", exact: true })
-    .click();
-  await page
-    .getByLabel("Futures underlying", { exact: true })
-    .selectOption("TCS");
-  await expect(
-    card(page, "TCS27OCT2099FUT").getByText("Lot 225"),
-  ).toBeVisible();
-  await page.getByLabel("Futures expiry", { exact: true }).selectOption("");
-  await expect(
-    page
-      .getByRole("region", { name: "Futures market", exact: true })
-      .getByRole("article"),
-  ).toHaveCount(2);
-  await page.getByLabel("Search futures contracts").fill("24NOV");
-  await expect(card(page, "TCS24NOV2099FUT")).toBeVisible();
-  await expect(
-    page
-      .getByRole("region", { name: "Futures market", exact: true })
-      .getByRole("article"),
-  ).toHaveCount(1);
-  await page.getByLabel("Search futures contracts").fill("missing");
-  await expect(
-    page.getByRole("heading", { name: "No matching futures" }),
-  ).toBeVisible();
-  await page
-    .getByRole("button", { name: "Reset filters", exact: true })
-    .click();
-  await expect(page.getByText(/011NSETEST/)).toHaveCount(0);
-  expect(
-    control.requests.filter((path) =>
-      /derivative-underlyings|option-chain/.test(path),
-    ),
-  ).toEqual([]);
-  expect(
-    control.batches.every((batch) =>
-      batch.every((symbol) => symbol.endsWith("FUT"))
-        ? batch.length <= 100
-        : batch.length <= 100,
-    ),
-  ).toBe(true);
-  expect(
-    control.subscriptions.flat().filter((symbol) => symbol.endsWith("FUT")),
-  ).not.toContain("011NSETEST27OCT2099FUT");
+  const top = page.getByRole("region", { name: "Top traded index futures", exact: true });
+  await expect(top.getByRole("article")).toHaveCount(4);
+  await expect(card(page).getByText("₹2,076.40", { exact: true })).toBeVisible();
+  for (const name of ["All stocks", "Browse all futures", "Stock futures", "Hide futures browser", "Refresh data"])
+    await expect(page.getByRole("button", { name, exact: true })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Futures market", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("tab", { name: "Option Chain", exact: true })).toHaveCount(0);
+  await expect(top.getByText(/SENSEX|011NSETEST|RETIRED|OLD/)).toHaveCount(0);
+  expect(control.requests.filter(path => /derivative-underlyings|option-chain/.test(path))).toEqual([]);
+  expect(control.batches.every(batch => batch.length <= 100)).toBe(true);
+  expect(control.subscriptions.flat()).not.toContain("011NSETEST27OCT2099FUT");
 });
 
 test("stream updates prices; REST and exchange failures disable execution until recovery", async ({
@@ -402,7 +335,7 @@ test("stream updates prices; REST and exchange failures disable execution until 
   const control = await setup(page);
   const view = card(page),
     buy = view.getByRole("button", {
-      name: "Buy BANKNIFTY27OCT2099FUT",
+      name: "Trade BANKNIFTY27OCT2099FUT",
       exact: true,
     });
   await expect(buy).toBeEnabled();
@@ -411,7 +344,7 @@ test("stream updates prices; REST and exchange failures disable execution until 
   control.state.quoteError = true;
   await refresh(page);
   await expect(
-    view.getByText("Angel One · Last available", { exact: true }),
+    view.getByText(/^Last available ·/),
   ).toBeVisible();
   await expect(buy).toBeDisabled();
   await expect(view.getByText("₹2,115.00", { exact: true })).toBeVisible();
@@ -419,9 +352,7 @@ test("stream updates prices; REST and exchange failures disable execution until 
   control.state.statusError = true;
   await refresh(page);
   await expect(
-    page.getByText(
-      "Exchange status cannot be confirmed. Paper trading is paused.",
-    ),
+    view.getByText("Exchange status unavailable. Trading paused.", { exact: true }),
   ).toBeVisible();
   await expect(buy).toBeDisabled();
   control.state.statusError = false;
@@ -432,21 +363,11 @@ test("stream updates prices; REST and exchange failures disable execution until 
   await expect(view.getByText("₹2,180.00", { exact: true })).toBeVisible();
 });
 
-test("paper buy and sell use canonical lots, preserve pending and block invalid lot", async ({
+test("paper buy and sell through search use canonical stock lots and preserve pending", async ({
   page,
 }) => {
   const { posts } = await setup(page);
-  await page
-    .getByRole("button", { name: "Stock futures", exact: true })
-    .click();
-  await expect(
-    card(page, "BROKEN27OCT2099FUT").getByRole("button", {
-      name: "Buy BROKEN27OCT2099FUT",
-    }),
-  ).toBeDisabled();
-  await card(page, "TCS27OCT2099FUT")
-    .getByRole("button", { name: "Buy TCS27OCT2099FUT", exact: true })
-    .click();
+  await openStockTicket(page);
   const submit = page.getByRole("button", {
     name: "BUY 225 TCS27OCT2099FUT (1 LOT)",
     exact: true,
@@ -463,9 +384,7 @@ test("paper buy and sell use canonical lots, preserve pending and block invalid 
     product: "FNO",
   });
   await page.getByRole("button", { name: "Close paper order ticket" }).click();
-  await card(page, "TCS27OCT2099FUT")
-    .getByRole("button", { name: "Sell TCS27OCT2099FUT", exact: true })
-    .click();
+  await openStockTicket(page, "SELL");
   const sell = page.getByRole("button", {
     name: "SELL 225 TCS27OCT2099FUT (1 LOT)",
     exact: true,
@@ -516,12 +435,7 @@ test("paper ticket retains virtual funds while preview refreshes and blocks fail
       },
     });
   });
-  await page
-    .getByRole("button", { name: "Stock futures", exact: true })
-    .click();
-  await card(page, "TCS27OCT2099FUT")
-    .getByRole("button", { name: "Buy TCS27OCT2099FUT", exact: true })
-    .click();
+  await openStockTicket(page);
   const ticket = page.getByRole("dialog", { name: "Paper order ticket" });
   const submit = ticket.getByRole("button", {
     name: "BUY 225 TCS27OCT2099FUT (1 LOT)",
@@ -560,11 +474,11 @@ test("mobile order ticket stays within viewport and pauses when exchange status 
   const control = await setup(page);
   await expect(
     page
-      .getByRole("region", { name: "Futures market", exact: true })
+      .getByRole("region", { name: "Top traded index futures", exact: true })
       .getByRole("article"),
-  ).toHaveCount(6);
+  ).toHaveCount(4);
   await card(page)
-    .getByRole("button", { name: "Buy BANKNIFTY27OCT2099FUT", exact: true })
+    .getByRole("button", { name: "Trade BANKNIFTY27OCT2099FUT", exact: true })
     .click();
   const dialog = page.getByRole("dialog", { name: "Paper order ticket" });
   await expect(dialog).toBeVisible();
@@ -595,7 +509,7 @@ test("uncertain order response never permits resubmission from the ticket", asyn
 }) => {
   const { posts } = await setup(page, { uncertainOrder: true });
   await card(page)
-    .getByRole("button", { name: "Buy BANKNIFTY27OCT2099FUT", exact: true })
+    .getByRole("button", { name: "Trade BANKNIFTY27OCT2099FUT", exact: true })
     .click();
   const submit = page.getByRole("button", {
     name: "BUY 65 BANKNIFTY27OCT2099FUT (1 LOT)",
@@ -615,11 +529,11 @@ test("closed session retains real last prices, unavailable fields and honest acc
 }) => {
   const { posts } = await setup(page, { closed: true, accountError: true });
   await expect(
-    card(page).getByText("Angel One · Last available", { exact: true }),
+    card(page).getByText(/^Last available ·/),
   ).toBeVisible();
   await expect(
     card(page).getByRole("button", {
-      name: "Buy BANKNIFTY27OCT2099FUT",
+      name: "Trade BANKNIFTY27OCT2099FUT",
       exact: true,
     }),
   ).toBeDisabled();
@@ -628,14 +542,8 @@ test("closed session retains real last prices, unavailable fields and honest acc
     summary.getByText("Portfolio unavailable. Exposure cannot be confirmed."),
   ).toBeVisible();
   await expect(summary.getByText("₹0.00", { exact: true })).toHaveCount(0);
-  await page
-    .getByRole("button", { name: "Stock futures", exact: true })
-    .click();
-  const dynamic = card(page, "DYNAMIC27OCT2099FUT");
-  await expect(
-    dynamic.getByText("Day change unavailable", { exact: true }),
-  ).toBeVisible();
-  await expect(dynamic.getByText("Unavailable", { exact: true })).toBeVisible();
+  const movers = page.getByRole("region", { name: "F&O stocks", exact: true });
+  await expect(movers.getByText("DYNAMIC", { exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "View derivative positions" }).click();
   await expect(
     page
@@ -656,17 +564,17 @@ test("unavailable quotes and catalog recover without fake prices", async ({
   await expect(indices).not.toContainText("71,909.70");
   await expect(
     page.getByText(
-      "Futures catalog unavailable. Check backend and instrument master health.",
+      "Index futures catalog unavailable. Unable to load contracts from the backend.",
     ),
   ).toBeVisible();
   control.state.catalogError = false;
-  await page.getByRole("button", { name: "Retry futures catalog" }).click();
+  await page.getByRole("button", { name: "Retry loading futures" }).click();
   await expect(
-    card(page).getByText("Quote unavailable", { exact: true }),
+    card(page).getByText("Unavailable", { exact: true }),
   ).toBeVisible();
   await expect(
     card(page).getByRole("button", {
-      name: "Buy BANKNIFTY27OCT2099FUT",
+      name: "Trade BANKNIFTY27OCT2099FUT",
       exact: true,
     }),
   ).toBeDisabled();
@@ -677,7 +585,7 @@ test("hanging master request becomes an actionable error rather than an infinite
 }) => {
   await setup(page, { catalogHang: true });
   await expect(
-    page.getByRole("button", { name: "Retry futures catalog" }),
+    page.getByRole("button", { name: "Retry loading futures" }),
   ).toBeVisible({ timeout: 12000 });
   await expect(
     page.getByText("Loading current futures contracts…", { exact: true }),
@@ -687,9 +595,7 @@ test("hanging master request becomes an actionable error rather than an infinite
 test("empty master and signed-out account stay explicit", async ({ page }) => {
   await setup(page, { empty: true });
   await expect(
-    page.getByRole("heading", {
-      name: "No current futures in the instrument master",
-    }),
+    page.getByText("No current index futures available.", { exact: false }),
   ).toBeVisible();
   await page.evaluate(() => {
     document.cookie = "stocksim_session=; Path=/; Max-Age=0";
@@ -698,10 +604,9 @@ test("empty master and signed-out account stay explicit", async ({ page }) => {
   await expect(
     page.getByText("Sign in to view your paper account."),
   ).toBeVisible();
+  await expect(page.getByRole("link", { name: "Log In to Trade F&O", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "View derivative positions" }).click();
-  await expect(
-    page.getByText("Sign in to view derivative positions."),
-  ).toBeVisible();
+  await expect(page.getByText("Sign in to view derivative positions.")).toBeVisible();
 });
 
 test("light/dark and mobile/tablet layouts have readable cards and no overlapping margin panel", async ({
@@ -716,7 +621,7 @@ test("light/dark and mobile/tablet layouts have readable cards and no overlappin
     await view
       .getByText("₹2,076.40", { exact: true })
       .evaluate((e) => parseFloat(getComputedStyle(e).fontSize)),
-  ).toBeGreaterThanOrEqual(24);
+  ).toBeGreaterThanOrEqual(14);
   const color = async () =>
     summary.evaluate((e) => ({
       background: getComputedStyle(e).backgroundColor,
@@ -832,7 +737,7 @@ test("failed archives and missing quotes stay explicit; eligible catalog retries
   ).toBeVisible();
   await expect(movers.getByRole("row")).toHaveCount(0);
   control.state.stockCatalogError = true;
-  await refresh(page);
+  await page.reload();
   await expect(
     movers.getByRole("button", { name: "Retry stock catalog" }),
   ).toBeVisible();
@@ -853,6 +758,7 @@ test("complete eligible stock universe uses batches of at most 100 and only visi
   await expect(
     movers.getByRole("heading", { name: "F&O stocks" }),
   ).toBeVisible();
+  await expect.poll(() => control.batches.filter(batch => batch.some(s => s.endsWith("-EQ"))).length).toBeGreaterThanOrEqual(3);
   const equityBatches = control.batches.filter((batch) =>
     batch.some((s) => s.endsWith("-EQ")),
   );
@@ -912,11 +818,7 @@ test("compact F&O discovery follows the requested headings and dynamically ranks
     expect(box!.height).toBeLessThanOrEqual(190);
   }
   control.state.volumes["NIFTY1427OCT2099FUT"] = 9999999;
-  const browseBtn = page.getByRole("button", { name: "Browse all futures", exact: true });
-  if (await browseBtn.isVisible()) {
-    await browseBtn.click();
-    await refresh(page);
-  }
+  await refresh(page);
   await expect(top.getByRole("article").first()).toHaveAttribute(
     "aria-label",
     "NIFTY1427OCT2099FUT top traded card",
@@ -925,10 +827,6 @@ test("compact F&O discovery follows the requested headings and dynamically ranks
   await expect(
     top.getByRole("article").first().getByText("₹2,150.00", { exact: true }),
   ).toBeVisible();
-  const hideBtn = page.getByRole("button", { name: "Hide futures browser", exact: true });
-  if (await hideBtn.isVisible()) {
-    await hideBtn.click();
-  }
   if (process.env.STOCK_UI_SCREENSHOTS)
     await page.evaluate(() => window.scrollTo(0, 0));
   if (process.env.STOCK_UI_SCREENSHOTS)
@@ -983,5 +881,20 @@ test("compact Buy and Sell controls block closed-session paper orders and ticker
     5,
   );
   await expect(strip.getByText("22,421.95", { exact: false })).toHaveCount(0);
+  expect(control.posts).toEqual([]);
+});
+
+
+test("compact index cards reject invalid master lot sizes without submitting", async ({ page }) => {
+  const control = await setup(page);
+  await page.route(/\/api\/v1\/instruments\/futures/, route => route.fulfill({
+    headers: { "access-control-allow-origin": "http://127.0.0.1:3100" },
+    json: { success: true, data: [future("BANKNIFTY", "FUTIDX", "27OCT2099", "NFO", 0)] },
+  }));
+  await page.reload();
+  const top = page.getByRole("region", { name: "Top traded index futures", exact: true });
+  await expect(top.getByRole("article")).toHaveCount(1);
+  await expect(top.getByRole("button", { name: "Trade BANKNIFTY27OCT2099FUT", exact: true })).toBeDisabled();
+  await expect(top.getByRole("button", { name: "Sell BANKNIFTY27OCT2099FUT", exact: true })).toBeDisabled();
   expect(control.posts).toEqual([]);
 });

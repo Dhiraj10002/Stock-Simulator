@@ -37,17 +37,28 @@ export default function SearchModal() {
   const setSelectedSymbol = useTradingStore((s) => s.setSelectedSymbol);
   const { addToast } = useToast();
 
-  const [query, setQuery] = useState("");
-  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [query, setQuery] = useState(searchInitialQuery || "");
+  const [debouncedQuery, setDebouncedQuery] = useState((searchInitialQuery || "").trim());
   const [segmentFilter, setSegmentFilter] = useState<SearchSegmentFilter>("ALL");
+  const [searchOpening, setSearchOpening] = useState({
+    open: isSearchPaletteOpen,
+    initialQuery: searchInitialQuery,
+  });
   const inputRef = React.useRef<HTMLInputElement>(null);
 
-  // Sync initial query when opened
+  // Reset input before committing an opening, rather than cascading from an effect.
+  if (searchOpening.open !== isSearchPaletteOpen || searchOpening.initialQuery !== searchInitialQuery) {
+    setSearchOpening({ open: isSearchPaletteOpen, initialQuery: searchInitialQuery });
+    if (isSearchPaletteOpen) {
+      setQuery(searchInitialQuery || "");
+      setDebouncedQuery((searchInitialQuery || "").trim());
+    }
+  }
+
+  // Focus is an external DOM operation; input state is initialized above.
   useEffect(() => {
     if (isSearchPaletteOpen) {
       const initQ = searchInitialQuery || "";
-      setQuery(initQ);
-      setDebouncedQuery(initQ.trim());
       const timer = setTimeout(() => {
         if (inputRef.current) {
           inputRef.current.focus();

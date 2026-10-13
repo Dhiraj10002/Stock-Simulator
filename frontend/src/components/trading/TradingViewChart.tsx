@@ -176,12 +176,9 @@ export default function TradingViewChart({
     volume: number;
   } | null>(null);
 
-  const [latestBar, setLatestBar] = useState<{
-    open: number;
-    high: number;
-    low: number;
-    close: number;
-    volume: number;
+  const [liveBar, setLiveBar] = useState<{
+    history: Candle[];
+    bar: LatestBarData;
   } | null>(null);
 
   // Dark mode detection
@@ -520,13 +517,6 @@ export default function TradingViewChart({
       // Track latest candle for live updates
       const last = formattedData[formattedData.length - 1];
       lastCandleRef.current = { ...last };
-      setLatestBar({
-        open: last.open,
-        high: last.high,
-        low: last.low,
-        close: last.close,
-        volume: last.volume,
-      });
 
       // Auto-fit content to view
       chartRef.current.timeScale().fitContent();
@@ -586,13 +576,11 @@ export default function TradingViewChart({
     };
 
     lastCandleRef.current = barForSeries;
-    setLatestBar({
-      open: updatedCandle.open,
-      high: updatedCandle.high,
-      low: updatedCandle.low,
-      close: updatedCandle.close,
-      volume: updatedCandle.volume,
-    });
+    // Coalesce legend publication with the chart's next animation frame.
+    const legendFrame = requestAnimationFrame(() => setLiveBar({
+      history: historicalCandles,
+      bar: updatedCandle,
+    }));
 
     try {
       if (candleSeriesRef.current && chartType === "candle") {
@@ -617,7 +605,8 @@ export default function TradingViewChart({
     } catch (err) {
       console.warn("TradingViewChart update caught:", err);
     }
-  }, [liveQuote, chartType, indicators.volume, timeframe]);
+    return () => cancelAnimationFrame(legendFrame);
+  }, [liveQuote, chartType, indicators.volume, timeframe, historicalCandles]);
 
   // ---------------------------------------------------------------------------
   // Dynamic Visibility Updates for Chart Type & Indicators
@@ -664,6 +653,9 @@ export default function TradingViewChart({
   };
 
   const hasData = formattedData.length > 0;
+  const latestBar = liveBar?.history === historicalCandles
+    ? liveBar.bar
+    : formattedData.at(-1) || null;
   const currentPriceDisplay =
     liveQuote?.price_paise && liveQuote.price_paise > 0
       ? (liveQuote.price_paise / 100).toFixed(2)

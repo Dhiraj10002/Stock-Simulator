@@ -732,6 +732,9 @@ def fetch_quote_for_symbol(symbol: str) -> dict[str, Any] | None:
         exch = info.get("exch_seg") or "NSE"
         inst_type = info.get("instrumenttype") or ""
 
+    if exch not in EXCHANGE_TYPES:
+        return None
+
     if mode == "live" and token:
         try:
             data = fetch_full_snapshot(None, exch, str(token))
@@ -743,11 +746,9 @@ def fetch_quote_for_symbol(symbol: str) -> dict[str, Any] | None:
                 ltp_paise = rupees_to_paise(data.get("ltp"))
                 close_paise = rupees_to_paise(data.get("close"))
                 stamp = full_snapshot_time(data)
-                if ltp_paise > 0:
-                    now_utc = datetime.now(timezone.utc)
-                    # For on-demand live quotes, if the contract has not traded recently or missing feed time,
-                    # use the retrieval timestamp so live broker quotes remain fresh and executable.
-                    quote_stamp = stamp if (stamp and (now_utc - stamp).total_seconds() < 120) else now_utc
+                if ltp_paise > 0 and stamp is not None:
+                    # Retrieval does not make an old trade fresh or executable.
+                    quote_stamp = stamp
                     lower_c = rupees_to_paise(data.get("lowerCircuit") or data.get("lower_circuit") or data.get("lower_circuit_limit"))
                     upper_c = rupees_to_paise(data.get("upperCircuit") or data.get("upper_circuit") or data.get("upper_circuit_limit"))
                     quote = {
@@ -775,6 +776,10 @@ def fetch_quote_for_symbol(symbol: str) -> dict[str, Any] | None:
         except Exception as e:
             print(f"market worker: error fetching live quote for {symbol} from Angel One: {e}", flush=True)
 
+    # Only explicit synthetic mode may model prices. A live miss fails closed.
+    if mode != "synthetic":
+        return None
+
     # If quote not found directly from broker, check if symbol is an NFO derivative (Future or Option)
     deriv_match = re.match(r"^([A-Z&]+?)(\d{1,2})?([A-Z]{3})(\d{2})?(?:(\d+(?:\.\d+)?)(CE|PE)|FUT)$", symbol)
     if deriv_match:
@@ -785,7 +790,7 @@ def fetch_quote_for_symbol(symbol: str) -> dict[str, Any] | None:
             spot_rs = spot_paise / 100.0
             under_change_pct = under_quote.get("change_percent", 0.0)
             now_iso = datetime.now(timezone.utc).isoformat()
-            deriv_source = "angelone_live" if mode == "live" else "simulated_deriv"
+            deriv_source = "simulated_deriv"
             
             if symbol.endswith("FUT"):
                 fut_price_paise = int(round(spot_paise * 1.0035))
@@ -1199,7 +1204,7 @@ class InstrumentStore:
         result = []
         for requested in self.symbols:
             match = next((item for item in FALLBACK_INSTRUMENT_MASTER if item["name"] == requested), None)
-            if match:
+            if match and match["exch_seg"] in EXCHANGE_TYPES:
                 exch = match["exch_seg"]
                 result.append(Subscription(requested, match["token"], exch, EXCHANGE_TYPES.get(exch, 1)))
         return result

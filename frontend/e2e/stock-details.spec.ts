@@ -306,13 +306,16 @@ test("closed and missing stock data stay honest and stock detail is responsive",
     page.getByRole("button", { name: "Place paper order", exact: true }),
   ).toBeDisabled();
   await expect(page.getByText("LIVE", { exact: true })).toHaveCount(0);
+  // Keep the current native intraday UI; do not restore unsupported timeframes for CI.
+  for (const name of ["1H", "1D"])
+    await expect(page.getByRole("button", { name, exact: true })).toHaveCount(0);
   for (const width of [1440, 1024, 768, 640, 390, 360]) {
     await page.setViewportSize({ width, height: 900 });
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth),
     ).toBeLessThanOrEqual(width);
     await expect(
-      page.getByRole("button", { name: "1D", exact: true }),
+      page.getByRole("button", { name: "15m", exact: true }),
     ).toBeVisible();
     if (width === 390 && process.env.STOCK_UI_SCREENSHOTS)
       await page.screenshot({
@@ -461,7 +464,7 @@ test("mobile touch ticket and chart stay usable under CPU throttling", async ({ 
     const cdp = await context.newCDPSession(page);
     await cdp.send("Emulation.setCPUThrottlingRate", { rate: 4 });
     const control = await setup(page);
-    await page.getByRole("button", { name: "1D", exact: true }).tap();
+    await page.getByRole("button", { name: "15m", exact: true }).tap();
     const quantity = page.getByRole("spinbutton", { name: "Quantity", exact: true });
     await quantity.tap();
     await quantity.fill("2");
@@ -507,7 +510,7 @@ test("mobile emulation captures a chart render trace with real-shaped fixture ti
   const control = await setup(page);
   const tickBurst = setInterval(() => { for (let i=0;i<20;i++) control.tick(200000+i); }, 200);
   try {
-    await page.getByRole("button", { name: "1D", exact: true }).click();
+    await page.getByRole("button", { name: "15m", exact: true }).click();
     await page.mouse.wheel(0,500);
     await page.waitForTimeout(2500);
   } finally { clearInterval(tickBurst); }
