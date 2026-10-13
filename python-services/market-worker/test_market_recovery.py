@@ -108,7 +108,8 @@ class MarketRecoveryTest(unittest.TestCase):
                 sub_map = {s.symbol: (s.token, s.exchange_segment) for s in subs}
                 self.assertEqual(sub_map.get("NIFTY"), ("99926000", "NSE"))
                 self.assertEqual(sub_map.get("BANKNIFTY"), ("99926009", "NSE"))
-                self.assertEqual(sub_map.get("SENSEX"), ("99919000", "BSE"))
+                self.assertNotIn("SENSEX", sub_map)
+                self.assertTrue(all(s.exchange_segment in ("NSE", "NFO") for s in subs))
 
     def test_backfill_history_writes_all_canonical_and_display_aliases(self):
         client, api = MagicMock(), MagicMock()

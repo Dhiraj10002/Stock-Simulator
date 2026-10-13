@@ -843,13 +843,23 @@ class RealBrokerDataRegressionTest(unittest.TestCase):
             self.assertIsNone(worker.fetch_quote_for_symbol(info["symbol"]))
         writer.write.assert_not_called()
 
-    def test_bse_benchmark_support_does_not_subscribe_legacy_bse_equities(self):
+    def test_nse_nfo_only_subscriptions_exclude_bse_benchmarks_and_equities(self):
         rows = [{"token": "500325", "symbol": "RELIANCE", "name": "RELIANCE", "exch_seg": "BSE", "instrumenttype": "EQUITY"}]
         store = worker.InstrumentStore("", [])
         from unittest.mock import patch
         with patch.object(worker, "get_feed_mode", return_value="live"):
             subscriptions = store._build_subscriptions(rows, ["RELIANCE", "SENSEX"])
-        self.assertEqual([(s.symbol, s.exchange_type) for s in subscriptions], [("SENSEX", 3)])
+        self.assertEqual(worker.EXCHANGE_TYPES, {"NSE": 1, "NFO": 2})
+        self.assertEqual(subscriptions, [])
+
+    def test_disabled_exchange_never_fetches_quotes_or_uses_nse_fallback_type(self):
+        from unittest.mock import patch
+        store = worker.InstrumentStore("", ["NIFTY", "SENSEX"])
+        self.assertEqual([s.symbol for s in store._fallback_subscriptions()], ["NIFTY"])
+        for mode in ("live", "synthetic", "disabled"):
+            with patch.dict(os.environ, MARKET_FEED_MODE=mode), patch.object(worker, "fetch_full_snapshot") as fetch:
+                self.assertIsNone(worker.fetch_quote_for_symbol("SENSEX"))
+                fetch.assert_not_called()
 
     def test_zero_change_is_available_and_no_fake_volume_is_written(self):
         from unittest.mock import patch

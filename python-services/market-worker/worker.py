@@ -151,7 +151,7 @@ BROKER_STREAM_HOST = urlsplit(SmartWebSocketV2.ROOT_URI).hostname
 
 INSTRUMENT_MASTER_URL = "https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json"
 LOCAL_CACHE_PATH = "/tmp/OpenAPIScripMaster.json"
-EXCHANGE_TYPES = {"NSE": 1, "NFO": 2, "BSE": 3}
+EXCHANGE_TYPES = {"NSE": 1, "NFO": 2}
 
 FALLBACK_INSTRUMENT_MASTER = [
     {"token": "2885", "symbol": "RELIANCE-EQ", "name": "RELIANCE", "underlying_symbol": "", "expiry": "", "strike": "-1.000000", "option_type": "XX", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "5.000000"},
@@ -732,6 +732,9 @@ def fetch_quote_for_symbol(symbol: str) -> dict[str, Any] | None:
         exch = info.get("exch_seg") or "NSE"
         inst_type = info.get("instrumenttype") or ""
 
+    if exch not in EXCHANGE_TYPES:
+        return None
+
     if mode == "live" and token:
         try:
             data = fetch_full_snapshot(None, exch, str(token))
@@ -1201,7 +1204,7 @@ class InstrumentStore:
         result = []
         for requested in self.symbols:
             match = next((item for item in FALLBACK_INSTRUMENT_MASTER if item["name"] == requested), None)
-            if match:
+            if match and match["exch_seg"] in EXCHANGE_TYPES:
                 exch = match["exch_seg"]
                 result.append(Subscription(requested, match["token"], exch, EXCHANGE_TYPES.get(exch, 1)))
         return result
