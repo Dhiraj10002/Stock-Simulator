@@ -124,6 +124,8 @@ test("expired cookie refresh is coordinated across two tabs; logout removes the 
   await context.route(/\/api\/(?:v1|backend)\//, async route => {
     const request = route.request();
     const path = new URL(request.url()).pathname.replace(/^\/api\/(?:v1|backend)/, "");
+    // Cookie headers require the complete API, not the partial headers() snapshot.
+    const requestHeaders = await request.allHeaders();
     const headers: Record<string, string> = {};
     if (path === "/auth/refresh") {
       refreshes++;
@@ -137,7 +139,7 @@ test("expired cookie refresh is coordinated across two tabs; logout removes the 
       return route.fulfill({ headers, json: { success: true } });
     }
     if (["/wallet", "/portfolio", "/orders", "/trades"].includes(path)) {
-      if (loggedOut || !request.headers().cookie?.includes("stocksim_access=fresh-fixture")) return route.fulfill({ status: 401, json: { success: false, message: "Session expired" } });
+      if (loggedOut || !requestHeaders.cookie?.includes("stocksim_access=fresh-fixture")) return route.fulfill({ status: 401, json: { success: false, message: "Session expired" } });
       privateSuccesses++;
     }
     let data: unknown = [];

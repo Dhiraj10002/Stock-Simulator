@@ -21,8 +21,9 @@ async function stocksMocks(page: Page, mode: "refresh" | "unavailable" | "degrad
       await route.fulfill({ status: 204, headers });
       return;
     }
-    const auth = request.headers().cookie?.includes("stocksim_session=renewed-scope") ? "renewed-scope" : "expired-scope";
-    expect(request.headers().authorization).toBeUndefined();
+    const requestHeaders = await request.allHeaders();
+    const auth = requestHeaders.cookie?.includes("stocksim_session=renewed-scope") ? "renewed-scope" : "expired-scope";
+    expect(requestHeaders.authorization).toBeUndefined();
     if (path === "/auth/refresh") {
       rotations++;
       await route.fulfill({ headers: { ...headers, "set-cookie": "stocksim_session=renewed-scope; Path=/; SameSite=Lax" }, json: { success: true, data: { authenticated: true } } });
