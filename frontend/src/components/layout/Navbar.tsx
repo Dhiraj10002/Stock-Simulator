@@ -2,6 +2,7 @@
 import BrandLogo from "@/components/brand/BrandLogo";
 import { logoutSession, sessionFetch } from "@/lib/api";
 import { useAccountWallet } from "@/hooks/useAccountWallet";
+import { useAccountPortfolio } from "@/hooks/useAccountPortfolio";
 import { useAuthToken } from "@/hooks/useAuthToken";
 
 import { useState, useEffect, useRef } from "react";
@@ -63,8 +64,9 @@ const NAV_LINKS = [
 ];
 
 export default function Navbar({
-  unrealizedPnlPaise,
-  unrealizedPnlStale = false,
+  availableBalancePaise: propAvailableBalancePaise,
+  unrealizedPnlPaise: propUnrealizedPnlPaise,
+  unrealizedPnlStale: propUnrealizedPnlStale = false,
   onResetSimulation,
   onSignOut,
   resetting = false,
@@ -74,8 +76,19 @@ export default function Navbar({
   const setSearchPaletteOpen = useUIStore((s) => s.setSearchPaletteOpen);
   const { theme, setTheme } = useTheme();
 
+  const token = useAuthToken();
   const { data: verifiedWallet } = useAccountWallet();
-  const availableBalancePaise = verifiedWallet?.available_balance_paise;
+  const { data: verifiedPortfolio } = useAccountPortfolio(!!token);
+  const availableBalancePaise = verifiedWallet?.available_balance_paise ?? propAvailableBalancePaise;
+
+  const valuationAvailable = verifiedPortfolio?.valuation_status !== "DEGRADED";
+  const effectiveUnrealizedPnl =
+    propUnrealizedPnlPaise !== undefined
+      ? propUnrealizedPnlPaise
+      : (valuationAvailable ? verifiedPortfolio?.unrealized_pnl_paise : undefined);
+
+  const effectiveIsStale =
+    propUnrealizedPnlStale || verifiedPortfolio?.valuation_status === "STALE";
   // Static pages can be served long after build time; hydrate with a stable clock placeholder.
   const [clientIstTime, setClientIstTime] = useState("");
   const feedStatus = useMarketStore((s) => s.feedStatus);
@@ -91,7 +104,6 @@ export default function Navbar({
     segment
   );
 
-  const token = useAuthToken();
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
   const [userName, setUserName] = useState("Trader");
@@ -190,7 +202,7 @@ export default function Navbar({
   const sensexPrice = sensexQuote && sensexQuote.price_paise > 0 ? sensexQuote.price_paise : undefined;
   const sensexChange = dayMovement(sensexQuote)?.percent;
 
-  const isProfit = unrealizedPnlPaise !== undefined && unrealizedPnlPaise >= 0;
+  const isProfit = effectiveUnrealizedPnl !== undefined && effectiveUnrealizedPnl >= 0;
 
   return (
     <>
@@ -325,10 +337,10 @@ export default function Navbar({
               {/* Unrealized P&L */}
               <div role="group" aria-label="Portfolio unrealized P&L" className="hidden md:flex flex-col text-right border-l border-slate-200 dark:border-white/[0.08] pl-3">
                 <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">
-                  Unrealized P&L{unrealizedPnlStale ? " · Last available" : ""}
+                  Unrealized P&L{effectiveIsStale ? " · Last available" : ""}
                 </span>
                 <div className="flex items-center justify-end gap-1">
-                  {(unrealizedPnlPaise === undefined || unrealizedPnlPaise === 0) ? (
+                  {(effectiveUnrealizedPnl === undefined || effectiveUnrealizedPnl === 0) ? (
                     <span className="w-1.5 h-1.5 rounded-full bg-slate-400 dark:bg-slate-500 mr-0.5" />
                   ) : isProfit ? (
                     <TrendingUp className="w-3 h-3 text-emerald-600 dark:text-emerald-400 shrink-0" />
@@ -337,14 +349,16 @@ export default function Navbar({
                   )}
                   <strong
                     className={`text-xs font-bold font-tabular ${
-                      (unrealizedPnlPaise === undefined || unrealizedPnlPaise === 0)
+                      (effectiveUnrealizedPnl === undefined || effectiveUnrealizedPnl === 0)
                         ? "text-slate-600 dark:text-slate-300"
                         : isProfit
                         ? "text-emerald-600 dark:text-emerald-400"
                         : "text-rose-600 dark:text-rose-400"
                     }`}
                   >
-                    {formatPaise(unrealizedPnlPaise)}
+                    {effectiveUnrealizedPnl !== undefined && effectiveUnrealizedPnl !== null
+                      ? `${isProfit && effectiveUnrealizedPnl > 0 ? "+" : ""}${formatPaise(effectiveUnrealizedPnl)}`
+                      : "Unavailable"}
                   </strong>
                 </div>
               </div>

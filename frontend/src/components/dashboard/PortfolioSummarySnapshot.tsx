@@ -206,7 +206,9 @@ export default function PortfolioSummarySnapshot({
               isProfit ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
             }`}
           >
-            {formatPaise(portfolio && valuationAvailable ? unrealizedPnlPaise : undefined)}
+            {portfolio && valuationAvailable && unrealizedPnlPaise !== undefined
+              ? `${isProfit && unrealizedPnlPaise > 0 ? "+" : ""}${formatPaise(unrealizedPnlPaise)}`
+              : "—"}
           </div>
           <div className="text-[10px] font-bold font-tabular">
             <span
@@ -233,6 +235,7 @@ export default function PortfolioSummarySnapshot({
               isTotalProfit ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
             }`}
           >
+            {portfolio?.realized_pnl_paise !== undefined && portfolio.realized_pnl_paise > 0 ? "+" : ""}
             {formatPaise(portfolio?.realized_pnl_paise)}
           </div>
           <div className="text-[10px] text-slate-500 font-tabular">
@@ -242,7 +245,9 @@ export default function PortfolioSummarySnapshot({
                 isTotalProfit ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
               }`}
             >
-              {formatPaise(portfolio && valuationAvailable ? totalNetPnlPaise : undefined)}
+              {portfolio && valuationAvailable && totalNetPnlPaise !== undefined
+                ? `${isTotalProfit && totalNetPnlPaise > 0 ? "+" : ""}${formatPaise(totalNetPnlPaise)}`
+                : "—"}
             </span>
           </div>
         </div>
