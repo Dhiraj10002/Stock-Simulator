@@ -182,7 +182,14 @@ export default function PortfolioSummarySnapshot({
         {/* Unrealized P&L */}
         <div className="p-3.5 rounded-xl bg-slate-50/70 dark:bg-slate-950/40 border border-slate-100 dark:border-slate-800/60 space-y-1">
           <div className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide flex items-center justify-between">
-            <span>Unrealized P&L</span>
+            <span className="flex items-center gap-1.5">
+              <span>Unrealized P&L</span>
+              {positionsCount > 0 && (
+                <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-mono">
+                  {positionsCount} Open
+                </span>
+              )}
+            </span>
             <div className="flex items-center gap-1">
               {onSharePnl && (
                 <button
@@ -218,7 +225,7 @@ export default function PortfolioSummarySnapshot({
             >
               {portfolio && valuationAvailable && returnPercent !== undefined ? formatPercent(returnPercent) : "—"}
             </span>{" "}
-            <span className="text-slate-400 font-normal">on open holdings</span>
+            <span className="text-slate-400 font-normal">on open holdings & positions</span>
           </div>
         </div>
 
@@ -227,7 +234,7 @@ export default function PortfolioSummarySnapshot({
           <div className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide flex items-center justify-between">
             <span>Total Realized P&L</span>
             <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-mono">
-              {positionsCount} Pos
+              Closed trades
             </span>
           </div>
           <div
@@ -239,7 +246,7 @@ export default function PortfolioSummarySnapshot({
             {formatPaise(portfolio?.realized_pnl_paise)}
           </div>
           <div className="text-[10px] text-slate-500 font-tabular">
-            Net P&L:{" "}
+            Net Lifetime P&L:{" "}
             <span
               className={`font-bold ${
                 isTotalProfit ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"

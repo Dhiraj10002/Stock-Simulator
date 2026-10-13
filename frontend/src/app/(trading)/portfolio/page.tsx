@@ -306,11 +306,6 @@ export default function PortfolioPage() {
   const anyHoldingDayPnlAvailable = activeHoldings.length > 0 && activeHoldings.some((h) => h.dayPnlAvailable);
 
   const positionsDayPnlPaise = activePositions.reduce((sum, p) => {
-    const canonical = resolveCanonicalSymbol(p.symbol);
-    const liveQuote = quotes[p.symbol] || quotes[canonical];
-    if (liveQuote?.day_change_available === true && typeof liveQuote.change_paise === "number") {
-      return sum + p.quantity * liveQuote.change_paise;
-    }
     return sum + (p.unrealized_pnl_paise || 0);
   }, 0);
 
