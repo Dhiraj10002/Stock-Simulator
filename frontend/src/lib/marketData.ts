@@ -9,7 +9,6 @@ export function quoteLabel(quote?: Quote | null, now = Date.now()) {
   return quote.source === "angelone_live" ? "LIVE" : "SIMULATED";
 }
 export function historyRequest(_timeframe?: string) {
-  void _timeframe;
   return { interval: "ONE_MINUTE", limit: 500 };
 }
 export function aggregateCandles(candles: Candle[], timeframe: string): Candle[] {

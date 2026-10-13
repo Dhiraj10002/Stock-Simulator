@@ -520,14 +520,12 @@ export default function TradingViewChart({
       // Track latest candle for live updates
       const last = formattedData[formattedData.length - 1];
       lastCandleRef.current = { ...last };
-      queueMicrotask(() => {
-        setLatestBar({
-          open: last.open,
-          high: last.high,
-          low: last.low,
-          close: last.close,
-          volume: last.volume,
-        });
+      setLatestBar({
+        open: last.open,
+        high: last.high,
+        low: last.low,
+        close: last.close,
+        volume: last.volume,
       });
 
       // Auto-fit content to view
@@ -715,7 +713,7 @@ export default function TradingViewChart({
 
           {/* Timeframe Pills (Intraday Native Aggregation) */}
           <div className="flex items-center gap-0.5 bg-slate-200/60 dark:bg-slate-800/80 p-0.5 rounded-lg font-mono">
-            {["1m", "5m", "15m", "1H", "1D"].map((tf) => (
+            {["1m", "5m", "15m"].map((tf) => (
               <button
                 key={tf}
                 onClick={() => handleTimeframeSelect(tf)}

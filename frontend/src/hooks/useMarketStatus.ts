@@ -14,7 +14,7 @@ export function useMarketStatus(segment: "NSE" | "NFO", enabled = true, poll = f
     staleTime: 10_000,
     refetchInterval: poll ? 15_000 : false,
     refetchIntervalInBackground: false,
-    refetchOnWindowFocus: false,
+    refetchOnWindowFocus: true,
     retry: false,
   });
 }
