@@ -33,13 +33,32 @@ export { formatKiteSymbol } from "@/lib/instrumentDisplay";
 export default function SearchModal() {
   const router = useRouter();
   const token = useAuthToken();
-  const { isSearchPaletteOpen, setSearchPaletteOpen } = useUIStore();
+  const { isSearchPaletteOpen, setSearchPaletteOpen, searchInitialQuery } = useUIStore();
   const setSelectedSymbol = useTradingStore((s) => s.setSelectedSymbol);
   const { addToast } = useToast();
 
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [segmentFilter, setSegmentFilter] = useState<SearchSegmentFilter>("ALL");
+  const inputRef = React.useRef<HTMLInputElement>(null);
+
+  // Sync initial query when opened
+  useEffect(() => {
+    if (isSearchPaletteOpen) {
+      const initQ = searchInitialQuery || "";
+      setQuery(initQ);
+      setDebouncedQuery(initQ.trim());
+      const timer = setTimeout(() => {
+        if (inputRef.current) {
+          inputRef.current.focus();
+          if (initQ) {
+            inputRef.current.select();
+          }
+        }
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [isSearchPaletteOpen, searchInitialQuery]);
 
   // Debounce user input by 150ms
   useEffect(() => {
@@ -148,7 +167,7 @@ export default function SearchModal() {
     setQuery("");
     setDebouncedQuery("");
     setSegmentFilter("ALL");
-    setSearchPaletteOpen(false);
+    setSearchPaletteOpen(false, "");
   }, [setSearchPaletteOpen]);
 
   const handleOpenFnoOrder = (item: Instrument, side: "BUY" | "SELL" = "BUY") => {
@@ -156,7 +175,7 @@ export default function SearchModal() {
     setFnoModalInstrument(item);
     setFnoOrderSide(side);
     setIsFnoModalOpen(true);
-    setSearchPaletteOpen(false);
+    setSearchPaletteOpen(false, "");
   };
 
   const handleQuickTrade = (item: Instrument, side: "BUY" | "SELL") => {
@@ -320,6 +339,7 @@ export default function SearchModal() {
             <div className="flex items-center px-4 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
               <Search className="w-5 h-5 text-slate-400 shrink-0 mr-3" />
               <input
+                ref={inputRef}
                 type="text"
                 autoFocus
                 placeholder="Search stocks, futures & options (e.g. TCS, KEI, NIFTY 23500 CE)..."

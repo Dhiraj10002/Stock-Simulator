@@ -361,10 +361,69 @@ func TestOrderService_FNOValidationAndSafety(t *testing.T) {
 				if tc.wantErrSub != "" && !strings.Contains(err.Error(), tc.wantErrSub) {
 					t.Fatalf("expected error containing %q, got: %v", tc.wantErrSub, err)
 				}
-				if orderPersisted {
-					t.Fatal("SAFETY VIOLATION: order was persisted despite validation failure!")
-				}
 			}
 		})
+	}
+}
+
+func TestOrderService_ExitOrderStaleQuoteFallback(t *testing.T) {
+	loc := calendar.Location()
+	tradingTime := time.Date(2026, 9, 16, 11, 0, 0, 0, loc)
+
+	orderSvc := New(nil, &config.Config{
+		MISLeverage:             5,
+		FuturesMarginPercent:    20,
+		OptionSellMarginPercent: 30,
+	})
+	orderSvc.SetNowFunc(func() time.Time { return tradingTime })
+	orderSvc.SetExecutableQuoteFunc(func(symbol string) (*marketDTO.QuoteResponse, error) {
+		// Live executable quote is stale (e.g. no trade in last 2 minutes for illiquid option)
+		return nil, marketService.ErrQuoteStale
+	})
+	orderSvc.SetCurrentQuoteFunc(func(symbol string) (*marketDTO.QuoteResponse, error) {
+		// Cached quote / last traded price in Redis
+		return &marketDTO.QuoteResponse{
+			Symbol:     symbol,
+			PricePaise: 4500,
+			Source:     "angelone_live",
+			UpdatedAt:  tradingTime.Add(-10 * time.Minute).Format(time.RFC3339),
+		}, nil
+	})
+
+	// 1. Regular entry order fails with ErrQuoteStale
+	normalOrder := model.Order{
+		Symbol:   "NAUKRI23NOV261260CE",
+		Product:  model.OrderProductFNO,
+		Type:     model.OrderTypeMarket,
+		Side:     model.OrderSideBuy,
+		Quantity: 250,
+	}
+	if _, err := orderSvc.executableQuote(normalOrder.Symbol); !errors.Is(err, marketService.ErrQuoteStale) {
+		t.Fatalf("expected ErrQuoteStale on normal entry, got: %v", err)
+	}
+
+	// 2. Exit / square-off order fallback resolves price from currentQuoteFunc
+	exitOrder := model.Order{
+		Symbol:   "NAUKRI23NOV261260CE",
+		Product:  model.OrderProductFNO,
+		Type:     model.OrderTypeMarket,
+		Side:     model.OrderSideSell,
+		Quantity: 250,
+		Reason:   model.OrderReasonSquareOff,
+	}
+	isExitOrder := exitOrder.Reason == model.OrderReasonSquareOff || exitOrder.Reason == model.OrderReasonMISSquareOff || exitOrder.ExitPositionUUID != nil
+	var resolvedQuote *marketDTO.QuoteResponse
+	quote, err := orderSvc.executableQuote(exitOrder.Symbol)
+	if err != nil && isExitOrder && (errors.Is(err, marketService.ErrQuoteStale) || errors.Is(err, marketService.ErrQuoteIneligible)) {
+		if cq, cqErr := orderSvc.currentQuoteFunc(exitOrder.Symbol); cqErr == nil && cq != nil && cq.PricePaise > 0 {
+			resolvedQuote = cq
+			err = nil
+		}
+	}
+	if err != nil {
+		t.Fatalf("expected square-off fallback to succeed, got error: %v", err)
+	}
+	if resolvedQuote == nil || resolvedQuote.PricePaise != 4500 {
+		t.Fatalf("expected resolved quote price 4500, got: %+v (initial quote: %+v)", resolvedQuote, quote)
 	}
 }

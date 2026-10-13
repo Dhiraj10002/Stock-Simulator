@@ -8,6 +8,7 @@ import (
 
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/accountchanges"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/database"
+	marketService "github.com/Dhiraj10002/Stock-Simulator/backend/internal/market/service"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/model"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/product"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/pkg/logger"
@@ -61,7 +62,26 @@ func (s *OrderService) Execute(userID, orderID string) (resultErr error) {
 	quote, err := s.executableQuote(pendingOrder.Symbol)
 	redisDuration := time.Since(redisStart)
 	if err != nil {
-		return err
+		isExitOrder := pendingOrder.Reason == model.OrderReasonSquareOff || pendingOrder.Reason == model.OrderReasonMISSquareOff || pendingOrder.ExitPositionUUID != nil
+		if isExitOrder && (errors.Is(err, marketService.ErrQuoteStale) || errors.Is(err, marketService.ErrQuoteIneligible)) {
+			if s.market != nil {
+				if cq, cqErr := s.market.CachedQuote(pendingOrder.Symbol); cqErr == nil && cq != nil && cq.PricePaise > 0 {
+					quote = cq
+					err = nil
+				} else if rq, rqErr := s.market.RawCachedQuote(pendingOrder.Symbol); rqErr == nil && rq != nil && rq.PricePaise > 0 {
+					quote = rq
+					err = nil
+				}
+			} else if s.currentQuoteFunc != nil {
+				if cq, cqErr := s.currentQuoteFunc(pendingOrder.Symbol); cqErr == nil && cq != nil && cq.PricePaise > 0 {
+					quote = cq
+					err = nil
+				}
+			}
+		}
+		if err != nil {
+			return err
+		}
 	}
 	if err := s.activateStop(userUUID, orderUUID, quote.PricePaise); err != nil {
 		return err
@@ -296,7 +316,26 @@ func (s *OrderService) executeMarginProduct(userUUID, orderUUID uuid.UUID, pendi
 	quote, err := s.executableQuote(pending.Symbol)
 	redisDuration := time.Since(redisStart)
 	if err != nil {
-		return err
+		isExitOrder := pending.Reason == model.OrderReasonSquareOff || pending.Reason == model.OrderReasonMISSquareOff || pending.ExitPositionUUID != nil
+		if isExitOrder && (errors.Is(err, marketService.ErrQuoteStale) || errors.Is(err, marketService.ErrQuoteIneligible)) {
+			if s.market != nil {
+				if cq, cqErr := s.market.CachedQuote(pending.Symbol); cqErr == nil && cq != nil && cq.PricePaise > 0 {
+					quote = cq
+					err = nil
+				} else if rq, rqErr := s.market.RawCachedQuote(pending.Symbol); rqErr == nil && rq != nil && rq.PricePaise > 0 {
+					quote = rq
+					err = nil
+				}
+			} else if s.currentQuoteFunc != nil {
+				if cq, cqErr := s.currentQuoteFunc(pending.Symbol); cqErr == nil && cq != nil && cq.PricePaise > 0 {
+					quote = cq
+					err = nil
+				}
+			}
+		}
+		if err != nil {
+			return err
+		}
 	}
 	if err := s.activateStop(userUUID, orderUUID, quote.PricePaise); err != nil {
 		return err

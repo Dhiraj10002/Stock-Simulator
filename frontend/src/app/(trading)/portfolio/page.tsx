@@ -303,17 +303,31 @@ export default function PortfolioPage() {
     (sum, h) => sum + (h.dayPnlAvailable ? h.dayChangePaise : 0),
     0
   );
-  const anyHoldingDayPnlAvailable = activeHoldings.length > 0 && activeHoldings.every((h) => h.dayPnlAvailable);
-  const dayPnlPaise: number | undefined = !isPositionsTab && anyHoldingDayPnlAvailable
-    ? holdingsDayPnlPaise
-    : (portfolio?.daily_pnl_paise !== null && portfolio?.daily_pnl_paise !== undefined ? portfolio.daily_pnl_paise : undefined);
+  const anyHoldingDayPnlAvailable = activeHoldings.length > 0 && activeHoldings.some((h) => h.dayPnlAvailable);
+
+  const positionsDayPnlPaise = activePositions.reduce((sum, p) => {
+    const canonical = resolveCanonicalSymbol(p.symbol);
+    const liveQuote = quotes[p.symbol] || quotes[canonical];
+    if (liveQuote?.day_change_available === true && typeof liveQuote.change_paise === "number") {
+      return sum + p.quantity * liveQuote.change_paise;
+    }
+    return sum + (p.unrealized_pnl_paise || 0);
+  }, 0);
+
+  const dayPnlPaise: number | undefined = isPositionsTab
+    ? (activePositions.length > 0 ? positionsDayPnlPaise : 0)
+    : (anyHoldingDayPnlAvailable
+        ? holdingsDayPnlPaise
+        : (portfolio?.daily_pnl_paise !== null && portfolio?.daily_pnl_paise !== undefined ? portfolio.daily_pnl_paise : undefined));
+
   const isDayProfit = (dayPnlPaise ?? 0) >= 0;
+
   const dayPnlPercent =
-    isPositionsTab && portfolio?.daily_pnl_percent !== undefined && portfolio?.daily_pnl_percent !== null
-      ? portfolio.daily_pnl_percent
-      : (totalInvestedPaise > 0 && dayPnlPaise !== undefined
-        ? (dayPnlPaise / totalInvestedPaise) * 100
-        : undefined);
+    totalInvestedPaise > 0 && dayPnlPaise !== undefined
+      ? (dayPnlPaise / totalInvestedPaise) * 100
+      : (isPositionsTab
+          ? 0
+          : (portfolio?.daily_pnl_percent !== undefined && portfolio?.daily_pnl_percent !== null ? portfolio.daily_pnl_percent : undefined));
 
   const valuationAvailable = !!portfolio && !portfolioError && (livePositions.length === 0 || totalValuationPaise > 0 || totalInvestedPaise > 0);
   const availableBalancePaise = walletError ? undefined : wallet?.available_balance_paise;
@@ -535,7 +549,7 @@ export default function PortfolioPage() {
           {/* 1. Gross Position Value */}
           <div className="p-5 rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 shadow-xs space-y-2 relative overflow-hidden group hover:border-cyan-500/40 transition-all">
             <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 flex items-center justify-between">
-              <span>Gross Position Value</span>
+              <span>{isPositionsTab ? "Gross Position Value" : "Total Portfolio Value"}</span>
               <span className="text-[10px] font-mono text-cyan-600 dark:text-cyan-400">Live MTM</span>
             </span>
             <div className="text-2xl font-black font-tabular text-slate-900 dark:text-slate-100">
@@ -593,7 +607,7 @@ export default function PortfolioPage() {
           {/* 3. Today's Day P&L */}
           <div className="p-5 rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 shadow-xs space-y-2 group hover:border-cyan-500/40 transition-all">
             <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 flex items-center justify-between">
-              <span>Holdings Day Movement</span>
+              <span>{isPositionsTab ? "Positions Day Movement" : "Holdings Day Movement"}</span>
               <span
                 className={`text-[10px] font-bold px-1.5 py-0.2 rounded font-tabular ${
                   isDayProfit
@@ -612,7 +626,9 @@ export default function PortfolioPage() {
               {dayPnlPaise !== undefined ? `${isDayProfit && dayPnlPaise > 0 ? "+" : ""}${formatPaise(dayPnlPaise)}` : "—"}
             </div>
             <div className="text-[11px] text-slate-400">
-              Current holdings × price change since previous close
+              {isPositionsTab
+                ? "Active positions × price change today"
+                : "Current holdings × price change since previous close"}
             </div>
           </div>
 
