@@ -90,7 +90,7 @@ export default function LandingScrollSections() {
                     </i>
                   </span>
                 </div>
-                <div className="how-panel" id="step-panel-0" role="tabpanel" aria-labelledby="step-tab-0">
+                <div className="how-panel" tabIndex={0} id="step-panel-0" role="tabpanel" aria-labelledby="step-tab-0">
                   <div className="wallet-top">
                     <span>
                       {"VIRTUAL STARTING CAPITAL"}
@@ -130,7 +130,7 @@ export default function LandingScrollSections() {
                     {"Understand your funds before placing an order."}
                   </div>
                 </div>
-                <div className="how-panel" id="step-panel-1" role="tabpanel" aria-labelledby="step-tab-1" hidden>
+                <div className="how-panel" tabIndex={0} id="step-panel-1" role="tabpanel" aria-labelledby="step-tab-1" hidden>
                   <div className="preview-order-head">
                     <div className="symbol-icon">
                       <i>
@@ -179,7 +179,7 @@ export default function LandingScrollSections() {
                     {"Interactive example only. No order is submitted."}
                   </p>
                 </div>
-                <div className="how-panel" id="step-panel-2" role="tabpanel" aria-labelledby="step-tab-2" hidden>
+                <div className="how-panel" tabIndex={0} id="step-panel-2" role="tabpanel" aria-labelledby="step-tab-2" hidden>
                   <div className="insight-top">
                     <div>
                       <span className="label">
