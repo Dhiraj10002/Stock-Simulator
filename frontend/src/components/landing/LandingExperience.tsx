@@ -78,7 +78,7 @@ export default function LandingExperience({ children }: { children: ReactNode })
     const updateScroll = () => {
       scrollFrame = 0;
       if (document.hidden) return;
-      const active = [...sections].reverse().find(section => section.offsetTop <= scrollY + 180)?.id || "hero";
+      const active = [...sections].reverse().find(section => section.getBoundingClientRect().top <= 180)?.id || "hero";
       for (const link of links) {
         if (link.dataset.landingNav === active) link.setAttribute("aria-current", "location");
         else link.removeAttribute("aria-current");
@@ -118,7 +118,7 @@ export default function LandingExperience({ children }: { children: ReactNode })
     };
   }, []);
 
-  return <div ref={rootRef} className="dark landing-experience relative min-h-screen text-slate-100 font-sans overflow-x-hidden selection:bg-blue-600/30 selection:text-white" data-landing style={{ backgroundColor: "#04060b" }}>
+  return <div ref={rootRef} className="dark landing-experience relative min-h-screen text-slate-100 font-sans overflow-x-clip selection:bg-blue-600/30 selection:text-white" data-landing style={{ backgroundColor: "#04060b" }}>
     <a href="#hero" className="sr-only focus:not-sr-only focus:fixed focus:z-[60] focus:bg-slate-900 focus:p-3">Skip to content</a>
     <svg aria-hidden className="landing-stars fixed inset-0 z-0 h-full w-full pointer-events-none" viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice">
       {Array.from({ length: 90 }, (_, i) => <circle key={i} cx={(i * 137.508) % 1440} cy={(i * 97.3) % 900} r={0.65 + (i % 3) * 0.4} fill={["#06b6d4", "#f97316", "#10b981", "#fbbf24", "#a855f7", "#f472b6"][i % 6]} opacity={0.2 + (i % 5) * 0.12} />)}
