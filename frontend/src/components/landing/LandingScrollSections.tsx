@@ -880,8 +880,8 @@ export default function LandingScrollSections() {
                       <strong id="story-role">
                         {"First-time market learner"}
                       </strong>
-                      <small>
-                        {"Learning perspectives · Share your feedback"}
+                      <small id="story-subtitle">
+                        {"Learning the basics, one paper trade at a time"}
                       </small>
                     </div>
                   </div>

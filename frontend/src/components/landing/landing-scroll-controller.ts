@@ -13,9 +13,9 @@ const AI: Record<string, { question: string; answer: string }> = {
   review: { question: "What should I review after a trade?", answer: "Write down why you entered the trade and what made you exit. Review the decision, as well as the result." },
 };
 const STORIES = [
-  { label: "ILLUSTRATIVE LEARNER STORY", quote: "I wanted a place to understand orders before putting my savings at risk.", role: "First-time market learner", avatar: "FL", goal: "Make the first step feel clearer.", path: ["Find a stock", "Place a paper order", "Review your result"] },
-  { label: "ILLUSTRATIVE STRATEGY STORY", quote: "I wanted to practise contract sizing and margin before putting real money on the line.", role: "Strategy explorer", avatar: "SE", goal: "Give your process a practice run.", path: ["Explore a contract", "Check required funds", "Review your process"] },
-  { label: "ILLUSTRATIVE EDUCATOR STORY", quote: "I wanted students to explore market concepts through examples they could try themselves.", role: "Market educator", avatar: "ME", goal: "Make a concept feel tangible.", path: ["Explain an order", "Explore the portfolio", "Discuss the outcome"] },
+  { label: "ILLUSTRATIVE LEARNER STORY", quote: "I wanted a place to understand orders before putting my savings at risk.", role: "First-time market learner", subtitle: "Learning the basics, one paper trade at a time", avatar: "FL", goal: "Make the first step feel clearer.", path: ["Find a stock", "Place a paper order", "Review your result"] },
+  { label: "ILLUSTRATIVE STRATEGY STORY", quote: "I wanted to practise contract sizing and margin before putting real money on the line.", role: "Strategy explorer", subtitle: "Testing ideas and refining a trading process", avatar: "SE", goal: "Give your process a practice run.", path: ["Explore a contract", "Check required funds", "Review your process"] },
+  { label: "ILLUSTRATIVE EDUCATOR STORY", quote: "I wanted students to explore market concepts through examples they could try themselves.", role: "Market educator", subtitle: "Bringing market concepts into the classroom", avatar: "ME", goal: "Make a concept feel tangible.", path: ["Explain an order", "Explore the portfolio", "Discuss the outcome"] },
 ];
 
 // Owns only static server-rendered children. Scroll frames update CSS variables;
@@ -68,7 +68,7 @@ export function mountLandingScroll(root: HTMLElement) {
       selectButton(all("[data-story]"), index);
       const story = STORIES[index];
       text("#story-kicker", story.label); text("#story-quote", story.quote);
-      text("#story-role", story.role); text("#story-avatar", story.avatar); text("#story-goal", story.goal);
+      text("#story-role", story.role); text("#story-subtitle", story.subtitle); text("#story-avatar", story.avatar); text("#story-goal", story.goal);
       const path = $("#story-path");
       if (path) {
         path.replaceChildren(...story.path.map((label, i) => {
