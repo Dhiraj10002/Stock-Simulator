@@ -82,3 +82,36 @@ test("reduced motion uses local chapters without scroll hijacking or 3D transfor
   expect(await page.locator(".step-window").evaluate(node => getComputedStyle(node).transform)).toBe("none");
   expect(await page.locator("#how .scroll-pin").evaluate(node => getComputedStyle(node).position)).not.toBe("sticky");
 });
+
+for (const viewport of [{ width: 1920, height: 1080 }, { width: 1440, height: 900 }, { width: 1040, height: 820 }]) {
+  test(`scroll sections fill the ${viewport.width}×${viewport.height} desktop canvas without clipped content`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await page.goto("/");
+    await expect(page.locator(".landing-scroll-sections")).toHaveClass(/scroll-enhanced/);
+    for (const [selector, count] of [["#how", 3], ["#features", 5], ["#testimonials", 3]] as const) {
+      for (let i = 0; i < count; i++) {
+        await scrollChapter(page, selector, (i + 0.5) / count);
+        await expect(page.locator(`${selector} .scene-count`)).toHaveText(`0${i + 1} / 0${count}`);
+        // Allow the short content-entry animation to finish before measuring geometry.
+        await page.locator(selector).evaluate(async section => {
+          await Promise.all(section.getAnimations({ subtree: true }).map(animation => animation.finished.catch(() => undefined)));
+        });
+        const bounds = await page.locator(selector).evaluate(section => {
+          const pin = section.querySelector<HTMLElement>(".scroll-pin")!;
+          const wrap = pin.querySelector<HTMLElement>(".wrap")!;
+          const card = section.querySelector<HTMLElement>(section.id === "how" ? ".step-window" : section.id === "features" ? ".scroll-feature-panel:not([hidden])" : ".story-shell")!;
+          const offset = parseFloat(getComputedStyle(section.closest(".landing-scroll-sections")!).getPropertyValue("--scroll-top"));
+          const content = section.querySelector<HTMLElement>(section.id === "how" ? ".how-panel:not([hidden])" : section.id === "features" ? ".scroll-feature-panel:not([hidden])" : ".story-shell")!;
+          return { wrap: wrap.getBoundingClientRect().toJSON(), card: card.getBoundingClientRect().toJSON(), offset, overflow: content.scrollHeight - content.clientHeight, pinBottom: pin.getBoundingClientRect().bottom };
+        });
+        expect(bounds.wrap.width).toBeGreaterThan(viewport.width * 0.92);
+        expect(bounds.wrap.top - bounds.offset).toBeLessThan(25);
+        expect(bounds.pinBottom).toBeLessThanOrEqual(viewport.height + 1);
+        expect(bounds.card.height).toBeGreaterThan((viewport.height - bounds.offset) * 0.45);
+        expect(bounds.card.bottom).toBeLessThanOrEqual(viewport.height + 1);
+        expect(bounds.overflow).toBeLessThanOrEqual(2);
+      }
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  });
+}
