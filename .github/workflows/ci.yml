@@ -12,12 +12,8 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - name: Pre-pull base images from public mirror
-        run: |
-          docker pull public.ecr.aws/docker/library/caddy:2-alpine && docker tag public.ecr.aws/docker/library/caddy:2-alpine caddy:2-alpine
-          docker pull public.ecr.aws/docker/library/redis:7-alpine && docker tag public.ecr.aws/docker/library/redis:7-alpine redis:7-alpine
-          docker pull public.ecr.aws/docker/library/postgres:16-alpine && docker tag public.ecr.aws/docker/library/postgres:16-alpine postgres:16-alpine
-          docker pull public.ecr.aws/docker/library/debian:bookworm-slim && docker tag public.ecr.aws/docker/library/debian:bookworm-slim debian:bookworm-slim
+      - name: Pull gateway base images with registry fallback
+        run: python3 scripts/ci_pull_images.py caddy:2-alpine redis:7-alpine postgres:16-alpine debian:bookworm-slim
       - name: Verify production Compose and Caddy against real Go backend
         run: python3 scripts/smoke_production_gateway.py
       - name: Verify optional broker proxy image and configuration
@@ -28,29 +24,7 @@ jobs:
   backend:
     name: Go Backend & Integration Tests
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: public.ecr.aws/docker/library/postgres:16-alpine
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: testdb
-        ports:
-          - 5433:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-      redis:
-        image: public.ecr.aws/docker/library/redis:7-alpine
-        ports:
-          - 6380:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
+    timeout-minutes: 25
     defaults:
       run:
         working-directory: backend
@@ -61,6 +35,35 @@ jobs:
       PGPASSWORD: "postgres"
     steps:
       - uses: actions/checkout@v4
+      # Job-level services pull before checkout, so they cannot use fallback.
+      - name: Start disposable PostgreSQL and Redis with registry fallback
+        run: |
+          python3 ../scripts/ci_pull_images.py postgres:16-alpine redis:7-alpine
+          docker run --detach --pull never --name ci-postgres \
+            -p 127.0.0.1:5433:5432 \
+            -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=testdb \
+            --health-cmd "pg_isready -U postgres -d testdb" \
+            --health-interval 2s --health-timeout 5s --health-retries 15 \
+            postgres:16-alpine
+          docker run --detach --pull never --name ci-redis \
+            -p 127.0.0.1:6380:6379 \
+            --health-cmd "redis-cli ping" \
+            --health-interval 2s --health-timeout 5s --health-retries 15 \
+            redis:7-alpine
+          for container in ci-postgres ci-redis; do
+            status=""
+            for attempt in $(seq 1 30); do
+              status=$(docker inspect --format '{{.State.Health.Status}}' "$container")
+              if [ "$status" = healthy ]; then break; fi
+              if [ "$status" = unhealthy ]; then break; fi
+              sleep 2
+            done
+            if [ "$status" != healthy ]; then
+              docker logs "$container"
+              echo "::error::$container did not become healthy"
+              exit 1
+            fi
+          done
       - uses: actions/setup-go@v5
         with:
           go-version: '1.25.x'
@@ -99,9 +102,9 @@ jobs:
 
       - name: Dump and restore accounting state in an isolated disposable database
         run: |
-          docker exec "${{ job.services.postgres.id }}" pg_dump -U postgres -d testdb --format=custom > "$RUNNER_TEMP/accounting.dump"
+          docker exec ci-postgres pg_dump -U postgres -d testdb --format=custom > "$RUNNER_TEMP/accounting.dump"
           python3 -c 'import sys; sys.path.insert(0, "../scripts"); from verify_backup_restore import FINGERPRINT_SQL; print(FINGERPRINT_SQL)' > "$RUNNER_TEMP/fingerprint.sql"
-          docker exec -i "${{ job.services.postgres.id }}" psql -U postgres -d testdb -At -v ON_ERROR_STOP=1 < "$RUNNER_TEMP/fingerprint.sql" > "$RUNNER_TEMP/fingerprint.txt"
+          docker exec -i ci-postgres psql -U postgres -d testdb -At -v ON_ERROR_STOP=1 < "$RUNNER_TEMP/fingerprint.sql" > "$RUNNER_TEMP/fingerprint.txt"
           python3 ../scripts/verify_backup_restore.py "$RUNNER_TEMP/accounting.dump" --expected-fingerprint "$RUNNER_TEMP/fingerprint.txt" > "$RUNNER_TEMP/restore-verification.json" || { cat "$RUNNER_TEMP/restore-verification.json"; exit 1; }
           cat "$RUNNER_TEMP/restore-verification.json"
 
@@ -112,6 +115,16 @@ jobs:
             ${{ runner.temp }}/backend-benchmarks.txt
             ${{ runner.temp }}/database-profile.json
             ${{ runner.temp }}/restore-verification.json
+
+      - name: Clean up disposable backend services
+        if: always()
+        run: |
+          for container in ci-postgres ci-redis; do
+            if docker inspect "$container" > /dev/null 2>&1; then
+              docker logs "$container"
+              docker rm --force "$container"
+            fi
+          done
 
   python-workers:
     name: Python Workers
@@ -217,9 +230,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Pre-pull Node base image from public mirror
-        run: |
-          docker pull public.ecr.aws/docker/library/node:22-alpine && docker tag public.ecr.aws/docker/library/node:22-alpine node:22-alpine
+      - name: Pull Node base image with registry fallback
+        run: python3 scripts/ci_pull_images.py node:22-alpine
       - name: Build production runtime image
         run: docker build --tag stock-simulator-frontend:ci frontend
       - name: Smoke non-root runtime, static assets and redirects
