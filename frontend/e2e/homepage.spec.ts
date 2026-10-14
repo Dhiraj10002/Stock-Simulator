@@ -17,7 +17,10 @@ test("original cinematic homepage renders without JavaScript and its footer link
   for (const id of ["platform", "how", "features", "testimonials", "portal"]) await expect(page.locator(`#${id}`)).toHaveCount(1);
   await expect(page.getByRole("link", { name: "Log In", exact: true })).toHaveAttribute("href", "/login");
   await expect(page.getByRole("link", { name: "Sign Up", exact: true })).toHaveAttribute("href", "/signup");
-  await expect(page.getByText("SAMPLE DATA", { exact: true })).toBeVisible();
+  await expect(page.getByText("SAMPLE DATA", { exact: true })).toHaveCount(0);
+  await expect(page.locator("[data-landing-ticker]")).toBeVisible();
+  await expect(page.getByText("Illustrative preview:", { exact: false })).toBeVisible();
+  await expect(page.locator("#story-subtitle")).toHaveText("Learning the basics, one paper trade at a time");
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   for (const title of ["About Paper Trading", "Privacy Policy", "Terms of Service"]) {
     await page.goto("http://127.0.0.1:3100/");

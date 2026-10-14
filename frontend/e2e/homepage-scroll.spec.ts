@@ -38,9 +38,15 @@ test("desktop features and illustrative stories advance with scrolling and the n
     await expect(page.locator(`#feature-panel-${i}`)).toBeVisible();
     await expect(page.locator('[data-landing-nav="features"]')).toHaveAttribute("aria-current", "location");
   }
-  for (const [i, role] of ["First-time market learner", "Strategy explorer", "Market educator"].entries()) {
+  const stories = [
+    { role: "First-time market learner", subtitle: "Learning the basics, one paper trade at a time" },
+    { role: "Strategy explorer", subtitle: "Testing ideas and refining a trading process" },
+    { role: "Market educator", subtitle: "Bringing market concepts into the classroom" },
+  ];
+  for (const [i, story] of stories.entries()) {
     await scrollChapter(page, "#testimonials", (i + 0.5) / 3);
-    await expect(page.locator("#story-role")).toHaveText(role);
+    await expect(page.locator("#story-role")).toHaveText(story.role);
+    await expect(page.locator("#story-subtitle")).toHaveText(story.subtitle);
     await expect(page.locator('[data-landing-nav="testimonials"]')).toHaveAttribute("aria-current", "location");
     await expect(page.getByText("Illustrative stories · not verified reviews")).toBeVisible();
   }
@@ -66,6 +72,7 @@ test("mobile tap and keyboard chapters work; preview quantity validation never s
   await expect(page.locator("#ai-question")).toHaveText("How does a limit order work?");
   await page.locator('[data-story="educator"]').click();
   await expect(page.locator("#story-role")).toHaveText("Market educator");
+  await expect(page.locator("#story-subtitle")).toHaveText("Bringing market concepts into the classroom");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   expect(writes).toEqual([]);
 });
