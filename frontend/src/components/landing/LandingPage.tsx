@@ -410,7 +410,6 @@ export default function LandingPage() {
           WebkitBackdropFilter: 'blur(16px)',
         }}
       >
-        <div className="absolute right-0 top-0 z-10 h-full flex items-center bg-[#04070e] px-2 text-[9px] font-mono text-cyan-300">SAMPLE DATA</div>
         <div className="flex animate-ticker-scroll py-2">
           {[...TICKERS, ...TICKERS, ...TICKERS].map((t, idx) => (
             <div key={idx} className="flex items-center gap-2 px-6 whitespace-nowrap text-[11px] font-mono shrink-0">

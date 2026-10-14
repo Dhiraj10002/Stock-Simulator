@@ -24,7 +24,8 @@ export function mountLandingScroll(root: HTMLElement) {
   const $ = <T extends HTMLElement = HTMLElement>(selector: string) => root.querySelector<T>(selector);
   const all = <T extends HTMLElement = HTMLElement>(selector: string) => [...root.querySelectorAll<T>(selector)];
   const sections = all("[data-scroll-scenes]");
-  const media = matchMedia("(min-width:961px) and (min-height:801px) and (prefers-reduced-motion:no-preference)");
+  // Use one desktop/tablet breakpoint; viewport height must not disable chapters.
+  const media = matchMedia("(min-width:768px) and (prefers-reduced-motion:no-preference)");
   const reduced = matchMedia("(prefers-reduced-motion:reduce)");
   const current = new Map<HTMLElement, number>();
   const visible = new Set<HTMLElement>();

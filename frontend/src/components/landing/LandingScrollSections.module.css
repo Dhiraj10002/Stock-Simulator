@@ -198,7 +198,7 @@
 .root :global(.scene-progress) { height:3px;margin-top:15px;border-radius:5px;background:#ffffff09;overflow:hidden }
 .root :global(.scene-progress i) { display:block;width:100%;height:100%;transform-origin:left;transform:scaleX(var(--scene-progress,0));background:linear-gradient(90deg,#16b5cd,#55cfc2,#9979ed);border-radius:5px }
 .root:global(.scroll-enhanced) :global(.feature-stage) { display:block }
-@media(min-width:961px) and (min-height:801px) and (prefers-reduced-motion:no-preference) {
+@media(min-width:768px) and (prefers-reduced-motion:no-preference) {
 .root:global(.scroll-enhanced) :global(.scroll-section) { height:calc(var(--chapters,3) * 62svh + 100svh) }
 .root:global(.scroll-enhanced) :global(.scroll-pin) { position:sticky;top:var(--scroll-top);min-height:calc(100svh - var(--scroll-top));padding:23px 0;display:flex;align-items:center }
 .root:global(.scroll-enhanced) :global(.scroll-pin>.wrap) { width:min(1200px,calc(100% - 100px)) }
@@ -221,7 +221,7 @@
 .root :global(.news-chips) { grid-column:2;grid-row:3;align-self:end;margin:0 }
 .root :global(.watch-items) { grid-column:2;grid-row:1/4;align-self:center }
 }
-@media(min-width:961px) and (max-width:1100px) {
+@media(min-width:768px) and (max-width:1100px) {
 .root:global(.scroll-enhanced) :global(.scroll-pin>.wrap) { width:calc(100% - 70px) }
 .root :global(.feature-chapter-layout) { grid-template-columns:175px 1fr;gap:25px }
 .root :global(.feature) { padding:26px }
@@ -231,7 +231,7 @@
 .root :global(.story-quote) { font-size:25px }
 .root :global(.mini-metric strong) { font-size:29px }
 }
-@media(min-width:961px) and (min-height:801px) and (max-height:950px) and (prefers-reduced-motion:no-preference) {
+@media(min-width:768px) and (max-height:950px) and (prefers-reduced-motion:no-preference) {
 .root:global(.scroll-enhanced) :global(.scroll-pin) { padding:12px 0 }
 .root :global(.section-head) { margin-bottom:18px }
 .root :global(.section-head h2) { font-size:34px;margin-top:14px }
@@ -262,7 +262,7 @@
 .root :global(.scroll-meta) { margin-top:17px }
 .root :global(.scene-progress) { margin-top:11px }
 }
-@media(max-width:960px),(max-height:800px) {
+@media(max-width:767px) {
 .root :global(.wrap) { width:calc(100% - 40px) }
 .root :global(.scroll-pin:before) { font-size:100px;top:20px;right:5% }
 .root :global(.how-grid) { grid-template-columns:1fr;gap:25px }
@@ -379,7 +379,7 @@
 .root:not(:global(.scroll-enhanced)) :global(.how-panel[hidden]) { display:block!important; }
 
 /* Balanced desktop scale based on the existing hero/platform composition. */
-@media (min-width:961px) and (min-height:801px) and (prefers-reduced-motion:no-preference) {
+@media (min-width:768px) and (prefers-reduced-motion:no-preference) {
   .root:global(.scroll-enhanced) :global(.scroll-pin) {
     height:calc(100svh - var(--scroll-top));
     min-height:0;
@@ -476,7 +476,7 @@
 }
 
 /* Smaller desktop viewports retain the same frame without clipping controls. */
-@media (min-width:961px) and (min-height:801px) and (max-height:950px) and (prefers-reduced-motion:no-preference) {
+@media (min-width:768px) and (max-height:950px) and (prefers-reduced-motion:no-preference) {
   .root:global(.scroll-enhanced) :global(.scroll-pin) { padding:12px 0; }
   .root :global(.section-head h2) { font-size:clamp(32px,3vw,42px); }
   .root :global(.section-head > p) { font-size:12px;margin-top:8px; }
@@ -493,6 +493,83 @@
 }
 
 /* Keep compact desktop widths usable while bounding large-screen layouts. */
-@media (min-width:961px) and (max-width:1279px) and (min-height:801px) and (prefers-reduced-motion:no-preference) {
+@media (min-width:768px) and (max-width:1279px) and (prefers-reduced-motion:no-preference) {
   .root:global(.scroll-enhanced) :global(.scroll-pin > .wrap) { width:calc(100% - 64px); }
+}
+
+
+/* Tablets keep the same two-column chapters as laptops and larger desktops. */
+@media (min-width:768px) and (max-width:1023px) and (prefers-reduced-motion:no-preference) {
+  .root :global(.feature-chapter-layout) { grid-template-columns:160px minmax(0,1fr);gap:20px; }
+  .root :global(.chapter-tab) { padding:12px;font-size:11px;gap:8px; }
+  .root :global(.chapter-tab small) { font-size:9px; }
+  .root :global(.how-grid) { gap:22px; }
+  .root :global(.step) { grid-template-columns:30px 1fr;gap:10px;padding:12px; }
+  .root :global(.step-number) { width:30px;height:30px;font-size:10px; }
+  .root :global(.step-body strong) { font-size:15px; }
+  .root :global(.step-body > span) { font-size:10px; }
+  .root:global(.scroll-enhanced) :global(.scroll-feature-panel) { padding:20px;column-gap:18px; }
+  .root :global(.feature h3) { font-size:24px; }
+  .root :global(.feature p) { font-size:11px; }
+  .root :global(.feature-products) { gap:5px;margin-top:14px; }
+  .root :global(.feature-products button) { padding:8px;font-size:8px; }
+  .root :global(.mini-terminal) { padding:14px; }
+  .root :global(.mini-terminal-price strong) { font-size:26px; }
+  .root :global(.mini-chart) { height:120px; }
+  .root :global(.ai-bubble) { padding:18px;font-size:14px;min-height:200px; }
+  .root :global(.ai-prompt button) { padding:8px;font-size:10px; }
+  .root :global(.news-list),
+  .root :global(.watch-items) { padding:16px; }
+  .root :global(.news-preview-row) { padding:14px 0; }
+  .root :global(.news-preview-row strong),
+  .root :global(.watch-item span) { font-size:11px; }
+  .root :global(.story-content) { gap:24px; }
+  .root :global(.story-quote) { font-size:24px; }
+  .root :global(.story-map) { padding:18px; }
+  .root :global(.story-map h4) { font-size:21px; }
+  .root :global(.story-path div) { font-size:10px; }
+}
+
+/* Short desktop viewports retain pinning instead of switching to mobile cards. */
+@media (min-width:768px) and (max-height:800px) and (prefers-reduced-motion:no-preference) {
+  .root:global(.scroll-enhanced) :global(.scroll-pin) { padding:8px 0; }
+  .root :global(.section-head) { margin-bottom:12px; }
+  .root :global(.section-head h2) { font-size:clamp(28px,2.6vw,36px);margin-top:9px; }
+  .root :global(.section-head > p) { font-size:11px;line-height:1.5;margin-top:7px; }
+  .root :global(.eyebrow) { padding:5px 10px;font-size:8px; }
+  .root :global(.how-panel) { padding:16px 20px; }
+  .root :global(.wallet-total) { font-size:34px;margin:10px 0; }
+  .root :global(.wallet-summary div) { padding:12px; }
+  .root :global(.wallet-foot) { margin-top:12px; }
+  .root :global(.order-field) { padding:6px 0; }
+  .root :global(.order-button) { padding:10px;font-size:11px; }
+  .root :global(.order-result) { font-size:9px; }
+  .root :global(.insight-chart) { height:85px;margin:10px 0; }
+  .root :global(.insight-feedback) { padding:12px;font-size:10px; }
+  .root :global(.feature h3) { font-size:clamp(24px,2vw,30px);margin:16px 0 10px; }
+  .root :global(.mini-chart) { height:110px;margin:12px 0; }
+  .root :global(.ai-bubble) { min-height:190px;font-size:14px;padding:18px; }
+  .root :global(.tiny-bars) { height:110px; }
+  .root :global(.news-list),
+  .root :global(.watch-items) { padding:18px; }
+  .root :global(.news-preview-row) { padding:12px 0; }
+  .root :global(.story-shell) { padding-top:20px; }
+  .root :global(.story-quote) { font-size:24px;margin:12px 0; }
+  .root :global(.story-person) { margin-top:12px; }
+  .root :global(.story-map) { padding:18px; }
+  .root :global(.story-path) { gap:12px; }
+  .root :global(.story-tabs button) { min-height:50px;padding:10px 14px; }
+  .root :global(.scroll-meta) { margin-top:10px; }
+  .root :global(.scene-progress) { margin-top:8px; }
+}
+
+/* At extreme zoom/short heights, keep content readable and reachable by scrolling. */
+@media (min-width:768px) and (prefers-reduced-motion:no-preference) {
+  .root:global(.scroll-enhanced) :global(.how-panel) { overflow-y:auto;justify-content:safe center;scrollbar-width:thin; }
+  .root:global(.scroll-enhanced) :global(.scroll-feature-panel),
+  .root:global(.scroll-enhanced) :global(.story-shell) { overflow-y:auto;scrollbar-width:thin; }
+}
+@media (min-width:768px) and (max-height:650px) and (prefers-reduced-motion:no-preference) {
+  .root :global(.story-content) { flex-shrink:0;min-height:min-content; }
+  .root :global(.how-panel) { flex-shrink:1; }
 }
