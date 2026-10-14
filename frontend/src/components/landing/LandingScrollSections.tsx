@@ -881,7 +881,7 @@ export default function LandingScrollSections() {
                         {"First-time market learner"}
                       </strong>
                       <small>
-                        {"Example persona · Fictional quote"}
+                        {"Learning perspectives · Share your feedback"}
                       </small>
                     </div>
                   </div>
