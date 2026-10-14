@@ -84,7 +84,7 @@ test("reduced motion uses local chapters without scroll hijacking or 3D transfor
 });
 
 for (const viewport of [{ width: 1920, height: 1080 }, { width: 1440, height: 900 }, { width: 1040, height: 820 }]) {
-  test(`scroll sections fill the ${viewport.width}×${viewport.height} desktop canvas without clipped content`, async ({ page }) => {
+  test(`scroll sections fill the ${viewport.width}×${viewport.height} desktop canvas at reference scale without clipped content`, async ({ page }) => {
     await page.setViewportSize(viewport);
     await page.goto("/");
     await expect(page.locator(".landing-scroll-sections")).toHaveClass(/scroll-enhanced/);
@@ -104,10 +104,16 @@ for (const viewport of [{ width: 1920, height: 1080 }, { width: 1440, height: 90
           const content = section.querySelector<HTMLElement>(section.id === "how" ? ".how-panel:not([hidden])" : section.id === "features" ? ".scroll-feature-panel:not([hidden])" : ".story-shell")!;
           return { wrap: wrap.getBoundingClientRect().toJSON(), card: card.getBoundingClientRect().toJSON(), offset, overflow: content.scrollHeight - content.clientHeight, pinBottom: pin.getBoundingClientRect().bottom };
         });
-        expect(bounds.wrap.width).toBeGreaterThan(viewport.width * 0.92);
-        expect(bounds.wrap.top - bounds.offset).toBeLessThan(25);
+        // Reference screenshots use a centered composition, not edge-to-edge cards.
+        const minWidth = viewport.width >= 1600 ? 0.66 : viewport.width >= 1280 ? 0.8 : 0.9;
+        const maxWidth = viewport.width >= 1600 ? 0.78 : viewport.width >= 1280 ? 0.9 : 0.96;
+        expect(bounds.wrap.width).toBeGreaterThan(viewport.width * minWidth);
+        expect(bounds.wrap.width).toBeLessThan(viewport.width * maxWidth);
+        expect(bounds.wrap.top - bounds.offset).toBeGreaterThanOrEqual(10);
+        expect(bounds.wrap.top - bounds.offset).toBeLessThan(160);
         expect(bounds.pinBottom).toBeLessThanOrEqual(viewport.height + 1);
-        expect(bounds.card.height).toBeGreaterThan((viewport.height - bounds.offset) * 0.45);
+        expect(bounds.card.height).toBeGreaterThan((viewport.height - bounds.offset) * 0.4);
+        expect(bounds.card.height).toBeLessThan((viewport.height - bounds.offset) * 0.76);
         expect(bounds.card.bottom).toBeLessThanOrEqual(viewport.height + 1);
         expect(bounds.overflow).toBeLessThanOrEqual(2);
       }
