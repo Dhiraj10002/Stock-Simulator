@@ -53,3 +53,7 @@ bin/
 backups/
 *-evidence.json
 artifacts/
+
+# Local experiments and duplicate planning drafts
+/scratch/
+/STOCK_SIMULATOR_PLAN (1).md

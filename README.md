@@ -1,6 +1,28 @@
 # Stock Simulator 📈
 
-A production-style Indian market paper trading simulator and real-time execution engine. Designed for simulation of NSE equities and NFO derivatives, the platform models live market data, strict session timings, integer-paise financial precision, intraday leverage, derivative contract settlement, and automated risk management.
+Practise Indian stock-market trading with real market data and virtual money. Stock Simulator supports NSE equities and NFO futures and options, with a paper wallet, portfolio analytics, market news and an educational AI copilot.
+
+**[Try the website](https://www.stock-simulator.in/)** · [API documentation](docs/api/openapi.yaml) · [Development plan](docs/STOCK_SIMULATOR_PLAN.md) · [Deployment guide](docs/deployment.md)
+
+![Stock Simulator homepage with a dark trading interface and virtual portfolio preview](docs/screenshots/homepage-desktop.png)
+
+*Homepage preview captured during development. The displayed prices, balances and P&L are illustrative sample data; the deployed interface may have changed.*
+
+## What you can explore
+
+- **Paper trading:** Delivery (CNC), intraday (MIS), and futures and options (NRML), with market and limit orders.
+- **Market data:** Angel One SmartAPI streaming prices during trading sessions, interactive charts, instrument search and watchlists.
+- **Virtual account:** Wallet balances, blocked funds, positions, order history, and realised/unrealised profit and loss.
+- **News Desk:** Market headlines with symbol, sector and sentiment filters.
+- **Analytics:** Daily P&L, win rate, profit factor and trade statistics.
+- **AI Trade Copilot:** Educational explanations and portfolio-risk feedback through Gemini, with a rule-based fallback.
+- **Execution checks:** Instrument eligibility, lot sizes, simulator margin, segment-specific sessions and quote freshness.
+
+Paper trading is for educational practice. It does not reproduce every aspect of real-money trading and is not investment advice.
+
+**Built with:** Next.js, React, TypeScript, Tailwind CSS, Go/Gin, Python, PostgreSQL, Redis, Angel One SmartAPI, WebSockets and lightweight-charts. Deployed with Vercel, Oracle Cloud, Docker and Caddy; tested with Playwright and GitHub Actions.
+
+The development plan lives in [docs/STOCK_SIMULATOR_PLAN.md](docs/STOCK_SIMULATOR_PLAN.md). Keep temporary experiments in an untracked root `scratch/` directory and durable project documentation in `docs/`.
 
 ## V1 interface and performance
 
@@ -325,7 +347,6 @@ python3 -m unittest discover -v -p 'test_*.py'
 - `mis_squareoff_test.go`: 15:20 order cancellations and 15:20–15:30 retry loop auto-squareoff.
 - `fno_expiry_integration_test.go`: NFO close-time derivatives expiry cash settlement and intrinsic value calculations.
 - `app_test.go`: Graceful `SIGINT`/`SIGTERM` server shutdown with background worker context propagation.
-- `app_test.go`: Graceful `SIGINT`/`SIGTERM` server shutdown with background worker context propagation.
 
 ---
 
@@ -401,9 +422,9 @@ Follow [the production deployment guide](docs/deployment.md) for environment set
 ## 📖 Documentation & Specifications
 
 - **[OpenAPI 3.0 Specification](docs/api/openapi.yaml)**: Comprehensive interactive REST API & WebSocket documentation covering all 42 platform endpoints (also served live at `/api/v1/openapi.yaml`).
-- **[Database Schema & Ledger Architecture](file:///home/dhiraj/personal/Stock-Simulator/docs/database/schema.md)**: Tables, columns, indexes, constraints, and state machine diagrams.
-- **[Cache Policy](file:///home/dhiraj/personal/Stock-Simulator/docs/cache-policy.md)**: Redis quote caching, expiry policies, and pub/sub channels.
-- **[Production Deployment Guide](file:///home/dhiraj/personal/Stock-Simulator/docs/deployment.md)**: Container orchestration, healthcheck probes, and security hardening.
+- **[Database Schema & Ledger Architecture](docs/database/schema.md)**: Tables, columns, indexes, constraints, and state machine diagrams.
+- **[Cache Policy](docs/cache-policy.md)**: Redis quote caching, expiry policies, and pub/sub channels.
+- **[Production Deployment Guide](docs/deployment.md)**: Container orchestration, healthcheck probes, and security hardening.
 
 ---
 
