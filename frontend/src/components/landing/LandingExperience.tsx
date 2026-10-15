@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
+import { mountLandingNavigation } from "./landing-navigation";
 
 const SpatialCanvas = dynamic(() => import("./SpatialCanvas"), { ssr: false });
 const AuthModal = dynamic(() => import("@/components/auth/AuthModal"), { ssr: false });
@@ -78,11 +79,7 @@ export default function LandingExperience({ children }: { children: ReactNode })
     const updateScroll = () => {
       scrollFrame = 0;
       if (document.hidden) return;
-      const active = [...sections].reverse().find(section => section.getBoundingClientRect().top <= 180)?.id || "hero";
-      for (const link of links) {
-        if (link.dataset.landingNav === active) link.setAttribute("aria-current", "location");
-        else link.removeAttribute("aria-current");
-      }
+      navigation.update();
       if (deck && !motion.matches && finePointer.matches) {
         const rect = deck.getBoundingClientRect();
         if (rect.bottom > 0 && rect.top < innerHeight) {
@@ -93,6 +90,7 @@ export default function LandingExperience({ children }: { children: ReactNode })
       }
     };
     const scroll = () => { if (!scrollFrame) scrollFrame = requestAnimationFrame(updateScroll); };
+    const navigation = mountLandingNavigation(root, sections, links, scroll);
     const visibility = () => {
       root.dataset.pageHidden = String(document.hidden);
       if (document.hidden) { cancelAnimationFrame(pointerFrame); cancelAnimationFrame(scrollFrame); pointerFrame = scrollFrame = 0; }
@@ -111,6 +109,7 @@ export default function LandingExperience({ children }: { children: ReactNode })
     finePointer.addEventListener("change", preference);
     scroll();
     return () => {
+      navigation.dispose();
       cancelAnimationFrame(pointerFrame); cancelAnimationFrame(scrollFrame); observer.disconnect();
       root.removeEventListener("pointermove", pointerMove); root.removeEventListener("pointerleave", pointerLeave);
       window.removeEventListener("scroll", scroll); document.removeEventListener("visibilitychange", visibility);
