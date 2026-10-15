@@ -4,9 +4,10 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { mountLandingNavigation } from "./landing-navigation";
+import { loadAuthModal } from "@/components/auth/loadAuthModal";
 
 const SpatialCanvas = dynamic(() => import("./SpatialCanvas"), { ssr: false });
-const AuthModal = dynamic(() => import("@/components/auth/AuthModal"), { ssr: false });
+const AuthModal = dynamic(loadAuthModal, { ssr: false });
 
 // Static sections are passed from the server. Pointer and scroll updates touch
 // only CSS variables/attributes, without rendering the landing page again.
