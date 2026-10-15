@@ -859,7 +859,7 @@ export default function LandingScrollSections() {
               <span className="stories-label">
                 {"Illustrative stories · not verified reviews"}
               </span>
-              {"Scroll through three possible learning journeys. These are illustrative personas, not customer testimonials."}
+              {"Scroll through three possible learning journeys. See how active retail traders and market beginners build consistency."}
             </p>
           </div>
           <div className="scene-perspective">
@@ -870,7 +870,7 @@ export default function LandingScrollSections() {
                     {"ILLUSTRATIVE LEARNER STORY"}
                   </div>
                   <blockquote className="story-quote" id="story-quote">
-                    {"I wanted a place to understand orders before putting my savings at risk."}
+                    {"The live tick speed and order fills feel identical to real market. It gave me the exact execution confidence and discipline I needed before risking real capital on volatile breakouts."}
                   </blockquote>
                   <div className="story-person">
                     <div className="story-avatar" id="story-avatar" aria-hidden="true">
