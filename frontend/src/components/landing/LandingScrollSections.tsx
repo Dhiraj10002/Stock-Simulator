@@ -870,7 +870,7 @@ export default function LandingScrollSections() {
                     {"ILLUSTRATIVE LEARNER STORY"}
                   </div>
                   <blockquote className="story-quote" id="story-quote">
-                    {"The live tick speed and order fills feel identical to real market. It gave me the exact execution confidence and discipline I needed before risking real capital on volatile breakouts."}
+                    {"I wanted a place to understand orders before putting my savings at risk.."}
                   </blockquote>
                   <div className="story-person">
                     <div className="story-avatar" id="story-avatar" aria-hidden="true">
