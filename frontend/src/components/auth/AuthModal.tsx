@@ -26,12 +26,12 @@ interface AuthModalProps {
 
 // Harmonious oceanic chromatic palette (Electric Cyan, Sky Blue, Royal Sapphire, Mint Jade, Diamond White)
 const PARTICLE_PALETTE = [
-  { prefix: "rgba(6, 182, 212, ", hex: "#06b6d4" },   // Electric Cyan
-  { prefix: "rgba(14, 165, 233, ", hex: "#0ea5e9" },  // Sky Blue
-  { prefix: "rgba(59, 130, 246, ", hex: "#3b82f6" },  // Royal Sapphire
-  { prefix: "rgba(16, 185, 129, ", hex: "#10b981" },  // Mint Jade
-  { prefix: "rgba(45, 212, 191, ", hex: "#2dd4bf" },  // Vibrant Teal
-  { prefix: "rgba(255, 255, 255, ", hex: "#ffffff" },  // Diamond White
+  { hex: "#06b6d4" },   // Electric Cyan
+  { hex: "#0ea5e9" },  // Sky Blue
+  { hex: "#3b82f6" },  // Royal Sapphire
+  { hex: "#10b981" },  // Mint Jade
+  { hex: "#2dd4bf" },  // Vibrant Teal
+  { hex: "#ffffff" },  // Diamond White
 ];
 
 export default function AuthModal({
@@ -66,6 +66,10 @@ export default function AuthModal({
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
+    // Reuse the same circle geometry and RGB colours without rebuilding paths
+    // or parsing a new rgba() string for every visible particle on every frame.
+    const circle = new Path2D();
+    circle.arc(0, 0, 1, 0, Math.PI * 2);
 
     const reduced = matchMedia("(prefers-reduced-motion: reduce)");
     const mobile = matchMedia("(max-width: 767px)");
@@ -89,7 +93,6 @@ export default function AuthModal({
         y: (Math.random() - 0.5) * 2400,
         z: Math.random() * 1000 + 1,
         size: Math.random() * 2.6 + 0.8,
-        colorPrefix: colorObj.prefix,
         colorHex: colorObj.hex,
       };
     });
@@ -103,6 +106,7 @@ export default function AuthModal({
       }
       lastTime = time;
 
+      ctx.resetTransform();
       ctx.clearRect(0, 0, width, height);
 
       const fov = 400;
@@ -128,12 +132,14 @@ export default function AuthModal({
           const alpha = Math.min(1, Math.max(0.12, (1 - p.z / 1000) * 1.35));
           const rad = Math.max(0.65, p.size * k * 0.85);
 
-          ctx.beginPath();
-          ctx.arc(x, y, rad, 0, Math.PI * 2);
-          ctx.fillStyle = `${p.colorPrefix}${alpha})`;
-          ctx.fill();
+          ctx.setTransform(rad, 0, 0, rad, x, y);
+          ctx.globalAlpha = alpha;
+          ctx.fillStyle = p.colorHex;
+          ctx.fill(circle);
         }
       }
+      ctx.resetTransform();
+      ctx.globalAlpha = 1;
 
       if (!reduced.matches) animId = requestAnimationFrame(render);
     };

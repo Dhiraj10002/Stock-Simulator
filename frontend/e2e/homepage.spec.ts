@@ -59,6 +59,15 @@ test("original login modal loads on demand and reduced-motion particles stay sti
   expect(await page.locator("canvas").evaluate((canvas: HTMLCanvasElement) => canvas.toDataURL())).toBe(pixels);
   await page.getByRole("link", { name: "Log In", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Welcome to Stock Simulator", exact: true })).toBeVisible();
+  // The modal still draws its original static particles with reduced motion.
+  const authCanvas = page.locator("canvas").last();
+  await expect.poll(() => authCanvas.evaluate((canvas: HTMLCanvasElement) => {
+    const data = canvas.getContext("2d")!.getImageData(0, 0, canvas.width, canvas.height).data;
+    return data.some((value, index) => index % 4 === 3 && value > 0);
+  })).toBe(true);
+  const authPixels = await authCanvas.evaluate((canvas: HTMLCanvasElement) => canvas.toDataURL());
+  await page.waitForTimeout(150);
+  expect(await authCanvas.evaluate((canvas: HTMLCanvasElement) => canvas.toDataURL())).toBe(authPixels);
   await page.getByRole("button", { name: "Close auth modal" }).click();
   await expect(page.getByRole("heading", { name: "Welcome to Stock Simulator", exact: true })).toHaveCount(0);
   await page.getByRole("link", { name: "Sign Up", exact: true }).click();
