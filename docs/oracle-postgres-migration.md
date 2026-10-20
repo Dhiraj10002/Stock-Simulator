@@ -91,6 +91,14 @@ and `source_fingerprint_matches` to be true (the latter covers either a legacy
 fingerprint or the full manifest). Keep the dump plus manifest somewhere outside
 the Oracle VM, with access controls. An on-VM dump by itself is not disaster recovery.
 
+On Fedora, the verifier copies the dump into the disposable container rather than
+bind-mounting a home-directory file. This avoids SELinux file-label restrictions
+without disabling SELinux or changing the backup's labels. Images are explicitly
+qualified with `docker.io/library/` for Docker-compatible runtime name resolution.
+If verification fails, share only its JSON `stage`/`code`/`exit_code`. For example,
+`container_start/docker_unavailable` means Docker startup failed; it is not evidence
+of a bad database backup. No raw SQL errors or account rows are emitted.
+
 ## Database profiling and application acceptance
 
 After staging prints a successful result, generate a separate candidate env:
