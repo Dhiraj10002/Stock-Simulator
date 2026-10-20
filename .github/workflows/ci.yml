@@ -25,6 +25,10 @@ jobs:
     name: Go Backend & Integration Tests
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        postgres: [16, 18]
     defaults:
       run:
         working-directory: backend
@@ -38,13 +42,13 @@ jobs:
       # Job-level services pull before checkout, so they cannot use fallback.
       - name: Start disposable PostgreSQL and Redis with registry fallback
         run: |
-          python3 ../scripts/ci_pull_images.py postgres:16-alpine redis:7-alpine
+          python3 ../scripts/ci_pull_images.py postgres:${{ matrix.postgres }}-alpine redis:7-alpine
           docker run --detach --pull never --name ci-postgres \
             -p 127.0.0.1:5433:5432 \
             -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=testdb \
             --health-cmd "pg_isready -U postgres -d testdb" \
             --health-interval 2s --health-timeout 5s --health-retries 15 \
-            postgres:16-alpine
+            postgres:${{ matrix.postgres }}-alpine
           docker run --detach --pull never --name ci-redis \
             -p 127.0.0.1:6380:6379 \
             --health-cmd "redis-cli ping" \
@@ -64,6 +68,12 @@ jobs:
               exit 1
             fi
           done
+      - name: Verify PG18 Oracle staging, snapshot consistency and independent restore
+        if: matrix.postgres == 18
+        run: |
+          python3 ../scripts/ci_pull_images.py postgres:18-bookworm
+          python3 ../scripts/smoke_oracle_postgres.py
+
       - uses: actions/setup-go@v5
         with:
           go-version: '1.25.x'
@@ -105,12 +115,12 @@ jobs:
           docker exec ci-postgres pg_dump -U postgres -d testdb --format=custom > "$RUNNER_TEMP/accounting.dump"
           python3 -c 'import sys; sys.path.insert(0, "../scripts"); from verify_backup_restore import FINGERPRINT_SQL; print(FINGERPRINT_SQL)' > "$RUNNER_TEMP/fingerprint.sql"
           docker exec -i ci-postgres psql -U postgres -d testdb -At -v ON_ERROR_STOP=1 < "$RUNNER_TEMP/fingerprint.sql" > "$RUNNER_TEMP/fingerprint.txt"
-          python3 ../scripts/verify_backup_restore.py "$RUNNER_TEMP/accounting.dump" --expected-fingerprint "$RUNNER_TEMP/fingerprint.txt" > "$RUNNER_TEMP/restore-verification.json" || { cat "$RUNNER_TEMP/restore-verification.json"; exit 1; }
+          python3 ../scripts/verify_backup_restore.py "$RUNNER_TEMP/accounting.dump" --postgres-major ${{ matrix.postgres }} --expected-fingerprint "$RUNNER_TEMP/fingerprint.txt" > "$RUNNER_TEMP/restore-verification.json" || { cat "$RUNNER_TEMP/restore-verification.json"; exit 1; }
           cat "$RUNNER_TEMP/restore-verification.json"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: backend-performance-measurements
+          name: backend-performance-measurements-pg${{ matrix.postgres }}
           path: |
             ${{ runner.temp }}/backend-benchmarks.txt
             ${{ runner.temp }}/database-profile.json

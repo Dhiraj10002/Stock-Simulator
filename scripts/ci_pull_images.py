@@ -7,7 +7,7 @@ import sys
 
 
 CI_IMAGES = frozenset({
-    "postgres:16-alpine", "redis:7-alpine", "caddy:2-alpine",
+    "postgres:16-alpine", "postgres:18-alpine", "postgres:18-bookworm", "redis:7-alpine", "caddy:2-alpine",
     "debian:bookworm-slim", "node:22-alpine",
 })
 REGISTRIES = ("docker.io/library/", "public.ecr.aws/docker/library/")

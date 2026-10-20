@@ -20,6 +20,7 @@ class ProductionBootstrapTest(unittest.TestCase):
         self.env_file = Path(temp.name) / ".env"
         self.env_file.write_text("JWT_SECRET=private-test-value-not-for-output\n")
         self.calls = []
+        self.api_domain = "api.trading.test"
         self.master = {"data": {"status": "ACTIVE", "active_version": "test-master",
                                 "activated_at": "2026-10-06T00:00:00Z", "total_instruments": 100}}
         self.wait = patch.object(BOOTSTRAP, "wait_json", side_effect=self.wait_json).start()
@@ -32,7 +33,7 @@ class ProductionBootstrapTest(unittest.TestCase):
         self.assertEqual(kwargs["env"]["PRODUCTION_ENV_FILE"], str(self.env_file))
         if "config" in command:
             self.assertTrue(kwargs["capture_output"])
-            config = {"services": {"caddy": {"environment": {"API_DOMAIN": "api.trading.test"}}}}
+            config = {"services": {"caddy": {"environment": {"API_DOMAIN": self.api_domain}}}}
             return subprocess.CompletedProcess(command, 0, json.dumps(config), "")
         return subprocess.CompletedProcess(command, 0, "", "")
 
@@ -64,6 +65,31 @@ class ProductionBootstrapTest(unittest.TestCase):
         BOOTSTRAP.bootstrap(self.env_file, timeout=5)
         self.assertFalse(any(isinstance(call, list) and "/sync-instruments" in call for call in self.calls))
         self.assertEqual(len(self.worker_starts()), 1)
+
+    def test_two_caddy_domains_use_primary_for_health_and_readiness(self):
+        self.api_domain = "api.stock-simulator.in, stocksim-api.duckdns.org"
+        BOOTSTRAP.bootstrap(self.env_file, timeout=5)
+        self.assertIn("https://api.stock-simulator.in/health", self.calls)
+        self.assertIn("https://api.stock-simulator.in/ready", self.calls)
+        self.assertFalse(any(isinstance(call, str) and "," in call for call in self.calls))
+
+    def test_local_database_marker_starts_postgres_before_backend(self):
+        self.env_file.write_text("ORACLE_POSTGRES_ENABLED=true\n")
+        (self.env_file.parent / ".env.oracle-db").write_text("private-test-secret")
+        with patch.object(BOOTSTRAP, "ROOT", self.env_file.parent):
+            BOOTSTRAP.bootstrap(self.env_file, timeout=5)
+        starts = [call for call in self.calls if isinstance(call, list) and "up" in call]
+        self.assertEqual(starts[0][-1], "postgres")
+        self.assertEqual(starts[1][-3:], ["redis", "backend", "caddy"])
+        self.assertTrue(all("oracle-db" in call for call in starts))
+        self.assertFalse(any(isinstance(call, list) and "/sync-instruments" in call for call in self.calls))
+
+    def test_local_database_marker_without_secret_starts_nothing(self):
+        self.env_file.write_text("ORACLE_POSTGRES_ENABLED=true\n")
+        with patch.object(BOOTSTRAP, "ROOT", self.env_file.parent):
+            with self.assertRaisesRegex(RuntimeError, "prepare"):
+                BOOTSTRAP.bootstrap(self.env_file)
+        self.assertEqual(self.calls, [])
 
     def test_missing_master_stops_before_workers(self):
         self.master["data"]["activated_at"] = None

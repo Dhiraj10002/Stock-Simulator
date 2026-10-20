@@ -10,6 +10,7 @@ import subprocess
 import time
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
+from production_addresses import primary_api_hostname
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -33,15 +34,26 @@ def wait_json(url, predicate, timeout):
         time.sleep(2)
 
 
-def bootstrap(env_file, sync_master=False, timeout=180):
+def bootstrap(env_file, sync_master=False, timeout=180, oracle_postgres=False):
     env_file = Path(env_file).resolve()
     if not env_file.is_file():
         raise RuntimeError("Production env file is missing; copy .env.prod.example to .env and configure it")
     if timeout <= 0:
         raise RuntimeError("Timeout must be positive")
     environment = {**os.environ, "PRODUCTION_ENV_FILE": str(env_file)}
-    command = ["docker", "compose", "--project-directory", str(ROOT), "--env-file", str(env_file),
-               "-f", str(ROOT / "docker-compose.prod.yml")]
+    # Generated local-DB env files carry an explicit opt-in marker. Keep normal
+    # Neon deployments unchanged; never infer migration from a hostname alone.
+    oracle_postgres = oracle_postgres or bool(re.search(
+        r"(?m)^ORACLE_POSTGRES_ENABLED=true\s*$", env_file.read_text()))
+    command = ["docker", "compose", "--project-directory", str(ROOT), "--env-file", str(env_file)]
+    if oracle_postgres:
+        secret_file = ROOT / ".env.oracle-db"
+        if not secret_file.is_file():
+            raise RuntimeError("Run oracle_postgres.py prepare before enabling Oracle PostgreSQL")
+        command += ["--env-file", str(secret_file), "--profile", "oracle-db"]
+    command += ["-f", str(ROOT / "docker-compose.prod.yml")]
+    if oracle_postgres:
+        command += ["-f", str(ROOT / "deploy/oracle/docker-compose.postgres.yml")]
 
     def compose(*args, capture=False):
         return subprocess.run(command + list(args), cwd=ROOT, env=environment,
@@ -50,13 +62,11 @@ def bootstrap(env_file, sync_master=False, timeout=180):
     # Capture rendered configuration privately: it contains secrets and must
     # never be dumped to terminal logs or committed as a deployment artifact.
     config = json.loads(compose("config", "--format", "json", capture=True).stdout)
-    domain = config["services"]["caddy"]["environment"]["API_DOMAIN"]
-    if not re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?", domain) or "." not in domain:
-        raise RuntimeError("API_DOMAIN must be a DNS hostname without scheme, port or path")
-    if domain == "example.com" or domain.endswith(".example.com"):
-        raise RuntimeError("Replace the API_DOMAIN placeholder with your own DNS hostname")
+    domain = primary_api_hostname(config["services"]["caddy"]["environment"]["API_DOMAIN"])
     base = f"https://{domain}"
 
+    if oracle_postgres:
+        compose("up", "-d", "--wait", "--wait-timeout", str(timeout), "postgres")
     print("Starting Redis, backend liveness and Caddy...", flush=True)
     compose("up", "-d", "--build", "--wait", "--wait-timeout", str(timeout), "redis", "backend", "caddy")
     wait_json(base + "/health", lambda body: body.get("success") is True, timeout)
@@ -80,9 +90,10 @@ def main():
     parser.add_argument("--env-file", default=os.environ.get("PRODUCTION_ENV_FILE", str(ROOT / ".env")))
     parser.add_argument("--sync-master", action="store_true", help="Sync/activate the official master before starting workers")
     parser.add_argument("--timeout", type=int, default=180, help="Health/readiness timeout in seconds")
+    parser.add_argument("--oracle-postgres", action="store_true", help="Include opt-in private Oracle PostgreSQL service")
     args = parser.parse_args()
     try:
-        bootstrap(args.env_file, args.sync_master, args.timeout)
+        bootstrap(args.env_file, args.sync_master, args.timeout, args.oracle_postgres)
     except (RuntimeError, subprocess.CalledProcessError, HTTPError, URLError, ValueError) as error:
         parser.exit(1, f"Production bootstrap failed: {error}\n")
 

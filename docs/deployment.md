@@ -2,6 +2,10 @@
 
 The V1 production stack is Next.js on Vercel, Caddy/Go/Python workers/private Redis on an Oracle VM, and Neon PostgreSQL for durable trading state. `docker-compose.prod.yml` is the source of truth. Development may use managed Redis; production Compose deliberately uses `redis://redis:6379/0`. Upstash requires a separate, measured migration of the URL and local-service dependencies.
 
+For an opt-in migration to a private PostgreSQL 18 service on the existing Oracle
+VM, follow [the staging, backup/restore and controlled cutover runbook](oracle-postgres-migration.md).
+The optional overlay does not change the default Neon deployment or switch live data.
+
 ```mermaid
 flowchart TD
     V["Vercel frontend"] --> B["Browser"]
@@ -37,7 +41,7 @@ Generate `JWT_SECRET` with `openssl rand -hex 32`. Use the repository-root `.env
 
 | Setting | Value/purpose |
 |---|---|
-| `API_DOMAIN` | API DNS hostname, without scheme, port or path |
+| `API_DOMAIN` | API DNS hostname(s), comma-separated, without scheme, port or path. Health checks use the first hostname. |
 | `ACME_EMAIL` | Contact for automatic HTTPS certificates |
 | `DATABASE_URL` | Neon production TLS URI |
 | `JWT_SECRET` | Generated secret, at least 32 bytes; placeholders are rejected |

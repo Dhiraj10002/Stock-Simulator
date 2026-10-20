@@ -1,0 +1,49 @@
+# Opt-in only: include after docker-compose.prod.yml, with --profile oracle-db.
+# This adds a database; it DOES NOT change any application's DATABASE_URL.
+services:
+  postgres:
+    profiles: ["oracle-db"]
+    image: postgres:18-bookworm
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_DB: postgres
+      POSTGRES_PASSWORD: ${ORACLE_PG_ADMIN_PASSWORD:?Run scripts/oracle_postgres.py prepare first}
+      STOCKSIM_APP_PASSWORD: ${ORACLE_PG_APP_PASSWORD:?Run scripts/oracle_postgres.py prepare first}
+      POSTGRES_INITDB_ARGS: --data-checksums
+    command:
+      - postgres
+      - -c
+      - max_connections=40
+      - -c
+      - shared_buffers=128MB
+      - -c
+      - work_mem=4MB
+      - -c
+      - maintenance_work_mem=64MB
+      - -c
+      - max_parallel_workers_per_gather=0
+    # PostgreSQL 18 images use a version-specific PGDATA below this directory.
+    volumes:
+      - oracle_postgres_data:/var/lib/postgresql
+      - ./deploy/oracle/postgres/init-app.sh:/docker-entrypoint-initdb.d/10-app.sh:ro
+    networks:
+      - stock_sim_net
+    # No host port; accessible only on the application's private Docker bridge.
+    mem_limit: 1g
+    shm_size: 128mb
+    restart: unless-stopped
+    stop_grace_period: 60s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d postgres"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 15s
+
+volumes:
+  oracle_postgres_data:
