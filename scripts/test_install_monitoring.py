@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -68,6 +69,39 @@ class InstallMonitoringTests(unittest.TestCase):
         self.assertFalse(any("restart" in args for args in commands))
         self.assertFalse(any("--restart-worker" in args for args in commands))
         self.assertFalse(any("oracle_postgres.py" in " ".join(args) for args in commands))
+
+    def test_first_install_handles_no_existing_monitor_units(self):
+        installer = Installer(ROOT)
+        config = json.dumps({"services": {"caddy": {"environment": {"API_DOMAIN": "api.stock-simulator.in"}}}})
+        commands = []
+        def run(args, **kwargs):
+            commands.append(args)
+            if "list-unit-files" in args:
+                # Real systemctl returns 1 for an unmatched names filter.
+                filtered = any(name in args for name in UNITS)
+                return subprocess.CompletedProcess(args, 1 if filtered else 0, "" if filtered else "ssh.service enabled enabled\n", "")
+            return subprocess.CompletedProcess(args, 0, "active" if "is-active" in args else "", "")
+        with patch.object(Migration, "source_url"), patch.object(Migration, "compose", return_value=config), \
+             patch("install_monitoring.subprocess.run", side_effect=run):
+            self.assertTrue(installer.install()["installed"])
+        self.assertFalse(any("stop" in args for args in commands))
+        self.assertEqual(sum("install" in args for args in commands), 3)
+
+    def test_actual_unit_install_failure_reports_specific_phase_and_exit_code(self):
+        installer = Installer(ROOT)
+        config = json.dumps({"services": {"caddy": {"environment": {"API_DOMAIN": "api.stock-simulator.in"}}}})
+        commands = []
+        def run(args, **kwargs):
+            commands.append(args)
+            return subprocess.CompletedProcess(args, 1 if "install" in args else 0, "", "sensitive raw diagnostic")
+        with patch.object(Migration, "source_url"), patch.object(Migration, "compose", return_value=config), \
+             patch("install_monitoring.subprocess.run", side_effect=run):
+            with self.assertRaises(SetupError) as error:
+                installer.install()
+        self.assertEqual(installer.phase, "install_monitor_units")
+        self.assertEqual(installer.command_exit_code, 1)
+        self.assertNotIn("sensitive", str(error.exception))
+        self.assertFalse(any("enable" in args for args in commands))
 
 
 if __name__ == "__main__":
