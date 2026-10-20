@@ -99,6 +99,8 @@ networks:
                 pass
             else:
                 raise AssertionError("modified balances incorrectly verified")
+            from smoke_oracle_cleanup import exercise_cleanup
+            exercise_cleanup(migration, container)
             print(json.dumps({"postgres_major": 18, "snapshot_during_concurrent_write": True,
                               "persistent_restart": True, "independent_restore": True,
                               "tampered_balance_rejected": True, "production_config_unchanged": True}))

@@ -4,6 +4,55 @@ The current VM has one visible CPU, 5.8 GiB RAM (4.4 GiB available in the suppli
 idle snapshot), and 33 GiB free root disk. This supports a staging trial, not a
 claim of peak capacity. Keep Neon until the entire migration is verified.
 
+## Owner-authorized demo cutover
+
+For the owner's resume demo, the owner has explicitly chosen to proceed without
+waiting for open-market acceptance. This is an operator choice, not a claim that
+peak-load or live execution acceptance passed. Existing Oracle staging and an
+independent Fedora restore have passed. Preserve the current data through a fresh
+restore, then remove only the six Dhiraj test accounts from the screenshot.
+
+Stop any local development backend, scripts or other external clients that can
+write to Neon before running this command in the ORIGINAL Oracle project checkout:
+
+```bash
+cd ~/stock-simulator-prod
+git pull --ff-only origin codex/oracle-postgres-migration
+python3 scripts/oracle_demo_cutover.py --sudo-docker --remove-dhiraj-test-users
+```
+
+This command causes maintenance downtime. It stops the existing monitor and local
+writers, takes a NEW snapshot, verifies the restored candidate, exports a separate
+runtime env, then deletes users `1,3,6,15,16,17` and their linked data. Each ID must
+also match the expected normalized screenshot name and a Dhiraj email prefix;
+otherwise the entire cleanup aborts. It does not match arbitrary similar names.
+It locks application tables, hashes every retained row before/after, and rolls back
+if an unexpected cascade changes any other data. Other accounts and the instrument
+master are preserved. PostgreSQL sequences are not reset or reused.
+
+It then exports and independently restore-verifies a NEW post-cleanup backup,
+checks Neon remained unchanged during the pause, atomically replaces root `.env`,
+and starts the existing running images by exact image ID without builds or pulls.
+The app/worker container DSNs are inspected privately to confirm Oracle is in use.
+Public health and readiness are reported separately; monitor resumes only if
+readiness passes and it had previously been active. A `migrated:true, ready:false`
+result needs readiness diagnosis; it is not an instruction to repoint to Neon.
+
+The private recovery journal, old env and image references live in
+`backups/demo_cutover_*`. A failure deliberately does not attempt an automatic
+rollback: after an app start, the target may already have written data. Share only
+the final JSON for diagnosis. A concurrent second cutover is rejected by a lock.
+Pre-cleanup backup bundles still contain the removed test data; retain privately
+for recovery, then remove them under the chosen backup retention policy.
+
+After success, copy the printed `backup_bundle` off the VM and run the Fedora
+restore verifier against its dump AND manifest. The earlier off-VM check does not
+verify this final snapshot. Only after the final off-VM restore and application
+checks pass should the owner delete this Stock-Simulator project in the Neon
+console. The script does not delete a cloud account/project, automate off-VM
+transfer or claim recurring backups are configured. Application integration stays
+PostgreSQL; frontend/Vercel does not need a database URL change.
+
 ## What the tooling does
 
 `deploy/oracle/docker-compose.postgres.yml` is an opt-in overlay. It adds PostgreSQL
