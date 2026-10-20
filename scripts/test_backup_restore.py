@@ -5,6 +5,14 @@ from unittest.mock import patch
 from verify_backup_restore import verify
 
 class BackupIsolationTests(unittest.TestCase):
+    def test_checksum_mismatch_stops_before_docker(self):
+        with tempfile.TemporaryDirectory() as folder, patch("verify_backup_restore.subprocess.run") as run:
+            backup = Path(folder) / "backup.dump"
+            backup.write_bytes(b"PGDMPdamaged")
+            with self.assertRaisesRegex(RuntimeError, "checksum"):
+                verify(backup, postgres_major=18, manifest={"dump_sha256": "wrong"})
+            run.assert_not_called()
+
     def test_rejects_plain_sql_without_starting_docker(self):
         with tempfile.TemporaryDirectory() as folder, patch("verify_backup_restore.subprocess.run") as run:
             backup = Path(folder) / "backup.dump"

@@ -64,7 +64,7 @@ networks:
                            "--env-file", str(source_env), "postgres:18-bookworm"])
             for _ in range(90):
                 try:
-                    migration.run(["exec", source_name, "pg_isready", "-U", "postgres"])
+                    migration.run(["exec", source_name, "pg_isready", "-h", "127.0.0.1", "-U", "postgres"])
                     break
                 except MigrationError:
                     time.sleep(1)

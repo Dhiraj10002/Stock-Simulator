@@ -25,8 +25,10 @@ volume. The existing app pool allows 25 connections, leaving headroom under the
 1. Reads the source DSN privately through Compose. If a running backend uses a
    different DSN, aborts. Never prints rendered config, credentials or account rows.
 2. Starts only the new PostgreSQL service. Other production containers stay running.
-3. Requires PostgreSQL 18 at source and checks extension availability. Unsupported
-   extensions or non-public application tables require review, not silent omission.
+3. Requires PostgreSQL 18 at source and checks extension availability. Preserves
+   database encoding and libc/builtin locale; compares collation versions. ICU
+   rules, unavailable locales/extensions, or non-public application tables require
+   review, not silent omission or a change to text sort/uniqueness semantics.
 4. Holds a read-only repeatable-read transaction and exports its snapshot. Both
    all-public-table fingerprints and `pg_dump` use that SAME snapshot, so production
    can continue writing during staging without causing false comparisons.

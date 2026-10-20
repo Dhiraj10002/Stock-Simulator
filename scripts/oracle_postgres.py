@@ -16,11 +16,12 @@ import secrets
 import select
 import subprocess
 import tempfile
-import time
-from urllib.parse import urlsplit
+from urllib.parse import parse_qsl, unquote, urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 IMAGE = "postgres:18-bookworm"
+
+
 class MigrationError(RuntimeError):
     """A curated diagnostic safe to show without connection credentials."""
 
@@ -39,6 +40,41 @@ def quote_ident(value):
 
 def quote_literal(value):
     return "'" + value.replace("'", "''") + "'"
+
+
+def client_environment(source):
+    # PGDATABASE is a database NAME, not a portable substitute for a URI. Also
+    # provide PGUSER explicitly: the unprivileged client UID need not be in passwd.
+    uri = urlsplit(source)
+    if not uri.hostname or not uri.username or not uri.path.lstrip('/'):
+        raise MigrationError("source URI requires host, user and database")
+    values = {"PGHOST": uri.hostname, "PGPORT": str(uri.port or 5432),
+              "PGUSER": unquote(uri.username), "PGDATABASE": unquote(uri.path.lstrip('/')),
+              "PGPASSWORD": unquote(uri.password or ""), "PGCONNECT_TIMEOUT": "15"}
+    options = {"sslmode": "PGSSLMODE", "channel_binding": "PGCHANNELBINDING", "options": "PGOPTIONS",
+               "application_name": "PGAPPNAME", "connect_timeout": "PGCONNECT_TIMEOUT",
+               "sslrootcert": "PGSSLROOTCERT", "sslcert": "PGSSLCERT", "sslkey": "PGSSLKEY",
+               "sslpassword": "PGSSLPASSWORD", "sslnegotiation": "PGSSLNEGOTIATION",
+               "target_session_attrs": "PGTARGETSESSIONATTRS", "gssencmode": "PGGSSENCMODE",
+               "client_encoding": "PGCLIENTENCODING", "require_auth": "PGREQUIREAUTH"}
+    for key, value in parse_qsl(uri.query, keep_blank_values=True):
+        if key not in options:
+            raise MigrationError("source URI option requires explicit client compatibility review: " + key)
+        values[options[key]] = value
+    if any("\n" in value or "\r" in value for value in values.values()):
+        raise MigrationError("multiline connection parameters are not supported")
+    return "".join(key + "=" + value + "\n" for key, value in values.items())
+
+
+def create_database_sql(name, owner, locale):
+    if locale["provider"] not in ("b", "c"):
+        raise MigrationError("ICU database locale/rules require explicit compatibility review")
+    provider = " LOCALE_PROVIDER libc" if locale["provider"] == "c" else (
+        " LOCALE_PROVIDER builtin BUILTIN_LOCALE " + quote_literal(locale["name"]))
+    return ("CREATE DATABASE " + quote_ident(name) + " OWNER " + quote_ident(owner)
+            + " TEMPLATE template0 ENCODING " + quote_literal(locale["encoding"])
+            + provider + " LC_COLLATE " + quote_literal(locale["collate"])
+            + " LC_CTYPE " + quote_literal(locale["ctype"]) + ";")
 
 
 def manifest_sql(tables):
@@ -62,17 +98,18 @@ TABLES_SQL = """SELECT COALESCE(json_agg(tablename ORDER BY tablename COLLATE "C
 FROM pg_tables WHERE schemaname='public';"""
 CATALOG_SQL = """SELECT json_build_object(
 'version', current_setting('server_version_num')::int,
-'extensions', (SELECT json_agg(json_build_object('name',extname,'version',extversion) ORDER BY extname) FROM pg_extension),
+'locale', (SELECT json_build_object('encoding',pg_encoding_to_char(encoding),'provider',datlocprovider,'collate',datcollate,'ctype',datctype,'name',datlocale,'version',datcollversion) FROM pg_database WHERE datname=current_database()),
+'extensions', (SELECT json_agg(json_build_object('name',extname,'version',extversion) ORDER BY extname COLLATE "C") FROM pg_extension),
 'other_tables', (SELECT count(*) FROM pg_tables WHERE schemaname NOT IN ('public','pg_catalog','information_schema') AND schemaname NOT LIKE 'pg_toast%'),
-'indexes', (SELECT COALESCE(json_agg(indexdef ORDER BY indexname), '[]') FROM pg_indexes WHERE schemaname='public'),
-'constraints', (SELECT COALESCE(json_agg(json_build_object('table',r.relname,'name',c.conname,'definition',pg_get_constraintdef(c.oid),'validated',c.convalidated) ORDER BY r.relname,c.conname), '[]') FROM pg_constraint c JOIN pg_class r ON r.oid=c.conrelid JOIN pg_namespace n ON n.oid=r.relnamespace WHERE n.nspname='public'));
+'indexes', (SELECT COALESCE(json_agg(indexdef ORDER BY indexname COLLATE "C"), '[]') FROM pg_indexes WHERE schemaname='public'),
+'constraints', (SELECT COALESCE(json_agg(json_build_object('table',r.relname,'name',c.conname,'definition',pg_get_constraintdef(c.oid),'validated',c.convalidated) ORDER BY r.relname COLLATE "C",c.conname COLLATE "C"), '[]') FROM pg_constraint c JOIN pg_class r ON r.oid=c.conrelid JOIN pg_namespace n ON n.oid=r.relnamespace WHERE n.nspname='public'));
 """
 
 
 def compare_manifest(expected, tables, catalog):
     if expected["tables"] != tables:
         raise MigrationError("restored table counts/content differ from the exported source snapshot")
-    for field in ("indexes", "constraints", "extensions"):
+    for field in ("indexes", "constraints", "extensions") + (("locale",) if "locale" in expected["catalog"] else ()):
         if expected["catalog"][field] != catalog[field]:
             raise MigrationError("restored " + field + " differ from source")
 
@@ -173,7 +210,7 @@ class Migration:
         name = "stocksim-pg-client-" + secrets.token_hex(6)
         with tempfile.TemporaryDirectory(prefix="stocksim-pg-") as private:
             env = Path(private) / "client.env"
-            private_write(env, "PGDATABASE=" + source + "\nPGCONNECT_TIMEOUT=15\nPGOPTIONS=-c timezone=UTC\n")
+            private_write(env, client_environment(source))
             try:
                 self.run(["run", "--detach", "--name", name, "--network", next(iter(networks)),
                           "--user", str(os.getuid()) + ":" + str(os.getgid()),
@@ -198,7 +235,7 @@ class Migration:
                 raise MigrationError("source snapshot connection failed")
             return line
         try:
-            snapshot = query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY; SELECT pg_export_snapshot();")
+            snapshot = query("SET timezone='UTC'; SET extra_float_digits=3; BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY; SELECT pg_export_snapshot();")
             if not re.fullmatch(r"[0-9A-Fa-f-]+", snapshot):
                 raise MigrationError("invalid exported snapshot")
             yield snapshot, query
@@ -223,6 +260,7 @@ class Migration:
                     raise MigrationError("this migration requires PostgreSQL 18 source; no downgrade is attempted")
                 if catalog["other_tables"]:
                     raise MigrationError("non-public application tables require an expanded verification policy")
+                create_database_sql(name, "stocksim", catalog["locale"])
                 available = json.loads(self.target_sql(container, "postgres", "SELECT json_agg(name) FROM pg_available_extensions;"))
                 missing = [item["name"] for item in catalog["extensions"] if item["name"] not in available]
                 if missing:
@@ -256,7 +294,8 @@ class Migration:
         folder = self.export(container, source, name)
         backup = folder / "source.dump"
         # CREATE DATABASE fails if it already exists. No --clean, DROP or existing-target restore.
-        self.target_sql(container, "postgres", "CREATE DATABASE " + quote_ident(name) + " OWNER stocksim;")
+        manifest = json.loads((folder / "manifest.json").read_text())
+        self.target_sql(container, "postgres", create_database_sql(name, "stocksim", manifest["catalog"]["locale"]))
         with backup.open("rb") as stream:
             result = subprocess.run(self.docker + ["exec", "-i", container, "pg_restore", "--exit-on-error",
                 "--single-transaction", "--no-owner", "--no-privileges", "--role=stocksim", "-U", "postgres", "-d", name],

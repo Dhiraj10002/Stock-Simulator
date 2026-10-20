@@ -37,12 +37,18 @@ def verify(backup, expected=None, postgres_major=16, manifest=None):
     with backup.open("rb") as stream:
         if stream.read(5) != b"PGDMP":
             raise ValueError("use pg_dump --format=custom")
+    if manifest is not None:
+        from oracle_postgres import file_sha256
+        if file_sha256(backup) != manifest["dump_sha256"]:
+            raise RuntimeError("backup checksum mismatch")
+        if postgres_major != 18:
+            raise ValueError("Oracle manifest restore requires PostgreSQL 18")
     name = "stocksim-restore-" + uuid.uuid4().hex
     try:
         command(["docker", "run", "--detach", "--name", name, "--network", "none",
                  "--env", "POSTGRES_PASSWORD=" + uuid.uuid4().hex,
                  "--mount", "type=bind,source=" + str(backup) + ",target=/backup.dump,readonly",
-                 "postgres:" + str(postgres_major) + "-alpine"])
+                 "postgres:18-bookworm" if manifest is not None else "postgres:" + str(postgres_major) + "-alpine"])
         for attempt in range(300):
             result = subprocess.run(["docker", "exec", name, "pg_isready", "-h", "127.0.0.1", "-U", "postgres"], capture_output=True, timeout=5)
             if result.returncode == 0:
@@ -50,25 +56,29 @@ def verify(backup, expected=None, postgres_major=16, manifest=None):
             time.sleep(0.2)
         else:
             raise RuntimeError("disposable database did not start")
-        command(["docker", "exec", name, "pg_restore", "--exit-on-error", "--single-transaction", "--no-owner", "--no-privileges", "-U", "postgres", "-d", "postgres", "/backup.dump"], timeout=1800)
-        fingerprint = command(["docker", "exec", name, "psql", "-U", "postgres", "-d", "postgres", "-At", "-v", "ON_ERROR_STOP=1", "-c", FINGERPRINT_SQL])
+        database = "postgres"
+        if manifest is not None:
+            from oracle_postgres import create_database_sql
+            database = "restore_validation"
+            command(["docker", "exec", name, "psql", "-U", "postgres", "-d", "postgres", "-v", "ON_ERROR_STOP=1",
+                     "-c", create_database_sql(database, "postgres", manifest["catalog"]["locale"])])
+        command(["docker", "exec", name, "pg_restore", "--exit-on-error", "--single-transaction", "--no-owner", "--no-privileges", "-U", "postgres", "-d", database, "/backup.dump"], timeout=1800)
+        fingerprint = command(["docker", "exec", name, "psql", "-U", "postgres", "-d", database, "-At", "-v", "ON_ERROR_STOP=1", "-c", FINGERPRINT_SQL])
         if expected is not None and fingerprint != expected.strip():
             raise RuntimeError("restored accounting rows differ from backup source")
-        indexes = command(["docker", "exec", name, "psql", "-U", "postgres", "-d", "postgres", "-At", "-v", "ON_ERROR_STOP=1", "-c",
+        indexes = command(["docker", "exec", name, "psql", "-U", "postgres", "-d", database, "-At", "-v", "ON_ERROR_STOP=1", "-c",
                            "SELECT count(*) FROM pg_indexes WHERE tablename='orders' AND indexname='idx_order_intent_key'"])
         if indexes != "1":
             raise RuntimeError("idempotency index missing after restore")
         full_match = False
         if manifest is not None:
-            from oracle_postgres import CATALOG_SQL, TABLES_SQL, Migration, compare_manifest, file_sha256, manifest_sql
-            if file_sha256(backup) != manifest["dump_sha256"]:
-                raise RuntimeError("backup checksum mismatch")
+            from oracle_postgres import CATALOG_SQL, TABLES_SQL, Migration, compare_manifest, manifest_sql
             def sql(query):
-                return command(["docker", "exec", name, "psql", "-XqAt", "-U", "postgres", "-d", "postgres",
+                return command(["docker", "exec", name, "psql", "-XqAt", "-U", "postgres", "-d", database,
                                 "-v", "ON_ERROR_STOP=1", "-c", "SET timezone='UTC'; SET extra_float_digits=3; " + query])
             names = json.loads(sql(TABLES_SQL))
             compare_manifest(manifest, json.loads(sql(manifest_sql(names))), json.loads(sql(CATALOG_SQL)))
-            Migration(Path.cwd(), Path.cwd() / ".env").verify_sequences(name, "postgres")
+            Migration(Path.cwd(), Path.cwd() / ".env").verify_sequences(name, database)
             full_match = True
         return {"restored": True, "isolated": True, "accounting_tables": len(TABLES), "source_fingerprint_matches": expected is not None or full_match,
                 "all_public_tables_match": full_match, "postgres_major": postgres_major,
