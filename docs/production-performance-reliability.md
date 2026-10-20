@@ -76,6 +76,8 @@ hostname, validates the systemd units and runs a read-only check before installi
 anything. It replaces only the three existing monitoring unit names; rerunning it
 updates those same units. It pauses/restarts monitoring units during the update,
 without changing application containers, their database URLs or data.
+On first installation, an empty monitoring-unit inventory is expected and does
+not stop setup. Only existing monitoring units are stopped during an update.
 
 The timer checks approximately every minute, with up to ten seconds of jitter.
 `ORACLE_POSTGRES_ENABLED=true` includes the PostgreSQL overlay and requires its
@@ -101,7 +103,9 @@ sudo journalctl -u stocksim-monitor.service -n 3 --no-pager
 ```
 
 If installation stops, share only its final JSON. Application services are not
-restarted. Check `journalctl -u stocksim-monitor.service` for component states.
+restarted. The JSON identifies the exact failed setup phase and command exit
+code without printing raw diagnostics. Check
+`journalctl -u stocksim-monitor.service` for component states once installed.
 To disable just this monitor:
 
 ```bash
