@@ -2,6 +2,10 @@
 
 The V1 production stack is Next.js on Vercel, Caddy/Go/Python workers/private Redis on an Oracle VM, and Neon PostgreSQL for durable trading state. `docker-compose.prod.yml` is the source of truth. Development may use managed Redis; production Compose deliberately uses `redis://redis:6379/0`. Upstash requires a separate, measured migration of the URL and local-service dependencies.
 
+For an opt-in migration to a private PostgreSQL 18 service on the existing Oracle
+VM, follow [the staging, backup/restore and controlled cutover runbook](oracle-postgres-migration.md).
+The optional overlay does not change the default Neon deployment or switch live data.
+
 ```mermaid
 flowchart TD
     V["Vercel frontend"] --> B["Browser"]

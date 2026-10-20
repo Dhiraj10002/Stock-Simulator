@@ -21,4 +21,5 @@ class BackupIsolationTests(unittest.TestCase):
                 verify(backup)
             args = run.call_args.args[0]
             self.assertEqual(args[:3], ["docker", "rm", "--force"])
-            self.assertTrue(args[3].startswith("stocksim-restore-"))
+            self.assertIn("--volumes", args)
+            self.assertTrue(args[-1].startswith("stocksim-restore-"))

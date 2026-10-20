@@ -65,6 +65,24 @@ class ProductionBootstrapTest(unittest.TestCase):
         self.assertFalse(any(isinstance(call, list) and "/sync-instruments" in call for call in self.calls))
         self.assertEqual(len(self.worker_starts()), 1)
 
+    def test_local_database_marker_starts_postgres_before_backend(self):
+        self.env_file.write_text("ORACLE_POSTGRES_ENABLED=true\n")
+        (self.env_file.parent / ".env.oracle-db").write_text("private-test-secret")
+        with patch.object(BOOTSTRAP, "ROOT", self.env_file.parent):
+            BOOTSTRAP.bootstrap(self.env_file, timeout=5)
+        starts = [call for call in self.calls if isinstance(call, list) and "up" in call]
+        self.assertEqual(starts[0][-1], "postgres")
+        self.assertEqual(starts[1][-3:], ["redis", "backend", "caddy"])
+        self.assertTrue(all("oracle-db" in call for call in starts))
+        self.assertFalse(any(isinstance(call, list) and "/sync-instruments" in call for call in self.calls))
+
+    def test_local_database_marker_without_secret_starts_nothing(self):
+        self.env_file.write_text("ORACLE_POSTGRES_ENABLED=true\n")
+        with patch.object(BOOTSTRAP, "ROOT", self.env_file.parent):
+            with self.assertRaisesRegex(RuntimeError, "prepare"):
+                BOOTSTRAP.bootstrap(self.env_file)
+        self.assertEqual(self.calls, [])
+
     def test_missing_master_stops_before_workers(self):
         self.master["data"]["activated_at"] = None
         with self.assertRaisesRegex(RuntimeError, "--sync-master"):
