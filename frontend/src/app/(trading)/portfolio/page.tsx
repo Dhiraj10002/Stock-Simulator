@@ -42,6 +42,7 @@ import { resolveCanonicalSymbol } from "@/lib/alias";
 import { API_URL, extractApiDiagnostic, type ApiDiagnostic } from "@/lib/api";
 import ErrorDiagnosticModal from "@/components/ui/ErrorDiagnosticModal";
 import { useToast } from "@/components/ui/ToastProvider";
+import { marketClosedNotice } from "@/lib/marketClosedNotice";
 import type { Position } from "@/types";
 
 const STOCK_INFO_MAP: Record<
@@ -342,6 +343,11 @@ export default function PortfolioPage() {
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         const diag = extractApiDiagnostic(res, data, endpoint);
+        const closureNotice = marketClosedNotice(diag);
+        if (closureNotice) {
+          addToast("Market closed", `${pos.symbol}: ${closureNotice}`, "info");
+          return;
+        }
         setDiagnosticTitle(`Square Off Failed: ${pos.symbol}`);
         setDiagnosticError(diag);
         return;
@@ -382,6 +388,11 @@ export default function PortfolioPage() {
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         const diag = extractApiDiagnostic(res, data, endpoint);
+        const closureNotice = marketClosedNotice(diag);
+        if (closureNotice) {
+          addToast("Market closed", closureNotice, "info");
+          return;
+        }
         setDiagnosticTitle("Bulk MIS Square-Off Failed");
         setDiagnosticError(diag);
         addToast("Bulk Square-Off Failed", "Unable to square off MIS positions.", "error");
