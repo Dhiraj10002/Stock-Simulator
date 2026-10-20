@@ -59,16 +59,55 @@ The worker probes configured CONNECT/origin TLS before connection attempts, repo
 5. During an open market, use a dedicated paper account for delivery, MIS, futures/options entry/exit and wallet/P&L reconciliation. Confirm same-key replay returns the same order, changed-payload replay is 409, and broker disconnection blocks new execution. No live account orders are placed by this release's browser tests.
 6. Retain a **schema-compatible** backend rollback artifact. Old main binaries intentionally reject a database newer than their schema ledger; an ordinary checkout to the old binary is not a valid rollback after migration. Prefer a forward fix/compatible artifact. Do not downgrade the ledger or restore an old database over newer financial writes. Keep backend and frontend session contracts compatible.
 
-Optional VM monitoring (edit the checked-in paths/domain to match your installation first):
+## Read-only health checks and local logs
+
+The demo uses simple monitoring without backup automation or automatic worker
+recovery. From the existing Oracle checkout, install it with:
 
 ```bash
-sudo install -m 644 deploy/oracle/stocksim-{monitor.service,monitor.timer,alert.service} /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now stocksim-monitor.timer
-sudo journalctl -u stocksim-monitor.service -u stocksim-alert.service --since '-15 min'
+cd /home/ubuntu/stock-simulator-prod
+python3 scripts/install_monitoring.py
+sudo systemctl list-timers stocksim-monitor.timer --no-pager
+sudo journalctl -u stocksim-monitor.service -n 3 --no-pager
 ```
 
-The timer checks readiness every minute, emits structured status and a local journal failure alert, and may restart an unhealthy market worker after three failed checks with a ten-minute cooldown. It does not restart a healthy worker or one with a known proxy failure, nor restart the financial API/database. `restart: unless-stopped` alone does not restart an alive-but-unhealthy container. Connect these journal alerts to your chosen external monitoring service before relying on unattended operations; no external notification destination is guessed or configured here.
+The installer verifies the running Oracle DSN, chooses the first configured Caddy
+hostname, validates the systemd units and runs a read-only check before installing
+anything. It replaces only the three existing monitoring unit names; rerunning it
+updates those same units. It pauses/restarts monitoring units during the update,
+without changing application containers, their database URLs or data.
+
+The timer checks approximately every minute, with up to ten seconds of jitter.
+`ORACLE_POSTGRES_ENABLED=true` includes the PostgreSQL overlay and requires its
+container to be running and healthy, alongside the API, Caddy, Redis and worker.
+HTTPS uses curl with normal certificate validation. API readiness remains
+authoritative about holiday/closed-session behavior; old holiday quotes alone
+do not cause a monitor failure. Logs contain container state and a small allowlist
+of API component statuses, never raw SQL errors, account data or credentials.
+
+Read-only mode explicitly blocks `--restart-worker`. The older optional recovery
+flag remains available for manual legacy use, but the installed unit always uses
+`--read-only`. A failed check records `production_unavailable` and triggers only
+a local journal/syslog entry. There are no email/Slack/phone notifications, backup
+jobs, database restarts or worker restarts in this setup.
+
+The latest failure count is stored privately in
+`/var/lib/stocksim-monitor/state.json`; service output is retained by the VM's
+normal journald policy. Check health without waiting for the timer:
+
+```bash
+sudo systemctl start stocksim-monitor.service
+sudo journalctl -u stocksim-monitor.service -n 3 --no-pager
+```
+
+If installation stops, share only its final JSON. Application services are not
+restarted. Check `journalctl -u stocksim-monitor.service` for component states.
+To disable just this monitor:
+
+```bash
+sudo systemctl disable --now stocksim-monitor.timer
+sudo systemctl stop stocksim-monitor.service
+```
 
 ## Measure on the deployed VM and mobile
 
