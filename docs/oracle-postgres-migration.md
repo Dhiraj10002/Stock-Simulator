@@ -26,6 +26,14 @@ writers, takes a NEW snapshot, verifies the restored candidate, exports a separa
 runtime env, then deletes users `1,3,6,15,16,17` and their linked data. Each ID must
 also match the expected normalized screenshot name and a Dhiraj email prefix;
 otherwise the entire cleanup aborts. It does not match arbitrary similar names.
+
+For a configuration/startup problem, run
+`python3 scripts/oracle_demo_cutover.py --sudo-docker --preflight-only`.
+This checks the production env/config and existing containers without pausing
+services, deleting accounts or switching the DSN. The final JSON includes a safe
+`preflight_check`, `code` and curated `reason` (or exception type); no raw Docker,
+SQL, credential or account diagnostics are displayed. A failed preflight with
+`production_env_changed:false` and no journal has not reached the writer pause.
 It locks application tables, hashes every retained row before/after, and rolls back
 if an unexpected cascade changes any other data. Other accounts and the instrument
 master are preserved. PostgreSQL sequences are not reset or reused.

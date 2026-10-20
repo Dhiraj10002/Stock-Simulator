@@ -114,18 +114,23 @@ class DemoCutover:
                       "-f", str(m.root / "deploy/oracle/docker-compose.postgres.yml"),
                       "-f", str(self.record / "images.json"), *args])
 
-    def run(self, remove_dhiraj=False):
+    def preflight(self):
         m = self.migration
+        self.state["preflight_check"] = "production_env_path"
         if m.env_file != m.root / ".env":
             raise MigrationError("cutover requires the root production .env")
+        self.state["preflight_check"] = "postgres_compose_configuration"
         m.prepare()
+        self.state["preflight_check"] = "source_database_and_running_backend"
         m.source_url()  # Reject already migrated or env/running-container mismatch.
+        self.state["preflight_check"] = "api_domain"
         config = json.loads(m.compose("config", "--format", "json"))
         domain = config["services"]["caddy"]["environment"]["API_DOMAIN"]
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9.-]+[A-Za-z0-9]", domain):
             raise MigrationError("invalid API domain")
         images, containers = {}, {}
         for service in ALL_SERVICES:
+            self.state["preflight_check"] = "running_container_" + service
             container = m.compose("ps", "--quiet", service)
             if not container or "\n" in container:
                 raise MigrationError("expected one running container for " + service)
@@ -134,14 +139,23 @@ class DemoCutover:
                 raise MigrationError("service is not running: " + service)
             images[service] = {"image": info["Image"], "pull_policy": "never"}
             containers[service] = container
+        self.state["preflight_check"] = "passed"
+        return images, containers, domain
+
+    def run(self, remove_dhiraj=False):
+        m = self.migration
+        images, containers, domain = self.preflight()
+        self.state["preflight_check"] = "private_recovery_record"
         self.record = m.root / "backups" / ("demo_cutover_" + secrets.token_hex(8))
         self.record.mkdir(mode=0o700, parents=True)
         original = m.env_file.read_text()
         private_write(self.record / "neon-fallback.env", original)
         private_write(self.record / "images.json", json.dumps({"services": images}))
+        self.state["preflight_check"] = "monitor_systemd_units"
         self.state["monitor_timer_active"] = self.systemctl("show", "stocksim-monitor.timer", "--property=ActiveState", "--value") == "active"
         loaded = [unit for unit in ("stocksim-monitor.timer", "stocksim-monitor.service")
                   if self.systemctl("show", unit, "--property=LoadState", "--value") == "loaded"]
+        self.state["preflight_check"] = "passed"
         self.phase("pause_local_writers")
         if loaded:
             self.systemctl("stop", *loaded)
@@ -239,6 +253,7 @@ def main():
     parser.add_argument("--root", type=Path, default=ROOT)
     parser.add_argument("--sudo-docker", action="store_true")
     parser.add_argument("--remove-dhiraj-test-users", action="store_true", help="Delete screenshot IDs 1,3,6,15,16,17 and linked data only")
+    parser.add_argument("--preflight-only", action="store_true", help="Check configuration and running services without pausing or switching production")
     args = parser.parse_args()
     migration = Migration(args.root, args.root / ".env", args.sudo_docker)
     cutover = DemoCutover(migration)
@@ -246,11 +261,26 @@ def main():
         (migration.root / "backups").mkdir(mode=0o700, exist_ok=True)
         with open(migration.root / "backups/.demo-cutover.lock", "w") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            print(json.dumps(cutover.run(args.remove_dhiraj_test_users)))
+            if args.preflight_only:
+                cutover.preflight()
+                print(json.dumps({"preflight_passed": True, **cutover.state}))
+            else:
+                print(json.dumps(cutover.run(args.remove_dhiraj_test_users)))
         return 0
-    except (MigrationError, OSError, ValueError, KeyError, TypeError, RuntimeError, subprocess.SubprocessError):
+    except (MigrationError, OSError, ValueError, KeyError, TypeError, RuntimeError, subprocess.SubprocessError) as error:
         # Never render arbitrary exceptions: they may carry database credentials or rows.
+        if isinstance(error, MigrationError):
+            diagnostic = {"code": "guard_or_operation_failed", "reason": str(error)}
+        elif isinstance(error, PermissionError):
+            diagnostic = {"code": "file_permission_denied"}
+        elif isinstance(error, FileNotFoundError):
+            diagnostic = {"code": "file_or_executable_missing"}
+        elif isinstance(error, subprocess.TimeoutExpired):
+            diagnostic = {"code": "operation_timeout"}
+        else:
+            diagnostic = {"code": "invalid_configuration_or_operation", "error_type": type(error).__name__}
         print(json.dumps({"migrated": False, **cutover.state,
+                          **diagnostic,
                           "recovery_journal": str(cutover.record.relative_to(migration.root) / "journal.json") if cutover.record else None,
                           "error": "Cutover stopped; keep backups and share this JSON. Do not manually switch databases or delete Neon."}))
         return 1

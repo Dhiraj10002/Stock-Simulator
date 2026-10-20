@@ -1,10 +1,11 @@
 import json
+import io
 from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
 
-from oracle_demo_cutover import ACCOUNT_NAMES, DemoCutover, cleanup_sql
+from oracle_demo_cutover import ACCOUNT_NAMES, DemoCutover, cleanup_sql, main
 from oracle_postgres import Migration, MigrationError
 
 
@@ -113,6 +114,38 @@ class DemoCutoverTests(unittest.TestCase):
 
     def test_after_start_attempt_failure_never_repoints_to_stale_neon(self):
         self.run_failure("startup")
+
+    def test_cli_reports_failed_check_without_raw_exception_or_secrets(self):
+        with tempfile.TemporaryDirectory() as directory:
+            migration = Migration(Path(directory), Path(directory) / ".env")
+            output = io.StringIO()
+            cutover = DemoCutover(migration)
+            cutover.state["preflight_check"] = "running_container_backend"
+            with patch("sys.argv", ["cutover", "--preflight-only"]), \
+                 patch("oracle_demo_cutover.Migration", return_value=migration), \
+                 patch("oracle_demo_cutover.DemoCutover", return_value=cutover), \
+                 patch.object(cutover, "preflight", side_effect=RuntimeError("postgresql://user:secret@host/db")), \
+                 patch("sys.stdout", output):
+                self.assertEqual(main(), 1)
+            result = json.loads(output.getvalue())
+            self.assertEqual(result["preflight_check"], "running_container_backend")
+            self.assertEqual(result["error_type"], "RuntimeError")
+            self.assertNotIn("secret", output.getvalue())
+            self.assertFalse(result["production_env_changed"])
+
+    def test_preflight_only_does_not_run_cutover(self):
+        with tempfile.TemporaryDirectory() as directory:
+            migration = Migration(Path(directory), Path(directory) / ".env")
+            cutover = DemoCutover(migration)
+            output = io.StringIO()
+            with patch("sys.argv", ["cutover", "--preflight-only"]), \
+                 patch("oracle_demo_cutover.Migration", return_value=migration), \
+                 patch("oracle_demo_cutover.DemoCutover", return_value=cutover), \
+                 patch.object(cutover, "preflight"), patch.object(cutover, "run") as run, \
+                 patch("sys.stdout", output):
+                self.assertEqual(main(), 0)
+            run.assert_not_called()
+            self.assertTrue(json.loads(output.getvalue())["preflight_passed"])
 
 
 if __name__ == "__main__":
