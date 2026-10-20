@@ -61,6 +61,20 @@ console. The script does not delete a cloud account/project, automate off-VM
 transfer or claim recurring backups are configured. Application integration stays
 PostgreSQL; frontend/Vercel does not need a database URL change.
 
+If the app has already started on Oracle but the public health check failed,
+do NOT repeat the migration or point back to stale Neon. Retry final verification:
+
+```bash
+python3 scripts/oracle_demo_cutover.py --sudo-docker \
+  --resume-health backups/demo_cutover_PRINTED_ID/journal.json
+```
+
+This verifies the current Oracle DSN against the journal, checks the exact running
+app images/DSNs, and reruns HTTPS health/readiness using the VM's certificate-
+verifying curl client. It records safe HTTP status and service state fields in the
+journal. It does not restore data, delete users, switch env files or restart apps.
+Only a previously active monitor timer is resumed, and only if readiness passes.
+
 ## What the tooling does
 
 `deploy/oracle/docker-compose.postgres.yml` is an opt-in overlay. It adds PostgreSQL

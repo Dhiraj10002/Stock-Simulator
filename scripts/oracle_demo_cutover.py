@@ -13,8 +13,6 @@ from pathlib import Path
 import secrets
 import subprocess
 import time
-from urllib.error import HTTPError, URLError
-from urllib.request import urlopen
 from urllib.parse import urlsplit
 
 from oracle_postgres import Migration, MigrationError, ROOT, TABLES_SQL, private_write, quote_ident, quote_literal
@@ -106,6 +104,39 @@ class DemoCutover:
     def systemctl(self, *args):
         prefix = ["sudo", "-n"] if self.migration.docker[0] == "sudo" else []
         return self.host(prefix + ["systemctl", *args])
+
+    def public_probe(self, url):
+        # Use the same certificate-verifying curl client as the VM's operator
+        # checks. Capture bodies privately and retain only curated status fields.
+        output = self.host(["curl", "--silent", "--show-error", "--max-time", "10",
+                            "--proto", "=https", "--max-filesize", "131072",
+                            "--write-out", "\n%{http_code}", "--", url], timeout=15)
+        body, status = output.rsplit("\n", 1)
+        payload = json.loads(body)
+        if not isinstance(payload, dict):
+            raise ValueError("public probe requires a JSON object")
+        return int(status), payload
+
+    def resume(self, journal):
+        m = self.migration
+        journal = journal.resolve(strict=True)
+        if (journal.name != "journal.json" or not journal.parent.name.startswith("demo_cutover_")
+                or journal.parent.parent != (m.root / "backups").resolve()):
+            raise MigrationError("resume requires this checkout's private cutover journal")
+        state = json.loads(journal.read_text())
+        if not state.get("production_env_changed") or not state.get("application_start_attempted"):
+            raise MigrationError("resume is only for health verification after an Oracle application start")
+        # Verify current runtime and journal agree. Never consult or reconnect Neon.
+        source = m.source_url(allow_local=True)
+        if urlsplit(source).path.lstrip("/") != state.get("database"):
+            raise MigrationError("running Oracle database does not match the recovery journal")
+        self.state = state
+        self.record = journal.parent
+        config = json.loads(m.compose("config", "--format", "json"))
+        domain = primary_api_hostname(config["services"]["caddy"]["environment"]["API_DOMAIN"])
+        images = json.loads((self.record / "images.json").read_text())["services"]
+        self.phase("resume_runtime_verification")
+        return self.finish_checks(images, domain)
 
     def runtime(self, *args):
         m = self.migration
@@ -201,6 +232,10 @@ class DemoCutover:
         self.phase("start_existing_application_images")
         self.runtime("up", "-d", "--no-build", "--no-deps", "--pull", "never", "--wait", "--wait-timeout", "180", "postgres", "redis", "backend", "caddy")
         self.runtime("up", "-d", "--no-build", "--no-deps", "--pull", "never", "market-worker", "news-worker")
+        return self.finish_checks(images, domain)
+
+    def finish_checks(self, images, domain):
+        m = self.migration
         expected = json.loads(m.compose("config", "--format", "json"))["services"]["backend"]["environment"]["DATABASE_URL"]
         if urlsplit(expected).hostname != "postgres":
             raise MigrationError("runtime is not configured for Oracle PostgreSQL")
@@ -214,26 +249,24 @@ class DemoCutover:
         health, ready = {}, {}
         for attempt in range(12):
             try:
-                with urlopen("https://" + domain + "/health", timeout=5) as response:
-                    health = json.load(response)
-                if health.get("success") is True:
+                status, health = self.public_probe("https://" + domain + "/health")
+                self.state["health_probe"] = {"client": "curl", "host": domain, "http_status": status}
+                if status == 200 and health.get("success") is True and health.get("data", {}).get("database") == "connected":
                     break
-            except (OSError, ValueError, HTTPError, URLError):
-                pass
+            except (MigrationError, OSError, ValueError, TypeError, AttributeError):
+                self.state["health_probe"] = {"client": "curl", "host": domain, "code": "transport_or_json_error"}
             time.sleep(2)
-        if health.get("success") is not True:
+        else:
             raise MigrationError("Oracle-configured application health check failed; do not repoint to stale Neon")
         self.phase("check_trading_readiness")
         for attempt in range(20):
             try:
-                with urlopen("https://" + domain + "/api/v1/ready", timeout=5) as response:
-                    ready = json.load(response)
-            except HTTPError as error:
-                try:
-                    ready = json.loads(error.read(128 * 1024))
-                except (OSError, ValueError):
-                    pass
-            except (OSError, ValueError):
+                status, ready = self.public_probe("https://" + domain + "/api/v1/ready")
+                self.state["readiness_http_status"] = status
+                if status != 200:
+                    ready["ready"] = False
+            except (MigrationError, OSError, ValueError, TypeError, AttributeError):
+                ready = {}
                 pass
             if ready.get("ready") is True:
                 break
@@ -241,6 +274,9 @@ class DemoCutover:
                 print(json.dumps({"phase": "waiting_for_trading_readiness", "attempt": attempt + 1}), flush=True)
             time.sleep(2)
         self.state["ready"] = ready.get("ready") is True
+        self.state["services"] = {name: {key: value for key, value in info.items()
+                                   if key in ("status", "mode", "market_state", "supervisor_state", "initialization_stage")}
+                                  for name, info in ready.get("services", {}).items() if isinstance(info, dict)}
         if self.state["ready"] and self.state["monitor_timer_active"]:
             self.systemctl("start", "stocksim-monitor.timer")
         self.state.update({"migrated": True, "runtime_database": "oracle_postgresql", "neon_project_deleted": False,
@@ -255,14 +291,19 @@ def main():
     parser.add_argument("--sudo-docker", action="store_true")
     parser.add_argument("--remove-dhiraj-test-users", action="store_true", help="Delete screenshot IDs 1,3,6,15,16,17 and linked data only")
     parser.add_argument("--preflight-only", action="store_true", help="Check configuration and running services without pausing or switching production")
+    parser.add_argument("--resume-health", type=Path, metavar="JOURNAL", help="Verify an already switched runtime; never restore, delete users or restart apps")
     args = parser.parse_args()
+    if args.resume_health and (args.preflight_only or args.remove_dhiraj_test_users):
+        parser.error("--resume-health cannot be combined with preflight or account deletion")
     migration = Migration(args.root, args.root / ".env", args.sudo_docker)
     cutover = DemoCutover(migration)
     try:
         (migration.root / "backups").mkdir(mode=0o700, exist_ok=True)
         with open(migration.root / "backups/.demo-cutover.lock", "w") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            if args.preflight_only:
+            if args.resume_health:
+                print(json.dumps(cutover.resume(args.resume_health)))
+            elif args.preflight_only:
                 cutover.preflight()
                 print(json.dumps({"preflight_passed": True, **cutover.state}))
             else:

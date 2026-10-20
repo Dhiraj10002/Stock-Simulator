@@ -10,6 +10,82 @@ from oracle_postgres import Migration, MigrationError
 
 
 class DemoCutoverTests(unittest.TestCase):
+    def test_resume_checks_same_oracle_database_without_restore_delete_or_restart(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            record = root / "backups/demo_cutover_test"
+            record.mkdir(parents=True)
+            state = {"production_env_changed": True, "application_start_attempted": True, "database": "stocksim_candidate_test"}
+            journal = record / "journal.json"
+            journal.write_text(json.dumps(state))
+            (record / "images.json").write_text('{"services": {}}')
+            migration = Migration(root, root / ".env")
+            cutover = DemoCutover(migration)
+            config = json.dumps({"services": {"caddy": {"environment": {"API_DOMAIN": "api.stock-simulator.in, stocksim-api.duckdns.org"}}}})
+            with patch.object(migration, "source_url", return_value="postgresql://u:p@postgres/stocksim_candidate_test") as source, \
+                 patch.object(migration, "compose", return_value=config), \
+                 patch.object(cutover, "finish_checks", return_value={"migrated": True}) as finish, \
+                 patch.object(cutover, "runtime") as runtime, patch.object(migration, "stage") as stage, \
+                 patch("oracle_demo_cutover.cleanup") as delete:
+                self.assertTrue(cutover.resume(journal)["migrated"])
+            source.assert_called_once_with(allow_local=True)
+            finish.assert_called_once_with({}, "api.stock-simulator.in")
+            stage.assert_not_called()
+            delete.assert_not_called()
+            runtime.assert_not_called()
+            self.assertFalse((root / ".env").exists())
+
+    def test_resume_rejects_database_mismatch_before_health_or_journal_update(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            record = root / "backups/demo_cutover_test"
+            record.mkdir(parents=True)
+            journal = record / "journal.json"
+            original = json.dumps({"production_env_changed": True, "application_start_attempted": True, "database": "stocksim_candidate_original"})
+            journal.write_text(original)
+            migration = Migration(root, root / ".env")
+            cutover = DemoCutover(migration)
+            with patch.object(migration, "source_url", return_value="postgresql://u:p@postgres/stocksim_candidate_other"), \
+                 patch.object(cutover, "finish_checks") as finish:
+                with self.assertRaises(MigrationError):
+                    cutover.resume(journal)
+            finish.assert_not_called()
+            self.assertEqual(journal.read_text(), original)
+
+    def test_successful_finish_records_oracle_health_and_curated_readiness(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            record = root / "backups/demo_cutover_test"
+            record.mkdir(parents=True)
+            migration = Migration(root, root / ".env")
+            cutover = DemoCutover(migration)
+            cutover.record = record
+            cutover.state["monitor_timer_active"] = False
+            config = json.dumps({"services": {"backend": {"environment": {"DATABASE_URL": "postgresql://u:p@postgres/stocksim_candidate_test"}}}})
+            images = {service: {"image": "sha256:existing"} for service in ("backend", "market-worker", "news-worker")}
+            info = json.dumps([{"Image": "sha256:existing", "State": {"Running": True}, "Config": {"Env": ["DATABASE_URL=postgresql://u:p@postgres/stocksim_candidate_test"]}}])
+            def compose(*args):
+                return config if args[0] == "config" else "container"
+            probes = [(200, {"success": True, "data": {"database": "connected"}}),
+                      (200, {"ready": True, "services": {"database": {"status": "OPERATIONAL", "error": "do not emit private diagnostics"}}})]
+            with patch.object(migration, "compose", side_effect=compose), patch.object(migration, "run", return_value=info), \
+                 patch.object(cutover, "public_probe", side_effect=probes), patch.object(cutover, "runtime") as runtime:
+                result = cutover.finish_checks(images, "api.stock-simulator.in")
+            self.assertTrue(result["migrated"] and result["ready"] and result["health"])
+            self.assertEqual(result["health_probe"]["http_status"], 200)
+            self.assertNotIn("do not emit", json.dumps(result))
+            self.assertTrue(json.loads((record / "journal.json").read_text())["migrated"])
+            runtime.assert_not_called()
+
+    def test_public_probe_keeps_certificate_verification_and_returns_http_status(self):
+        cutover = DemoCutover(Mock())
+        with patch.object(cutover, "host", return_value='{"ready":false}\n503') as host:
+            self.assertEqual(cutover.public_probe("https://api.valid.test/ready"), (503, {"ready": False}))
+        args = host.call_args.args[0]
+        self.assertNotIn("--insecure", args)
+        self.assertNotIn("-k", args)
+        self.assertIn("=https", args)
+
     def test_preflight_accepts_existing_two_domain_caddy_setting_without_mutation(self):
         migration = Mock()
         migration.root = Path("/repo")
