@@ -10,6 +10,7 @@ import subprocess
 import time
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
+from production_addresses import primary_api_hostname
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -61,11 +62,7 @@ def bootstrap(env_file, sync_master=False, timeout=180, oracle_postgres=False):
     # Capture rendered configuration privately: it contains secrets and must
     # never be dumped to terminal logs or committed as a deployment artifact.
     config = json.loads(compose("config", "--format", "json", capture=True).stdout)
-    domain = config["services"]["caddy"]["environment"]["API_DOMAIN"]
-    if not re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?", domain) or "." not in domain:
-        raise RuntimeError("API_DOMAIN must be a DNS hostname without scheme, port or path")
-    if domain == "example.com" or domain.endswith(".example.com"):
-        raise RuntimeError("Replace the API_DOMAIN placeholder with your own DNS hostname")
+    domain = primary_api_hostname(config["services"]["caddy"]["environment"]["API_DOMAIN"])
     base = f"https://{domain}"
 
     if oracle_postgres:

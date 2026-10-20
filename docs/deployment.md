@@ -41,7 +41,7 @@ Generate `JWT_SECRET` with `openssl rand -hex 32`. Use the repository-root `.env
 
 | Setting | Value/purpose |
 |---|---|
-| `API_DOMAIN` | API DNS hostname, without scheme, port or path |
+| `API_DOMAIN` | API DNS hostname(s), comma-separated, without scheme, port or path. Health checks use the first hostname. |
 | `ACME_EMAIL` | Contact for automatic HTTPS certificates |
 | `DATABASE_URL` | Neon production TLS URI |
 | `JWT_SECRET` | Generated secret, at least 32 bytes; placeholders are rejected |

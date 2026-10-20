@@ -10,7 +10,6 @@ import fcntl
 import json
 import os
 from pathlib import Path
-import re
 import secrets
 import subprocess
 import time
@@ -19,6 +18,7 @@ from urllib.request import urlopen
 from urllib.parse import urlsplit
 
 from oracle_postgres import Migration, MigrationError, ROOT, TABLES_SQL, private_write, quote_ident, quote_literal
+from production_addresses import primary_api_hostname
 
 
 ACCOUNT_NAMES = {1: "dhirajgupta", 3: "dhiraj", 6: "dhiraj", 15: "dhirajgupta", 16: "dhiraj", 17: "dj"}
@@ -104,7 +104,7 @@ class DemoCutover:
         return result.stdout.strip()
 
     def systemctl(self, *args):
-        prefix = ["sudo"] if self.migration.docker[0] == "sudo" else []
+        prefix = ["sudo", "-n"] if self.migration.docker[0] == "sudo" else []
         return self.host(prefix + ["systemctl", *args])
 
     def runtime(self, *args):
@@ -125,9 +125,10 @@ class DemoCutover:
         m.source_url()  # Reject already migrated or env/running-container mismatch.
         self.state["preflight_check"] = "api_domain"
         config = json.loads(m.compose("config", "--format", "json"))
-        domain = config["services"]["caddy"]["environment"]["API_DOMAIN"]
-        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9.-]+[A-Za-z0-9]", domain):
-            raise MigrationError("invalid API domain")
+        try:
+            domain = primary_api_hostname(config["services"]["caddy"]["environment"]["API_DOMAIN"])
+        except ValueError as error:
+            raise MigrationError(str(error)) from None
         images, containers = {}, {}
         for service in ALL_SERVICES:
             self.state["preflight_check"] = "running_container_" + service

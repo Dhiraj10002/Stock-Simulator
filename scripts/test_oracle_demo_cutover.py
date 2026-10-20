@@ -10,6 +10,22 @@ from oracle_postgres import Migration, MigrationError
 
 
 class DemoCutoverTests(unittest.TestCase):
+    def test_preflight_accepts_existing_two_domain_caddy_setting_without_mutation(self):
+        migration = Mock()
+        migration.root = Path("/repo")
+        migration.env_file = Path("/repo/.env")
+        value = "api.stock-simulator.in, stocksim-api.duckdns.org"
+        config = json.dumps({"services": {"caddy": {"environment": {"API_DOMAIN": value}}}})
+        migration.compose.side_effect = lambda *args: config if args[0] == "config" else "container"
+        migration.run.return_value = json.dumps([{"State": {"Running": True}, "Image": "sha256:existing"}])
+        cutover = DemoCutover(migration)
+        images, containers, host = cutover.preflight()
+        self.assertEqual(host, "api.stock-simulator.in")
+        self.assertEqual(len(images), 6)
+        self.assertEqual(len(containers), 6)
+        self.assertIsNone(cutover.record)
+        self.assertEqual(json.loads(config)["services"]["caddy"]["environment"]["API_DOMAIN"], value)
+
     def test_cleanup_is_transactional_and_checks_retained_rows(self):
         sql = cleanup_sql(["users", "wallets", "wallet_transactions", "instruments", "orders"], ["wallets", "orders"])
         self.assertTrue(sql.startswith("BEGIN;"))
