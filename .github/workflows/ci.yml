@@ -164,6 +164,9 @@ jobs:
       - name: Test Local Startup and Cleanup
         run: python3 -m unittest discover -v -s scripts -p 'test_*.py'
 
+      - name: Validate read-only Oracle monitoring units
+        run: systemd-analyze verify deploy/oracle/stocksim-monitor.service deploy/oracle/stocksim-monitor.timer deploy/oracle/stocksim-alert.service
+
   frontend:
     name: Next.js Frontend Quality Gate
     runs-on: ubuntu-latest

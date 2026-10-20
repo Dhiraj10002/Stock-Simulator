@@ -6,6 +6,10 @@ For an opt-in migration to a private PostgreSQL 18 service on the existing Oracl
 VM, follow [the staging, backup/restore and controlled cutover runbook](oracle-postgres-migration.md).
 The optional overlay does not change the default Neon deployment or switch live data.
 
+For the migrated Oracle demo, see [read-only health checks and local logs](production-performance-reliability.md#read-only-health-checks-and-local-logs).
+The monitoring installer enables only health checks and local journal entries;
+it does not configure backup automation or automatic application recovery.
+
 ```mermaid
 flowchart TD
     V["Vercel frontend"] --> B["Browser"]
