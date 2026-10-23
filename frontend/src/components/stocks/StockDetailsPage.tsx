@@ -187,7 +187,9 @@ function StockDesk({ symbol, token }: { symbol: string; token: string }) {
   const [side, setSide] = useState<"BUY" | "SELL">("BUY");
   const [product, setProduct] = useState<"DELIVERY" | "INTRADAY">("DELIVERY");
   const [type, setType] = useState<"MARKET" | "LIMIT">("MARKET");
-  const [quantity, setQuantity] = useState(1);
+  // Preserve the editing value, including empty, instead of converting "" to 0.
+  const [quantityInput, setQuantityInput] = useState("1");
+  const quantity = Number(quantityInput);
   const [limit, setLimit] = useState("");
   const [feedback, setFeedback] = useState<string>();
   const [watchFeedback, setWatchFeedback] = useState<string>();
@@ -347,7 +349,7 @@ function StockDesk({ symbol, token }: { symbol: string; token: string }) {
     quantity,
     price_paise: type === "LIMIT" ? Math.round(Number(limit) * 100) : 0,
   };
-  const validQuantity = Number.isSafeInteger(quantity) && quantity > 0;
+  const validQuantity = /^\d+$/.test(quantityInput) && Number.isSafeInteger(quantity) && quantity > 0;
   const validPrice =
     type === "MARKET" ||
     (Number.isFinite(Number(limit)) &&
@@ -825,14 +827,22 @@ function StockDesk({ symbol, token }: { symbol: string; token: string }) {
                     type="number"
                     min="1"
                     step="1"
-                    value={quantity}
+                    inputMode="numeric"
+                    value={quantityInput}
+                    aria-invalid={!validQuantity}
+                    aria-describedby={!validQuantity ? "stock-quantity-error" : undefined}
                     onChange={(e) => {
-                      setQuantity(Number(e.target.value));
+                      setQuantityInput(e.target.value);
                       setConfirmation(false);
                     }}
                     className={input}
                   />
                 </label>
+                {!validQuantity && (
+                  <p id="stock-quantity-error" className="text-xs text-amber-800 dark:text-amber-300">
+                    Enter a whole-number quantity greater than zero.
+                  </p>
+                )}
                 {type === "LIMIT" && (
                   <label className={`block text-xs ${muted}`}>
                     Limit price ₹
@@ -857,9 +867,10 @@ function StockDesk({ symbol, token }: { symbol: string; token: string }) {
                     type="checkbox"
                     className="mt-1"
                     checked={confirmation}
+                    disabled={!validQuantity}
                     onChange={(e) => setConfirmation(e.target.checked)}
                   />
-                  Confirm {side} {quantity} {symbol.replace(/-EQ$/, "")} as a{" "}
+                  Confirm {side} {validQuantity ? quantity : "—"} {symbol.replace(/-EQ$/, "")} as a{" "}
                   {product.toLowerCase()} paper order.
                 </label>
               </fieldset>
@@ -867,7 +878,7 @@ function StockDesk({ symbol, token }: { symbol: string; token: string }) {
                 <div className="flex justify-between gap-2">
                   <span className={muted}>Required funds</span>
                   <strong>
-                    {formatPaise(preview.data?.required_funds_paise)}
+                    {formatPaise(validQuantity ? preview.data?.required_funds_paise : undefined)}
                   </strong>
                 </div>
                 <div className="mt-2 flex justify-between gap-2">

@@ -13,6 +13,7 @@ async function setup(
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   const posts: Record<string, unknown>[] = [];
+  const previews: Record<string, unknown>[] = [];
   const requests: string[] = [];
   let socket: WebSocketRoute | undefined;
   let connections = 0;
@@ -149,7 +150,8 @@ async function setup(
         return;
       }
       data = quote(path.split("/")[3]);
-    } else if (path === "/orders/preview")
+    } else if (path === "/orders/preview") {
+      previews.push(req.postDataJSON());
       data = {
         required_funds_paise: 147250,
         available_balance_paise: 100000000,
@@ -158,7 +160,7 @@ async function setup(
         quote_source: "angelone_live",
         quote_updated_at: new Date().toISOString(),
       };
-    else if (path === "/orders" && req.method() === "POST") {
+    } else if (path === "/orders" && req.method() === "POST") {
       posts.push(req.postDataJSON());
       if (options.uncertain) {
         await route.abort("failed");
@@ -187,6 +189,7 @@ async function setup(
   return {
     errors,
     posts,
+    previews,
     requests,
     messages,
     connectionCount: () => connections,
@@ -524,3 +527,48 @@ test("mobile emulation captures a chart render trace with real-shaped fixture ti
   expect(metrics.length).toBeGreaterThan(0);
   expect(control.posts).toHaveLength(0);
 });
+
+
+for (const side of ["BUY", "SELL"] as const) {
+  for (const product of ["DELIVERY", "INTRADAY"] as const) {
+    test(`NSE ${side} ${product} quantity can be cleared and replaced without submitting invalid values`, async ({ page }) => {
+      const control = await setup(page);
+      const ticket = page.getByRole("region", { name: "Paper order ticket" });
+      await ticket.getByRole("button", { name: side, exact: true }).click();
+      await ticket.getByLabel("Product", { exact: true }).selectOption(product);
+      const quantity = ticket.getByRole("spinbutton", { name: "Quantity", exact: true });
+      const confirm = ticket.getByRole("checkbox");
+      const submit = ticket.getByRole("button", { name: "Place paper order", exact: true });
+      await confirm.check();
+      await quantity.focus();
+      await quantity.press("End");
+      await quantity.press("Backspace");
+      await expect(quantity).toHaveValue("");
+      await expect(confirm).not.toBeChecked();
+      await expect(confirm).toBeDisabled();
+      await expect(submit).toBeDisabled();
+      await quantity.fill("0");
+      await quantity.press("ControlOrMeta+A");
+      await quantity.press("Delete");
+      await expect(quantity).toHaveValue("");
+      for (const invalid of ["0", "-2", "1.5", "1e2", "9007199254740992"]) {
+        await quantity.fill(invalid);
+        await expect(quantity).toHaveAttribute("aria-invalid", "true");
+        await expect(submit).toBeDisabled();
+      }
+      expect(control.posts).toHaveLength(0);
+      await quantity.fill("25");
+      await expect(quantity).toHaveValue("25");
+      await expect(quantity).toHaveAttribute("aria-invalid", "false");
+      await confirm.check();
+      await expect(submit).toBeEnabled();
+      await submit.click();
+      await expect.poll(() => control.posts.length).toBe(1);
+      expect(control.posts[0]).toMatchObject({ quantity: 25, side, product });
+      expect(control.previews.length).toBeGreaterThan(0);
+      expect(control.previews.every(p => Number.isSafeInteger(p.quantity) && Number(p.quantity) > 0)).toBe(true);
+      expect(control.previews.some(p => p.quantity === 100)).toBe(false);
+      expect(control.errors).toEqual([]);
+    });
+  }
+}

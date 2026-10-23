@@ -66,6 +66,7 @@ async function setup(
   } = {},
 ) {
   const posts: Record<string, unknown>[] = [],
+    previews: Record<string, unknown>[] = [],
     requests: string[] = [],
     batches: string[][] = [],
     subscriptions: string[][] = [];
@@ -251,14 +252,15 @@ async function setup(
           },
         ],
       };
-    else if (path === "/orders/preview")
+    else if (path === "/orders/preview") {
+      previews.push(req.postDataJSON());
       data = {
         required_funds_paise: 10000000,
         available_balance_paise: 90000000,
         sufficient_funds: true,
         estimated_price_paise: state.price,
       };
-    else if (path === "/orders" && req.method() === "POST") {
+    } else if (path === "/orders" && req.method() === "POST") {
       const body = req.postDataJSON();
       posts.push(body);
       if (options.uncertainOrder) {
@@ -281,6 +283,7 @@ async function setup(
   ).toBeVisible();
   return {
     posts,
+    previews,
     requests,
     batches,
     subscriptions,
@@ -898,3 +901,44 @@ test("compact index cards reject invalid master lot sizes without submitting", a
   await expect(top.getByRole("button", { name: "Sell BANKNIFTY27OCT2099FUT", exact: true })).toBeDisabled();
   expect(control.posts).toEqual([]);
 });
+
+
+for (const side of ["BUY", "SELL"] as const) {
+  test(`NFO ${side} lots can be cleared, replaced and stepped without rounding or submitting invalid values`, async ({ page }) => {
+    const { posts, previews } = await setup(page);
+    await openStockTicket(page, side);
+    const ticket = page.getByRole("dialog", { name: "Paper order ticket" });
+    const lots = ticket.getByRole("spinbutton", { name: "Number of lots", exact: true });
+    await expect(lots).toHaveValue("1");
+    await lots.focus();
+    await lots.press("End");
+    await lots.press("Backspace");
+    await expect(lots).toHaveValue("");
+    await expect(ticket.getByRole("button", { name: "Enter valid lots", exact: true })).toBeDisabled();
+    await ticket.getByRole("button", { name: "Increase lots", exact: true }).click();
+    await expect(lots).toHaveValue("1");
+    await lots.fill("0");
+    await lots.press("ControlOrMeta+A");
+    await lots.press("Delete");
+    await expect(lots).toHaveValue("");
+    await ticket.getByRole("button", { name: "Decrease lots", exact: true }).click();
+    await expect(lots).toHaveValue("1");
+    for (const invalid of ["0", "-1", "1.5", "1e2", "101"]) {
+      await lots.fill(invalid);
+      await expect(lots).toHaveAttribute("aria-invalid", "true");
+      await expect(ticket.getByRole("button", { name: "Enter valid lots", exact: true })).toBeDisabled();
+    }
+    expect(posts).toHaveLength(0);
+    await ticket.getByRole("button", { name: "5L", exact: true }).click();
+    await expect(lots).toHaveValue("5");
+    await lots.fill("2");
+    const submit = ticket.getByRole("button", { name: `${side} 450 TCS27OCT2099FUT (2 LOTS)`, exact: true });
+    await expect(submit).toBeEnabled();
+    await submit.click();
+    await expect.poll(() => posts.length).toBe(1);
+    expect(posts[0]).toMatchObject({ quantity: 450, side, product: "FNO" });
+    expect(previews.length).toBeGreaterThan(0);
+    expect(previews.every(p => Number.isSafeInteger(p.quantity) && Number(p.quantity) >= 225 && Number(p.quantity) <= 22500 && Number(p.quantity) % 225 === 0)).toBe(true);
+    expect(previews.some(p => p.quantity === 22500)).toBe(false);
+  });
+}

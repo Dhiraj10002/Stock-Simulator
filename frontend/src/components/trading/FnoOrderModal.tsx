@@ -40,7 +40,8 @@ export default function FnoOrderModal({
   const [side, setSide] = useState<"BUY" | "SELL">(initialSide);
   const product = "FNO";
   const [orderType, setOrderType] = useState<"MARKET" | "LIMIT">("MARKET");
-  const [lots, setLots] = useState<number>(1);
+  const [lotsInput, setLotsInput] = useState("1");
+  const lots = Number(lotsInput);
   const [limitPrice, setLimitPrice] = useState<string>("");
   const [executing, setExecuting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -72,7 +73,7 @@ export default function FnoOrderModal({
       setRestQuote(undefined);
       setFeedback(null);
       setSubmitted(false);
-      setLots(1);
+      setLotsInput("1");
       setSide(initialSide);
       setLimitPrice("");
     });
@@ -115,7 +116,7 @@ export default function FnoOrderModal({
     instrument && validLot(instrument.lot_size) ? instrument.lot_size : 0;
   const totalQuantity = lots * lotSize;
   const validQuantity =
-    validLot(lots) && validLot(lotSize) && Number.isSafeInteger(totalQuantity);
+    /^\d+$/.test(lotsInput) && validLot(lots) && lots <= 100 && validLot(lotSize) && Number.isSafeInteger(totalQuantity);
   const effectiveQuote = displayQuote(restQuote, liveQuote);
   const effectivePricePaise = effectiveQuote?.price_paise ?? 0;
   const effectiveChangePercent = dayMovement(effectiveQuote)?.percent;
@@ -170,7 +171,7 @@ export default function FnoOrderModal({
   }, [instrument?.segment, notionalPaise, side, validQuantity]);
 
   // Keep the last server estimate visible during polling, but fall back to client estimation
-  const validPreview = !preview.isError ? preview.data : undefined;
+  const validPreview = validQuantity && !preview.isError ? preview.data : undefined;
   const requiredMarginPaise = validPreview?.required_funds_paise;
   const displayMarginPaise = requiredMarginPaise ?? clientEstimatedMarginPaise;
   const availableBalancePaise = wallet.data?.available_balance_paise;
@@ -461,7 +462,7 @@ export default function FnoOrderModal({
           {/* 3. Quantity in Lots (With Quick Multipliers) */}
           <div className="space-y-2">
             <div className="flex items-center justify-between text-[11px]">
-              <label className="font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+              <label htmlFor="fno-lots" className="font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
                 Number of Lots (Lot Size: {lotSize || "Unavailable"})
               </label>
               <span className="font-mono font-bold text-cyan-600 dark:text-cyan-400">
@@ -473,24 +474,30 @@ export default function FnoOrderModal({
               <div className="flex items-center rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 overflow-hidden shrink-0 shadow-xs">
                 <button
                   type="button"
-                  onClick={() => setLots((prev) => Math.max(1, prev - 1))}
+                  aria-label="Decrease lots"
+                  onClick={() => setLotsInput(String(Math.max(1, Math.min(100, Number.isSafeInteger(lots) ? lots - 1 : 1))))}
                   className="w-10 h-10 flex items-center justify-center font-bold text-lg text-slate-500 hover:text-cyan-600 dark:hover:text-cyan-400 active:bg-slate-100 dark:active:bg-slate-700 transition-colors select-none"
                 >
                   −
                 </button>
                 <input
+                  id="fno-lots"
+                  aria-label="Number of lots"
                   type="number"
                   min="1"
                   max="100"
-                  value={lots}
-                  onChange={(e) =>
-                    setLots(Math.max(1, parseInt(e.target.value) || 1))
-                  }
+                  step="1"
+                  inputMode="numeric"
+                  value={lotsInput}
+                  aria-invalid={!validQuantity}
+                  aria-describedby={!validQuantity ? "fno-lots-error" : undefined}
+                  onChange={(e) => setLotsInput(e.target.value)}
                   className="w-16 text-center py-2 bg-transparent font-black font-tabular text-sm text-slate-900 dark:text-slate-100 focus:outline-none"
                 />
                 <button
                   type="button"
-                  onClick={() => setLots((prev) => Math.min(100, prev + 1))}
+                  aria-label="Increase lots"
+                  onClick={() => setLotsInput(String(Math.min(100, Math.max(1, Number.isSafeInteger(lots) ? lots + 1 : 1))))}
                   className="w-10 h-10 flex items-center justify-center font-bold text-lg text-slate-500 hover:text-cyan-600 dark:hover:text-cyan-400 active:bg-slate-100 dark:active:bg-slate-700 transition-colors select-none"
                 >
                   +
@@ -501,7 +508,7 @@ export default function FnoOrderModal({
                 {[1, 2, 5, 10, 25].map((q) => (
                   <button
                     key={q}
-                    onClick={() => setLots(q)}
+                    onClick={() => setLotsInput(String(q))}
                     className={`px-3 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
                       lots === q
                         ? "bg-cyan-600 text-white dark:bg-cyan-500 dark:text-slate-950 font-black shadow-xs"
@@ -615,8 +622,8 @@ export default function FnoOrderModal({
           )}
           {/* Feedback message */}
           {!validQuantity && (
-            <p role="alert" className="text-sm text-amber-300">
-              A canonical lot size and whole-number lots are required.
+            <p id="fno-lots-error" role="alert" className="text-sm text-amber-800 dark:text-amber-300">
+              {validLot(lotSize) ? "Enter whole-number lots between 1 and 100." : "A canonical lot size is required."}
             </p>
           )}
           {feedback && (
@@ -681,7 +688,7 @@ export default function FnoOrderModal({
                 <span>
                   {executing
                     ? "Routing Order..."
-                    : `${side} ${totalQuantity} ${formattedContract} (${lots} LOT${lots > 1 ? "S" : ""})`}
+                    : !validQuantity ? "Enter valid lots" : `${side} ${totalQuantity} ${formattedContract} (${lots} LOT${lots > 1 ? "S" : ""})`}
                 </span>
               </button>
             );
