@@ -192,6 +192,7 @@ export type BehavioralFlag = {
 
 export type CritiqueMetrics = {
   win_rate: number;
+  realized_positions_evaluated?: number;
   concentration_risk: "LOW" | "MODERATE" | "HIGH";
   leverage_risk: "SAFE" | "ELEVATED" | "HIGH";
   revenge_trading_detected: boolean;
@@ -207,6 +208,8 @@ export type TradeCritiqueResponse = {
   metrics: CritiqueMetrics;
   behavioral_flags: BehavioralFlag[];
   critique: string;
+  source?: string;
+  fallback_reason?: string;
 };
 
 export type ApiResponse<T> = {

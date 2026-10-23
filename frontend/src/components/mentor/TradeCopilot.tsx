@@ -1,4 +1,6 @@
 "use client";
+import CopilotMarkdown from "./CopilotMarkdown";
+import { COPILOT_TIMEOUT_MS, copilotSourceLabel, isAuditRequest } from "@/lib/copilot";
 import { sessionFetch } from "@/lib/api";
 
 import { useState, useRef, useEffect } from "react";
@@ -34,6 +36,8 @@ interface ChatMessage {
   role: "user" | "copilot";
   content: string;
   timestamp: string;
+  source?: string;
+  fallbackReason?: string;
 }
 
 const PROMPT_CHIPS = [
@@ -41,56 +45,10 @@ const PROMPT_CHIPS = [
   "Analyze my portfolio risk right now",
   "How do I hedge my open positions?",
   "What happens during 15:20 MIS square-off?",
-  "How do F&O options settle on Thursday expiry?",
+  "How do F&O contracts settle on their expiry date?",
   "Explain Black-Scholes Greeks (Delta & Theta)",
   "How should I manage margin leverage?",
 ];
-
-const PREBUILT_RESPONSES: Record<string, string> = {
-  "analyze my portfolio risk right now": `📊 **Institutional Portfolio Risk Framework:**
-
-• **Position Sizing Rule:** Limit single-trade margin commitment to 2% – 5% of total capital to protect against systemic adverse gap moves.
-• **Drawdown Protocol:** Enforce a hard daily account stop-loss (e.g. 2%–3% of total equity) to pause trading after consecutive loss legs.
-• **Overnight Delta Exposure:** Avoid carrying unhedged naked short options or excessive derivative delta across sessions.
-• **Leverage Discipline:** Use MIS intraday leverage with strict stop-losses; leverage accelerates drawdowns equally during volatile swings.
-
-💡 **Key Takeaway:**
-Maintain predefined risk-reward asymmetry (minimum 1:1.5 or 1:2) before committing execution margin.`,
-
-  "how do i hedge my open positions?": `🛡️ **Institutional Hedging Playbook:**
-
-1. **Index Protective Puts (Delta Hedge):**
-   Buy Out-of-the-Money (OTM) NIFTY PE options to insulate equity delivery holdings against systemic macro gap-downs.
-2. **Covered Call Writing (Income Generation):**
-   Sell Out-of-the-Money CE contracts against long equity delivery holdings to capture Theta (time decay) yield during sideways phases.
-3. **Beta-Neutral Sector Pairs:**
-   Pair a long position in a high-conviction leader (e.g. RELIANCE) with a corresponding index or sector short hedge.`,
-
-  "what happens during 15:20 mis square-off?": `⏰ **15:20 IST MIS (Intraday) Square-off Rules:**
-
-• **Auto-Liquidation:** At exactly 15:20 IST, the Risk Management System (RMS) automatically closes all open intraday (MIS) equity, futures, and options positions at prevailing market prices.
-• **Order Cancellation:** Any pending limit orders or stop-loss trigger orders under the MIS product type are immediately cancelled.
-• **Delivery Unaffected:** Long-term delivery (CNC) and normal derivatives (NRML) positions remain active and carry overnight.`,
-
-  "how do f&o options settle on thursday expiry?": `📈 **Thursday Weekly / Monthly F&O Expiry Mechanics:**
-
-• **Cash Settlement for Indices:** All In-the-Money (ITM) Nifty & BankNifty options settle in pure cash against the official settlement price (weighted average of the last 30 minutes: 15:00 – 15:30 IST).
-• **OTM Expiration:** All Out-of-the-Money (OTM) options expire completely worthless (₹0.00 premium).
-• **Physical Delivery for Stocks:** Stock options that expire In-the-Money require mandatory physical delivery of underlying shares.`,
-
-  "explain black-scholes greeks (delta & theta)": `📐 **Options Greeks Core Primer:**
-
-• **Delta (Δ):** Measures how much the option price moves for every ₹1 move in the underlying asset. An At-the-Money call typically has a Delta of ~0.50.
-• **Theta (Θ):** Represents daily time decay. Accelerates rapidly in the final 5 days before Thursday expiry. Options buyers lose Theta every night.
-• **Gamma (Γ):** The acceleration rate of Delta as the spot price changes.
-• **Vega (ν):** Sensitivity of option premium to a 1% shift in Implied Volatility (IV).`,
-
-  "how should i manage margin leverage?": `⚖️ **Institutional Margin & Leverage Rules:**
-
-• **5x Intraday Multiplier:** While MIS offers 5x leverage on liquid stocks, leverage is a double-edged sword that amplifies losses just as fast as profits.
-• **1% Capital Rule:** Never risk losing more than 1% of total account capital (₹10,000) on any single setup.
-• **Mandatory Stop-Loss:** Always enter hard Stop-Loss (SL) trigger orders upon order fill rather than relying on mental stops.`,
-};
 
 export default function TradeCopilot({ token, apiUrl, initialQuery }: TradeCopilotProps) {
   const [question, setQuestion] = useState("");
@@ -105,24 +63,28 @@ export default function TradeCopilot({ token, apiUrl, initialQuery }: TradeCopil
       id: "welcome-1",
       role: "copilot",
       content:
-        "👋 Welcome to the **AI Trade Copilot & Institutional Risk Desk**.\n\nI monitor your position sizing, margin leverage, and execution discipline in real time. Ask me anything about risk management, portfolio hedging, MIS square-off rules, or click **Audit My Trades** above to generate your post-mortem scorecard.",
-      timestamp: "10:00 AM",
+        "Welcome to the **AI Trade Copilot**.\n\nAsk about paper-trading mechanics or request a snapshot of your account risk. Account figures use stored marks and may be stale. **Audit My Trades** reviews available records using simulator heuristics; it does not continuously monitor your account.",
+      timestamp: "Now",
+      source: "system",
     },
   ]);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const msgIdRef = useRef(1);
   const initialQueryHandled = useRef(false);
+  const auditInFlight = useRef(false);
 
   // Run Trade Post-Mortem Critique
   const handleCritique = async () => {
+    if (auditInFlight.current) return false;
     if (!token) {
       setCritique(null);
       setCritiqueError("Please log in to generate an AI trade critique for your account.");
       setShowCritique(true);
-      return;
+      return false;
     }
 
+    auditInFlight.current = true;
     setCritiquing(true);
     setCritiqueError(null);
     try {
@@ -132,12 +94,13 @@ export default function TradeCopilot({ token, apiUrl, initialQuery }: TradeCopil
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        signal: AbortSignal.timeout(10000),
+        signal: AbortSignal.timeout(COPILOT_TIMEOUT_MS),
       });
       const data = await res.json();
-      if (data.success && data.data) {
+      if (res.ok && data.success && data.data) {
         setCritique(data.data);
         setShowCritique(true);
+        return true;
       } else {
         setCritique(null);
         setCritiqueError(data.message || "Failed to generate trade critique. Ensure you have closed trades in your account.");
@@ -148,18 +111,16 @@ export default function TradeCopilot({ token, apiUrl, initialQuery }: TradeCopil
       setCritiqueError(err instanceof Error ? err.message : "Network error contacting critique desk.");
       setShowCritique(true);
     } finally {
+      auditInFlight.current = false;
       setCritiquing(false);
     }
+    return false;
   };
 
   // Ask Mentor
   const handleAsk = async (queryText?: string) => {
     const q = (queryText || question).trim();
-    if (!q || asking) return;
-
-    if (q.toLowerCase().includes("audit") || q.toLowerCase().includes("critique")) {
-      void handleCritique();
-    }
+    if (!q || asking || critiquing) return;
 
     const currentId = ++msgIdRef.current;
     const userMsgId = `u-${currentId}`;
@@ -173,65 +134,39 @@ export default function TradeCopilot({ token, apiUrl, initialQuery }: TradeCopil
     setQuestion("");
     setAsking(true);
 
-    const qLower = q.toLowerCase();
-    const matchedPrebuilt = Object.keys(PREBUILT_RESPONSES).find((k) => qLower.includes(k));
-
-    // If authenticated, always call backend AI endpoint for live trade-aware analysis
-    if (token) {
-      try {
-        const res = await sessionFetch(`${apiUrl}/ai/analyze-trade`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ question: q }),
-          signal: AbortSignal.timeout(10000),
-        });
-        const data = await res.json();
-        const reply =
-          res.ok && data.success && data.data?.answer
-            ? data.data.answer
-            : data.message || "Institutional Mentor analysis complete.";
-
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: `c-${++msgIdRef.current}`,
-            role: "copilot",
-            content: reply,
-            timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-          },
-        ]);
-        setAsking(false);
-        return;
-      } catch {
-        // Fall back gracefully below
-      }
-    }
-
-    // Guest mode or offline fallback
-    setTimeout(() => {
-      const notice = token
-        ? "⚠️ *Live portfolio telemetry temporarily unreachable. Providing educational risk framework:*\n\n"
-        : "";
-      const baseReply = matchedPrebuilt
-        ? PREBUILT_RESPONSES[matchedPrebuilt]
-        : `💡 **Institutional Copilot Assessment:**\n\nRegarding "${q}":\n• **Risk Principle:** Maintain strict position limits so that adverse gap moves never exceed 1.5% of account margin.\n• **Execution Check:** Verify technical support/resistance levels on higher timeframes (15m and 1h) before committing margin.\n• **Discipline Rule:** If you take two consecutive losses in a session, enforce an automatic 30-minute cooling break to prevent emotional bias.\n\n*Note: Educational trade simulation critique only; not financial advice.*`;
-
-      const fallbackReply = `${notice}${baseReply}`;
-
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `c-${++msgIdRef.current}`,
-          role: "copilot",
-          content: fallbackReply,
+    try {
+      if (isAuditRequest(q)) {
+        const completed = await handleCritique();
+        setMessages((prev) => [...prev, {
+          id: `c-${++msgIdRef.current}`, role: "copilot", source: "system",
+          content: completed ? "Your audit scorecard is shown above. It summarizes available records using simulator heuristics." : "The audit could not be completed. See the audit notice above and retry.",
           timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-        },
-      ]);
+        }]);
+        return;
+      }
+      if (!token) throw new Error("Please sign in to ask the Copilot about your account.");
+      const res = await sessionFetch(`${apiUrl}/ai/analyze-trade`, {
+        method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ question: q }), signal: AbortSignal.timeout(COPILOT_TIMEOUT_MS),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success || typeof data.data?.answer !== "string") {
+        throw new Error("The Copilot could not answer this request. Please retry.");
+      }
+      setMessages((prev) => [...prev, {
+        id: `c-${++msgIdRef.current}`, role: "copilot", content: data.data.answer,
+        source: data.data.source, fallbackReason: data.data.fallback_reason,
+        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      }]);
+    } catch {
+      setMessages((prev) => [...prev, {
+        id: `c-${++msgIdRef.current}`, role: "copilot", source: "system",
+        content: token ? "Copilot is temporarily unreachable. Your account was not analyzed. Please retry; you can inspect holdings and quote timestamps in Portfolio." : "Please sign in to use account-aware chat and trade audits.",
+        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      }]);
+    } finally {
       setAsking(false);
-    }, 400);
+    }
   };
 
   const handleAskRef = useRef(handleAsk);
@@ -255,7 +190,7 @@ export default function TradeCopilot({ token, apiUrl, initialQuery }: TradeCopil
       {
         id: "welcome-reset",
         role: "copilot",
-        content: "👋 Conversation thread refreshed. Select a quick practice topic below or ask about specific risk scenarios.",
+        content: "Conversation thread refreshed. Select a quick practice topic below or ask about specific risk scenarios.",
         timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
       },
     ]);
@@ -273,10 +208,11 @@ export default function TradeCopilot({ token, apiUrl, initialQuery }: TradeCopil
   };
 
   const score = critique?.discipline_score ?? 0;
-  const rating = critique?.risk_rating ?? "NEUTRAL";
-  const grade = critique?.grade ?? (score >= 85 ? "A" : score >= 70 ? "B" : score >= 50 ? "C" : "D");
+  const rating = critique?.metrics.total_trades_evaluated === 0 ? "INSUFFICIENT HISTORY" : critique?.risk_rating ?? "NEUTRAL";
+  const grade = critique?.metrics.total_trades_evaluated === 0 ? "N/A" : critique?.grade ?? "N/A";
 
   const getScoreBadge = () => {
+    if (critique?.metrics.total_trades_evaluated === 0) return "bg-slate-50 dark:bg-slate-900 border-slate-300 text-slate-600";
     if (score >= 80)
       return "bg-emerald-50 dark:bg-emerald-950/50 border-emerald-300 dark:border-emerald-700/60 text-emerald-800 dark:text-emerald-300";
     if (score >= 55)
@@ -295,7 +231,7 @@ export default function TradeCopilot({ token, apiUrl, initialQuery }: TradeCopil
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <h3 className="font-black text-sm sm:text-base text-slate-900 dark:text-slate-100 tracking-tight">
-                AI Trade Copilot & Institutional Risk Officer
+                AI Trade Copilot & Simulator Risk Officer
               </h3>
               <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 flex items-center gap-1">
                 <CheckCircle2 className="w-3 h-3" />
@@ -303,7 +239,7 @@ export default function TradeCopilot({ token, apiUrl, initialQuery }: TradeCopil
               </span>
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Audits emotional bias, leverage exposure, risk-reward symmetry, and trade execution discipline.
+              Reviews stored account figures and sampled order activity using educational heuristics.
             </p>
           </div>
         </div>
@@ -333,11 +269,11 @@ export default function TradeCopilot({ token, apiUrl, initialQuery }: TradeCopil
           <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-800">
             <span className="text-[11px] font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
               <Award className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
-              Institutional Audit & Behavioral Scorecard
+              Simulator Audit & Behavioral Scorecard
             </span>
             <div className="flex items-center gap-2">
               <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">
-                Evaluated {critique.metrics.total_trades_evaluated} Trade Executions
+                Sampled {critique.metrics.total_trades_evaluated} orders · stored account snapshot
               </span>
               <button
                 onClick={() => setShowCritique(false)}
@@ -360,7 +296,7 @@ export default function TradeCopilot({ token, apiUrl, initialQuery }: TradeCopil
                 </span>
               </div>
               <div className="flex items-baseline gap-1 my-0.5">
-                <span className="text-2xl font-black">{score}</span>
+                <span className="text-2xl font-black">{critique.metrics.total_trades_evaluated === 0 ? "N/A" : score}</span>
                 <span className="text-[10px] opacity-75 font-semibold">/ 100</span>
               </div>
               <div className="text-[10px] font-bold flex items-center gap-1">
@@ -373,7 +309,7 @@ export default function TradeCopilot({ token, apiUrl, initialQuery }: TradeCopil
             <div className="p-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl flex flex-col justify-between shadow-sm">
               <span className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold flex items-center gap-1">
                 <TrendingUp className="w-3 h-3 text-cyan-600 dark:text-cyan-400" />
-                Win Rate
+                Positive realized positions
               </span>
               <span
                 className={`text-lg font-bold my-0.5 ${
@@ -382,10 +318,10 @@ export default function TradeCopilot({ token, apiUrl, initialQuery }: TradeCopil
                     : "text-amber-600 dark:text-amber-400"
                 }`}
               >
-                {critique.metrics.win_rate.toFixed(1)}%
+                {critique.metrics.realized_positions_evaluated ? `${critique.metrics.win_rate.toFixed(1)}%` : "N/A"}
               </span>
               <span className="text-[9px] text-slate-400 font-mono truncate">
-                P&L: {formatPaise(critique.metrics.realized_pnl_paise ?? 0)}
+                Cumulative position P&L: {formatPaise(critique.metrics.realized_pnl_paise ?? 0)}
               </span>
             </div>
 
@@ -465,10 +401,7 @@ export default function TradeCopilot({ token, apiUrl, initialQuery }: TradeCopil
           <div className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-[11px] text-slate-700 dark:text-slate-300 shadow-sm flex flex-col items-start gap-2 leading-relaxed">
             <div className="flex items-start gap-2">
               <Zap className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400 shrink-0 mt-0.5" />
-              <div className="whitespace-pre-line">
-                <strong>Executive Coach Verdict:</strong> Grade <strong>{grade}</strong> ({score}/100).
-                {critique.critique ? `\n\n${critique.critique}` : " Trade audit completed."}
-              </div>
+              <div><div className="mb-2">{copilotSourceLabel(critique.source, critique.fallback_reason)} · Simulator heuristic score</div><CopilotMarkdown text={critique.critique || "Trade audit completed."} /></div>
             </div>
           </div>
         </div>
@@ -531,7 +464,10 @@ export default function TradeCopilot({ token, apiUrl, initialQuery }: TradeCopil
                     : "bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 rounded-tl-sm shadow-sm"
                 }`}
               >
-                {m.content}
+                {m.role === "copilot" ? <>
+                  <div className="mb-2 text-[10px] text-slate-500 dark:text-slate-400">{copilotSourceLabel(m.source, m.fallbackReason)}</div>
+                  <CopilotMarkdown text={m.content} />
+                </> : m.content}
                 <div
                   className={`text-[9px] mt-1.5 font-mono ${
                     m.role === "user" ? "text-cyan-200/80 text-right" : "text-slate-400 text-left"
@@ -594,12 +530,12 @@ export default function TradeCopilot({ token, apiUrl, initialQuery }: TradeCopil
             placeholder="Ask Copilot about portfolio risk, hedging setups, or execution mechanics…"
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
-            disabled={asking}
+            disabled={asking || critiquing}
             className="flex-1 px-4 py-2.5 bg-slate-50 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-cyan-500 text-xs shadow-inner"
           />
           <button
             type="submit"
-            disabled={asking || !question.trim()}
+            disabled={asking || critiquing || !question.trim()}
             className="px-5 py-2.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-bold rounded-xl flex items-center gap-1.5 transition-all shadow-md shadow-cyan-500/20 disabled:opacity-40 text-xs"
           >
             <Send className="w-3.5 h-3.5" />
@@ -607,7 +543,7 @@ export default function TradeCopilot({ token, apiUrl, initialQuery }: TradeCopil
           </button>
         </form>
 
-        {/* Institutional Educational Compliance Disclaimer */}
+        {/* Simulator Educational Compliance Disclaimer */}
         <div className="px-4 py-2 bg-slate-100/70 dark:bg-slate-900/60 border-t border-slate-200 dark:border-slate-800/80 flex items-center justify-between gap-2 text-[10px] text-slate-500 dark:text-slate-400">
           <div className="flex items-center gap-1.5">
             <ShieldCheck className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400 shrink-0" />

@@ -76,7 +76,7 @@ function MentorContent() {
               </h1>
             </div>
             <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-2 max-w-2xl leading-relaxed">
-              Real-time trading discipline letter grades (A+ to F), emotional revenge-trading detection, risk-reward symmetry auditing, and pre-trade simulation.
+              Educational trading explanations, account snapshots, heuristic reviews of order activity, and pre-trade simulation. Stored marks may be stale.
             </p>
           </div>
 

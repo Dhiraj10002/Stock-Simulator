@@ -74,9 +74,9 @@ func TestMentorHandler_Analyze(t *testing.T) {
 		}
 	})
 
-	t.Run("Short question (< 5 chars) returns 400 Bad Request", func(t *testing.T) {
+	t.Run("Blank question returns 400 Bad Request", func(t *testing.T) {
 		reqBody, _ := json.Marshal(dto.MentorRequest{
-			Question: "Hi",
+			Question: "   ",
 		})
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/ai/analyze-trade", bytes.NewReader(reqBody))
 		req.Header.Set("Content-Type", "application/json")
@@ -93,36 +93,13 @@ func TestMentorHandler_Analyze(t *testing.T) {
 func TestMentorHandler_Critique(t *testing.T) {
 	r, _ := setupTestRouter()
 
-	t.Run("Authorized request returns 200 with structured trade critique", func(t *testing.T) {
+	t.Run("Unavailable records return 503 instead of fabricated audit", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/ai/trade-critique", nil)
 		req.Header.Set("X-Test-User-ID", "31372e69-2088-45d8-a2d8-8607a58e3685")
 		w := httptest.NewRecorder()
-
 		r.ServeHTTP(w, req)
-
-		if w.Code != http.StatusOK {
-			t.Fatalf("expected 200 OK, got %d (body: %s)", w.Code, w.Body.String())
-		}
-
-		var res struct {
-			Success bool                      `json:"success"`
-			Data    dto.TradeCritiqueResponse `json:"data"`
-		}
-		if err := json.Unmarshal(w.Body.Bytes(), &res); err != nil {
-			t.Fatalf("failed to parse JSON response: %v", err)
-		}
-
-		if !res.Success {
-			t.Fatalf("expected success true, got false")
-		}
-		if res.Data.DisciplineScore <= 0 || res.Data.DisciplineScore > 100 {
-			t.Errorf("expected discipline score in 1..100, got %d", res.Data.DisciplineScore)
-		}
-		if res.Data.Grade == "" {
-			t.Errorf("expected non-empty grade")
-		}
-		if len(res.Data.BehavioralFlags) == 0 {
-			t.Errorf("expected at least one behavioral flag")
+		if w.Code != http.StatusServiceUnavailable {
+			t.Fatalf("expected 503, got %d: %s", w.Code, w.Body.String())
 		}
 	})
 
