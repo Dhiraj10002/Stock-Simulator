@@ -94,7 +94,7 @@ func TestMentorService_BuildRuleBasedCritique(t *testing.T) {
 		"Concentration Risk:",
 		"RELIANCE",
 		"Execution Discipline:",
-		"Win Rate:",
+		"Realized position outcomes:",
 	}
 
 	for _, sub := range expectedSubstrings {
@@ -241,12 +241,9 @@ func TestMentorService_AccountContextAndEducationalDisclaimers(t *testing.T) {
 	}
 
 	expectedElements := []string{
-		"Institutional Portfolio Risk Diagnostic",
-		"Live Account Context",
-		"Available Balance",
-		"Blocked Margin",
-		"Educational Notice:",
-		"simulator educational guidance only",
+		"Portfolio Risk Snapshot",
+		"Account snapshot unavailable",
+		"Educational paper-trading guidance",
 	}
 
 	for _, elem := range expectedElements {
@@ -260,10 +257,10 @@ func TestMentorService_AccountContextAndEducationalDisclaimers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(ansHedge, "Hedging Framework & Risk Mitigation") {
+	if !strings.Contains(ansHedge, "Hedging Framework") {
 		t.Errorf("expected hedging response, got:\n%s", ansHedge)
 	}
-	if !strings.Contains(ansHedge, "Educational Notice:") {
+	if !strings.Contains(ansHedge, "Educational paper-trading guidance") {
 		t.Errorf("expected educational notice in hedge response, got:\n%s", ansHedge)
 	}
 }
@@ -289,11 +286,11 @@ func TestMentorService_Critique_ZeroTradesCleanSlate(t *testing.T) {
 	}
 
 	critique := svc.buildRuleBasedCritique(100, "EXCELLENT", "A+", metrics, "")
-	if !strings.Contains(critique, "Clean Trading Slate") {
+	if !strings.Contains(critique, "Insufficient order history") {
 		t.Errorf("expected clean trading slate onboarding critique for 0 trades, got:\n%s", critique)
 	}
-	if !strings.Contains(critique, "Trader Discipline Grade: A+ — EXCELLENT (100 / 100)") {
-		t.Errorf("expected A+ grade for clean slate, got:\n%s", critique)
+	if strings.Contains(critique, "100 / 100") {
+		t.Errorf("zero history must not imply an earned grade: %s", critique)
 	}
 	if !strings.Contains(critique, "Disclaimer: Educational trade simulation critique only") {
 		t.Errorf("expected educational disclaimer in critique, got:\n%s", critique)

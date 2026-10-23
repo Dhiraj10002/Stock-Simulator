@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/ai/dto"
 	"github.com/Dhiraj10002/Stock-Simulator/backend/internal/ai/service"
@@ -22,12 +23,12 @@ func (h *MentorHandler) Analyze(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, "Invalid mentor request", err.Error())
 		return
 	}
-	answer, err := h.service.Analyze(c.Request.Context(), c.GetString("user_id"), request.Question)
-	if err != nil {
-		response.Error(c, http.StatusServiceUnavailable, err.Error(), nil)
+	if strings.TrimSpace(request.Question) == "" {
+		response.Error(c, http.StatusBadRequest, "Question cannot be blank", nil)
 		return
 	}
-	response.Success(c, http.StatusOK, "Educational analysis generated", dto.MentorResponse{Answer: answer})
+	result := h.service.AnalyzeDetailed(c.Request.Context(), c.GetString("user_id"), request.Question)
+	response.Success(c, http.StatusOK, "Educational analysis generated", result)
 }
 
 func (h *MentorHandler) Critique(c *gin.Context) {
@@ -39,7 +40,7 @@ func (h *MentorHandler) Critique(c *gin.Context) {
 
 	critique, err := h.service.Critique(c.Request.Context(), userID)
 	if err != nil {
-		response.Error(c, http.StatusInternalServerError, "Failed to generate trade critique", err.Error())
+		response.Error(c, http.StatusServiceUnavailable, "Trade audit unavailable; account records could not be read", nil)
 		return
 	}
 

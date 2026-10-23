@@ -1,11 +1,14 @@
 package dto
 
 type MentorRequest struct {
-	Question string `json:"question" binding:"required,min=5,max=2000"`
+	Question string `json:"question" binding:"required,min=1,max=2000"`
 }
 
 type MentorResponse struct {
-	Answer string `json:"answer"`
+	Answer         string `json:"answer"`
+	Source         string `json:"source"`
+	Model          string `json:"model,omitempty"`
+	FallbackReason string `json:"fallback_reason,omitempty"`
 }
 
 type BehavioralFlag struct {
@@ -15,13 +18,14 @@ type BehavioralFlag struct {
 }
 
 type CritiqueMetrics struct {
-	WinRate                float64 `json:"win_rate"`
-	ConcentrationRisk      string  `json:"concentration_risk"` // "LOW", "MODERATE", "HIGH"
-	LeverageRisk           string  `json:"leverage_risk"`      // "SAFE", "ELEVATED", "HIGH"
-	RevengeTradingDetected bool    `json:"revenge_trading_detected"`
-	LimitOrderUsagePct     float64 `json:"limit_order_usage_pct"`
-	TotalTradesEvaluated   int     `json:"total_trades_evaluated"`
-	RealizedPnlPaise       int64   `json:"realized_pnl_paise"`
+	RealizedPositionsEvaluated int     `json:"realized_positions_evaluated"`
+	WinRate                    float64 `json:"win_rate"`
+	ConcentrationRisk          string  `json:"concentration_risk"` // "LOW", "MODERATE", "HIGH"
+	LeverageRisk               string  `json:"leverage_risk"`      // "SAFE", "ELEVATED", "HIGH"
+	RevengeTradingDetected     bool    `json:"revenge_trading_detected"`
+	LimitOrderUsagePct         float64 `json:"limit_order_usage_pct"`
+	TotalTradesEvaluated       int     `json:"total_trades_evaluated"`
+	RealizedPnlPaise           int64   `json:"realized_pnl_paise"`
 }
 
 type TradeCritiqueResponse struct {
@@ -31,6 +35,8 @@ type TradeCritiqueResponse struct {
 	Metrics         CritiqueMetrics  `json:"metrics"`
 	BehavioralFlags []BehavioralFlag `json:"behavioral_flags"`
 	Critique        string           `json:"critique"`
+	Source          string           `json:"source"`
+	FallbackReason  string           `json:"fallback_reason,omitempty"`
 }
 
 type PreTradeCheckRequest struct {

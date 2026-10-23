@@ -111,35 +111,14 @@ func TestE2E_FullPlatformSuite(t *testing.T) {
 	})
 
 	// 5. AI Post-Mortem Trade Critique
-	t.Run("4. POST /api/v1/ai/trade-critique evaluates user discipline", func(t *testing.T) {
+	t.Run("4. POST /api/v1/ai/trade-critique does not fabricate unavailable records", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/ai/trade-critique", nil)
 		req.Header.Set("Authorization", "Bearer "+userToken)
 		rec := httptest.NewRecorder()
 		appRouter.ServeHTTP(rec, req)
-
-		if rec.Code != http.StatusOK {
-			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
-		}
-
-		var body struct {
-			Success bool `json:"success"`
-			Data    struct {
-				DisciplineScore int    `json:"discipline_score"`
-				RiskRating      string `json:"risk_rating"`
-				Critique        string `json:"critique"`
-			} `json:"data"`
-		}
-		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
-			t.Fatalf("failed to parse response JSON: %v", err)
-		}
-		if !body.Success {
-			t.Fatalf("expected success: true")
-		}
-		if body.Data.DisciplineScore < 10 || body.Data.DisciplineScore > 100 {
-			t.Errorf("expected discipline score in [10, 100], got %d", body.Data.DisciplineScore)
-		}
-		if body.Data.RiskRating == "" {
-			t.Errorf("expected non-empty risk rating")
+		// This fixture has no stored account. Authentication alone cannot produce an audit.
+		if rec.Code != http.StatusServiceUnavailable {
+			t.Fatalf("expected 503, got %d: %s", rec.Code, rec.Body.String())
 		}
 	})
 
