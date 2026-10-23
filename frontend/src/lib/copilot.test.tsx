@@ -15,6 +15,7 @@ test("response labels never disguise fallback as Gemini", () => {
   assert.equal(copilotSourceLabel("gemini"), "Gemini response");
   assert.match(copilotSourceLabel("rule_based", "rate_limited"), /Rule-based fallback.*quota/);
   assert.match(copilotSourceLabel(undefined), /unavailable/);
+  assert.equal(copilotSourceLabel("system"), "");
   assert.ok(COPILOT_TIMEOUT_MS > 20_000);
 });
 test("Copilot renders formatting while blocking raw HTML, script links and remote images", () => {
