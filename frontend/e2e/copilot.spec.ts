@@ -1,6 +1,6 @@
 import { test, expect, type Page, type BrowserContext } from "@playwright/test";
 
-async function setup(page: Page, context: BrowserContext, options: { fail?: boolean; delay?: number; fallback?: boolean } = {}) {
+async function setup(page: Page, context: BrowserContext, options: { fail?: boolean; delay?: number; fallback?: boolean; missingSource?: boolean } = {}) {
   await context.addCookies([{ name: "stocksim_session", value: "00000000-0000-0000-0000-000000000051", url: "http://127.0.0.1:3100" }]);
   await page.routeWebSocket("**/ws/market", ws => ws.onMessage(() => {}));
   const calls = { chat: 0, audit: 0 };
@@ -18,7 +18,7 @@ async function setup(page: Page, context: BrowserContext, options: { fail?: bool
       calls.chat++;
       if (options.fail) return route.fulfill({ status: 503, headers, json: { success: false, message: "unavailable" } });
       if (options.delay) await new Promise(resolve => setTimeout(resolve, options.delay));
-      data = { answer: "**Explore stocks**\n\n1. Compare `NSE` quotes and timestamps.", source: options.fallback ? "rule_based" : "gemini", fallback_reason: options.fallback ? "rate_limited" : undefined };
+      data = { answer: "**Explore stocks**\n\n1. Compare `NSE` quotes and timestamps.", source: options.missingSource ? undefined : options.fallback ? "rule_based" : "gemini", fallback_reason: options.fallback ? "rate_limited" : undefined };
     }
     if (path === "/ai/trade-critique") {
       calls.audit++;
@@ -65,4 +65,22 @@ test("network/API failure never invents an assessment", async ({ page, context }
   await page.getByRole("button", { name: "Send", exact: true }).click();
   await expect(page.getByText(/Your account was not analyzed/)).toBeVisible();
   await expect(page.getByText(/1.5% of account margin/)).toHaveCount(0);
+});
+
+test("local welcome and reset messages have no response-source badge or API calls", async ({ page, context }) => {
+  const calls = await setup(page, context);
+  await expect(page.getByText("Response source unavailable", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Gemini response", { exact: true })).toHaveCount(0);
+  await page.getByTitle("Clear Chat History").click();
+  await expect(page.getByText(/Conversation thread refreshed/)).toBeVisible();
+  await expect(page.getByText("Response source unavailable", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Gemini response", { exact: true })).toHaveCount(0);
+  expect(calls).toEqual({ chat: 0, audit: 0 });
+});
+
+test("a server response with missing metadata still shows source unavailable", async ({ page, context }) => {
+  await setup(page, context, { missingSource: true });
+  await page.getByPlaceholder(/Ask Copilot/).fill("Explain stocks");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(page.getByText("Response source unavailable", { exact: true })).toBeVisible();
 });

@@ -29,6 +29,30 @@ request/model configuration; the operator must check the Google project privatel
 
 ## Configure and verify Gemini
 
+### Response style and financial wording
+
+Chat instructions target 60–120 words and up to three bullets by default;
+greetings use one or two sentences, and explicit requests for detail may be
+longer. Audit narratives target at most 120 words without repeating the
+scorecard. These are model instructions, not hard truncation limits or a
+guarantee of accuracy. The UI keeps its persistent educational notice;
+generated responses should include claim-specific limitations instead of
+repeating a generic disclaimer.
+
+General explanations should not insert personal account figures unless asked.
+Account responses distinguish virtual money and simulated holdings from real
+market data, available cash from blocked margin, and concentration in gross
+open-position marked value from total account-equity allocation. Zero blocked
+margin is not proof of zero market risk or margin-call safety. Recent orders
+alone do not establish fills or completed round trips. Stored values may be
+stale and concentration can fall back to entry cost for zero marked values.
+
+Local welcome/reset/status messages have no provider-source badge. Server
+responses retain Gemini/fallback labels; missing server metadata still shows
+`Response source unavailable` rather than being disguised as a local message.
+
+### Production configuration
+
 Local development: set `backend/.env`. Oracle production: set the root `.env`
 (or the existing `PRODUCTION_ENV_FILE`) used by the backend's Compose `env_file`.
 Never put the key in frontend variables or paste it into an issue/chat.

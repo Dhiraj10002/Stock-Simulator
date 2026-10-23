@@ -148,6 +148,25 @@ func TestAccountSnapshotAndAuditReadActualRecords(t *testing.T) {
 	if !snapshot.Available || snapshot.AvailableBalancePaise != 69364500 || math.Abs(snapshot.ConcentrationRatio-82.4) > 0.001 {
 		t.Fatalf("wrong snapshot: %+v", snapshot)
 	}
+	// Real records must reach Gemini with distinct cash/margin and concentration
+	// denominators, so zero blocked funds cannot be presented as zero market risk.
+	svc := withGeminiResponse(200, "")
+	svc.client.Transport = geminiTransport(func(r *http.Request) (*http.Response, error) {
+		var request geminiRequest
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatal(err)
+		}
+		prompt := request.Contents[0].Parts[0].Text
+		for _, fact := range []string{"Available cash: ₹693645.00", "Blocked margin: ₹0.00", "82.4% in TCS-EQ", "excludes cash; not account-equity allocation", "virtual money and simulated holdings", "not invested-capital utilization or a risk score"} {
+			if !strings.Contains(prompt, fact) {
+				t.Fatalf("missing account context %q in %s", fact, prompt)
+			}
+		}
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"candidates":[{"finishReason":"STOP","content":{"parts":[{"text":"Stored marks may be stale."}]}}]}`))}, nil
+	})
+	if answer := svc.AnalyzeDetailed(context.Background(), user.String(), "Analyze my portfolio"); answer.Source != "gemini" {
+		t.Fatalf("unexpected fallback: %+v", answer)
+	}
 	audit, err := service.Critique(context.Background(), user.String())
 	if err != nil {
 		t.Fatal(err)

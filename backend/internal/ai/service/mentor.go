@@ -520,12 +520,12 @@ func (s *MentorService) Critique(ctx context.Context, userID string) (*dto.Trade
 	// The numeric score is always calculated by Go; Gemini only writes a narrative.
 	if strings.TrimSpace(s.apiKey) != "" && totalTrades > 0 {
 		uCtx := s.fetchUserAccountContext(userID)
-		prompt := fmt.Sprintf("Act as an institutional risk officer. Evaluate this simulated trader:\n"+
+		prompt := fmt.Sprintf("Review the available simulator records using educational heuristics:\n"+
 			"%s\n"+
 			"Trader Grade: %s (Discipline Score: %d/100, Rating: %s)\n"+
 			"Positive share of positions with non-zero cumulative realized P&L: %.1f%%; %d sampled orders (Realized P&L: ₹%.2f)\n"+
 			"Behavioral Flags: Rapid Order Activity: %t, Concentration Risk: %s (%s), Margin Leverage Risk: %s, Limit Order Discipline: %.0f%%\n"+
-			"Provide a concise 2-to-3 paragraph professional executive critique with actionable recommendations for risk mitigation. Explicitly state that this is an educational simulation critique and not financial advice.",
+			"Write at most 120 words in up to 3 bullets: a supported observation, its limitation, and a practical review step. Do not repeat the scorecard or a generic disclaimer. Rapid order activity does not prove revenge trading; an order is not necessarily a fill. Preserve the distinction between realized position outcomes and per-trade win rate.",
 			uCtx.FullContextString, grade, score, riskRating, winRate, totalTrades, float64(totalRealizedPnlPaise)/100.0,
 			revengeDetected, concentrationRisk, maxSymbol, leverageRisk, limitUsagePct)
 		llmCritique, err := s.callGemini(ctx, prompt)
@@ -625,12 +625,12 @@ func (s *MentorService) fetchUserAccountContext(userID string) UserAccountContex
 
 	// Build human-readable structured context summary for LLM prompt and rule-based engine
 	var sb strings.Builder
-	sb.WriteString("SIMULATOR ACCOUNT SNAPSHOT (stored marks; not a live price/risk guarantee):\n")
-	sb.WriteString(fmt.Sprintf("- Available Margin: ₹%.2f | Blocked Margin: ₹%.2f (%.1f%% Margin Utilization)\n",
+	sb.WriteString("SIMULATOR ACCOUNT SNAPSHOT (virtual money and simulated holdings; real market data, but stored marks may be stale):\n")
+	sb.WriteString(fmt.Sprintf("- Available cash: ₹%.2f | Blocked margin: ₹%.2f (%.1f%% of wallet cash balance; not invested-capital utilization or a risk score)\n",
 		float64(ctx.AvailableBalancePaise)/100.0, float64(ctx.BlockedPaise)/100.0, ctx.MarginUtilizationPct))
 
 	if len(positions) == 0 {
-		sb.WriteString("- Open Positions (0): No active simulator positions (portfolio is 100% liquid cash).\n")
+		sb.WriteString("- Open Positions (0): No active simulator positions. Check blocked margin and pending orders separately.\n")
 	} else {
 		sb.WriteString(fmt.Sprintf("- Open Positions (%d):\n", len(positions)))
 		for i, p := range positions {
@@ -655,7 +655,7 @@ func (s *MentorService) fetchUserAccountContext(userID string) UserAccountContex
 	if len(orders) == 0 {
 		sb.WriteString("- Recent Orders (0): No simulator orders placed yet.\n")
 	} else {
-		sb.WriteString(fmt.Sprintf("- Recent Orders (%d evaluated):\n", len(orders)))
+		sb.WriteString(fmt.Sprintf("- Recent Orders (%d sampled; statuses below do not alone establish fills or completed round trips):\n", len(orders)))
 		for i, o := range orders {
 			if i >= 5 {
 				break
@@ -667,6 +667,7 @@ func (s *MentorService) fetchUserAccountContext(userID string) UserAccountContex
 
 	if ctx.TopSymbol != "" && ctx.ConcentrationRatio > 0 {
 		sb.WriteString(fmt.Sprintf("- Largest position share of gross open-position marked value: %.1f%% in %s (excludes cash; not account-equity allocation)\n", ctx.ConcentrationRatio, ctx.TopSymbol))
+		sb.WriteString("- Concentration uses absolute stored position values, falling back to average entry price when a marked value is zero. It is not a live valuation or complete derivatives exposure measure.\n")
 	}
 
 	ctx.FullContextString = sb.String()
@@ -675,10 +676,9 @@ func (s *MentorService) fetchUserAccountContext(userID string) UserAccountContex
 
 func (s *MentorService) buildRuleBasedCritique(score int, rating, grade string, metrics dto.CritiqueMetrics, topSymbol string) string {
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("📊 **Institutional Trade Post-Mortem Assessment**\n\n"))
+	b.WriteString("📊 **Educational Simulator Trade Review**\n\n")
 	if metrics.TotalTradesEvaluated == 0 {
 		b.WriteString("**Insufficient order history:** No sampled orders were found. No discipline grade can be established from that sample. Existing positions and cash must be checked separately.\n\n")
-		b.WriteString("*Disclaimer: Educational trade simulation critique only; not financial advice.*")
 		return b.String()
 	}
 	b.WriteString(fmt.Sprintf("**Trader Discipline Grade: %s — %s (%d / 100)**\n\n", grade, rating, score))
@@ -688,7 +688,7 @@ func (s *MentorService) buildRuleBasedCritique(score int, rating, grade string, 
 	}
 
 	if metrics.ConcentrationRisk == "HIGH" {
-		b.WriteString(fmt.Sprintf("⚠️ **Concentration Risk:** Your capital is heavily concentrated in `%s`. Review its share of gross open-position marked value; this excludes cash and is not a total-account risk measure.\n\n", topSymbol))
+		b.WriteString(fmt.Sprintf("⚠️ **Concentration Risk:** `%s` triggered a high share of gross open-position marked value. This excludes cash and is not a total-account risk measure.\n\n", topSymbol))
 	} else {
 		b.WriteString("✅ **Position Sizing:** No high concentration flag was triggered by this heuristic; this is not a complete risk assessment.\n\n")
 	}
@@ -704,7 +704,6 @@ func (s *MentorService) buildRuleBasedCritique(score int, rating, grade string, 
 	}
 
 	b.WriteString("This heuristic review cannot establish profitability or future returns. Check quote freshness, execution constraints and your recorded trading plan.\n\n")
-	b.WriteString("*Disclaimer: Educational trade simulation critique only; not SEBI-registered financial advice.*")
 	return b.String()
 }
 

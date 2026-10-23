@@ -292,8 +292,8 @@ func TestMentorService_Critique_ZeroTradesCleanSlate(t *testing.T) {
 	if strings.Contains(critique, "100 / 100") {
 		t.Errorf("zero history must not imply an earned grade: %s", critique)
 	}
-	if !strings.Contains(critique, "Disclaimer: Educational trade simulation critique only") {
-		t.Errorf("expected educational disclaimer in critique, got:\n%s", critique)
+	if !strings.Contains(critique, "Educational Simulator Trade Review") {
+		t.Errorf("expected an educational review, got:\n%s", critique)
 	}
 }
 

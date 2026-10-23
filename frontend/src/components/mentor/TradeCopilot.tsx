@@ -190,6 +190,7 @@ export default function TradeCopilot({ token, apiUrl, initialQuery }: TradeCopil
       {
         id: "welcome-reset",
         role: "copilot",
+        source: "system",
         content: "Conversation thread refreshed. Select a quick practice topic below or ask about specific risk scenarios.",
         timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
       },
@@ -465,7 +466,7 @@ export default function TradeCopilot({ token, apiUrl, initialQuery }: TradeCopil
                 }`}
               >
                 {m.role === "copilot" ? <>
-                  <div className="mb-2 text-[10px] text-slate-500 dark:text-slate-400">{copilotSourceLabel(m.source, m.fallbackReason)}</div>
+                  {m.source !== "system" && <div className="mb-2 text-[10px] text-slate-500 dark:text-slate-400">{copilotSourceLabel(m.source, m.fallbackReason)}</div>}
                   <CopilotMarkdown text={m.content} />
                 </> : m.content}
                 <div
