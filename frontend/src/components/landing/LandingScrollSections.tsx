@@ -974,14 +974,28 @@ export default function LandingScrollSections() {
           </div>
           <div className="review-bottom">
             <p>
-              {"Tried the platform? Your feedback can help make the next learning journey better."}
+              {"Tried the platform? Connect with Dhiraj or explore the code:"}
             </p>
-            <a href="https://github.com/Dhiraj10002/Stock-Simulator" target="_blank" rel="noopener noreferrer">
-              {"Explore the project on GitHub "}
-              <span>
-                {"↗"}
-              </span>
-            </a>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+              <a href="https://github.com/Dhiraj10002" target="_blank" rel="noopener noreferrer">
+                {"GitHub "}
+                <span>
+                  {"↗"}
+                </span>
+              </a>
+              <a href="https://www.linkedin.com/in/dhirajgupta1002/" target="_blank" rel="noopener noreferrer">
+                {"LinkedIn "}
+                <span>
+                  {"↗"}
+                </span>
+              </a>
+              <a href="https://dhiraj-my-portfolio.vercel.app/" target="_blank" rel="noopener noreferrer">
+                {"Portfolio "}
+                <span>
+                  {"↗"}
+                </span>
+              </a>
+            </div>
           </div>
         </div>
       </div>

@@ -428,5 +428,14 @@ Follow [the production deployment guide](docs/deployment.md) for environment set
 
 ---
 
+## 👨‍💻 Author & Connect
+
+**Dhiraj Gupta**
+- **Portfolio:** [dhiraj-my-portfolio.vercel.app](https://dhiraj-my-portfolio.vercel.app/)
+- **LinkedIn:** [linkedin.com/in/dhirajgupta1002](https://www.linkedin.com/in/dhirajgupta1002/)
+- **GitHub:** [@Dhiraj10002](https://github.com/Dhiraj10002)
+
+---
+
 ## ⚖️ License
 Distributed under the MIT License. See `LICENSE` for details.
