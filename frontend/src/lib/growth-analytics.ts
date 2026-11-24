@@ -6,7 +6,6 @@ type Consent = "unknown" | "unset" | "granted" | "denied";
 type GoogleWindow = Window & {
   dataLayer?: unknown[];
   gtag?: (...args: unknown[]) => void;
-  [key: `ga-disable-${string}`]: boolean | undefined;
 };
 let initialized = false;
 let lastPage = "";
@@ -35,7 +34,7 @@ export function setAnalyticsConsent(value: "granted" | "denied") {
   if (!available()) return;
   try { localStorage.setItem(consentKey, value); } catch { return; }
   if (value === "denied") {
-    (window as GoogleWindow)[`ga-disable-${id}`] = true;
+    Reflect.set(window, `ga-disable-${id}`, true);
     if (initialized) { window.location.reload(); return; }
   }
   window.dispatchEvent(new Event(consentEvent));
@@ -58,9 +57,11 @@ function context() {
 function initialize() {
   if (getAnalyticsConsent() !== "granted") return false;
   const w = window as GoogleWindow;
-  w[`ga-disable-${id}`] = false;
+  Reflect.set(w, `ga-disable-${id}`, false);
   if (initialized) return true;
   w.dataLayer = w.dataLayer || [];
+  // Keep the Google tag protocol: its command queue uses an Arguments object.
+  // eslint-disable-next-line prefer-rest-params
   w.gtag = function () { w.dataLayer?.push(arguments); };
   w.gtag("js", new Date());
   w.gtag("config", id, {
