@@ -1,4 +1,5 @@
 import { SpeedInsights } from "@vercel/speed-insights/next";
+import GrowthAnalytics from "@/components/analytics/GrowthAnalytics";
 import { SITE_URL, SITE_NAME, SITE_DESCRIPTION } from "@/lib/seo";
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
@@ -102,6 +103,7 @@ export default function RootLayout({
         </div>
 
         {process.env.NEXT_PUBLIC_ENABLE_SPEED_INSIGHTS === "true" && <SpeedInsights />}
+        <GrowthAnalytics />
         <div className="relative z-10 flex-1 flex flex-col">
           <ThemeProvider>
             <ToastProvider>
