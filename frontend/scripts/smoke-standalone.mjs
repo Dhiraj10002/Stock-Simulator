@@ -83,7 +83,9 @@ async function main() {
     assert.ok((await robots.text()).includes("Sitemap: " + canonicalOrigin + "/sitemap.xml"));
     const sitemap = await fetch(origin + "/sitemap.xml");
     assert.equal(sitemap.status, 200);
-    const locations = [...(await sitemap.text()).matchAll(/<loc>([^<]+)<\/loc>/g)].map(match => match[1]);
+    const sitemapXml = await sitemap.text();
+    assert.doesNotMatch(sitemapXml, /<lastmod>/, "No fabricated last-modified dates");
+    const locations = [...sitemapXml.matchAll(/<loc>([^<]+)<\/loc>/g)].map(match => match[1]);
     assert.deepEqual(locations.sort(), publicPaths.map(path => canonicalOrigin + (path === "/" ? "" : path)).sort());
     for (const path of ["/brand/stock-simulator-mark.svg", "/brand/social-preview.png", "/favicon.ico", "/manifest.webmanifest"]) {
       const response = await fetch(origin + path);

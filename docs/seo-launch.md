@@ -2,9 +2,9 @@
 
 The canonical website is https://www.stock-simulator.in. Public pages have individual titles, descriptions, canonical URLs, Open Graph and Twitter previews. The homepage includes WebSite, Organization and educational WebApplication structured data without fabricated ratings or trading performance.
 
-The sitemap lists the homepage, stocks explorer, futures/options explorer, news, about, privacy and terms. It omits account pages, query-string filters and unverified client-resolved instrument routes. There is no invented last-modified timestamp. Account and auth pages inherit noindex,follow; instrument detail routes override the parent stocks canonical and stay noindex until server-side instrument identity/content can be verified. These directives do not replace authentication.
+The sitemap lists the homepage, stocks explorer, futures/options explorer, news, about, privacy and terms. It omits account pages, query-string filters and unverified client-resolved instrument routes. Omit lastModified until real per-page content update dates are available. Account and auth pages inherit noindex,follow; instrument detail routes override the parent stocks canonical and stay noindex until server-side instrument identity/content can be verified. These directives do not replace authentication.
 
-Production robots rules allow public crawling and disallow /api/. Account pages remain crawlable so crawlers can see their noindex tag. Vercel Preview builds have noindex metadata and disallow crawling. Public canonicals always point at the custom domain.
+Production robots rules allow public crawling and disallow API and selected account routes. Authentication is the access control; robots rules are not a security boundary. Vercel Preview builds have noindex metadata and disallow crawling. Public canonicals always point at the custom domain.
 
 ## After deploying this PR
 
@@ -21,3 +21,13 @@ Add server-rendered educational pages explaining delivery (CNC), intraday (MIS),
 ## Branding
 
 The brand SVG is a lightweight vector interpretation of the approved cyan/blue/violet ribbon and ascending bars. The wordmark remains accessible live text. Regenerate browser, app and social assets with node scripts/generate-brand-icons.mjs inside frontend. No image library or client animation was added.
+
+
+## Phase 1: indexing and signup measurement
+
+- Search Console: submit the sitemap, then inspect each public URL and check Google-selected canonical, indexing and live test. Export Performance (Web, last 28 days and last 3 months) including Queries and Pages; export Page indexing as well. Compare equivalent periods and prioritize relevant non-brand queries with impressions and positions 4–20. Do not infer queries from aggregate totals.
+- GA4 is disabled by default. Create a web data stream for https://www.stock-simulator.in; turn off Enhanced Measurement in the stream (including automatic history-based page views, form and site-search events). Disable Google signals, ads personalization and user-provided data collection. Do not enable automatic collection or ad integrations. Review privacy requirements before activation.
+- Set NEXT_PUBLIC_GA_MEASUREMENT_ID=G-... in Vercel Production only, then rebuild/redeploy. The tag loads only on the canonical host (or local development) after explicit consent. Declining is equally available; the privacy page lets users change preferences. No analytics event includes account details or trades; private paths are grouped as /app, and referrers are reduced to origins. Campaign query parameters are intentionally omitted; attribution can be incomplete.
+- sign_up fires only after the register response confirms account creation, not after login, failed registration or a button click. Mark sign_up as a key event in GA4. In an exploration, compare Total users and users who triggered sign_up by first user source/medium (google / organic), over the same date range. Signup user conversion = unique measured signup users / measured users. GA4 consent, blockers and attribution mean results are directional, not a database count. Search Console clicks are not the denominator.
+- Validate with a clean browser and DevTools: no Google tag request before consent or after declining; after allowing, confirm one page_view per measured path and sign_up only on a successful registration. Verify failed registration/login do not emit sign_up. Check payloads for no personal data. Revoke on /privacy and confirm no further tag requests after reload. Test GA4 Realtime/DebugView with a dedicated test stream before production. Exclude your own test traffic.
+- Run npm test, npm run lint, npm run build and npm run test:standalone in frontend. Check deployed sitemap XML and robots with curl and Search Console URL Inspection. No private Search Console or GA4 access is assumed.

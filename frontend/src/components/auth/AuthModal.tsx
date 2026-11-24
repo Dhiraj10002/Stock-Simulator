@@ -1,6 +1,7 @@
 "use client";
 import { BrandMark } from "@/components/brand/BrandLogo";
 import { sessionFetch } from "@/lib/api";
+import { trackSignup } from "@/lib/growth-analytics";
 
 import React, { useState, useEffect, useRef } from "react";
 import {
@@ -197,6 +198,8 @@ export default function AuthModal({
           }
           throw new Error(errorMsg);
         }
+        // Count successful account creation even if the subsequent login fails.
+        trackSignup();
       }
 
       const loginRes = await sessionFetch(`${apiUrl}/auth/login`, {
