@@ -1,6 +1,6 @@
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import GrowthAnalytics from "@/components/analytics/GrowthAnalytics";
-import { SITE_URL, SITE_NAME, SITE_DESCRIPTION } from "@/lib/seo";
+import { SITE_URL, SITE_NAME, SITE_DESCRIPTION, HOME_TITLE } from "@/lib/seo";
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
@@ -31,7 +31,7 @@ export const viewport: Viewport = {
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
-  title: { default: "Stock Simulator — Paper Trading in India", template: "%s | Stock Simulator" },
+  title: { default: HOME_TITLE, template: "%s | Stock Simulator" },
   description: SITE_DESCRIPTION,
   applicationName: SITE_NAME,
   verification: {

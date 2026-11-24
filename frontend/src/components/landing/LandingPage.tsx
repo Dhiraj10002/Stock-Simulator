@@ -620,7 +620,7 @@ export default function LandingPage() {
             </div>
             <h2 className="text-2xl sm:text-4xl lg:text-5xl font-black uppercase tracking-tight leading-[1.05]">
               <AnimatedPhrase
-                phrase="A dashboard that"
+                phrase="A paper trading dashboard"
                 className=""
                 letterClassName="text-white"
               />{" "}
@@ -629,7 +629,7 @@ export default function LandingPage() {
               </span>
             </h2>
             <p className="text-slate-300 text-xs sm:text-sm max-w-xl mx-auto leading-relaxed pt-0.5">
-              Scroll and watch it settle into place. Every number here is driven by the same engine that powers your trades.
+              Explore a sample virtual portfolio, cash balance and paper orders in the interactive 3D preview. Figures shown here are illustrative, not live account results.
             </p>
           </div>
 
@@ -679,7 +679,7 @@ export default function LandingPage() {
                     </span>
                   </h2>
                   <p className="text-slate-300 text-xs sm:text-sm lg:text-base max-w-2xl mx-auto leading-relaxed">
-                    Build the instincts of an institutional trader with zero financial risk. Unlock ₹10,00,000 in virtual seed capital and place your first paper order in under 60 seconds.
+                    Create a free account, receive ₹10,00,000 in virtual capital and practise your first paper order. Review your simulated results before making any real-money decisions.
                   </p>
                 </div>
 
@@ -730,7 +730,7 @@ export default function LandingPage() {
                     <CheckCircle2 className="w-4 h-4 text-cyan-400" /> Real NSE/NFO Tick Stream
                   </span>
                   <span className="flex items-center gap-1.5 text-slate-300">
-                    <CheckCircle2 className="w-4 h-4 text-purple-400" /> 100% Risk-Free Practice
+                    <CheckCircle2 className="w-4 h-4 text-purple-400" /> No Real-Money Trades
                   </span>
                   <span className="flex items-center gap-1.5 text-slate-300">
                     <CheckCircle2 className="w-4 h-4 text-amber-400" /> Zero Credit Card Required
@@ -751,8 +751,14 @@ export default function LandingPage() {
             {/* Brand & Mission Column (Col 5) */}
             <div className="md:col-span-5 space-y-4">
               <BrandLogo className="text-white" tagline="Indian financial market engine" />
-              <p className="text-xs sm:text-[13px] text-slate-400 leading-relaxed max-w-md font-normal">
-                India&apos;s premier institutional-fidelity paper trading platform. Practise NSE cash equities and NFO options and futures risk-free with ₹10,00,000 in virtual seed capital.
+              <h2 id="footer-market-heading" className="text-2xl sm:text-3xl font-black uppercase tracking-tight leading-tight text-white">
+                STOCK SIMULATOR{" "}<br />
+                <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 via-teal-200 to-emerald-400">FOR INDIA.</span>
+              </h2>
+              <p id="footer-market-description" className="text-xs sm:text-[13px] text-slate-400 leading-relaxed max-w-md font-normal">
+                Free paper trading with ₹10,00,000 virtual capital. Practice delivery and intraday trading in{" "}
+                <Link prefetch={false} href="/stocks" className="underline underline-offset-2 hover:text-cyan-300">NSE stocks</Link>, or explore{" "}
+                <Link prefetch={false} href="/options" className="underline underline-offset-2 hover:text-cyan-300">futures and options</Link>{" "}without risking real money.
               </p>
 
               {/* Developer & Social Badges */}
@@ -826,31 +832,31 @@ export default function LandingPage() {
             <div className="md:col-span-7 grid grid-cols-2 sm:grid-cols-3 gap-8">
               {/* Product */}
               <div className="space-y-3 font-mono">
-                <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                <h2 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
                   <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
                   PLATFORM
-                </h4>
+                </h2>
                 <ul className="space-y-2 text-xs text-slate-400">
                   <li>
                     <Link prefetch={false} href="/stocks" className="hover:text-cyan-300 transition-colors flex items-center gap-1.5 font-bold text-slate-200">
                       <TrendingUp className="w-3.5 h-3.5 text-cyan-400" />
-                      <span>Stock Explorer</span>
+                      <span>NSE Stock Explorer</span>
                     </Link>
                   </li>
                   <li>
                     <Link prefetch={false} href="/stocks" className="hover:text-cyan-300 transition-colors flex items-center gap-1.5">
-                      <span>Equities Overview</span>
+                      <span>Equity Paper Trading</span>
                     </Link>
                   </li>
                   <li>
                     <Link prefetch={false} href="/options" className="hover:text-cyan-300 transition-colors flex items-center gap-1.5">
-                      <span>Options Chain (L2)</span>
-                      <span className="text-[9px] px-1.5 py-0.2 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">LIVE</span>
+                      <span>Options Chain</span>
+                      <span className="text-[9px] px-1.5 py-0.2 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">NFO</span>
                     </Link>
                   </li>
                   <li>
                     <Link prefetch={false} href="/options" className="hover:text-cyan-300 transition-colors flex items-center gap-1.5">
-                      <span>Iron Condor Lab</span>
+                      <span>Futures Trading</span>
                     </Link>
                   </li>
                   <li>
@@ -863,24 +869,24 @@ export default function LandingPage() {
 
               {/* Resources */}
               <div className="space-y-3 font-mono">
-                <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                <h2 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
                   <span className="w-1.5 h-1.5 rounded-full bg-orange-400" />
                   RESOURCES
-                </h4>
+                </h2>
                 <ul className="space-y-2 text-xs text-slate-400">
                   <li><a href="#how" className="hover:text-orange-300 transition-colors">How It Works</a></li>
                   <li><a href="#features" className="hover:text-orange-300 transition-colors">Platform Features</a></li>
                   <li><a href="#testimonials" className="hover:text-orange-300 transition-colors">Trader Reviews</a></li>
-                  <li><Link prefetch={false} href="/options" className="hover:text-orange-300 transition-colors">Risk Calculator</Link></li>
+                  <li><Link prefetch={false} href="/news" className="hover:text-orange-300 transition-colors">Stock Market News</Link></li>
                 </ul>
               </div>
 
               {/* Legal & Compliance */}
               <div className="space-y-3 font-mono">
-                <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                <h2 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
                   <span className="w-1.5 h-1.5 rounded-full bg-purple-400" />
-                  COMPLIANCE
-                </h4>
+                  ABOUT &amp; LEGAL
+                </h2>
                 <ul className="space-y-2 text-xs text-slate-400">
                   <li><Link prefetch={false} href="/about" className="hover:text-purple-300 transition-colors">About Paper Trading</Link></li>
                   <li><Link prefetch={false} href="/terms" className="hover:text-purple-300 transition-colors">Terms of Service</Link></li>
@@ -916,7 +922,7 @@ export default function LandingPage() {
           {/* Bottom Horizon Strip */}
           <div className="pt-6 mt-6 border-t border-white/[0.06] flex flex-col sm:flex-row items-center justify-between gap-4 text-xs font-mono text-slate-500">
             <div className="flex flex-wrap items-center gap-2">
-              <span>&copy; 2026 Stock Simulator Inc.</span>
+              <span>&copy; 2026 Stock Simulator</span>
               <span>•</span>
               <span className="text-slate-400">Engineered for Indian Capital Markets</span>
               <span>•</span>
