@@ -440,7 +440,7 @@ export default function LandingPage() {
             transition: "transform 0.15s ease-out",
           }}
         >
-          <h1 className="text-4xl sm:text-6xl lg:text-7xl font-black uppercase tracking-tighter leading-[0.98]">
+          <h1 aria-label="STOCK SIMULATOR FOR INDIA." className="text-4xl sm:text-6xl lg:text-7xl font-black uppercase tracking-tighter leading-[0.98]">
             <AnimatedPhrase
               phrase="STOCK SIMULATOR"
               className=""
