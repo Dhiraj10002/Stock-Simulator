@@ -1,7 +1,7 @@
 import LandingPage from "@/components/landing/LandingPage";
-import { publicPageMetadata, SITE_DESCRIPTION, SITE_NAME, SITE_URL } from "@/lib/seo";
+import { publicPageMetadata, HOME_TITLE, SITE_DESCRIPTION, SITE_NAME, SITE_URL } from "@/lib/seo";
 
-export const metadata = publicPageMetadata("/", "Stock Simulator — Paper Trading in India", SITE_DESCRIPTION);
+export const metadata = publicPageMetadata("/", HOME_TITLE, SITE_DESCRIPTION);
 
 const structuredData = {
   "@context": "https://schema.org",

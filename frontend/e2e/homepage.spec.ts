@@ -12,7 +12,14 @@ test("original cinematic homepage renders without JavaScript and its footer link
   const context = await browser.newContext({ javaScriptEnabled: false, viewport: { width: 390, height: 844 } });
   const page = await context.newPage();
   await page.goto("http://127.0.0.1:3100/");
-  await expect(page.getByRole("heading", { level: 1 })).toContainText("ZERO FINANCIAL RISK.");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveAccessibleName("STOCK SIMULATOR FOR INDIA.");
+  await expect(page).toHaveTitle("Stock Simulator India – Free Paper Trading");
+  await expect(page.locator('meta[name="description"]')).toHaveAttribute("content", "Practice NSE stocks, intraday trading, futures and options with ₹10 lakh virtual capital. Learn stock trading without risking real money.");
+  await expect(page.locator("#hero").getByRole("link", { name: "NSE stocks", exact: true })).toHaveAttribute("href", "/stocks");
+  await expect(page.locator("#hero").getByRole("link", { name: "futures and options", exact: true })).toHaveAttribute("href", "/options");
+  await expect(page.locator("#hero").getByRole("link", { name: "Start Paper Trading", exact: true })).toHaveAttribute("href", "/signup");
+  await expect(page.locator("footer").getByRole("link", { name: "Stock Market News", exact: true })).toHaveAttribute("href", "/news");
   await expect(page.locator("#hero")).toContainText("₹10,00,000 virtual capital");
   for (const id of ["platform", "how", "features", "testimonials", "portal"]) await expect(page.locator(`#${id}`)).toHaveCount(1);
   await expect(page.getByRole("link", { name: "Log In", exact: true })).toHaveAttribute("href", "/login");
@@ -38,7 +45,7 @@ test("cinematic homepage starts no private requests or market socket for a signe
   page.on("pageerror", error => errors.push(error.message));
   await page.addInitScript(() => { document.cookie = "stocksim_session=fixture; Path=/; SameSite=Lax"; });
   await page.goto("/");
-  await expect(page.getByRole("link", { name: "Open Dashboard", exact: true })).toHaveAttribute("href", "/dashboard");
+  await expect(page.getByRole("link", { name: "Start Paper Trading", exact: true })).toHaveAttribute("href", "/dashboard");
   await page.getByRole("link", { name: "Explore Platform ↓", exact: true }).click();
   await expect(page.locator("#platform")).toBeInViewport();
   await expect(page.locator(".landing-experience")).toHaveAttribute("data-motion-ready", "true");
