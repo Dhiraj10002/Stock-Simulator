@@ -48,14 +48,11 @@ function AnimatedPhrase({
   return (
     <span className={`inline-block ${className}`}>
       {phrase.split(" ").map((w, i) => (
-        <React.Fragment key={i}>
-          {i > 0 && " "}
-          <span className={`inline-block whitespace-nowrap ${wordClassName}`}>
-            {w.split("").map((c, cIdx) => (
-              <AnimatedLetter key={cIdx} char={c} className={letterClassName} />
-            ))}
-          </span>
-        </React.Fragment>
+        <span key={i} className={`inline-block whitespace-nowrap mr-[0.26em] ${wordClassName}`}>
+          {w.split("").map((c, cIdx) => (
+            <AnimatedLetter key={cIdx} char={c} className={letterClassName} />
+          ))}
+        </span>
       ))}
     </span>
   );
@@ -440,28 +437,27 @@ export default function LandingPage() {
             transition: "transform 0.15s ease-out",
           }}
         >
-          <h1 aria-label="STOCK SIMULATOR FOR INDIA." className="text-4xl sm:text-6xl lg:text-7xl font-black uppercase tracking-tighter leading-[0.98]">
+          <h1 className="text-4xl sm:text-6xl lg:text-7xl font-black uppercase tracking-tighter leading-[0.98]">
             <AnimatedPhrase
-              phrase="STOCK SIMULATOR"
+              phrase="MASTER THE MARKET."
               className=""
               letterClassName="text-white"
             />
-            {" "}<br />
+            <br />
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 via-teal-200 to-emerald-400 drop-shadow-[0_0_35px_rgba(6,182,212,0.45)]">
-              FOR INDIA.
+              ZERO FINANCIAL RISK.
             </span>
           </h1>
 
           <p className="text-white/50 text-sm sm:text-base max-w-xl mx-auto leading-relaxed pt-1 font-normal">
-            Free paper trading with ₹10,00,000 virtual capital. Practice delivery and intraday trading in{" "}
-            <Link prefetch={false} href="/stocks" className="underline decoration-white/30 underline-offset-2 hover:text-white">NSE stocks</Link>, or explore{" "}
-            <Link prefetch={false} href="/options" className="underline decoration-white/30 underline-offset-2 hover:text-white">futures and options</Link>{" "}without risking real money.
+            Experience institutional-grade paper trading with ₹10,00,000 virtual capital in spatial 3D.
+            Practice intraday equities, F&amp;O options strategies, and algo risk rules on real-time market data.
           </p>
         </div>
 
         {/* Interactive Action Hub */}
         <div className="flex flex-wrap items-center justify-center gap-3.5 pt-7">
-          <LandingAuthLink mode="register"
+          <LandingAuthLink mode="login"
             className="group relative inline-flex items-center gap-2.5 px-8 py-3.5 rounded-xl text-white font-bold text-sm tracking-wide overflow-hidden transition-all hover:scale-[1.04] active:scale-[0.98] cursor-pointer shadow-[0_4px_24px_rgba(6,182,212,0.25),0_8px_32px_rgba(139,92,246,0.15)]"
             style={{
               background: 'linear-gradient(135deg, #06b6d4 0%, #3b82f6 50%, #8b5cf6 100%)',
@@ -469,7 +465,7 @@ export default function LandingPage() {
           >
             {/* Glass sheen overlay */}
             <div className="absolute inset-0 bg-gradient-to-b from-white/25 to-transparent pointer-events-none" />
-            <span className="relative">Start Paper Trading</span>
+            <span className="relative">Open Dashboard</span>
             <ArrowRight className="relative w-4 h-4 transition-transform duration-200 group-hover:translate-x-1" />
           </LandingAuthLink>
 
@@ -755,8 +751,14 @@ export default function LandingPage() {
             {/* Brand & Mission Column (Col 5) */}
             <div className="md:col-span-5 space-y-4">
               <BrandLogo className="text-white" tagline="Indian financial market engine" />
-              <p className="text-xs sm:text-[13px] text-slate-400 leading-relaxed max-w-md font-normal">
-                Stock Simulator is a free stock market simulator for India. Paper trading means practising buy and sell orders with virtual money instead of placing real exchange orders.
+              <h2 id="footer-market-heading" className="text-2xl sm:text-3xl font-black uppercase tracking-tight leading-tight text-white">
+                STOCK SIMULATOR{" "}<br />
+                <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 via-teal-200 to-emerald-400">FOR INDIA.</span>
+              </h2>
+              <p id="footer-market-description" className="text-xs sm:text-[13px] text-slate-400 leading-relaxed max-w-md font-normal">
+                Free paper trading with ₹10,00,000 virtual capital. Practice delivery and intraday trading in{" "}
+                <Link prefetch={false} href="/stocks" className="underline underline-offset-2 hover:text-cyan-300">NSE stocks</Link>, or explore{" "}
+                <Link prefetch={false} href="/options" className="underline underline-offset-2 hover:text-cyan-300">futures and options</Link>{" "}without risking real money.
               </p>
 
               {/* Developer & Social Badges */}

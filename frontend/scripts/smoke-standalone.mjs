@@ -73,6 +73,7 @@ async function main() {
         assert.ok(html.includes('name="description" content="Practice NSE stocks, intraday trading, futures and options with ₹10 lakh virtual capital. Learn stock trading without risking real money."'), "Homepage description");
         assert.ok(html.includes('property="og:title" content="Stock Simulator India – Free Paper Trading"'), "Homepage social title");
         assert.equal([...html.matchAll(/<h1(?:\s|>)/g)].length, 1, "Exactly one server-rendered H1");
+        assert.match(html, /<footer\b[\s\S]*?id="footer-market-heading"[\s\S]*?STOCK SIMULATOR[\s\S]*?FOR INDIA\.[\s\S]*?id="footer-market-description"[\s\S]*?Free paper trading with/);
         assert.match(html, /href="\/stocks"/);
         assert.match(html, /href="\/options"/);
         assert.match(html, /href="\/news"/);
